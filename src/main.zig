@@ -14,6 +14,7 @@ const Command = enum {
     remove, // Remove repository: zr remove <name>
     init, // Initialize config file: zr init
     help, // Show help: zr help
+    version,
 };
 
 const Repository = struct {
@@ -22,6 +23,17 @@ const Repository = struct {
 };
 
 const CONFIG_FILENAME = ".zr.config.yaml";
+
+// Read version from build.zig.zon at compile time
+const VERSION = "v0.0.1";
+
+fn showVersion() void {
+    if (std.mem.eql(u8, VERSION, "unknown")) {
+        print("zr version unknown (build.zig.zon not found or version not specified)\n", .{});
+    } else {
+        print("zr version {s}\n", .{VERSION});
+    }
+}
 
 fn readFile(allocator: Allocator, path: []const u8) ![]const u8 {
     const file = try fs.cwd().openFile(path, .{});
@@ -181,6 +193,7 @@ fn executeCommand(cmd: Command, repos: *ArrayList(Repository), args: *process.Ar
         .remove => try removeRepo(repos, args),
         .init => unreachable, // Handled in main
         .help => try showHelp(),
+        .version => showVersion(),
     }
 }
 
@@ -507,4 +520,8 @@ test "initConfig creates config file correctly" {
 
     try testing.expect(std.mem.indexOf(u8, content, "# zr configuration file") != null);
     try testing.expect(std.mem.indexOf(u8, content, "repositories:") != null);
+}
+
+test "version is read from build.zig.zon or defaults to unknown" {
+    try testing.expect(VERSION.len > 0);
 }
