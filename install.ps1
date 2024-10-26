@@ -15,7 +15,7 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # Configuration
 $AppName = "zr"
-$InstallDir = Join-Path $env:LOCALAPPDATA "Programs" $AppName
+$InstallDir = Join-Path (Join-Path $env:LOCALAPPDATA "Programs") $AppName
 $ExeName = "zr.exe"
 $GithubRepo = "yusa-imit/zr"
 $TempDir = Join-Path $env:TEMP "zr-install"
@@ -126,7 +126,7 @@ Set-Content -Path (Join-Path $InstallDir "uninstall.ps1") -Value $UninstallScrip
 Write-Host "Created uninstall script"
 
 # Create Start Menu shortcut
-$StartMenuPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$AppName"
+$StartMenuPath = Join-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs") $AppName
 if (-not (Test-Path $StartMenuPath)) {
     New-Item -ItemType Directory -Path $StartMenuPath -Force | Out-Null
 }
