@@ -1,17 +1,12 @@
 powershell
 
 ```
-Set-ExecutionPolicy Bypass -Scope Process -Force
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/yusa-imit/zr/main/install.ps1" -OutFile install.ps1
-.\install.ps1
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/yusa-imit/zr/main/install.ps1'))
 ```
 
-sh
+bash curl/wget
 
 ```
-# curl을 사용하는 경우
 curl -fsSL https://raw.githubusercontent.com/yusa-imit/zr/main/install.sh | sudo bash
-
-# wget을 사용하는 경우
 wget -qO- https://raw.githubusercontent.com/yusa-imit/zr/main/install.sh | sudo bash
 ```
