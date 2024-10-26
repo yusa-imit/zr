@@ -15,7 +15,8 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # Configuration
 $AppName = "zr"
-$InstallDir = Join-Path (Join-Path $env:LOCALAPPDATA "Programs") $AppName
+$ProgramsPath = Join-Path $env:LOCALAPPDATA "Programs"
+$InstallDir = Join-Path $ProgramsPath $AppName
 $ExeName = "zr.exe"
 $GithubRepo = "yusa-imit/zr"
 $TempDir = Join-Path $env:TEMP "zr-install"
@@ -52,7 +53,8 @@ try {
     Invoke-WebRequest -Uri $WindowsAsset.browser_download_url -OutFile $DownloadPath
 
     # Copy executable to installation directory
-    Copy-Item -Path $DownloadPath -Destination (Join-Path $InstallDir $ExeName) -Force
+    $ExePath = Join-Path $InstallDir $ExeName
+    Copy-Item -Path $DownloadPath -Destination $ExePath -Force
     Write-Host "Installed executable version $($LatestRelease.tag_name)"
 } catch {
     Write-Error "Failed to download and install executable: $_"
@@ -105,7 +107,7 @@ try {
     Write-Host "Removed from PATH"
 
     # Remove Start Menu shortcut
-    $StartMenuPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$AppName"
+    $StartMenuPath = Join-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs") $AppName
     if (Test-Path $StartMenuPath) {
         Remove-Item -Path $StartMenuPath -Recurse -Force
         Write-Host "Removed Start Menu shortcut"
@@ -122,17 +124,20 @@ try {
 }
 '@
 
-Set-Content -Path (Join-Path $InstallDir "uninstall.ps1") -Value $UninstallScript
+$UninstallPath = Join-Path $InstallDir "uninstall.ps1"
+Set-Content -Path $UninstallPath -Value $UninstallScript
 Write-Host "Created uninstall script"
 
 # Create Start Menu shortcut
-$StartMenuPath = Join-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs") $AppName
+$StartMenuFolder = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+$StartMenuPath = Join-Path $StartMenuFolder $AppName
 if (-not (Test-Path $StartMenuPath)) {
     New-Item -ItemType Directory -Path $StartMenuPath -Force | Out-Null
 }
 
 $WShell = New-Object -ComObject WScript.Shell
-$Shortcut = $WShell.CreateShortcut((Join-Path $StartMenuPath "$AppName.lnk"))
+$ShortcutPath = Join-Path $StartMenuPath "$AppName.lnk"
+$Shortcut = $WShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = Join-Path $InstallDir $ExeName
 $Shortcut.Save()
 Write-Host "Created Start Menu shortcut"
