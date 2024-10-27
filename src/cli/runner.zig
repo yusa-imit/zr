@@ -12,7 +12,7 @@ const init_command = @import("commands/init.zig");
 const help_command = @import("commands/help.zig");
 const Allocator = std.mem.Allocator;
 
-const VERSION = "v0.0.2";
+const VERSION = "v0.0.3";
 
 pub fn executeCommand(cmd: Command, config: ?*Config, args: *Arguments, allocator: Allocator) !void {
     switch (cmd) {
