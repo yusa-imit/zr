@@ -1,3 +1,26 @@
+# ZR (t͡ɕiɾa̠ɭ)
+
+Ultimate Language Agnostic Command Running Solution written in Zig
+
+```
+    Usage:
+        zr <command> [arguments]
+    Commands:
+        init                  Create initial config file
+        run <repo> <command>  Run command in specified repository
+        list                  List all repositories
+        add <name> <path>     Add a new repository
+        remove <name>         Remove a repository
+        help                  Show this help message
+        <repo> <task>         Run config > Repository defined tasks
+
+    Examples:
+        zr init
+        zr add frontend ./packages/frontend
+        zr run frontend npm start
+
+```
+
 powershell
 
 ```
