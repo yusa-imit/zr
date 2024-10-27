@@ -37,6 +37,7 @@ fn addRepository(config: *Config, name: []const u8, path: []const u8, allocator:
     dir.close();
 
     const repo = try Repository.create(allocator, name, path);
+    errdefer repo.deinit();
     try config.repos.append(repo);
 
     std.debug.print("Added repository '{s}' at {s}\n", .{ name, path });
@@ -54,6 +55,7 @@ test "addRepository adds new repository" {
     try addRepository(&config, "test-repo", "test-dir", testing.allocator);
 
     try testing.expectEqual(@as(usize, 1), config.repos.items.len);
-    try testing.expectEqualStrings("test-repo", config.repos.items[0].name);
-    try testing.expectEqualStrings("test-dir", config.repos.items[0].path);
+    const repo = config.repos.items[0];
+    try testing.expectEqualStrings("test-repo", repo.name);
+    try testing.expectEqualStrings("test-dir", repo.path);
 }

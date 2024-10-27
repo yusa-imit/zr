@@ -32,23 +32,39 @@ pub fn executeTask(config: *Config, repo_name: []const u8, task_name: []const u8
         return;
     };
 
-    const task = (try repo.findTask(task_name)) orelse {
+    // task_name이 "tasks"인 경우 task 목록을 출력
+    if (std.mem.eql(u8, task_name, "tasks")) {
+        repo.printTasks();
+        return;
+    }
+
+    const task = repo.findTask(task_name) orelse {
         std.debug.print("Error: Task '{s}' not found in repository '{s}'\n", .{ task_name, repo_name });
-        if (repo.tasks.items.len > 0) {
-            std.debug.print("\nAvailable tasks:\n", .{});
-            for (repo.tasks.items) |t| {
-                std.debug.print("  {s}: {s}\n", .{ t.name, t.command });
-            }
-        }
+        repo.printTasks();
         return;
     };
-    defer task.deinit(allocator);
+    _ = task; // autofix
 
-    // task 실행을 위한 새로운 Arguments 생성
-    var task_args = try args.taskIterator(repo_name, task.command);
-    defer task_args.deinit();
+    try run_command.execute(config, args, allocator);
+}
 
-    try run_command.execute(config, task_args, allocator);
+fn printTask(task: Task) void {
+    std.debug.print("  {s}:", .{task.name});
+
+    // 단순 task인 경우 (하나의 명령어만 있는 경우)
+    if (task.groups.items.len == 1 and task.groups.items[0].commands.items.len == 1) {
+        std.debug.print(" {s}\n", .{task.groups.items[0].commands.items[0].command});
+        return;
+    }
+
+    // 복잡한 task인 경우
+    std.debug.print("\n", .{});
+    for (task.groups.items, 0..) |group, group_idx| {
+        std.debug.print("    task group {d}:\n", .{group_idx + 1});
+        for (group.commands.items) |cmd| {
+            std.debug.print("      - {s}\n", .{cmd.command});
+        }
+    }
 }
 
 fn showVersion() void {

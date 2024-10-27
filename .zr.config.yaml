@@ -4,4 +4,28 @@ repositories:
     path: ./repositories/pnpm-turbo
     tasks:
       - dev: turbo dev
-      - name: dev
+      - task-name:
+          - task:
+              - turbo test
+              - turbo lint
+              - turbo dev
+          - task:
+              - turbo webpack
+              - turbo dev
+          - task:
+              - turbo build
+              - turbo start
+  - name: pnpm-default
+    path: ./repositories/pnpm-default
+    tasks:
+      - dev: pnpm run dev
+      - manual-task:
+          - task:
+              - pnpm run dev
+              - pnpm run dev
+          - task:
+              - pnpm run dev
+              - pnpm run dev
+              - pnpm run dev
+          - task:
+              - pnpm run dev

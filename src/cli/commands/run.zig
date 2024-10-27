@@ -1,5 +1,7 @@
 const std = @import("std");
 const Repository = @import("../../repository.zig").Repository;
+const Task = @import("../../repository.zig").Task;
+const TaskGroup = @import("../../repository.zig").TaskGroup;
 const Config = @import("../../config.zig").Config;
 const ArrayList = std.ArrayList;
 const ChildProcess = std.process.Child;
@@ -26,6 +28,7 @@ pub const RunError = error{
     OutOfMemory,
     ThreadQuotaExceeded,
     LockedMemoryLimitExceeded,
+    TaskNotFound,
 } || File.WriteError || File.ReadError || ChildProcess.SpawnError;
 
 pub const RunOptions = struct {
@@ -38,7 +41,13 @@ pub const RunOptions = struct {
 pub fn execute(config: *Config, args: *Arguments, allocator: Allocator) RunError!void {
     const repo_name = args.next() orelse {
         std.debug.print("Error: Repository name required\n", .{});
-        std.debug.print("Usage: zr run <repo> <command>\n", .{});
+        std.debug.print("Usage: zr run <repo> <task>\n", .{});
+        return;
+    };
+
+    const task_name = args.next() orelse {
+        std.debug.print("Error: Task name required\n", .{});
+        std.debug.print("Usage: zr run <repo> <task>\n", .{});
         return;
     };
 
@@ -47,54 +56,72 @@ pub fn execute(config: *Config, args: *Arguments, allocator: Allocator) RunError
         return;
     };
 
-    // Default options
+    const task = repo.findTask(task_name) orelse {
+        std.debug.print("Error: Task not found: {s}\n", .{task_name});
+        return error.TaskNotFound;
+    };
+
     const options = RunOptions{};
-    try runCommand(repo.*, args.remaining(), allocator, options);
+    try executeTask(task, repo, allocator, options);
 }
 
-fn findRepository(config: *Config, name: []const u8) ?Repository {
-    for (config.repos.items) |repo| {
-        if (std.mem.eql(u8, repo.name, name)) {
-            return repo;
+fn executeTask(task: *Task, repo: *Repository, allocator: Allocator, options: RunOptions) !void {
+    // 각 TaskGroup을 순차적으로 실행
+    for (task.groups.items) |group| {
+        try executeTaskGroup(group, repo, allocator, options);
+    }
+}
+
+fn executeTaskGroup(group: *TaskGroup, repo: *Repository, allocator: Allocator, options: RunOptions) !void {
+    if (group.commands.items.len == 1) {
+        // 단일 명령어 실행
+        var cmd_args = try parseCommandString(allocator, group.commands.items[0].command);
+        defer cmd_args.deinit();
+        try executeChildProcess(repo, &cmd_args, allocator, options);
+    } else {
+        // 병렬 실행을 위한 컨텍스트 생성
+        var threads = ArrayList(Thread).init(allocator);
+        defer threads.deinit();
+
+        // 각 명령어를 별도 스레드에서 실행
+        for (group.commands.items) |cmd| {
+            const command_dup = try allocator.dupe(u8, cmd.command);
+            const thread = try Thread.spawn(.{}, struct {
+                fn run(repo_arg: *Repository, command: []const u8, alloc: Allocator, opts: RunOptions) !void {
+                    defer alloc.free(command);
+                    var args = try parseCommandString(alloc, command);
+                    defer args.deinit();
+                    try executeChildProcess(repo_arg, &args, alloc, opts);
+                }
+            }.run, .{ repo, command_dup, allocator, options });
+            try threads.append(thread);
+        }
+
+        // 모든 스레드 완료 대기
+        for (threads.items) |thread| {
+            thread.join();
         }
     }
-    return null;
 }
 
-pub fn runCommand(repo: Repository, args: []const []const u8, allocator: Allocator, options: RunOptions) RunError!void {
-    // Validate buffer size
-    if (options.buffer_size < MIN_BUFFER_SIZE or options.buffer_size > MAX_BUFFER_SIZE) {
-        return error.InvalidBufferSize;
+fn parseCommandString(allocator: Allocator, command: []const u8) !ArrayList([]const u8) {
+    var args = ArrayList([]const u8).init(allocator);
+    errdefer args.deinit();
+
+    var iter = std.mem.split(u8, command, " ");
+    while (iter.next()) |arg| {
+        try args.append(arg);
     }
 
-    var cmd_args = ArrayList([]const u8).init(allocator);
-    defer cmd_args.deinit();
-
-    for (args) |arg| {
-        try cmd_args.append(arg);
-    }
-
-    if (cmd_args.items.len == 0) {
-        std.debug.print("Error: Command required\n", .{});
-        std.debug.print("Usage: zr run <repo> <command>\n", .{});
-        return;
-    }
-
-    if (options.show_command) {
-        const cmd_str = try std.mem.join(allocator, " ", cmd_args.items);
-        defer allocator.free(cmd_str);
-        std.debug.print("Running '{s}' in {s}...\n", .{ cmd_str, repo.name });
-    }
-
-    try executeChildProcess(repo, &cmd_args, allocator, options);
+    return args;
 }
 
 const ProcessContext = struct {
     child: *ChildProcess,
     original_termios: ?TermiosData = null,
     output_threads: ?struct {
-        stdout: std.Thread,
-        stderr: std.Thread,
+        stdout: Thread,
+        stderr: Thread,
     } = null,
     allocator: Allocator,
     options: RunOptions,
@@ -121,7 +148,11 @@ const ProcessContext = struct {
     }
 };
 
-fn executeChildProcess(repo: Repository, cmd_args: *ArrayList([]const u8), allocator: Allocator, options: RunOptions) RunError!void {
+fn executeChildProcess(repo: *Repository, cmd_args: *ArrayList([]const u8), allocator: Allocator, options: RunOptions) RunError!void {
+    if (options.buffer_size < MIN_BUFFER_SIZE or options.buffer_size > MAX_BUFFER_SIZE) {
+        return error.InvalidBufferSize;
+    }
+
     if (options.show_command) {
         const cmd_str = try std.mem.join(allocator, " ", cmd_args.items);
         defer allocator.free(cmd_str);
@@ -133,12 +164,10 @@ fn executeChildProcess(repo: Repository, cmd_args: *ArrayList([]const u8), alloc
 
     // 터미널 설정
     if (builtin.os.tag == .windows) {
-        // Windows에서는 stdio 직접 상속
         child.stdin_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
     } else {
-        // Unix에서는 현재 프로세스의 터미널 설정을 유지
         child.stdin_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
@@ -191,33 +220,6 @@ fn executeChildProcess(repo: Repository, cmd_args: *ArrayList([]const u8), alloc
             std.debug.print("\nCommand terminated with unknown status: {d}\n", .{code});
             return error.ProcessTerminated;
         },
-    }
-}
-
-fn handleOutputThread(pipe: File, output: File, buffer_size: usize) void {
-    var buffer = std.heap.page_allocator.alloc(u8, buffer_size) catch return;
-    defer std.heap.page_allocator.free(buffer);
-
-    const writer = output.writer();
-
-    if (builtin.os.tag == .windows) {
-        // Windows에서는 더 작은 버퍼로 더 자주 읽고 쓰기
-        const windows_buffer_size = 1024;
-        const read_size = @min(buffer.len, windows_buffer_size);
-
-        while (true) {
-            const bytes_read = pipe.read(buffer[0..read_size]) catch break;
-            if (bytes_read == 0) break;
-            writer.writeAll(buffer[0..bytes_read]) catch break;
-        }
-    } else {
-        // Unix 시스템에서는 기존 방식 유지
-        while (true) {
-            const bytes_read = pipe.read(buffer) catch break;
-            if (bytes_read == 0) break;
-            writer.writeAll(buffer[0..bytes_read]) catch break;
-            output.sync() catch {};
-        }
     }
 }
 

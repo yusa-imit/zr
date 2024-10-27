@@ -16,7 +16,7 @@ pub fn execute(config: *Config, args: *Arguments) !void {
 fn removeRepository(config: *Config, name: []const u8) !void {
     for (config.repos.items, 0..) |repo, i| {
         if (std.mem.eql(u8, repo.name, name)) {
-            repo.deinit(config.allocator);
+            repo.deinit();
             _ = config.repos.orderedRemove(i);
             std.debug.print("Removed repository '{s}'\n", .{name});
             return;

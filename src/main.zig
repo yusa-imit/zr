@@ -7,7 +7,10 @@ const Arguments = @import("cli/args.zig").Arguments;
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) @panic("Memory leak detected");
+    }
 
     var args = try Arguments.init(allocator);
     defer args.deinit();
@@ -36,20 +39,13 @@ pub fn main() !void {
                 return;
             },
             else => {
-                // Load config for commands that need it
-                var config = Config.load(allocator) catch |err| {
-                    if (err == error.ConfigNotInitialized) {
-                        std.debug.print("Config file not found. Run 'zr init' first.\n", .{});
-                        return;
-                    }
-                    return err;
-                };
+                var config = try Config.load(allocator);
                 defer config.deinit();
 
                 try args.parseRemaining();
                 const iter = try args.iterator();
                 defer allocator.destroy(iter);
-                try runner.executeCommand(cmd, &config, iter, allocator);
+                try runner.executeCommand(cmd, config, iter, allocator);
 
                 // Save config if needed
                 if (cmd == .add or cmd == .remove) {
@@ -59,16 +55,11 @@ pub fn main() !void {
         }
     } else {
         // If not a built-in command, try to handle as a repository task
-        var config = Config.load(allocator) catch |err| {
-            if (err == error.ConfigNotInitialized) {
-                std.debug.print("Config file not found. Run 'zr init' first.\n", .{});
-                return;
-            }
-            return err;
-        };
+        var config = try Config.load(allocator);
         defer config.deinit();
 
-        const repo_name = cmd_str; // first arg is repo name
+        const repo_name = cmd_str;
+
         const task_name = args.next() orelse {
             std.debug.print("Error: Task name required\n", .{});
             std.debug.print("Usage: zr <repository> <task>\n", .{});
@@ -79,6 +70,22 @@ pub fn main() !void {
             return;
         };
 
-        try runner.executeTask(&config, repo_name, task_name, &args, allocator);
+        // Parse remaining arguments
+        try args.parseRemaining();
+
+        runner.executeTask(config, repo_name, task_name, &args, allocator) catch |err| {
+            switch (err) {
+                error.ProcessTerminated => {
+                    // Process terminated abnormally
+                    std.debug.print("Task execution failed\n", .{});
+                    return err;
+                },
+                error.TaskNotFound => {
+                    // Task not found error message is already printed
+                    return;
+                },
+                else => return err,
+            }
+        };
     }
 }
