@@ -1,0 +1,20 @@
+repositories:
+  - name: <<name>>
+    path: <<path>>
+    tasks:
+      - <<simple-task-name>>: <<command>>
+      - <<complex-task-name>>:
+          - task:
+              - <<command>> # this command and
+              - <<command>> # this command run as parallel
+          - task:
+              - <<command>> # this command run after upper commands ends
+
+tasks:
+  - <<simple-task-name>>: <<repository:task-name|command>>
+  - <<complex-task-name>>:
+      - task:
+          - <<repository:task-name|command>>
+          - <<repository:task-name|command>>
+      - task:
+          - <<repository:task-name|command>> # same as repository's complex task

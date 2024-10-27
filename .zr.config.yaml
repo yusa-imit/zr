@@ -29,3 +29,13 @@ repositories:
               - pnpm run dev
           - task:
               - pnpm run dev
+
+tasks:
+  - dev-pnpm-turbo-command: pnpm-turbo:turbo dev
+  - dev-pnpm-turbo-task: pnpm-turbo:dev
+  - super-spec:
+      - task:
+          - pnpm-default:pnpm run dev
+          - pnpm-default:dev
+      - task:
+          - pnpm-default:dev
