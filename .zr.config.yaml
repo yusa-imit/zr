@@ -3,5 +3,5 @@ repositories:
   - name: pnpm-turbo
     path: ./repositories/pnpm-turbo
     tasks:
-      - dev: "turbo dev"
+      - dev: turbo dev
       - name: dev
