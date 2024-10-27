@@ -8,6 +8,7 @@ const os = std.os;
 const builtin = @import("builtin");
 const File = std.fs.File;
 const Thread = std.Thread;
+const Arguments = @import("../args.zig").Arguments;
 
 // Constants for configuration
 const DEFAULT_BUFFER_SIZE: usize = 4096;
@@ -34,21 +35,21 @@ pub const RunOptions = struct {
     show_command: bool = true,
 };
 
-pub fn execute(config: *Config, args: *std.process.ArgIterator, allocator: Allocator) RunError!void {
+pub fn execute(config: *Config, args: *Arguments, allocator: Allocator) RunError!void {
     const repo_name = args.next() orelse {
         std.debug.print("Error: Repository name required\n", .{});
         std.debug.print("Usage: zr run <repo> <command>\n", .{});
         return;
     };
 
-    const repo = findRepository(config, repo_name) orelse {
+    const repo = config.findRepository(repo_name) orelse {
         std.debug.print("Error: Repository not found: {s}\n", .{repo_name});
         return;
     };
 
     // Default options
     const options = RunOptions{};
-    try runCommand(repo, args, allocator, options);
+    try runCommand(repo.*, args.remaining(), allocator, options);
 }
 
 fn findRepository(config: *Config, name: []const u8) ?Repository {
@@ -60,7 +61,7 @@ fn findRepository(config: *Config, name: []const u8) ?Repository {
     return null;
 }
 
-fn runCommand(repo: Repository, args: *std.process.ArgIterator, allocator: Allocator, options: RunOptions) RunError!void {
+pub fn runCommand(repo: Repository, args: []const []const u8, allocator: Allocator, options: RunOptions) RunError!void {
     // Validate buffer size
     if (options.buffer_size < MIN_BUFFER_SIZE or options.buffer_size > MAX_BUFFER_SIZE) {
         return error.InvalidBufferSize;
@@ -69,7 +70,7 @@ fn runCommand(repo: Repository, args: *std.process.ArgIterator, allocator: Alloc
     var cmd_args = ArrayList([]const u8).init(allocator);
     defer cmd_args.deinit();
 
-    while (args.next()) |arg| {
+    for (args) |arg| {
         try cmd_args.append(arg);
     }
 

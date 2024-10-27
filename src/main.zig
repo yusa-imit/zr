@@ -2,56 +2,73 @@ const std = @import("std");
 const Command = @import("command.zig").Command;
 const Config = @import("config.zig").Config;
 const runner = @import("cli/runner.zig");
+const Arguments = @import("cli/args.zig").Arguments;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var args = try std.process.argsWithAllocator(allocator);
+    var args = try Arguments.init(allocator);
     defer args.deinit();
 
-    // Skip executable name
-    _ = args.skip();
+    try args.parseCommand();
 
-    const cmd_str = args.next() orelse {
-        try runner.executeCommand(.help, null, undefined, allocator);
-        return;
-    };
-
-    const cmd = Command.parse(cmd_str) orelse {
-        std.debug.print("Unknown command: {s}\n", .{cmd_str});
-        try runner.executeCommand(.help, null, undefined, allocator);
-        return;
-    };
-
-    // Commands that don't need config
-    switch (cmd) {
-        .init => {
-            try runner.executeCommand(.init, null, &args, allocator);
-            return;
-        },
-        .help, .version => {
-            try runner.executeCommand(cmd, null, undefined, allocator);
-            return;
-        },
-        else => {},
-    }
-
-    // Load config for commands that need it
-    var config = Config.load(allocator) catch |err| {
-        if (err == error.ConfigNotInitialized) {
-            std.debug.print("Config file not found. Run 'zr init' first.\n", .{});
-            return;
+    const cmd_str = args.command.?;
+    if (Command.parse(cmd_str)) |cmd| {
+        // Commands that don't need config
+        switch (cmd) {
+            .init => {
+                try args.parseRemaining();
+                var iter = try args.iterator();
+                defer iter.deinit();
+                try runner.executeCommand(.init, null, iter, allocator);
+                return;
+            },
+            .help, .version => {
+                try runner.executeCommand(cmd, null, undefined, allocator);
+                return;
+            },
+            else => {},
         }
-        return err;
-    };
-    defer config.deinit();
 
-    try runner.executeCommand(cmd, &config, &args, allocator);
+        // Load config for commands that need it
+        var config = Config.load(allocator) catch |err| {
+            if (err == error.ConfigNotInitialized) {
+                std.debug.print("Config file not found. Run 'zr init' first.\n", .{});
+                return;
+            }
+            return err;
+        };
+        defer config.deinit();
 
-    // Save config if needed
-    if (cmd == .add or cmd == .remove) {
-        try config.save();
+        try args.parseRemaining();
+        var iter = try args.iterator();
+        defer iter.deinit();
+        try runner.executeCommand(cmd, &config, iter, allocator);
+
+        // Save config if needed
+        if (cmd == .add or cmd == .remove) {
+            try config.save();
+        }
+    } else {
+        // If not a command, treat as repository task
+        var config = Config.load(allocator) catch |err| {
+            if (err == error.ConfigNotInitialized) {
+                std.debug.print("Config file not found. Run 'zr init' first.\n", .{});
+                return;
+            }
+            return err;
+        };
+        defer config.deinit();
+
+        const repo_name = cmd_str; // first arg is repo name
+        const task_name = args.next() orelse {
+            std.debug.print("Error: Task name required\n", .{});
+            std.debug.print("Usage: zr <repository> <task>\n", .{});
+            return;
+        };
+
+        try runner.executeTask(&config, repo_name, task_name, &args, allocator);
     }
 }

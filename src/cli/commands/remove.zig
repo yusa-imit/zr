@@ -1,9 +1,10 @@
 const std = @import("std");
 const Config = @import("../../config.zig").Config;
 const Repository = @import("../../repository.zig").Repository;
+const Arguments = @import("../args.zig").Arguments;
 
-pub fn execute(config: *Config, args: *std.process.ArgIterator) !void {
-    const name = args.next() orelse {
+pub fn execute(config: *Config, args: *Arguments) !void {
+    const name = args.requireNext(.MissingRepository) catch {
         std.debug.print("Error: Repository name required\n", .{});
         std.debug.print("Usage: zr remove <name>\n", .{});
         return;

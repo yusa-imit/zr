@@ -3,14 +3,15 @@ const Config = @import("../../config.zig").Config;
 const Repository = @import("../../repository.zig").Repository;
 const Allocator = std.mem.Allocator;
 const fs = std.fs;
+const Arguments = @import("../args.zig").Arguments;
 
-pub fn execute(config: *Config, args: *std.process.ArgIterator, allocator: Allocator) !void {
-    const name = args.next() orelse {
+pub fn execute(config: *Config, args: *Arguments, allocator: Allocator) !void {
+    const name = args.requireNext(.MissingRepository) catch {
         std.debug.print("Error: Repository name required\n", .{});
         std.debug.print("Usage: zr add <name> <path>\n", .{});
         return;
     };
-    const path = args.next() orelse {
+    const path = args.requireNext(.MissingPath) catch {
         std.debug.print("Error: Repository path required\n", .{});
         std.debug.print("Usage: zr add <name> <path>\n", .{});
         return;
