@@ -1,3 +1,10 @@
+.vscode
+
+# zig
 .zig-cache
 zig-out
-.zr.config.yaml
+
+# js
+node_modules
+.turbo
+.next
