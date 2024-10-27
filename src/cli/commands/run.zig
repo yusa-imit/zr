@@ -12,6 +12,14 @@ const File = std.fs.File;
 const Thread = std.Thread;
 const Arguments = @import("../args.zig").Arguments;
 
+const WIN_CTRL_EVENT = struct {
+    const CTRL_C = 0;
+    const CTRL_BREAK = 1;
+    const CTRL_CLOSE = 2;
+    const CTRL_LOGOFF = 5;
+    const CTRL_SHUTDOWN = 6;
+};
+
 // Constants for configuration
 const DEFAULT_BUFFER_SIZE: usize = 4096;
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1MB
@@ -56,6 +64,8 @@ pub fn execute(config: *Config, args: *Arguments, allocator: Allocator) RunError
         return;
     };
 
+    repo.printTasks();
+
     const task = repo.findTask(task_name) orelse {
         std.debug.print("Error: Task not found: {s}\n", .{task_name});
         return error.TaskNotFound;
@@ -65,7 +75,7 @@ pub fn execute(config: *Config, args: *Arguments, allocator: Allocator) RunError
     try executeTask(task, repo, allocator, options);
 }
 
-fn executeTask(task: *Task, repo: *Repository, allocator: Allocator, options: RunOptions) !void {
+pub fn executeTask(task: *Task, repo: *Repository, allocator: Allocator, options: RunOptions) !void {
     // 각 TaskGroup을 순차적으로 실행
     for (task.groups.items) |group| {
         try executeTaskGroup(group, repo, allocator, options);
@@ -73,34 +83,39 @@ fn executeTask(task: *Task, repo: *Repository, allocator: Allocator, options: Ru
 }
 
 fn executeTaskGroup(group: *TaskGroup, repo: *Repository, allocator: Allocator, options: RunOptions) !void {
+    // 단일 명령어인 경우 직접 실행
     if (group.commands.items.len == 1) {
-        // 단일 명령어 실행
         var cmd_args = try parseCommandString(allocator, group.commands.items[0].command);
         defer cmd_args.deinit();
         try executeChildProcess(repo, &cmd_args, allocator, options);
-    } else {
-        // 병렬 실행을 위한 컨텍스트 생성
-        var threads = ArrayList(Thread).init(allocator);
-        defer threads.deinit();
+        return;
+    }
 
-        // 각 명령어를 별도 스레드에서 실행
-        for (group.commands.items) |cmd| {
-            const command_dup = try allocator.dupe(u8, cmd.command);
-            const thread = try Thread.spawn(.{}, struct {
-                fn run(repo_arg: *Repository, command: []const u8, alloc: Allocator, opts: RunOptions) !void {
-                    defer alloc.free(command);
-                    var args = try parseCommandString(alloc, command);
-                    defer args.deinit();
-                    try executeChildProcess(repo_arg, &args, alloc, opts);
-                }
-            }.run, .{ repo, command_dup, allocator, options });
-            try threads.append(thread);
-        }
+    // 여러 명령어는 병렬로 실행
+    var threads = ArrayList(Thread).init(allocator);
+    defer threads.deinit();
 
-        // 모든 스레드 완료 대기
-        for (threads.items) |thread| {
-            thread.join();
-        }
+    std.debug.print("thread spawn {d}", .{group.commands.items.len});
+
+    // 각 명령어에 대한 스레드 생성
+    for (group.commands.items) |cmd| {
+        const command_dup = try allocator.dupe(u8, cmd.command);
+
+        const thread = try Thread.spawn(.{}, struct {
+            fn run(repo_arg: *Repository, command: []const u8, alloc: Allocator, opts: RunOptions) !void {
+                defer alloc.free(command);
+                var args = try parseCommandString(alloc, command);
+                defer args.deinit();
+                try executeChildProcess(repo_arg, &args, alloc, opts);
+            }
+        }.run, .{ repo, command_dup, allocator, options });
+
+        try threads.append(thread);
+    }
+
+    // 모든 스레드의 완료를 기다림
+    for (threads.items) |thread| {
+        thread.join();
     }
 }
 
@@ -116,6 +131,23 @@ fn parseCommandString(allocator: Allocator, command: []const u8) !ArrayList([]co
     return args;
 }
 
+const HandlerContext = struct {
+    ctx: *ProcessContext,
+
+    fn handler(self: *const @This(), dwCtrlType: u32) callconv(.C) c_int {
+        switch (dwCtrlType) {
+            WIN_CTRL_EVENT.CTRL_C, WIN_CTRL_EVENT.CTRL_BREAK => {
+                if (self.ctx.child.kill()) |_| {
+                    return 1; // 이벤트 처리 완료
+                } else |_| {
+                    return 0; // 이벤트 처리 실패
+                }
+            },
+            else => return 0, // 다른 이벤트는 무시
+        }
+    }
+};
+
 const ProcessContext = struct {
     child: *ChildProcess,
     original_termios: ?TermiosData = null,
@@ -126,12 +158,14 @@ const ProcessContext = struct {
     allocator: Allocator,
     options: RunOptions,
     env_map: ?*std.process.EnvMap = null,
+    handler_ctx: ?*HandlerContext = null,
 
     pub fn init(child: *ChildProcess, allocator: Allocator, options: RunOptions) ProcessContext {
         return .{
             .child = child,
             .allocator = allocator,
             .options = options,
+            .handler_ctx = null,
         };
     }
 
@@ -143,6 +177,18 @@ const ProcessContext = struct {
         if (builtin.os.tag != .windows) {
             if (self.original_termios) |termios| {
                 restoreTerminalState(termios) catch {};
+            }
+        } else {
+            // Windows 신호 핸들러 정리
+            if (self.handler_ctx) |handler_ctx| {
+                // 핸들러 제거
+                const kernel32 = std.os.windows.kernel32;
+                _ = kernel32.SetConsoleCtrlHandler(
+                    @ptrCast(&HandlerContext.handler),
+                    @intFromBool(false),
+                );
+
+                self.allocator.destroy(handler_ctx);
             }
         }
     }
@@ -247,25 +293,15 @@ fn restoreTerminalState(original: TermiosData) !void {
 fn setupWindowsSignalHandler(ctx: *ProcessContext) !void {
     if (builtin.os.tag == .windows) {
         const kernel32 = std.os.windows.kernel32;
-        const CTRL_C_EVENT = 0;
 
-        const HandlerContext = struct {
-            ctx: *ProcessContext,
-
-            fn handler(self: *const @This(), dwCtrlType: u32) callconv(.C) c_int {
-                if (dwCtrlType == CTRL_C_EVENT) {
-                    if (self.ctx.child.kill()) |_| {
-                        return 1;
-                    } else |_| {
-                        return 0;
-                    }
-                }
-                return 0;
-            }
-        };
+        // HandlerContext를 ProcessContext에 저장하여 수명 관리
+        if (ctx.handler_ctx != null) {
+            ctx.allocator.destroy(ctx.handler_ctx.?);
+        }
 
         const handler_ctx = try ctx.allocator.create(HandlerContext);
         handler_ctx.* = .{ .ctx = ctx };
+        ctx.handler_ctx = handler_ctx;
 
         if (kernel32.SetConsoleCtrlHandler(
             @ptrCast(&HandlerContext.handler),

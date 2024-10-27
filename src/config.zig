@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 const Repository = @import("repository.zig").Repository;
 const Task = @import("repository.zig").Task;
 const TaskGroup = @import("repository.zig").TaskGroup;
@@ -72,29 +73,41 @@ pub const Config = struct {
             }
 
             if (indent == base_indent + 2 and std.mem.startsWith(u8, trimmed, "- name:")) {
-                // Handle previous repository
                 if (current_repo) |repo| {
                     try self.repos.append(repo);
                 }
 
-                const name = std.mem.trim(u8, trimmed["- name:".len..], " ");
-                const repo = try Repository.create(self.allocator, name, "");
+                // Extract name correctly
+                const name = std.mem.trim(u8, trimmed["- name:".len..], " \t\r");
+                var repo = try Repository.create(self.allocator, name, "");
                 errdefer repo.deinit();
                 current_repo = repo;
 
-                i += 1;
-                continue;
-            }
+                // Process next lines for path and tasks
+                var next_i = i + 1;
+                while (next_i < lines.len) : (next_i += 1) {
+                    const next_line = lines[next_i];
+                    const next_trimmed = std.mem.trim(u8, next_line, " \t\r");
+                    const next_indent = countLeadingSpaces(next_line);
 
-            if (current_repo) |repo| {
-                if (indent == base_indent + 4) {
-                    if (std.mem.startsWith(u8, trimmed, "path:")) {
-                        const path = std.mem.trim(u8, trimmed["path:".len..], " ");
-                        repo.path = try self.allocator.dupe(u8, path);
-                    } else if (std.mem.startsWith(u8, trimmed, "tasks:")) {
-                        i = try parseTasksSection(self, repo, lines, i + 1, indent);
+                    if (next_indent == base_indent + 4) {
+                        if (std.mem.startsWith(u8, next_trimmed, "path:")) {
+                            const path = std.mem.trim(u8, next_trimmed["path:".len..], " \t\r");
+                            // Update repository path
+                            if (repo.path.len > 0) {
+                                self.allocator.free(repo.path);
+                            }
+                            repo.path = try self.allocator.dupe(u8, path);
+                        } else if (std.mem.startsWith(u8, next_trimmed, "tasks:")) {
+                            i = try parseTasksSection(self, repo, lines, next_i + 1, next_indent);
+                            break;
+                        }
+                    } else if (next_indent <= base_indent + 2) {
+                        i = next_i - 1;
+                        break;
                     }
                 }
+                i = next_i;
             }
         }
 
@@ -109,6 +122,8 @@ pub const Config = struct {
         var current_task: ?*Task = null;
         var current_group: ?*TaskGroup = null;
 
+        std.debug.print("Parsing tasks section starting at line {d}\n", .{start_index});
+
         while (i < lines.len) {
             const line = lines[i];
             const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -118,6 +133,8 @@ pub const Config = struct {
             }
 
             const indent = countLeadingSpaces(line);
+            std.debug.print("Processing line {d}: '{s}' (indent: {d})\n", .{ i, trimmed, indent });
+
             if (indent <= base_indent - 2) break;
 
             if (indent == base_indent + 2 and std.mem.startsWith(u8, trimmed, "- ")) {
@@ -125,8 +142,10 @@ pub const Config = struct {
                 if (current_task) |task| {
                     if (task.groups.items.len > 0) {
                         try repo.addTask(task);
+                        std.debug.print("Added task '{s}' with {d} groups\n", .{ task.name, task.groups.items.len });
                     } else {
                         task.deinit();
+                        std.debug.print("Discarded empty task\n", .{});
                     }
                     current_task = null;
                 }
@@ -140,8 +159,10 @@ pub const Config = struct {
         if (current_task) |task| {
             if (task.groups.items.len > 0) {
                 try repo.addTask(task);
+                std.debug.print("Added final task '{s}' with {d} groups\n", .{ task.name, task.groups.items.len });
             } else {
                 task.deinit();
+                std.debug.print("Discarded final empty task\n", .{});
             }
         }
 
@@ -158,65 +179,73 @@ pub const Config = struct {
         current_task: *?*Task,
         current_group: *?*TaskGroup,
     ) !usize {
-        _ = repo; // autofix
-        if (std.mem.indexOf(u8, line, ": ")) |colon_pos| {
-            const name = std.mem.trim(u8, line[0..colon_pos], " ");
-            const task = try Task.create(config.allocator, name);
-            errdefer task.deinit();
+        _ = repo;
 
-            var group = try task.addGroup();
-            errdefer {
-                if (task.groups.items.len > 0) {
-                    group.deinit();
-                }
-                task.deinit();
-            }
-
-            current_task.* = task;
-            current_group.* = group;
-
-            const command = std.mem.trim(u8, line[colon_pos + 2 ..], " ");
-            try group.addCommand(command);
-
-            return start_index - 1;
-        }
+        std.debug.print("Parsing task definition: '{s}'\n", .{line});
 
         if (std.mem.indexOf(u8, line, ":")) |colon_pos| {
             const name = std.mem.trim(u8, line[0..colon_pos], " ");
-            const task = try Task.create(config.allocator, name);
+            const value = if (colon_pos + 1 < line.len)
+                std.mem.trim(u8, line[colon_pos + 1 ..], " :")
+            else
+                "";
+
+            std.debug.print("Found task name: '{s}', value: '{s}'\n", .{ name, value });
+
+            var task = try Task.create(config.allocator, name);
             errdefer task.deinit();
 
-            current_task.* = task;
-            current_group.* = null;
+            if (value.len > 0) {
+                // Simple task
+                var group = try task.addGroup();
+                try group.addCommand(value);
+                current_task.* = task;
+                current_group.* = null;
+                std.debug.print("Created simple task with command: '{s}'\n", .{value});
+                return start_index - 1;
+            }
 
+            // Complex task
             var i = start_index;
-            while (i < lines.len) {
+            const task_base_indent = base_indent + 4;
+
+            while (i < lines.len) : (i += 1) {
                 const task_line = lines[i];
                 const task_trimmed = std.mem.trim(u8, task_line, " \t\r");
+                if (task_trimmed.len == 0) continue;
+
                 const task_indent = countLeadingSpaces(task_line);
+                std.debug.print("Processing task line {d}: '{s}' (indent: {d}, base: {d})\n", .{ i, task_trimmed, task_indent, task_base_indent });
 
-                if (task_indent <= base_indent or task_trimmed.len == 0) break;
+                // 들여쓰기 레벨이 현재 태스크를 벗어나면 종료
+                if (task_indent < task_base_indent - 4) break;
 
-                if (std.mem.startsWith(u8, task_trimmed, "- task:")) {
-                    if (current_group.*) |group| {
-                        try task.groups.append(group);
-                    }
-                    current_group.* = try TaskGroup.create(config.allocator);
-                } else if (current_group.* != null and std.mem.startsWith(u8, task_trimmed, "- ")) {
-                    const cmd = std.mem.trim(u8, task_trimmed[2..], " ");
-                    try current_group.*.?.addCommand(cmd);
+                // 새로운 태스크 그룹 시작
+                if (task_indent == task_base_indent and std.mem.startsWith(u8, task_trimmed, "- task:")) {
+                    std.debug.print("Found new task group\n", .{});
+                    const group = try task.addGroup();
+                    current_group.* = group;
+                    continue;
                 }
 
-                i += 1;
+                // 현재 그룹에 명령어 추가
+                if (current_group.* != null and task_indent > task_base_indent and std.mem.startsWith(u8, task_trimmed, "- ")) {
+                    const cmd = std.mem.trim(u8, task_trimmed[2..], " ");
+                    try current_group.*.?.addCommand(cmd);
+                    std.debug.print("Added command to group: '{s}'\n", .{cmd});
+                }
             }
 
-            // Handle last group
-            if (current_group.*) |group| {
-                try task.groups.append(group);
+            if (task.groups.items.len > 0) {
+                current_task.* = task;
                 current_group.* = null;
+                std.debug.print("Completed complex task '{s}' with {d} groups\n", .{ task.name, task.groups.items.len });
+                return i - 1;
+            } else {
+                std.debug.print("Discarding empty task '{s}'\n", .{task.name});
+                task.deinit();
+                return start_index - 1;
             }
-
-            return i - 1;
         }
 
         return start_index;
@@ -323,6 +352,13 @@ pub const Config = struct {
         }
     }
 
+    pub fn printRepositories(self: *const Config) void {
+        std.debug.print("Repositories:\n", .{});
+        for (self.repos.items) |repo| {
+            std.debug.print("  {s}      {s}\n", .{ repo.name, repo.path });
+        }
+    }
+
     fn writeConfig(self: *const Config, buffer: *ArrayList(u8)) !void {
         const writer = buffer.writer();
         try writer.writeAll("# zr configuration file\n");
@@ -354,3 +390,94 @@ pub const Config = struct {
         }
     }
 };
+
+pub fn printConfig(config: *const Config) void {
+    std.debug.print("\nCurrent config contents:\n", .{});
+    for (config.repos.items) |repo| {
+        std.debug.print("Repository: {s} ({s})\n", .{ repo.name, repo.path });
+        std.debug.print("Tasks:\n", .{});
+        for (repo.tasks.items) |task| {
+            if (task.groups.items.len == 1 and task.groups.items[0].commands.items.len == 1) {
+                std.debug.print("  {s}: {s}\n", .{
+                    task.name,
+                    task.groups.items[0].commands.items[0].command,
+                });
+            } else {
+                std.debug.print("  {s}:\n", .{task.name});
+                for (task.groups.items, 0..) |group, group_idx| {
+                    std.debug.print("    Group {d}:\n", .{group_idx + 1});
+                    for (group.commands.items) |cmd| {
+                        std.debug.print("      - {s}\n", .{cmd.command});
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "Config parser - complex tasks" {
+    const test_config =
+        \\# zr configuration file
+        \\repositories:
+        \\  - name: pnpm-default
+        \\    path: ./repositories/pnpm-default
+        \\    tasks:
+        \\      - dev: pnpm run dev
+        \\      - manual-task:
+        \\          - task:
+        \\            - pnpm run dev
+        \\            - pnpm run dev
+        \\          - task:
+        \\            - pnpm run dev
+        \\            - pnpm run dev
+        \\            - pnpm run dev
+        \\          - task:
+        \\            - pnpm run dev
+    ;
+
+    const allocator = testing.allocator;
+
+    // Config 파일 생성
+    const test_file = try std.fs.cwd().createFile(".zr.config.yaml", .{});
+    defer test_file.close();
+    try test_file.writeAll(test_config);
+    defer std.fs.cwd().deleteFile(".zr.config.yaml") catch {};
+
+    // Config 로드 및 파싱
+    var config = try Config.load(allocator);
+    defer config.deinit();
+
+    // Repository 검증
+    try testing.expectEqual(@as(usize, 1), config.repos.items.len);
+    const repo = config.repos.items[0];
+    try testing.expectEqualStrings("pnpm-default", repo.name);
+    try testing.expectEqualStrings("./repositories/pnpm-default", repo.path);
+
+    // Tasks 검증
+    try testing.expectEqual(@as(usize, 2), repo.tasks.items.len);
+
+    // dev task 검증
+    const dev_task = repo.findTask("dev").?;
+    try testing.expectEqual(@as(usize, 1), dev_task.groups.items.len);
+    try testing.expectEqual(@as(usize, 1), dev_task.groups.items[0].commands.items.len);
+    try testing.expectEqualStrings("pnpm run dev", dev_task.groups.items[0].commands.items[0].command);
+
+    // manual-task 검증
+    const manual_task = repo.findTask("manual-task").?;
+    try testing.expectEqual(@as(usize, 3), manual_task.groups.items.len);
+
+    // 첫 번째 그룹 검증 (2개 명령어)
+    try testing.expectEqual(@as(usize, 2), manual_task.groups.items[0].commands.items.len);
+    try testing.expectEqualStrings("pnpm run dev", manual_task.groups.items[0].commands.items[0].command);
+    try testing.expectEqualStrings("pnpm run dev", manual_task.groups.items[0].commands.items[1].command);
+
+    // 두 번째 그룹 검증 (3개 명령어)
+    try testing.expectEqual(@as(usize, 3), manual_task.groups.items[1].commands.items.len);
+    try testing.expectEqualStrings("pnpm run dev", manual_task.groups.items[1].commands.items[0].command);
+    try testing.expectEqualStrings("pnpm run dev", manual_task.groups.items[1].commands.items[1].command);
+    try testing.expectEqualStrings("pnpm run dev", manual_task.groups.items[1].commands.items[2].command);
+
+    // 세 번째 그룹 검증 (1개 명령어)
+    try testing.expectEqual(@as(usize, 1), manual_task.groups.items[2].commands.items.len);
+    try testing.expectEqualStrings("pnpm run dev", manual_task.groups.items[2].commands.items[0].command);
+}

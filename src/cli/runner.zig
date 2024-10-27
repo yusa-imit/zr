@@ -27,6 +27,7 @@ pub fn executeCommand(cmd: Command, config: ?*Config, args: *Arguments, allocato
 }
 
 pub fn executeTask(config: *Config, repo_name: []const u8, task_name: []const u8, args: *Arguments, allocator: Allocator) !void {
+    _ = args; // autofix
     const repo = config.findRepository(repo_name) orelse {
         std.debug.print("Error: Repository not found: {s}\n", .{repo_name});
         return;
@@ -43,9 +44,9 @@ pub fn executeTask(config: *Config, repo_name: []const u8, task_name: []const u8
         repo.printTasks();
         return;
     };
-    _ = task; // autofix
 
-    try run_command.execute(config, args, allocator);
+    // task를 직접 실행
+    try run_command.executeTask(task, repo, allocator, .{});
 }
 
 fn printTask(task: Task) void {

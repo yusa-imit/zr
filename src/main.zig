@@ -54,10 +54,6 @@ pub fn main() !void {
             },
         }
     } else {
-        // If not a built-in command, try to handle as a repository task
-        var config = try Config.load(allocator);
-        defer config.deinit();
-
         const repo_name = cmd_str;
 
         const task_name = args.next() orelse {
@@ -69,6 +65,10 @@ pub fn main() !void {
             }
             return;
         };
+
+        var config = try Config.load(allocator);
+
+        defer config.deinit();
 
         // Parse remaining arguments
         try args.parseRemaining();
