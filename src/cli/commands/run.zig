@@ -37,6 +37,7 @@ pub const RunError = error{
     ThreadQuotaExceeded,
     LockedMemoryLimitExceeded,
     TaskNotFound,
+    OperationNotSupported,
 } || File.WriteError || File.ReadError || ChildProcess.SpawnError;
 
 pub const RunOptions = struct {
@@ -217,7 +218,8 @@ fn executeChildProcess(repo: *Repository, cmd_args: *ArrayList([]const u8), allo
         child.stdin_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
-        child.term = .{ .Pid = std.os.getpid() };
+
+        // child.term = .{ .Signal = std.os.getpid() };
     }
 
     var ctx = ProcessContext.init(&child, allocator, options);
@@ -269,7 +271,7 @@ fn executeChildProcess(repo: *Repository, cmd_args: *ArrayList([]const u8), allo
     }
 }
 
-const TermiosData = if (builtin.os.tag == .windows) void else os.termios;
+const TermiosData = if (builtin.os.tag == .windows) void else std.posix.termios;
 
 fn saveTerminalState() !TermiosData {
     if (builtin.os.tag == .windows) {
@@ -287,7 +289,7 @@ fn restoreTerminalState(original: TermiosData) !void {
         return;
     }
     const stdin_fd = std.io.getStdIn().handle;
-    try os.tcsetattr(stdin_fd, .FLUSH, original);
+    try std.posix.tcsetattr(stdin_fd, .FLUSH, original);
 }
 
 fn setupWindowsSignalHandler(ctx: *ProcessContext) !void {
@@ -314,26 +316,31 @@ fn setupWindowsSignalHandler(ctx: *ProcessContext) !void {
 }
 
 fn setupUnixSignalHandler(ctx: *ProcessContext) !void {
-    const Handler = struct {
-        ctx: *ProcessContext,
-        fn handle(self: @This(), sig: c_int) void {
+    // 전역 변수로 현재 프로세스 컨텍스트를 저장
+    const SignalContext = struct {
+        var current_process: ?*ProcessContext = null;
+
+        pub fn handle(sig: c_int) callconv(.C) void {
             _ = sig;
-            if (self.ctx.child.kill()) |_| {} else |_| {}
+            if (current_process) |process| {
+                if (process.child.kill()) |_| {} else |_| {}
+            }
         }
     };
 
-    const handler = Handler{ .ctx = ctx };
-    try os.sigaction(
-        os.SIG.INT,
-        &os.Sigaction{
-            .handler = .{ .handler = struct {
-                fn handleSignal(sig: c_int) callconv(.C) void {
-                    @as(*const Handler, @ptrCast(&handler)).handle(sig);
-                }
-            }.handleSignal },
-            .mask = os.empty_sigset,
-            .flags = 0,
-        },
+    // 현재 프로세스 컨텍스트 설정
+    SignalContext.current_process = ctx;
+
+    // 기본 시그널 핸들러 설정
+    var sa = std.posix.Sigaction{
+        .handler = .{ .handler = SignalContext.handle },
+        .mask = std.posix.empty_sigset,
+        .flags = 0,
+    };
+
+    try std.posix.sigaction(
+        std.posix.SIG.INT,
+        &sa,
         null,
     );
 }
