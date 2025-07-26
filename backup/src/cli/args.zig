@@ -139,8 +139,8 @@ pub const Arguments = struct {
         new_args.* = .{
             .allocator = self.allocator,
             .raw_args = undefined, // iterator에서는 사용하지 않음
-            .index = self.index,
-            .args = self.args, // 원본 args 공유
+            .index = 0, // Start from beginning of remaining args
+            .args = if (self.remaining_args) |*rem_args| rem_args.* else self.args,
             .command = null,
             .repository = null,
             .remaining_args = null,
@@ -161,7 +161,7 @@ pub const Arguments = struct {
         try task_args.append(try self.allocator.dupe(u8, repo_name));
 
         // 명령어 토큰화하여 추가
-        var cmd_iter = std.mem.tokenize(u8, task_command, " ");
+        var cmd_iter = std.mem.tokenizeScalar(u8, task_command, ' ');
         while (cmd_iter.next()) |token| {
             try task_args.append(try self.allocator.dupe(u8, token));
         }
@@ -202,3 +202,91 @@ pub const Arguments = struct {
         }
     }
 };
+
+test "Arguments parsing - basic functionality" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    // Mock process arguments for testing
+    var mock_args = std.ArrayList([]const u8).init(allocator);
+    defer {
+        for (mock_args.items) |arg| {
+            allocator.free(arg);
+        }
+        mock_args.deinit();
+    }
+
+    try mock_args.append(try allocator.dupe(u8, "run"));
+    try mock_args.append(try allocator.dupe(u8, "frontend"));
+    try mock_args.append(try allocator.dupe(u8, "build"));
+
+    var args = Arguments{
+        .allocator = allocator,
+        .raw_args = undefined,
+        .index = 0,
+        .args = mock_args,
+        .command = null,
+        .repository = null,
+        .remaining_args = null,
+    };
+
+    // Test command parsing
+    try args.parseCommand();
+    try testing.expectEqualStrings("run", args.command.?);
+
+    // Test next() functionality
+    const repo = args.next();
+    try testing.expect(repo != null);
+    try testing.expectEqualStrings("frontend", repo.?);
+
+    const task = args.next();
+    try testing.expect(task != null);
+    try testing.expectEqualStrings("build", task.?);
+
+    const end = args.next();
+    try testing.expect(end == null);
+}
+
+test "Arguments - peek and rewind functionality" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var mock_args = std.ArrayList([]const u8).init(allocator);
+    defer {
+        for (mock_args.items) |arg| {
+            allocator.free(arg);
+        }
+        mock_args.deinit();
+    }
+
+    try mock_args.append(try allocator.dupe(u8, "list"));
+    try mock_args.append(try allocator.dupe(u8, "repos"));
+
+    var args = Arguments{
+        .allocator = allocator,
+        .raw_args = undefined,
+        .index = 0,
+        .args = mock_args,
+        .command = null,
+        .repository = null,
+        .remaining_args = null,
+    };
+
+    // Test peek without moving cursor
+    const peeked = args.peek();
+    try testing.expect(peeked != null);
+    try testing.expectEqualStrings("list", peeked.?);
+
+    // Cursor should still be at 0
+    try testing.expectEqual(@as(usize, 0), args.index);
+
+    // Move cursor and test current
+    _ = args.next();
+    const current = args.current();
+    try testing.expect(current != null);
+    try testing.expectEqualStrings("list", current.?);
+
+    // Test rewind
+    args.rewind();
+    try testing.expectEqual(@as(usize, 0), args.index);
+}

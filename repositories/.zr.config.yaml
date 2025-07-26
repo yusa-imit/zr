@@ -1,0 +1,39 @@
+# ZR Configuration File
+# See zr.config.spec.yaml for full specification
+
+global:
+  resources:
+    max_cpu_percent: 80
+    max_memory_mb: 4096
+    max_concurrent_tasks: 10
+  pipeline:
+    default_timeout: 300
+    retry_attempts: 3
+    log_level: "info"
+  interface:
+    interactive_mode: true
+    show_progress: true
+    color_output: true
+
+repositories:
+  - name: "pwd-test"
+    path: "./npm-default"
+    tasks:
+      - name: "pwd"
+        command: "pwd"
+  - name: "fail-test"
+    path: "."
+    tasks:
+      - name: "fail"
+        command: "false"
+
+pipelines:
+  []
+
+monitoring:
+  enabled: true
+  resources:
+    check_interval: 5
+    alert_threshold:
+      cpu_percent: 95
+      memory_percent: 90

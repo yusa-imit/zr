@@ -103,11 +103,11 @@ pub const Config = struct {
                             break;
                         }
                     } else if (next_indent <= base_indent + 2) {
+                        // We hit the next repository or end, back up one
                         i = next_i - 1;
                         break;
                     }
                 }
-                i = next_i;
             }
         }
 
@@ -278,7 +278,7 @@ pub const Config = struct {
             lines.deinit();
         }
 
-        var line_iter = std.mem.split(u8, content, "\n");
+        var line_iter = std.mem.splitScalar(u8, content, '\n');
         while (line_iter.next()) |line| {
             const duped = try allocator.dupe(u8, line);
             errdefer allocator.free(duped);

@@ -172,3 +172,60 @@ pub const Repository = struct {
         }
     }
 };
+
+test "Repository creation and task management" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var repo = try Repository.create(allocator, "test-repo", "./test/path");
+    defer repo.deinit();
+
+    try testing.expectEqualStrings("test-repo", repo.name);
+    try testing.expectEqualStrings("./test/path", repo.path);
+    try testing.expectEqual(@as(usize, 0), repo.tasks.items.len);
+
+    // Test adding a task
+    var task = try Task.create(allocator, "build");
+    var group = try task.addGroup();
+    try group.addCommand("npm run build");
+    
+    try repo.addTask(task);
+    try testing.expectEqual(@as(usize, 1), repo.tasks.items.len);
+
+    // Test finding task
+    const found_task = repo.findTask("build");
+    try testing.expect(found_task != null);
+    try testing.expectEqualStrings("build", found_task.?.name);
+
+    // Test task not found
+    const not_found = repo.findTask("nonexistent");
+    try testing.expect(not_found == null);
+}
+
+test "Task and TaskGroup functionality" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var task = try Task.create(allocator, "test-task");
+    defer task.deinit();
+
+    try testing.expectEqualStrings("test-task", task.name);
+    try testing.expectEqual(@as(usize, 0), task.groups.items.len);
+
+    // Add first group
+    var group1 = try task.addGroup();
+    try group1.addCommand("echo hello");
+    try group1.addCommand("echo world");
+
+    // Add second group
+    var group2 = try task.addGroup();
+    try group2.addCommand("npm run test");
+
+    try testing.expectEqual(@as(usize, 2), task.groups.items.len);
+    try testing.expectEqual(@as(usize, 2), task.groups.items[0].commands.items.len);
+    try testing.expectEqual(@as(usize, 1), task.groups.items[1].commands.items.len);
+    
+    try testing.expectEqualStrings("echo hello", task.groups.items[0].commands.items[0].command);
+    try testing.expectEqualStrings("echo world", task.groups.items[0].commands.items[1].command);
+    try testing.expectEqualStrings("npm run test", task.groups.items[1].commands.items[0].command);
+}

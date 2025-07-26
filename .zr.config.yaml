@@ -1,41 +1,83 @@
-# zr configuration file
-repositories:
-  - name: pnpm-turbo
-    path: ./repositories/pnpm-turbo
-    tasks:
-      - dev: turbo dev
-      - task-name:
-          - task:
-              - turbo test
-              - turbo lint
-              - turbo dev
-          - task:
-              - turbo webpack
-              - turbo dev
-          - task:
-              - turbo build
-              - turbo start
-  - name: pnpm-default
-    path: ./repositories/pnpm-default
-    tasks:
-      - dev: pnpm run dev
-      - manual-task:
-          - task:
-              - pnpm run dev
-              - pnpm run dev
-          - task:
-              - pnpm run dev
-              - pnpm run dev
-              - pnpm run dev
-          - task:
-              - pnpm run dev
+# ZR Configuration File
+# See zr.config.spec.yaml for full specification
 
-tasks:
-  - dev-pnpm-turbo-command: pnpm-turbo:turbo dev
-  - dev-pnpm-turbo-task: pnpm-turbo:dev
-  - super-spec:
-      - task:
-          - pnpm-default:pnpm run dev
-          - pnpm-default:dev
-      - task:
-          - pnpm-default:dev
+global:
+  resources:
+    max_cpu_percent: 80
+    max_memory_mb: 4096
+    max_concurrent_tasks: 10
+  pipeline:
+    default_timeout: 300
+    retry_attempts: 3
+    log_level: "info"
+  interface:
+    interactive_mode: true
+    show_progress: true
+    color_output: true
+
+repositories:
+  - name: "npm-simple"
+    path: "./repositories/npm-default"
+    tasks:
+      - name: "dev"
+        command: "npm run dev"
+      - name: "install"
+        command: "npm install"
+      - name: "clean"
+        command: "rm -rf node_modules"
+  - name: "npm-monorepo"
+    path: "./repositories/npm-turbo"
+    tasks:
+      - name: "dev"
+        command: "npm run dev"
+      - name: "build"
+        command: "echo 'npm build simulation'"
+      - name: "lint"
+        command: "echo 'npm lint simulation'"
+      - name: "install"
+        command: "npm install"
+  - name: "pnpm-simple"
+    path: "./repositories/pnpm-default"
+    tasks:
+      - name: "dev"
+        command: "node script.js"
+      - name: "test"
+        command: "echo 'pnpm test simulation'"
+  - name: "pnpm-monorepo"
+    path: "./repositories/pnpm-turbo"
+    tasks:
+      - name: "dev"
+        command: "node script.js"
+      - name: "build"
+        command: "echo 'pnpm build simulation'"
+      - name: "web-dev"
+        command: "cd apps/web && node script.js"
+  - name: "yarn-monorepo"
+    path: "./repositories/yarn-turbo"
+    tasks:
+      - name: "dev"
+        command: "node script.js"
+      - name: "build"
+        command: "echo 'yarn build simulation'"
+      - name: "web-dev"
+        command: "cd apps/web && node script.js"
+  - name: "build-all"
+    path: ""
+    tasks:
+      - name: "monorepos"
+      - name: "build"
+  - name: "test-all"
+    path: ""
+    tasks:
+      - name: "test"
+
+pipelines:
+  []
+
+monitoring:
+  enabled: true
+  resources:
+    check_interval: 5
+    alert_threshold:
+      cpu_percent: 95
+      memory_percent: 90

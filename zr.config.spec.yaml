@@ -1,0 +1,182 @@
+# ZR Configuration Specification
+# This file defines the structure and features of .zr.config.yaml
+
+# Global configuration for the ZR instance
+global:
+  # Resource limits for all pipelines
+  resources:
+    max_cpu_percent: 80      # Maximum CPU usage percentage (default: 80%)
+    max_memory_mb: 4096      # Maximum memory usage in MB (default: 4096MB)
+    max_concurrent_tasks: 10 # Maximum concurrent tasks (default: 10)
+  
+  # Global pipeline settings
+  pipeline:
+    default_timeout: 300     # Default timeout in seconds (default: 300)
+    retry_attempts: 3        # Default retry attempts (default: 3)
+    log_level: "info"        # Log level: debug, info, warn, error (default: info)
+  
+  # User interface settings (Minecraft-like server interface)
+  interface:
+    interactive_mode: true   # Enable interactive console (default: true)
+    show_progress: true      # Show progress bars (default: true)
+    color_output: true       # Enable colored output (default: true)
+
+# Repository definitions
+repositories:
+  - name: "frontend"         # Repository identifier
+    path: "./packages/frontend"
+    
+    # Repository-specific resource limits (overrides global)
+    resources:
+      max_cpu_percent: 50
+      max_memory_mb: 2048
+      max_concurrent_tasks: 5
+    
+    # Environment variables for this repository
+    environment:
+      NODE_ENV: "development"
+      API_URL: "http://localhost:3001"
+    
+    # Task definitions
+    tasks:
+      # Simple task (single command)
+      - build: "npm run build"
+      
+      # Complex task with multiple pipeline groups
+      - dev:
+          # Pipeline configuration
+          pipeline:
+            timeout: 600      # Task-specific timeout
+            retry_attempts: 1
+            parallel: true    # Run groups in parallel (default: false)
+          
+          # Task groups (each group runs in sequence, groups can run in parallel)
+          groups:
+            - name: "setup"
+              parallel: false # Commands in this group run sequentially
+              commands:
+                - "npm install"
+                - "npm run clean"
+            
+            - name: "watch"
+              parallel: true  # Commands in this group run in parallel
+              commands:
+                - "npm run dev"
+                - "npm run type-check:watch"
+      
+      # Task with dependencies
+      - test:
+          dependencies: ["build"]  # Must run 'build' task first
+          pipeline:
+            timeout: 300
+            retry_attempts: 2
+          groups:
+            - name: "test"
+              commands:
+                - "npm run test"
+                - "npm run lint"
+
+  - name: "backend"
+    path: "./packages/backend"
+    
+    environment:
+      NODE_ENV: "development"
+      DATABASE_URL: "postgresql://localhost:5432/dev"
+    
+    tasks:
+      - build: "cargo build"
+      - dev: "cargo watch -x run"
+      - test:
+          groups:
+            - name: "unit-tests"
+              commands:
+                - "cargo test --lib"
+            - name: "integration-tests"
+              commands:
+                - "cargo test --test integration"
+
+# Cross-repository pipeline definitions
+pipelines:
+  # Full stack development pipeline
+  - name: "full-dev"
+    description: "Start full development environment"
+    
+    # Pipeline-level resource limits
+    resources:
+      max_cpu_percent: 90
+      max_memory_mb: 6144
+    
+    # Pipeline execution order
+    stages:
+      - name: "preparation"
+        parallel: false
+        repositories:
+          - repository: "backend"
+            task: "build"
+          - repository: "frontend"
+            task: "build"
+      
+      - name: "development"
+        parallel: true  # Run these repositories in parallel
+        repositories:
+          - repository: "backend"
+            task: "dev"
+          - repository: "frontend"
+            task: "dev"
+  
+  # Testing pipeline
+  - name: "test-all"
+    description: "Run all tests across repositories"
+    stages:
+      - name: "test"
+        parallel: true
+        repositories:
+          - repository: "backend"
+            task: "test"
+          - repository: "frontend"
+            task: "test"
+
+# Monitoring and logging configuration
+monitoring:
+  enabled: true
+  
+  # Resource monitoring
+  resources:
+    check_interval: 5        # Check resource usage every 5 seconds
+    alert_threshold:
+      cpu_percent: 95        # Alert when CPU usage exceeds 95%
+      memory_percent: 90     # Alert when memory usage exceeds 90%
+  
+  # Log configuration
+  logging:
+    file_path: "./zr.log"
+    max_file_size_mb: 100
+    max_files: 5             # Keep 5 log files
+    format: "json"           # Log format: json, text
+
+# Hooks and integrations
+hooks:
+  # Pre/post task hooks
+  before_task:
+    - command: "echo 'Starting task: ${TASK_NAME}'"
+  
+  after_task:
+    - command: "echo 'Completed task: ${TASK_NAME}'"
+  
+  # Resource threshold hooks
+  on_resource_limit:
+    - command: "echo 'Resource limit reached, consider scaling down'"
+
+# Plugin system (for extensibility)
+plugins:
+  enabled: true
+  directory: "./zr-plugins"
+  
+  # Built-in plugins
+  builtin:
+    - name: "turbo-compat"     # Turborepo compatibility layer
+      enabled: true
+    - name: "docker-runner"    # Docker container task runner
+      enabled: false
+    - name: "notification"     # Desktop notifications
+      enabled: true

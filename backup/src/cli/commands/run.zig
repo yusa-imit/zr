@@ -6,7 +6,7 @@ const Config = @import("../../config.zig").Config;
 const ArrayList = std.ArrayList;
 const ChildProcess = std.process.Child;
 const Allocator = std.mem.Allocator;
-const os = std.os;
+const posix = std.posix;
 const builtin = @import("builtin");
 const File = std.fs.File;
 const Thread = std.Thread;
@@ -124,7 +124,7 @@ fn parseCommandString(allocator: Allocator, command: []const u8) !ArrayList([]co
     var args = ArrayList([]const u8).init(allocator);
     errdefer args.deinit();
 
-    var iter = std.mem.split(u8, command, " ");
+    var iter = std.mem.splitScalar(u8, command, ' ');
     while (iter.next()) |arg| {
         try args.append(arg);
     }
@@ -278,7 +278,7 @@ fn saveTerminalState() !TermiosData {
         return;
     }
     const stdin_fd = std.io.getStdIn().handle;
-    return os.tcgetattr(stdin_fd) catch |err| {
+    return posix.tcgetattr(stdin_fd) catch |err| {
         std.debug.print("Failed to save terminal state: {s}\n", .{@errorName(err)});
         return error.TerminalStateFailed;
     };
@@ -338,7 +338,7 @@ fn setupUnixSignalHandler(ctx: *ProcessContext) !void {
         .flags = 0,
     };
 
-    try std.posix.sigaction(
+    std.posix.sigaction(
         std.posix.SIG.INT,
         &sa,
         null,
