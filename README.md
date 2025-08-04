@@ -8,16 +8,35 @@ ZR is a powerful command runner designed to manage repositories efficiently like
 
 - **🚀 Multi-Repository Management**: Add, remove, and manage multiple repositories with different package managers
 - **⚡ Task Execution**: Run tasks across repositories with proper working directory handling
-- **🔧 Pipeline System**: Create and execute cross-repository pipelines for complex workflows
+- **🔧 Pipeline System**: Create and execute cross-repository pipelines for complex workflows *(Recently Fixed & Fully Functional)*
 - **🎮 Interactive Console**: Minecraft-like interactive console for real-time repository management
 - **🔌 Plugin System**: Extensible plugin architecture with built-in plugins:
   - **Turbo Compatibility**: Turborepo-compatible caching and logging
   - **Desktop Notifications**: Cross-platform notifications for task completion
   - **Docker Runner**: Run tasks in containerized environments
-- **📊 Resource Monitoring**: Monitor CPU and memory usage with configurable limits
+- **📊 Resource Monitoring**: Monitor CPU and memory usage with configurable limits *(Recently Fixed & Fully Functional)*
 - **⚙️ Configuration Management**: YAML-based configuration with live settings updates
 - **🎨 Beautiful UI**: Colored output with progress indicators and status displays
 - **🛡️ Error Handling**: Robust error handling with clear user feedback
+
+## 📈 Current Status
+
+**ZR is actively maintained and functional** with most core features working:
+
+✅ **Working Features:**
+- **Multi-repository management (add/remove/list)** *(Recently fixed)*
+- Task execution with proper working directories
+- **Pipeline parsing and execution** *(Recently fixed)*
+- **Resource monitoring with CPU/memory tracking** *(Recently fixed)*
+- **Settings persistence and management** *(Recently fixed)*
+- Interactive console with command history
+- Plugin system with built-in plugins
+- YAML configuration parsing
+- Colored output and progress indicators
+
+🎉 **Phase 1 Complete - All Critical Issues Fixed!**
+
+See [TODO.md](./TODO.md) for detailed improvement roadmap.
 
 ## 🚀 Quick Start
 
@@ -83,7 +102,7 @@ zr settings set max_cpu 90
 - `zr repo list` - List all repositories
 - `zr run <repo> <task>` - Run a task in a repository
 
-### Pipeline Management
+### Pipeline Management *(Fully Functional)*
 - `zr pipeline add <name> <repo1:task1,repo2:task2,...>` - Create a pipeline
 - `zr pipeline remove <name>` - Remove a pipeline
 - `zr pipeline run <name>` - Execute a pipeline

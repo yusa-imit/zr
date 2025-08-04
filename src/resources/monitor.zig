@@ -92,8 +92,9 @@ pub const ResourceMonitor = struct {
                 std.debug.print("🚨 Memory usage threshold exceeded: {d}MB\n", .{usage.memory_mb});
             }
 
-            // Sleep for the configured interval
-            std.time.sleep(self.monitoring_config.check_interval * std.time.ns_per_s);
+            // Sleep for the configured interval (convert seconds to nanoseconds safely)
+            const sleep_ns = @as(u64, self.monitoring_config.check_interval) * std.time.ns_per_s;
+            std.time.sleep(sleep_ns);
         }
     }
 
@@ -240,4 +241,69 @@ test "ResourceMonitor initialization" {
     const usage = try monitor.getCurrentUsage();
     try testing.expect(usage.cpu_percent >= 0.0);
     try testing.expect(usage.memory_mb >= 0);
+}
+
+test "ResourceMonitor configuration and limits" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const global_limits = config.ResourceConfig{
+        .max_cpu_percent = 75.0,
+        .max_memory_mb = 2048,
+        .max_concurrent_tasks = 6,
+    };
+
+    const monitoring_config = config.ResourceMonitoringConfig{
+        .check_interval = 3,
+        .alert_threshold = config.AlertThreshold{
+            .cpu_percent = 80.0,
+            .memory_percent = 85.0,
+        },
+    };
+
+    var monitor = try ResourceMonitor.init(allocator, global_limits, monitoring_config);
+    defer monitor.deinit();
+
+    // Test configuration values are properly stored
+    try testing.expect(monitor.global_limits.max_cpu_percent == 75.0);
+    try testing.expect(monitor.global_limits.max_memory_mb == 2048);
+    try testing.expect(monitor.global_limits.max_concurrent_tasks == 6);
+    try testing.expect(monitor.monitoring_config.check_interval == 3);
+    try testing.expect(monitor.monitoring_config.alert_threshold.cpu_percent == 80.0);
+    try testing.expect(monitor.monitoring_config.alert_threshold.memory_percent == 85.0);
+
+    // Test that monitor starts in correct state
+    try testing.expect(!monitor.is_running.load(.acquire));
+    try testing.expect(monitor.monitor_thread == null);
+
+    // Test getCurrentUsage returns valid data
+    const usage = try monitor.getCurrentUsage();
+    try testing.expect(usage.cpu_percent >= 0.0);
+    try testing.expect(usage.memory_mb >= 0);
+    try testing.expect(usage.timestamp > 0);
+}
+
+test "ResourceMonitor platform measurement safety" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const global_limits = config.ResourceConfig.default();
+    const monitoring_config = config.ResourceMonitoringConfig.default();
+
+    var monitor = try ResourceMonitor.init(allocator, global_limits, monitoring_config);
+    defer monitor.deinit();
+
+    // Test that platform-specific measurement functions don't crash
+    const usage1 = try monitor.measureResourceUsage();
+    try testing.expect(usage1.cpu_percent >= 0.0);
+    try testing.expect(usage1.memory_mb >= 0);
+
+    // Test multiple measurements for consistency
+    const usage2 = try monitor.measureResourceUsage();
+    try testing.expect(usage2.cpu_percent >= 0.0);
+    try testing.expect(usage2.memory_mb >= 0);
+
+    // Test that timestamps are reasonable
+    try testing.expect(usage1.timestamp > 0);
+    try testing.expect(usage2.timestamp >= usage1.timestamp);
 }

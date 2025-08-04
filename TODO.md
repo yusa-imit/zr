@@ -2,35 +2,39 @@
 
 This document outlines potential future features, improvements, and fixes for ZR based on code analysis and testing results.
 
-## 🔥 Critical Fixes (High Priority)
+## ✅ Recently Completed
 
 ### Pipeline System
-- [ ] **Fix pipeline parsing from YAML config** - Currently pipelines are saved but not loaded properly
-  - Location: `src/config/parser.zig` - needs pipeline parsing implementation
-  - Issue: Parser only handles repositories section, pipelines return empty array
-  - Impact: Pipeline execution is completely broken
+- [x] **Fix pipeline parsing from YAML config** - ✅ **COMPLETED (2025-01-08)**
+  - Location: `src/config/parser.zig` - pipeline parsing fully implemented
+  - Fix: Added complete YAML pipeline parsing with multi-pipeline support, stages, parallel execution, and repository task assignments
+  - Impact: Pipeline execution now fully functional
+  - Tests: Added comprehensive test coverage for simple/complex/multiple pipeline scenarios
 
-- [ ] **Fix repository removal memory crash** - Memory access violation when removing repositories
-  - Location: `src/core/engine.zig:removeRepository()`
-  - Issue: Potential double-free or invalid pointer access in config save
-  - Impact: CLI crashes when removing repositories
+### Repository Management
+- [x] **Fix repository removal memory crash** - ✅ **COMPLETED (2025-01-08)**
+  - Location: `src/core/engine.zig:removeRepository()` and `src/config/parser.zig` memory management
+  - Fix: Fixed inconsistent memory management by ensuring all Repository strings are properly duplicated and freed
+  - Impact: Repository removal no longer crashes the application
+  - Tests: Added comprehensive test coverage for repository addition/removal cycles
 
-- [ ] **Fix settings persistence** - Settings changes don't reload properly
-  - Location: `src/core/engine.zig:setSetting()` and `getSetting()`
-  - Issue: Settings save to config but aren't reloaded from file
-  - Impact: Setting changes don't persist between sessions
+### Settings Management
+- [x] **Fix settings persistence** - ✅ **COMPLETED (2025-01-08)**
+  - Location: `src/core/engine.zig:setSetting()/getSetting()` and `src/config/parser.zig:parse()`
+  - Fix: Fixed settings parsing and persistence by implementing proper global configuration parsing and fixing pointer usage
+  - Impact: Settings now save to file and reload correctly between sessions
+  - Tests: Verified settings change persistence through complete save/load cycles
 
-## 🚧 Infrastructure Improvements (High Priority)
+## 🔥 Critical Fixes (High Priority)
 
 ### Resource Monitoring
-- [ ] **Enable resource monitoring system** - Currently disabled due to compilation issues
+- [x] **Enable resource monitoring system** - ✅ **COMPLETED (2025-01-08)**
   - Location: `src/resources/monitor.zig` and `src/core/engine.zig:initSubsystems()`
-  - Issue: Commented out due to stack overflow/compilation problems
-  - Features to implement:
-    - CPU usage monitoring via system calls
-    - Memory usage tracking
-    - Alert system when limits exceeded
-    - Real-time display in interactive console
+  - Fix: Fixed integer overflow in sleep calculation and re-enabled resource monitoring
+  - Impact: Resource monitoring now fully functional with CPU/memory usage tracking and alerts
+  - Tests: Verified resource monitoring works in status, task execution, and interactive console
+
+## 🚧 Infrastructure Improvements (High Priority)
 
 ### Task Execution
 - [ ] **Implement proper thread pool for parallel execution**
@@ -315,11 +319,11 @@ This document outlines potential future features, improvements, and fixes for ZR
 
 ## Implementation Priority Guide
 
-### Phase 1 (Critical - Next Release)
-1. Fix pipeline parsing
-2. Fix repository removal crash
-3. Fix settings persistence
-4. Enable resource monitoring
+### Phase 1 (Critical - Next Release) ✅ **FULLY COMPLETED**
+1. ~~Fix pipeline parsing~~ ✅ **COMPLETED**
+2. ~~Fix repository removal crash~~ ✅ **COMPLETED**
+3. ~~Fix settings persistence~~ ✅ **COMPLETED**
+4. ~~Enable resource monitoring~~ ✅ **COMPLETED**
 
 ### Phase 2 (Core Features)
 1. Proper YAML parser

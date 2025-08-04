@@ -9,39 +9,123 @@ pub const Config = struct {
     plugins: ?PluginConfig = null,
 
     pub fn parse(allocator: std.mem.Allocator, content: []const u8) !Config {
-        // Simple YAML-like parser for repositories section
+        // Simple YAML-like parser for global, repositories and pipelines sections
         var repos_list = std.ArrayList(Repository).init(allocator);
         defer repos_list.deinit();
+        var pipelines_list = std.ArrayList(Pipeline).init(allocator);
+        defer pipelines_list.deinit();
         
         var lines = std.mem.splitScalar(u8, content, '\n');
+        var in_global = false;
         var in_repositories = false;
+        var in_pipelines = false;
         var current_repo: ?Repository = null;
         var current_tasks = std.ArrayList(Task).init(allocator);
+        var current_pipeline: ?Pipeline = null;
+        var current_stages = std.ArrayList(PipelineStage).init(allocator);
+        var current_stage_repos = std.ArrayList(RepositoryTask).init(allocator);
+        
+        // Initialize global config with defaults, will be overridden by parsed values
+        var global_config = GlobalConfig.default();
         
         while (lines.next()) |line| {
             const trimmed = std.mem.trim(u8, line, " \t\r");
             
-            if (std.mem.startsWith(u8, trimmed, "repositories:")) {
-                in_repositories = true;
+            // Only change section state for top-level sections (no indentation)
+            const line_indent = line.len - trimmed.len;
+            
+            if (std.mem.startsWith(u8, trimmed, "global:") and line_indent == 0) {
+                in_global = true;
+                in_repositories = false;
+                in_pipelines = false;
                 continue;
             }
             
-            if (in_repositories) {
-                if (std.mem.startsWith(u8, trimmed, "pipelines:") or 
-                    std.mem.startsWith(u8, trimmed, "monitoring:")) {
-                    // Save current repo if exists
-                    if (current_repo) |*repo| {
-                        repo.tasks = try current_tasks.toOwnedSlice();
-                        try repos_list.append(repo.*);
-                        current_repo = null;
-                        current_tasks = std.ArrayList(Task).init(allocator);
-                    }
-                    in_repositories = false;
-                    continue;
+            if (std.mem.startsWith(u8, trimmed, "repositories:") and line_indent == 0) {
+                in_global = false;
+                in_repositories = true;
+                in_pipelines = false;
+                continue;
+            }
+            
+            if (std.mem.startsWith(u8, trimmed, "pipelines:") and line_indent == 0) {
+                // Save current repo if exists
+                if (current_repo) |*repo| {
+                    repo.tasks = try current_tasks.toOwnedSlice();
+                    try repos_list.append(repo.*);
+                    current_repo = null;
+                    current_tasks = std.ArrayList(Task).init(allocator);
                 }
-                
+                in_global = false;
+                in_repositories = false;
+                in_pipelines = true;
+                continue;
+            }
+            
+            if (std.mem.startsWith(u8, trimmed, "monitoring:")) {
+                // Save current repo if exists
+                if (current_repo) |*repo| {
+                    repo.tasks = try current_tasks.toOwnedSlice();
+                    try repos_list.append(repo.*);
+                    current_repo = null;
+                    current_tasks = std.ArrayList(Task).init(allocator);
+                }
+                // Save current pipeline if exists
+                if (current_pipeline) |*pipeline| {
+                    if (current_stage_repos.items.len > 0) {
+                        // Save the last stage
+                        var last_stage = &current_stages.items[current_stages.items.len - 1];
+                        last_stage.repositories = try current_stage_repos.toOwnedSlice();
+                        current_stage_repos = std.ArrayList(RepositoryTask).init(allocator);
+                    }
+                    pipeline.stages = try current_stages.toOwnedSlice();
+                    try pipelines_list.append(pipeline.*);
+                    current_pipeline = null;
+                    current_stages = std.ArrayList(PipelineStage).init(allocator);
+                }
+                in_repositories = false;
+                in_pipelines = false;
+                continue;
+            }
+            
+            if (in_global) {
+                // Parse global configuration values
+                if (std.mem.startsWith(u8, trimmed, "max_cpu_percent:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.resources.max_cpu_percent = std.fmt.parseFloat(f32, value_str) catch global_config.resources.max_cpu_percent;
+                } else if (std.mem.startsWith(u8, trimmed, "max_memory_mb:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.resources.max_memory_mb = std.fmt.parseInt(u32, value_str, 10) catch global_config.resources.max_memory_mb;
+                } else if (std.mem.startsWith(u8, trimmed, "max_concurrent_tasks:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.resources.max_concurrent_tasks = std.fmt.parseInt(u32, value_str, 10) catch global_config.resources.max_concurrent_tasks;
+                } else if (std.mem.startsWith(u8, trimmed, "default_timeout:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.pipeline.default_timeout = std.fmt.parseInt(u32, value_str, 10) catch global_config.pipeline.default_timeout;
+                } else if (std.mem.startsWith(u8, trimmed, "retry_attempts:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.pipeline.retry_attempts = std.fmt.parseInt(u32, value_str, 10) catch global_config.pipeline.retry_attempts;
+                } else if (std.mem.startsWith(u8, trimmed, "interactive_mode:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.interface.interactive_mode = std.mem.eql(u8, value_str, "true");
+                } else if (std.mem.startsWith(u8, trimmed, "show_progress:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.interface.show_progress = std.mem.eql(u8, value_str, "true");
+                } else if (std.mem.startsWith(u8, trimmed, "color_output:")) {
+                    const value_start = std.mem.indexOf(u8, trimmed, ":") orelse continue;
+                    const value_str = std.mem.trim(u8, trimmed[value_start + 1..], " \t");
+                    global_config.interface.color_output = std.mem.eql(u8, value_str, "true");
+                }
+            } else if (in_repositories) {
                 // Check indentation to distinguish between repo and task entries
-                const line_indent = line.len - trimmed.len;
+                // line_indent already calculated above
                 
                 if (std.mem.startsWith(u8, trimmed, "- name:") and line_indent <= 2) {
                     // This is a repository entry (top level, 0-2 spaces indent)
@@ -94,6 +178,88 @@ pub const Config = struct {
                     const last_idx = current_tasks.items.len - 1;
                     current_tasks.items[last_idx].command = try allocator.dupe(u8, command);
                 }
+            } else if (in_pipelines) {
+                // Parse pipelines section
+                // line_indent already calculated above
+                
+                if (std.mem.startsWith(u8, trimmed, "- name:") and line_indent <= 2) {
+                    // This is a pipeline entry (top level, 0-2 spaces indent)
+                    // Save previous pipeline if exists
+                    if (current_pipeline) |*pipeline| {
+                        if (current_stage_repos.items.len > 0 and current_stages.items.len > 0) {
+                            // Save the last stage
+                            var last_stage = &current_stages.items[current_stages.items.len - 1];
+                            last_stage.repositories = try current_stage_repos.toOwnedSlice();
+                            current_stage_repos = std.ArrayList(RepositoryTask).init(allocator);
+                        }
+                        pipeline.stages = try current_stages.toOwnedSlice();
+                        try pipelines_list.append(pipeline.*);
+                        current_stages = std.ArrayList(PipelineStage).init(allocator);
+                    }
+                    
+                    // Parse pipeline name
+                    const name_start = std.mem.indexOf(u8, trimmed, "\"") orelse continue;
+                    const name_end = std.mem.indexOfPos(u8, trimmed, name_start + 1, "\"") orelse continue;
+                    const name = trimmed[name_start + 1..name_end];
+                    
+                    current_pipeline = Pipeline{
+                        .name = try allocator.dupe(u8, name),
+                        .description = null,
+                        .resources = null,
+                        .stages = &[_]PipelineStage{},
+                    };
+                } else if (std.mem.startsWith(u8, trimmed, "description:") and current_pipeline != null) {
+                    // Parse description
+                    const desc_start = std.mem.indexOf(u8, trimmed, "\"") orelse continue;
+                    const desc_end = std.mem.indexOfPos(u8, trimmed, desc_start + 1, "\"") orelse continue;
+                    const description = trimmed[desc_start + 1..desc_end];
+                    current_pipeline.?.description = try allocator.dupe(u8, description);
+                } else if (std.mem.startsWith(u8, trimmed, "- name:") and line_indent > 4 and line_indent <= 8) {
+                    // This is a stage entry (nested under stages:, 5-8 spaces indent)
+                    // Save previous stage repositories if exists
+                    if (current_stage_repos.items.len > 0 and current_stages.items.len > 0) {
+                        var last_stage = &current_stages.items[current_stages.items.len - 1];
+                        last_stage.repositories = try current_stage_repos.toOwnedSlice();
+                        current_stage_repos = std.ArrayList(RepositoryTask).init(allocator);
+                    }
+                    
+                    const name_start = std.mem.indexOf(u8, trimmed, "\"") orelse continue;
+                    const name_end = std.mem.indexOfPos(u8, trimmed, name_start + 1, "\"") orelse continue;
+                    const stage_name = trimmed[name_start + 1..name_end];
+                    
+                    const stage = PipelineStage{
+                        .name = try allocator.dupe(u8, stage_name),
+                        .parallel = false, // default, will be overridden if specified
+                        .repositories = &[_]RepositoryTask{},
+                    };
+                    
+                    try current_stages.append(stage);
+                } else if (std.mem.startsWith(u8, trimmed, "parallel:") and current_stages.items.len > 0) {
+                    // Parse parallel flag for last stage
+                    const parallel = std.mem.indexOf(u8, trimmed, "true") != null;
+                    const last_idx = current_stages.items.len - 1;
+                    current_stages.items[last_idx].parallel = parallel;
+                } else if (std.mem.startsWith(u8, trimmed, "- repository:") and line_indent > 8) {
+                    // This is a repository task entry (nested under repositories:, >8 spaces indent)
+                    const repo_start = std.mem.indexOf(u8, trimmed, "\"") orelse continue;
+                    const repo_end = std.mem.indexOfPos(u8, trimmed, repo_start + 1, "\"") orelse continue;
+                    const repo_name = trimmed[repo_start + 1..repo_end];
+                    
+                    const repo_task = RepositoryTask{
+                        .repository = try allocator.dupe(u8, repo_name),
+                        .task = "", // Will be set when we parse the task line
+                    };
+                    
+                    try current_stage_repos.append(repo_task);
+                } else if (std.mem.startsWith(u8, trimmed, "task:") and current_stage_repos.items.len > 0) {
+                    // Parse task for last repository task
+                    const task_start = std.mem.indexOf(u8, trimmed, "\"") orelse continue;
+                    const task_end = std.mem.indexOfPos(u8, trimmed, task_start + 1, "\"") orelse continue;
+                    const task_name = trimmed[task_start + 1..task_end];
+                    
+                    const last_idx = current_stage_repos.items.len - 1;
+                    current_stage_repos.items[last_idx].task = try allocator.dupe(u8, task_name);
+                }
             }
         }
         
@@ -105,12 +271,28 @@ pub const Config = struct {
             current_tasks.deinit();
         }
         
+        // Save final pipeline if exists
+        if (current_pipeline) |*pipeline| {
+            if (current_stage_repos.items.len > 0) {
+                // Save the last stage
+                var last_stage = &current_stages.items[current_stages.items.len - 1];
+                last_stage.repositories = try current_stage_repos.toOwnedSlice();
+            } else {
+                current_stage_repos.deinit();
+            }
+            pipeline.stages = try current_stages.toOwnedSlice();
+            try pipelines_list.append(pipeline.*);
+        } else {
+            current_stages.deinit();
+            current_stage_repos.deinit();
+        }
+        
         const repos = try repos_list.toOwnedSlice();
-        const pipelines = try allocator.alloc(Pipeline, 0);
+        const pipelines = try pipelines_list.toOwnedSlice();
         
         const config = Config{
             .allocator = allocator,
-            .global = GlobalConfig.default(),
+            .global = global_config,
             .repositories = repos,
             .pipelines = pipelines,
             .monitoring = MonitoringConfig.default(),
@@ -221,10 +403,10 @@ pub const Repository = struct {
     environment: std.StringHashMap([]const u8),
     tasks: []Task,
 
-    pub fn init(allocator: std.mem.Allocator, name: []const u8, path: []const u8) Repository {
+    pub fn init(allocator: std.mem.Allocator, name: []const u8, path: []const u8) !Repository {
         return Repository{
-            .name = name,
-            .path = path,
+            .name = try allocator.dupe(u8, name),
+            .path = try allocator.dupe(u8, path),
             .resources = null,
             .environment = std.StringHashMap([]const u8).init(allocator),
             .tasks = &[_]Task{},
@@ -232,6 +414,11 @@ pub const Repository = struct {
     }
 
     pub fn deinit(self: *Repository, allocator: std.mem.Allocator) void {
+        // Free allocated strings
+        allocator.free(self.name);
+        allocator.free(self.path);
+        
+        // Free environment and tasks
         self.environment.deinit();
         for (self.tasks) |*task| {
             task.deinit(allocator);
@@ -257,6 +444,13 @@ pub const Task = struct {
     groups: []TaskGroup,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
+        // Free allocated strings
+        allocator.free(self.name);
+        if (self.command) |cmd| {
+            allocator.free(cmd);
+        }
+        
+        // Free arrays
         allocator.free(self.dependencies);
         for (self.groups) |*group| {
             group.deinit(allocator);
@@ -281,6 +475,10 @@ pub const TaskGroup = struct {
     commands: [][]const u8,
 
     pub fn deinit(self: *TaskGroup, allocator: std.mem.Allocator) void {
+        // Free allocated strings
+        allocator.free(self.name);
+        
+        // Free commands
         for (self.commands) |cmd| {
             allocator.free(cmd);
         }
@@ -295,6 +493,13 @@ pub const Pipeline = struct {
     stages: []PipelineStage,
 
     pub fn deinit(self: *Pipeline, allocator: std.mem.Allocator) void {
+        // Free allocated strings
+        allocator.free(self.name);
+        if (self.description) |desc| {
+            allocator.free(desc);
+        }
+        
+        // Free stages
         for (self.stages) |*stage| {
             stage.deinit(allocator);
         }
@@ -308,6 +513,14 @@ pub const PipelineStage = struct {
     repositories: []RepositoryTask,
 
     pub fn deinit(self: *PipelineStage, allocator: std.mem.Allocator) void {
+        // Free allocated strings
+        allocator.free(self.name);
+        
+        // Free repository tasks (which contain allocated strings)
+        for (self.repositories) |repo_task| {
+            allocator.free(repo_task.repository);
+            allocator.free(repo_task.task);
+        }
         allocator.free(self.repositories);
     }
 };
@@ -543,6 +756,174 @@ test "Config parsing - indentation handling" {
     try testing.expect(std.mem.eql(u8, config.repositories[0].tasks[1].name, "task2"));
     try testing.expect(std.mem.eql(u8, config.repositories[0].tasks[0].command.?, "echo 'first'"));
     try testing.expect(std.mem.eql(u8, config.repositories[0].tasks[1].command.?, "echo 'second'"));
+}
+
+test "Config parsing - simple pipeline parsing" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const simple_pipeline_yaml =
+        \\repositories:
+        \\  - name: "frontend"
+        \\    path: "./frontend"
+        \\    tasks:
+        \\      - name: "build"
+        \\        command: "npm run build"
+        \\      - name: "dev"
+        \\        command: "npm run dev"
+        \\  - name: "backend"
+        \\    path: "./backend"
+        \\    tasks:
+        \\      - name: "build"
+        \\        command: "cargo build"
+        \\      - name: "dev"
+        \\        command: "cargo run"
+        \\
+        \\pipelines:
+        \\  - name: "full-dev"
+        \\    description: "Start full development environment"
+        \\    stages:
+        \\      - name: "preparation"
+        \\        parallel: false
+        \\        repositories:
+        \\          - repository: "backend"
+        \\            task: "build"
+        \\          - repository: "frontend"
+        \\            task: "build"
+        \\      - name: "development"
+        \\        parallel: true
+        \\        repositories:
+        \\          - repository: "backend"
+        \\            task: "dev"
+        \\          - repository: "frontend"
+        \\            task: "dev"
+        \\
+        \\monitoring:
+        \\  enabled: true
+    ;
+
+    var config = try Config.parse(allocator, simple_pipeline_yaml);
+    defer config.deinit();
+
+    try testing.expect(config.repositories.len == 2);
+    try testing.expect(config.pipelines.len == 1);
+    
+    const pipeline = &config.pipelines[0];
+    try testing.expect(std.mem.eql(u8, pipeline.name, "full-dev"));
+    try testing.expect(std.mem.eql(u8, pipeline.description.?, "Start full development environment"));
+    try testing.expect(pipeline.stages.len == 2);
+    
+    // Test preparation stage
+    const prep_stage = &pipeline.stages[0];
+    try testing.expect(std.mem.eql(u8, prep_stage.name, "preparation"));
+    try testing.expect(prep_stage.parallel == false);
+    try testing.expect(prep_stage.repositories.len == 2);
+    try testing.expect(std.mem.eql(u8, prep_stage.repositories[0].repository, "backend"));
+    try testing.expect(std.mem.eql(u8, prep_stage.repositories[0].task, "build"));
+    try testing.expect(std.mem.eql(u8, prep_stage.repositories[1].repository, "frontend"));
+    try testing.expect(std.mem.eql(u8, prep_stage.repositories[1].task, "build"));
+    
+    // Test development stage
+    const dev_stage = &pipeline.stages[1];
+    try testing.expect(std.mem.eql(u8, dev_stage.name, "development"));
+    try testing.expect(dev_stage.parallel == true);
+    try testing.expect(dev_stage.repositories.len == 2);
+    try testing.expect(std.mem.eql(u8, dev_stage.repositories[0].repository, "backend"));
+    try testing.expect(std.mem.eql(u8, dev_stage.repositories[0].task, "dev"));
+    try testing.expect(std.mem.eql(u8, dev_stage.repositories[1].repository, "frontend"));
+    try testing.expect(std.mem.eql(u8, dev_stage.repositories[1].task, "dev"));
+}
+
+test "Config parsing - multiple pipelines" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const multi_pipeline_yaml =
+        \\repositories:
+        \\  - name: "frontend"
+        \\    path: "./frontend"
+        \\    tasks:
+        \\      - name: "test"
+        \\        command: "npm test"
+        \\  - name: "backend"
+        \\    path: "./backend"
+        \\    tasks:
+        \\      - name: "test"
+        \\        command: "cargo test"
+        \\
+        \\pipelines:
+        \\  - name: "test-all"
+        \\    description: "Run all tests"
+        \\    stages:
+        \\      - name: "test"
+        \\        parallel: true
+        \\        repositories:
+        \\          - repository: "backend"
+        \\            task: "test"
+        \\          - repository: "frontend"
+        \\            task: "test"
+        \\  - name: "test-sequential"
+        \\    stages:
+        \\      - name: "backend-test"
+        \\        parallel: false
+        \\        repositories:
+        \\          - repository: "backend"
+        \\            task: "test"
+        \\      - name: "frontend-test"
+        \\        parallel: false
+        \\        repositories:
+        \\          - repository: "frontend"
+        \\            task: "test"
+        \\
+        \\monitoring:
+        \\  enabled: true
+    ;
+
+    var config = try Config.parse(allocator, multi_pipeline_yaml);
+    defer config.deinit();
+
+    try testing.expect(config.repositories.len == 2);
+    try testing.expect(config.pipelines.len == 2);
+    
+    // Test first pipeline
+    const pipeline1 = &config.pipelines[0];
+    try testing.expect(std.mem.eql(u8, pipeline1.name, "test-all"));
+    try testing.expect(std.mem.eql(u8, pipeline1.description.?, "Run all tests"));
+    try testing.expect(pipeline1.stages.len == 1);
+    try testing.expect(pipeline1.stages[0].parallel == true);
+    
+    // Test second pipeline
+    const pipeline2 = &config.pipelines[1];
+    try testing.expect(std.mem.eql(u8, pipeline2.name, "test-sequential"));
+    try testing.expect(pipeline2.description == null);
+    try testing.expect(pipeline2.stages.len == 2);
+    try testing.expect(pipeline2.stages[0].parallel == false);
+    try testing.expect(pipeline2.stages[1].parallel == false);
+}
+
+test "Config parsing - empty pipelines array" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const empty_pipelines_yaml =
+        \\repositories:
+        \\  - name: "test"
+        \\    path: "./test"
+        \\    tasks:
+        \\      - name: "build"
+        \\        command: "make"
+        \\
+        \\pipelines: []
+        \\
+        \\monitoring:
+        \\  enabled: true
+    ;
+
+    var config = try Config.parse(allocator, empty_pipelines_yaml);
+    defer config.deinit();
+
+    try testing.expect(config.repositories.len == 1);
+    try testing.expect(config.pipelines.len == 0);
 }
 
 // Plugin configuration structures

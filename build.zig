@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
 
     // Add test step
     const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/test_runner.zig"),
         .target = target,
         .optimize = optimize,
     });

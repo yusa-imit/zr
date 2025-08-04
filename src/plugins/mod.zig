@@ -319,3 +319,62 @@ test "Plugin manager initialization" {
     try testing.expect(std.mem.eql(u8, manager.plugin_directory, "./test-plugins"));
     try testing.expect(manager.plugins.items.len == 0);
 }
+
+test "PluginManager plugin discovery and initialization" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var manager = try PluginManager.init(allocator, "./test-plugins", true);
+    defer manager.deinit();
+
+    // Test that discovery doesn't crash even with non-existent directory
+    try manager.discoverPlugins();
+    
+    // Basic functionality test
+    try testing.expect(manager.plugins.items.len >= 0);
+
+    // Test initialization
+    try manager.initializePlugins();
+
+    // Verify builtin plugins are registered (at least some should be available)
+    try testing.expect(manager.plugins.items.len >= 3); // turbo-compat, notification, docker-runner
+
+    // Test that we can find specific builtin plugins
+    var found_turbo = false;
+    var found_notification = false;
+    var found_docker = false;
+
+    for (manager.plugins.items) |plugin| {
+        if (std.mem.eql(u8, plugin.name, "turbo-compat")) {
+            found_turbo = true;
+        } else if (std.mem.eql(u8, plugin.name, "notification")) {
+            found_notification = true;
+        } else if (std.mem.eql(u8, plugin.name, "docker-runner")) {
+            found_docker = true;
+        }
+    }
+
+    try testing.expect(found_turbo);
+    try testing.expect(found_notification);
+    try testing.expect(found_docker);
+}
+
+test "PluginManager hook execution safety" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var manager = try PluginManager.init(allocator, "./test-plugins", true);
+    defer manager.deinit();
+
+    try manager.discoverPlugins();
+    try manager.initializePlugins();
+
+    // Test that hook execution doesn't crash with valid parameters
+    try manager.executeHook(.BeforeTask, .{ .repo = "test-repo", .task = "test-task" });
+    try manager.executeHook(.AfterTask, .{ .repo = "test-repo", .task = "test-task", .success = true });
+    try manager.executeHook(.BeforePipeline, .{ .pipeline = "test-pipeline" });
+    try manager.executeHook(.AfterPipeline, .{ .pipeline = "test-pipeline", .success = false });
+    try manager.executeHook(.OnResourceLimit, .{ .cpu_percent = 95.0, .memory_mb = 2048 });
+
+    // No assertions needed - if we get here without crashing, the test passes
+}
