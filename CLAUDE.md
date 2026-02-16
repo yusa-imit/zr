@@ -145,8 +145,8 @@ User-facing errors must follow this pattern:
 
 ### Branch Strategy
 
-- `main` — stable releases only
-- `v0.0.x` — development branches per version
+- `main` — stable releases only (머지 시 사용자 승인 필요)
+- `v0.0.x` — development branches per version (CI 통과 시 직접 머지 가능)
 - Feature branches: `feat/<name>`, `fix/<name>`, `refactor/<name>`
 
 ### Commit Convention
