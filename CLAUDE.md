@@ -105,8 +105,8 @@ Leader (orchestrator)
 | 3. 구현 | 코딩 + 테스트 (복잡도에 따라 팀 구성) | 팀 구성 기준은 위 참조 |
 | 4. 검증 | `zig build` + `zig build test` 통과 필수 | 실패 시 수정 후 재검증 |
 | 5. 코드 리뷰 | `/review` — PRD 준수·메모리 안전성·테스트 커버리지 확인 | 이슈 발견 시 Phase 4로 회귀 |
-| 6. 커밋 | 기능 단위 커밋 (커밋 컨벤션 준수) | `git add -A` 금지 |
-| 7. 메모리 갱신 | `.claude/memory/` 파일 업데이트 | 별도 커밋: `chore: update session memory` |
+| 6. 커밋 & 푸시 | 기능 단위 커밋 후 `git push` 실행 | `git add -A` 금지 |
+| 7. 메모리 갱신 | `.claude/memory/` 파일 업데이트 | 별도 커밋: `chore: update session memory` → push |
 | 8. 세션 요약 | 구조화된 요약 출력 | 아래 템플릿 참조 |
 
 **작업 선택 규칙**:
