@@ -10,18 +10,20 @@
 
 ## Current Phase
 
-**Phase 1 - Foundation (MVP)** — 구현 시작
+**Phase 1 - Foundation (MVP)** — 구현 진행 중
 - [x] Project bootstrap (build.zig, build.zig.zon, src/main.zig)
 - [x] Basic TOML config parser (supports tasks with cmd, cwd, description, deps)
 - [ ] Task execution engine (process spawning, env vars)
-- [ ] Dependency graph (DAG) construction & cycle detection
+- [x] Dependency graph (DAG) construction & cycle detection
+- [x] Topological sort with Kahn's Algorithm
+- [x] Execution level calculation for parallel planning
 - [ ] Parallel execution engine (worker pool)
 - [ ] Basic CLI (run, list, graph)
 - [ ] Color output, error formatting
 - [x] Cross-compile CI pipeline (ci.yml, release.yml 준비됨)
 - [x] 문서/설정/에이전트 인프라 구축 완료
 
-> **Status**: Project successfully bootstrapped with Zig 0.15.2. Basic TOML parser implemented and tested.
+> **Status**: Graph module complete (DAG, cycle detection, topological sort). All tests passing. Next: execution engine.
 
 ## Architecture (High-Level)
 

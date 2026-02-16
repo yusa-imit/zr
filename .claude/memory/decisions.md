@@ -27,3 +27,15 @@ Decisions are logged chronologically. Format:
 - Context: 18 changes proposed by 4-agent expert team (zig-expert, arch-reviewer, devops-expert, doc-specialist)
 - Decision: Applied 18 changes with 75%+ approval: model assignments, CLAUDE.md restructure, CI artifact upload, checksum compatibility, settings cleanup, .gitignore simplification, validate command addition
 - Rationale: Voting-based review ensures quality through multi-perspective consensus
+
+## [2026-02-17] Graph Module Implementation
+- Context: Phase 1 requires DAG construction, cycle detection, and topological sort
+- Decision: Implemented three modules:
+  - `graph/dag.zig`: Core DAG structure with StringHashMap for nodes
+  - `graph/cycle_detect.zig`: Kahn's Algorithm for cycle detection
+  - `graph/topo_sort.zig`: Topological sort + execution level calculation
+- Rationale:
+  - Kahn's Algorithm chosen for both cycle detection and topo sort (single-pass, O(V+E))
+  - Execution levels enable parallel execution planning by grouping independent tasks
+  - StringHashMap provides O(1) node lookup for large graphs
+  - Each module is independently testable with comprehensive test coverage
