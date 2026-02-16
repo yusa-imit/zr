@@ -10,9 +10,10 @@
 
 ## Current Phase
 
-**Phase 1 - Foundation (MVP)** — 구현 준비 완료, 코드 작성 대기
-- [ ] TOML config file parser
-- [ ] Basic task definition & execution (cmd, cwd, env)
+**Phase 1 - Foundation (MVP)** — 구현 시작
+- [x] Project bootstrap (build.zig, build.zig.zon, src/main.zig)
+- [x] Basic TOML config parser (supports tasks with cmd, cwd, description, deps)
+- [ ] Task execution engine (process spawning, env vars)
 - [ ] Dependency graph (DAG) construction & cycle detection
 - [ ] Parallel execution engine (worker pool)
 - [ ] Basic CLI (run, list, graph)
@@ -20,7 +21,7 @@
 - [x] Cross-compile CI pipeline (ci.yml, release.yml 준비됨)
 - [x] 문서/설정/에이전트 인프라 구축 완료
 
-> **Note**: src/, build.zig, build.zig.zon은 아직 미생성. Phase 1 구현 시 생성 예정.
+> **Status**: Project successfully bootstrapped with Zig 0.15.2. Basic TOML parser implemented and tested.
 
 ## Architecture (High-Level)
 
