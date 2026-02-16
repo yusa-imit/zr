@@ -84,6 +84,52 @@ Leader (orchestrator)
 
 **팀 해산**: 작업 완료 후 반드시 `shutdown_request` → `TeamDelete`로 정리
 
+### Automated Session Execution
+
+자동화 세션(cron job 등)에서는 다음 프로토콜을 순서대로 실행한다.
+
+**컨텍스트 복원** — 세션 시작 시 다음 파일을 읽어 프로젝트 상태 파악:
+1. `.claude/memory/project-context.md` — 현재 phase, 체크리스트, 진행 상황
+2. `.claude/memory/architecture.md` — 아키텍처 결정사항
+3. `.claude/memory/decisions.md` — 기술 결정 로그
+4. `.claude/memory/debugging.md` — 알려진 이슈와 해결법
+5. `.claude/memory/patterns.md` — 검증된 코드 패턴
+6. `.claude/memory/zig-0.15-migration.md` — Zig 0.15 breaking changes
+
+**8단계 실행 사이클**:
+
+| Phase | 내용 | 비고 |
+|-------|------|------|
+| 1. 상태 파악 | `/status` 실행, git log·빌드·테스트 상태 점검 | 체크리스트에서 다음 미완료 항목 식별 |
+| 2. 계획 | `EnterPlanMode`로 구현 전략 수립 | 자율 모드에서는 자체 승인 |
+| 3. 구현 | 코딩 + 테스트 (복잡도에 따라 팀 구성) | 팀 구성 기준은 위 참조 |
+| 4. 검증 | `zig build` + `zig build test` 통과 필수 | 실패 시 수정 후 재검증 |
+| 5. 코드 리뷰 | `/review` — PRD 준수·메모리 안전성·테스트 커버리지 확인 | 이슈 발견 시 Phase 4로 회귀 |
+| 6. 커밋 | 기능 단위 커밋 (커밋 컨벤션 준수) | `git add -A` 금지 |
+| 7. 메모리 갱신 | `.claude/memory/` 파일 업데이트 | 별도 커밋: `chore: update session memory` |
+| 8. 세션 요약 | 구조화된 요약 출력 | 아래 템플릿 참조 |
+
+**작업 선택 규칙**:
+- `build.zig`가 없으면 프로젝트 부트스트랩부터 시작
+- 테스트 실패 중이면 새 기능 추가 전에 수정
+- 의존성 순서 준수: Config → Graph → Exec → CLI
+- 사이클당 하나의 집중 작업만 수행
+- 이전 세션의 미완료 작업이 있으면 먼저 완료
+
+**세션 요약 템플릿**:
+
+    ## Session Summary
+    ### Completed
+    - [이번 사이클에서 완료한 내용]
+    ### Files Changed
+    - [생성/수정된 파일 목록]
+    ### Tests
+    - [테스트 수, 통과/실패 상태]
+    ### Next Priority
+    - [다음 사이클에서 작업할 내용]
+    ### Issues / Blockers
+    - [발생한 문제 또는 미해결 이슈]
+
 ### Available Custom Agents
 
 | Agent | Model | File | Purpose |
@@ -260,3 +306,7 @@ rm -rf zig-out .zig-cache
 6. **PRD is source of truth** — 요구사항은 `docs/PRD.md` 참조
 7. **Team cleanup** — 팀 작업 완료 후 반드시 해산
 8. **Error messages matter** — 사용자 경험은 에러 메시지 품질로 결정됨
+9. **Stop if stuck** — 동일 에러가 3회 시도 후에도 지속되면 `.claude/memory/debugging.md`에 기록하고 다음 작업으로 이동
+10. **No scope creep** — 현재 Phase 체크리스트 범위를 벗어나는 작업 금지
+11. **Respect CI** — CI 파이프라인이 존재하면 `ci.yml` 호환성 유지
+12. **Never force push** — 파괴적 git 명령어 금지, `main` 브랜치 직접 수정 금지
