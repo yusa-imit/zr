@@ -38,7 +38,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, null, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false);
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -52,7 +52,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, timeout_ms, allow_failure);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure);
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -65,7 +65,20 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, null, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false);
+    }
+
+    /// Add a task with env pairs (for tests or programmatic use with env overrides).
+    pub fn addTaskWithEnv(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        cwd: ?[]const u8,
+        description: ?[]const u8,
+        deps: []const []const u8,
+        env: []const [2][]const u8,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false);
     }
 };
 
@@ -77,6 +90,8 @@ pub const Task = struct {
     deps: [][]const u8,
     /// Sequential dependencies: run in array order before this task, one at a time.
     deps_serial: [][]const u8,
+    /// Environment variable overrides. Each entry is [key, value] (owned, duped).
+    env: [][2][]const u8,
     /// Timeout in milliseconds. null means no timeout.
     timeout_ms: ?u64 = null,
     /// If true, a non-zero exit code is treated as success for dependency purposes.
@@ -95,6 +110,11 @@ pub const Task = struct {
             allocator.free(dep);
         }
         allocator.free(self.deps_serial);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(self.env);
     }
 };
 
@@ -137,6 +157,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer task_deps.deinit(allocator);
     var task_deps_serial = std.ArrayList([]const u8){};
     defer task_deps_serial.deinit(allocator);
+    // Non-owning slices into content for env pairs — addTask dupes them
+    var task_env = std.ArrayList([2][]const u8){};
+    defer task_env.deinit(allocator);
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -147,13 +170,14 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_timeout_ms, task_allow_failure);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure);
                 }
             }
 
             // Reset state — no freeing needed since these are non-owning slices
             task_deps.clearRetainingCapacity();
             task_deps_serial.clearRetainingCapacity();
+            task_env.clearRetainingCapacity();
             task_cmd = null;
             task_cwd = null;
             task_desc = null;
@@ -206,13 +230,30 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (std.mem.eql(u8, key, "env")) {
+                // Parse inline table: { KEY = "value", FOO = "bar" }
+                // value has already had outer quotes stripped; strip braces now.
+                const inner = std.mem.trim(u8, value, " \t");
+                if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                    const pairs_str = inner[1 .. inner.len - 1];
+                    var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                    while (pairs_it.next()) |pair_str| {
+                        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                        const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                        const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                        if (env_key.len > 0) {
+                            // Non-owning slices into content — addTask will dupe
+                            try task_env.append(allocator, .{ env_key, env_val });
+                        }
+                    }
+                }
             }
         }
     }
 
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_timeout_ms, task_allow_failure);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure);
         }
     }
 
@@ -228,6 +269,7 @@ fn addTaskImpl(
     description: ?[]const u8,
     deps: []const []const u8,
     deps_serial: []const []const u8,
+    env: []const [2][]const u8,
     timeout_ms: ?u64,
     allow_failure: bool,
 ) !void {
@@ -265,6 +307,24 @@ fn addTaskImpl(
         serial_duped += 1;
     }
 
+    // Dupe each env pair ([key, value]) independently for safe partial cleanup.
+    const task_env = try allocator.alloc([2][]const u8, env.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (task_env[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(task_env);
+    }
+    for (env, 0..) |pair, i| {
+        task_env[i][0] = try allocator.dupe(u8, pair[0]);
+        // If key dupe succeeds but value dupe fails, free the key we just duped.
+        errdefer allocator.free(task_env[i][0]);
+        task_env[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
     const task = Task{
         .name = task_name,
         .cmd = task_cmd,
@@ -272,6 +332,7 @@ fn addTaskImpl(
         .description = task_desc,
         .deps = task_deps,
         .deps_serial = task_deps_serial,
+        .env = task_env,
         .timeout_ms = timeout_ms,
         .allow_failure = allow_failure,
     };
@@ -361,4 +422,55 @@ test "parse deps_serial from toml" {
     try std.testing.expectEqualStrings("migrate", deploy.deps_serial[1]);
     try std.testing.expectEqualStrings("verify", deploy.deps_serial[2]);
     try std.testing.expectEqual(@as(usize, 0), deploy.deps.len);
+}
+
+test "parse env from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\env = { NODE_ENV = "production", DEBUG = "false" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqual(@as(usize, 2), task.env.len);
+
+    // Find each key-value pair (order may vary since we split by comma)
+    var found_node_env = false;
+    var found_debug = false;
+    for (task.env) |pair| {
+        if (std.mem.eql(u8, pair[0], "NODE_ENV")) {
+            try std.testing.expectEqualStrings("production", pair[1]);
+            found_node_env = true;
+        } else if (std.mem.eql(u8, pair[0], "DEBUG")) {
+            try std.testing.expectEqualStrings("false", pair[1]);
+            found_debug = true;
+        }
+    }
+    try std.testing.expect(found_node_env);
+    try std.testing.expect(found_debug);
+}
+
+test "addTaskWithEnv: programmatic env construction" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    const env_pairs = [_][2][]const u8{
+        .{ "MY_VAR", "hello" },
+        .{ "OTHER", "world" },
+    };
+    try config.addTaskWithEnv("env-task", "echo $MY_VAR", null, null, &[_][]const u8{}, &env_pairs);
+
+    const task = config.tasks.get("env-task").?;
+    try std.testing.expectEqual(@as(usize, 2), task.env.len);
+    try std.testing.expectEqualStrings("MY_VAR", task.env[0][0]);
+    try std.testing.expectEqualStrings("hello", task.env[0][1]);
+    try std.testing.expectEqualStrings("OTHER", task.env[1][0]);
+    try std.testing.expectEqualStrings("world", task.env[1][1]);
 }

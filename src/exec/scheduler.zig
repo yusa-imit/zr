@@ -45,6 +45,8 @@ const WorkerCtx = struct {
     task_name: []const u8, // owned slice, freed by worker after use
     cmd: []const u8,
     cwd: ?[]const u8,
+    /// Optional env var overrides from the task definition.
+    env: ?[]const [2][]const u8,
     inherit_stdio: bool,
     timeout_ms: ?u64,
     allow_failure: bool,
@@ -67,7 +69,7 @@ fn workerFn(ctx: WorkerCtx) void {
     const proc_result = process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
         .cwd = ctx.cwd,
-        .env = null,
+        .env = ctx.env,
         .inherit_stdio = ctx.inherit_stdio,
         .timeout_ms = ctx.timeout_ms,
     }) catch process.ProcessResult{
@@ -181,6 +183,7 @@ fn resolveMaxJobs(max_jobs: u32) u32 {
 fn runTaskSync(
     allocator: std.mem.Allocator,
     task: loader.Task,
+    env: ?[]const [2][]const u8,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
@@ -188,7 +191,7 @@ fn runTaskSync(
     const proc_result = process.run(allocator, .{
         .cmd = task.cmd,
         .cwd = task.cwd,
-        .env = null,
+        .env = env,
         .inherit_stdio = inherit_stdio,
         .timeout_ms = task.timeout_ms,
     }) catch process.ProcessResult{
@@ -248,7 +251,8 @@ fn runSerialChain(
             if (!chain_ok) return false;
         }
 
-        const ok = try runTaskSync(allocator, dep_task, inherit_stdio, results, results_mutex);
+        const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
+        const ok = try runTaskSync(allocator, dep_task, task_env, inherit_stdio, results, results_mutex);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
@@ -344,6 +348,7 @@ pub fn run(
                 .task_name = owned_task_name,
                 .cmd = task.cmd,
                 .cwd = task.cwd,
+                .env = if (task.env.len > 0) task.env else null,
                 .inherit_stdio = sched_config.inherit_stdio,
                 .timeout_ms = task.timeout_ms,
                 .allow_failure = task.allow_failure,
