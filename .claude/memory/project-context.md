@@ -29,8 +29,9 @@
 - [x] Task `env` field (per-task env vars, TOML inline table: `env = { KEY = "value" }`)
 - [x] Task `retry` field (retry_max, retry_delay_ms, retry_backoff — inline table: `retry = { max = 3, delay = "5s", backoff = "exponential" }`)
 - [x] Task `condition` field (expression engine: `true`/`false`, `env.VAR`, `env.VAR == "val"`, `env.VAR != "val"`) — `src/config/expr.zig`
+- [x] Watch mode (`zr watch <task> [path...]`) — `src/watch/watcher.zig` — polling-based, 500ms, skips .git/node_modules/zig-out/.zig-cache, records to history
 
-> **Status**: Phase 1 complete + Phase 2 partial. 68/68 tests passing. Next: watch mode, workflow system, profile system.
+> **Status**: Phase 1 complete + Phase 2 partial. 72/72 tests passing. Next: workflow system, profile system.
 
 ## Architecture (High-Level)
 

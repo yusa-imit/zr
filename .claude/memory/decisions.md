@@ -106,6 +106,20 @@ Decisions are logged chronologically. Format:
   - 68/68 tests passing; binary 1.86MB
 - Rationale: Fail-open prevents misconfigured conditions from silently breaking pipelines. Per-task env lookup enables environment-specific skipping without polluting process env.
 
+## [2026-02-18] Watch Mode Implementation
+- Context: Phase 2 requires watch mode for automatic task re-run on file changes
+- Decision: Polling-based watcher (500ms interval) in `src/watch/watcher.zig`
+  - `Watcher.init(allocator, paths, poll_ms)` → snapshot initial mtimes
+  - `Watcher.waitForChange()` → blocks, returns changed path
+  - Uses `std.fs.Dir.walk()` for recursive directory scanning
+  - Skips .git, node_modules, zig-out, .zig-cache
+  - `cmdWatch` in main.zig: run immediately, then loop on `waitForChange`
+  - Reloads config each iteration (picks up zr.toml edits mid-session)
+  - Records each run to history (consistent with `cmdRun`)
+  - errdefer on `owned_path` before `mtimes.put` prevents OOM leak
+  - 72/72 tests passing; binary 1.9MB
+- Rationale: Polling is cross-platform (no inotify/kqueue), simple, and 500ms granularity is sufficient for dev workflows
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:

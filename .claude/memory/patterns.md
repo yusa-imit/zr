@@ -298,6 +298,25 @@ if (!proc_result.success and task.retry_max > 0) {
 // Both parallel workers (WorkerCtx) and serial sync runners use the same pattern.
 ```
 
+### Polling File Watcher Pattern (watch/watcher.zig)
+```zig
+// Init: snapshot mtimes; waitForChange: poll loop
+var watch = try watcher.Watcher.init(allocator, paths, 500); // 500ms poll
+defer watch.deinit();
+
+const event = try watch.waitForChange(); // blocks until change
+// event.path is owned by watcher's internal map — valid until next call
+
+// recordMtime safety — always errdefer before put:
+const owned = try allocator.dupe(u8, path);
+errdefer allocator.free(owned);
+try map.put(owned, mtime);  // errdefer runs if put OOMs
+```
+- Uses `std.fs.Dir.walk()` for recursive scan; `entry.path` is relative to walked dir root
+- Skip dirs by basename: .git, node_modules, zig-out, .zig-cache
+- Tests use `std.testing.tmpDir` + explicit `checkPath` (not `waitForChange`)
+- `waitForChange` is an infinite loop — no clean shutdown on Ctrl+C (process exits naturally)
+
 ### Expression Evaluator Pattern (config/expr.zig)
 ```zig
 // evalCondition is fail-open: unknown expressions return true (task runs).
