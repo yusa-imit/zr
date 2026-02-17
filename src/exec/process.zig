@@ -4,6 +4,7 @@ pub const ProcessError = error{
     SpawnFailed,
     WaitFailed,
     InvalidCommand,
+    EnvSetupFailed,
 } || std.mem.Allocator.Error;
 
 pub const ProcessResult = struct {
@@ -15,7 +16,12 @@ pub const ProcessResult = struct {
 pub const ProcessConfig = struct {
     cmd: []const u8,
     cwd: ?[]const u8,
+    /// Optional env var overrides. Each entry is [key, value].
+    /// These are merged with the current process environment.
     env: ?[]const [2][]const u8,
+    /// Whether to inherit parent stdio (default true for interactive use).
+    /// Set to false in tests or when output capture is needed.
+    inherit_stdio: bool = true,
 };
 
 /// Run a shell command and wait for it to complete.
@@ -29,10 +35,36 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
     const argv = [_][]const u8{ "sh", "-c", config.cmd };
     var child = std.process.Child.init(&argv, allocator);
 
-    child.stdin_behavior = .Close;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
+    if (config.inherit_stdio) {
+        child.stdin_behavior = .Inherit;
+        child.stdout_behavior = .Inherit;
+        child.stderr_behavior = .Inherit;
+    } else {
+        child.stdin_behavior = .Close;
+        child.stdout_behavior = .Pipe;
+        child.stderr_behavior = .Pipe;
+    }
     child.cwd = config.cwd;
+
+    // When env overrides are provided, build a merged EnvMap.
+    // We use an ArenaAllocator so all temporary strings are freed together.
+    var maybe_arena: ?std.heap.ArenaAllocator = null;
+    var maybe_env_map: ?std.process.EnvMap = null;
+    defer {
+        if (maybe_env_map) |*m| m.deinit();
+        if (maybe_arena) |*a| a.deinit();
+    }
+
+    if (config.env) |env_pairs| {
+        // Build merged env: current environment + overrides
+        maybe_env_map = std.process.getEnvMap(allocator) catch return error.EnvSetupFailed;
+
+        for (env_pairs) |pair| {
+            maybe_env_map.?.put(pair[0], pair[1]) catch return error.EnvSetupFailed;
+        }
+
+        child.env_map = &maybe_env_map.?;
+    }
 
     child.spawn() catch return error.SpawnFailed;
     const term = child.wait() catch return error.WaitFailed;
@@ -42,10 +74,7 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
 
     const exit_code: u8 = switch (term) {
         .Exited => |code| code,
-        .Signal => |sig| blk: {
-            _ = sig;
-            break :blk 1;
-        },
+        .Signal => |_| 1,
         .Stopped => |_| 1,
         .Unknown => |_| 1,
     };
@@ -64,6 +93,7 @@ test "run: echo command exits successfully" {
         .cmd = "echo hello",
         .cwd = null,
         .env = null,
+        .inherit_stdio = false,
     });
 
     try std.testing.expect(result.success);
@@ -73,11 +103,11 @@ test "run: echo command exits successfully" {
 test "run: failing command returns non-zero exit code" {
     const allocator = std.testing.allocator;
 
-    // `false` is a standard POSIX command that always exits with code 1
     const result = try run(allocator, .{
         .cmd = "exit 42",
         .cwd = null,
         .env = null,
+        .inherit_stdio = false,
     });
 
     try std.testing.expect(!result.success);
@@ -91,6 +121,7 @@ test "run: empty command returns InvalidCommand error" {
         .cmd = "",
         .cwd = null,
         .env = null,
+        .inherit_stdio = false,
     });
 
     try std.testing.expectError(error.InvalidCommand, result);
@@ -103,9 +134,26 @@ test "run: timing is non-negative" {
         .cmd = "true",
         .cwd = null,
         .env = null,
+        .inherit_stdio = false,
     });
 
     try std.testing.expect(result.success);
-    // Duration should be non-negative (it's u64 so always true, but this documents intent)
     try std.testing.expect(result.duration_ms < 60_000);
+}
+
+test "run: env vars are passed to child process" {
+    const allocator = std.testing.allocator;
+
+    const env_pairs = [_][2][]const u8{
+        .{ "ZR_TEST_VAR", "hello_zr" },
+    };
+
+    const result = try run(allocator, .{
+        .cmd = "test \"$ZR_TEST_VAR\" = \"hello_zr\"",
+        .cwd = null,
+        .env = &env_pairs,
+        .inherit_stdio = false,
+    });
+
+    try std.testing.expect(result.success);
 }
