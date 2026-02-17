@@ -38,7 +38,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false);
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -52,7 +52,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false);
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -65,7 +65,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false);
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -78,7 +78,22 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false);
+    }
+
+    /// Add a task with retry settings (for tests or programmatic use).
+    pub fn addTaskWithRetry(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        cwd: ?[]const u8,
+        description: ?[]const u8,
+        deps: []const []const u8,
+        retry_max: u32,
+        retry_delay_ms: u64,
+        retry_backoff: bool,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff);
     }
 };
 
@@ -96,6 +111,12 @@ pub const Task = struct {
     timeout_ms: ?u64 = null,
     /// If true, a non-zero exit code is treated as success for dependency purposes.
     allow_failure: bool = false,
+    /// Maximum number of retry attempts after the first failure (0 = no retry).
+    retry_max: u32 = 0,
+    /// Delay between retry attempts in milliseconds.
+    retry_delay_ms: u64 = 0,
+    /// If true, delay doubles on each retry attempt (exponential backoff).
+    retry_backoff: bool = false,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -151,6 +172,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_desc: ?[]const u8 = null;
     var task_timeout_ms: ?u64 = null;
     var task_allow_failure: bool = false;
+    var task_retry_max: u32 = 0;
+    var task_retry_delay_ms: u64 = 0;
+    var task_retry_backoff: bool = false;
 
     // Non-owning slices into content — addTask dupes them
     var task_deps = std.ArrayList([]const u8){};
@@ -170,7 +194,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff);
                 }
             }
 
@@ -183,6 +207,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_desc = null;
             task_timeout_ms = null;
             task_allow_failure = false;
+            task_retry_max = 0;
+            task_retry_delay_ms = 0;
+            task_retry_backoff = false;
 
             const start = "[tasks.".len;
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
@@ -247,13 +274,32 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (std.mem.eql(u8, key, "retry")) {
+                // Parse inline table: { max = 3, delay = "5s", backoff = "exponential" }
+                const inner = std.mem.trim(u8, value, " \t");
+                if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                    const pairs_str = inner[1 .. inner.len - 1];
+                    var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                    while (pairs_it.next()) |pair_str| {
+                        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                        const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                        const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                        if (std.mem.eql(u8, rkey, "max")) {
+                            task_retry_max = std.fmt.parseInt(u32, rval, 10) catch 0;
+                        } else if (std.mem.eql(u8, rkey, "delay")) {
+                            task_retry_delay_ms = parseDurationMs(rval) orelse 0;
+                        } else if (std.mem.eql(u8, rkey, "backoff")) {
+                            task_retry_backoff = std.mem.eql(u8, rval, "exponential");
+                        }
+                    }
+                }
             }
         }
     }
 
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff);
         }
     }
 
@@ -272,6 +318,9 @@ fn addTaskImpl(
     env: []const [2][]const u8,
     timeout_ms: ?u64,
     allow_failure: bool,
+    retry_max: u32,
+    retry_delay_ms: u64,
+    retry_backoff: bool,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -335,6 +384,9 @@ fn addTaskImpl(
         .env = task_env,
         .timeout_ms = timeout_ms,
         .allow_failure = allow_failure,
+        .retry_max = retry_max,
+        .retry_delay_ms = retry_delay_ms,
+        .retry_backoff = retry_backoff,
     };
 
     try config.tasks.put(task_name, task);
@@ -473,4 +525,68 @@ test "addTaskWithEnv: programmatic env construction" {
     try std.testing.expectEqualStrings("hello", task.env[0][1]);
     try std.testing.expectEqualStrings("OTHER", task.env[1][0]);
     try std.testing.expectEqualStrings("world", task.env[1][1]);
+}
+
+test "parse retry from toml inline table" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.deploy]
+        \\cmd = "deploy.sh"
+        \\retry = { max = 3, delay = "5s", backoff = "exponential" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("deploy").?;
+    try std.testing.expectEqual(@as(u32, 3), task.retry_max);
+    try std.testing.expectEqual(@as(u64, 5_000), task.retry_delay_ms);
+    try std.testing.expect(task.retry_backoff);
+}
+
+test "parse retry with no backoff" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.fetch]
+        \\cmd = "curl https://example.com"
+        \\retry = { max = 2, delay = "1s" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("fetch").?;
+    try std.testing.expectEqual(@as(u32, 2), task.retry_max);
+    try std.testing.expectEqual(@as(u64, 1_000), task.retry_delay_ms);
+    try std.testing.expect(!task.retry_backoff);
+}
+
+test "addTaskWithRetry: programmatic retry construction" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTaskWithRetry("retry-task", "flaky.sh", null, null, &[_][]const u8{}, 3, 500, true);
+
+    const task = config.tasks.get("retry-task").?;
+    try std.testing.expectEqual(@as(u32, 3), task.retry_max);
+    try std.testing.expectEqual(@as(u64, 500), task.retry_delay_ms);
+    try std.testing.expect(task.retry_backoff);
+}
+
+test "task defaults: retry fields are zero/false by default" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTask("plain", "echo hi", null, null, &[_][]const u8{});
+
+    const task = config.tasks.get("plain").?;
+    try std.testing.expectEqual(@as(u32, 0), task.retry_max);
+    try std.testing.expectEqual(@as(u64, 0), task.retry_delay_ms);
+    try std.testing.expect(!task.retry_backoff);
 }
