@@ -176,12 +176,14 @@ fn resolveMaxJobs(max_jobs: u32) u32 {
 }
 
 /// Run a single task synchronously (on the calling thread). Records result.
+/// Holds results_mutex while appending so it is safe to call concurrently with worker threads.
 /// Returns true if the task succeeded (or has allow_failure set).
 fn runTaskSync(
     allocator: std.mem.Allocator,
     task: loader.Task,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
+    results_mutex: *std.Thread.Mutex,
 ) !bool {
     const proc_result = process.run(allocator, .{
         .cmd = task.cmd,
@@ -196,18 +198,24 @@ fn runTaskSync(
     };
 
     const owned_name = try allocator.dupe(u8, task.name);
-    try results.append(allocator, .{
+    results_mutex.lock();
+    defer results_mutex.unlock();
+    results.append(allocator, .{
         .task_name = owned_name,
         .success = proc_result.success,
         .exit_code = proc_result.exit_code,
         .duration_ms = proc_result.duration_ms,
-    });
+    }) catch {
+        allocator.free(owned_name);
+        return error.OutOfMemory;
+    };
 
     return proc_result.success or task.allow_failure;
 }
 
 /// Run deps_serial tasks in array order, stopping on first failure (unless allow_failure).
 /// Already-completed tasks (tracked in `completed`) are skipped.
+/// `completed` uses a false sentinel to detect dep_serial cycles and prevent infinite recursion.
 /// Returns true if all serial deps passed.
 fn runSerialChain(
     allocator: std.mem.Allocator,
@@ -215,28 +223,33 @@ fn runSerialChain(
     serial_deps: []const []const u8,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
+    results_mutex: *std.Thread.Mutex,
     completed: *std.StringHashMap(bool),
 ) !bool {
     for (serial_deps) |dep_name| {
         if (completed.contains(dep_name)) {
-            // Already ran; check if it passed
-            const prev_ok = completed.get(dep_name) orelse true;
+            // Already ran (or is currently being visited as a cycle sentinel).
+            const prev_ok = completed.get(dep_name).?;
             if (!prev_ok) return false;
             continue;
         }
 
         const dep_task = config.tasks.get(dep_name) orelse return error.TaskNotFound;
 
+        // Insert visiting sentinel to prevent infinite recursion on dep_serial cycles.
+        try completed.put(dep_name, false);
+
         // Recursively run this dep's own serial chain first
         if (dep_task.deps_serial.len > 0) {
-            const chain_ok = try runSerialChain(allocator, config, dep_task.deps_serial, inherit_stdio, results, completed);
-            if (!chain_ok) {
-                try completed.put(dep_task.name, false);
-                return false;
-            }
+            const chain_ok = try runSerialChain(
+                allocator, config, dep_task.deps_serial,
+                inherit_stdio, results, results_mutex, completed,
+            );
+            if (!chain_ok) return false;
         }
 
-        const ok = try runTaskSync(allocator, dep_task, inherit_stdio, results);
+        const ok = try runTaskSync(allocator, dep_task, inherit_stdio, results, results_mutex);
+        // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
     }
@@ -304,7 +317,7 @@ pub fn run(
             if (task.deps_serial.len > 0) {
                 const serial_ok = try runSerialChain(
                     allocator, config, task.deps_serial,
-                    sched_config.inherit_stdio, &results, &completed,
+                    sched_config.inherit_stdio, &results, &results_mutex, &completed,
                 );
                 if (!serial_ok) {
                     if (!task.allow_failure) failed.store(true, .release);

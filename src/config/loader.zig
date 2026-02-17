@@ -244,15 +244,25 @@ fn addTaskImpl(
     errdefer if (task_desc) |d| allocator.free(d);
 
     const task_deps = try allocator.alloc([]const u8, deps.len);
-    errdefer allocator.free(task_deps);
+    var deps_duped: usize = 0;
+    errdefer {
+        for (task_deps[0..deps_duped]) |d| allocator.free(d);
+        allocator.free(task_deps);
+    }
     for (deps, 0..) |dep, i| {
         task_deps[i] = try allocator.dupe(u8, dep);
+        deps_duped += 1;
     }
 
     const task_deps_serial = try allocator.alloc([]const u8, deps_serial.len);
-    errdefer allocator.free(task_deps_serial);
+    var serial_duped: usize = 0;
+    errdefer {
+        for (task_deps_serial[0..serial_duped]) |d| allocator.free(d);
+        allocator.free(task_deps_serial);
+    }
     for (deps_serial, 0..) |dep, i| {
         task_deps_serial[i] = try allocator.dupe(u8, dep);
+        serial_duped += 1;
     }
 
     const task = Task{
