@@ -25,8 +25,9 @@
 - [x] Execution history module (history/store.zig) + `zr history` CLI command
 - [x] Task `timeout` field (parse "5m"/"30s"/"1h"/"500ms", kill child on expiry)
 - [x] Task `allow_failure` field (non-zero exit doesn't fail pipeline)
+- [x] Task `deps_serial` field (sequential pre-dependencies, run in array order)
 
-> **Status**: Phase 1 complete + Phase 2 partial. 45/45 tests passing. Next: expression engine, watch mode, workflow system, retry/deps_serial.
+> **Status**: Phase 1 complete + Phase 2 partial. 48/48 tests passing. Next: expression engine, watch mode, workflow system, retry logic.
 
 ## Architecture (High-Level)
 

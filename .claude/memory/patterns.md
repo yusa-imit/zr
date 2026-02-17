@@ -188,6 +188,36 @@ try file.writeAll(line);
 // Do NOT use file.writer(&buf) + flush for appending — unreliable
 ```
 
+### Partial Alloc+Dupe Loop Cleanup Pattern
+```zig
+// Track how many items were duped for safe partial cleanup:
+const slice = try allocator.alloc([]const u8, items.len);
+var duped: usize = 0;
+errdefer {
+    for (slice[0..duped]) |s| allocator.free(s);
+    allocator.free(slice);
+}
+for (items, 0..) |item, i| {
+    slice[i] = try allocator.dupe(u8, item);
+    duped += 1;
+}
+```
+
+### Cycle Sentinel Pattern for Recursive Graph Traversal
+```zig
+// Insert a false sentinel before recursing to detect cycles:
+try completed.put(name, false);  // sentinel: "visiting"
+const ok = try recurse(name, ...);
+try completed.put(name, ok);     // update to real result
+
+// Check on entry:
+if (completed.contains(name)) {
+    const prev_ok = completed.get(name).?;
+    if (!prev_ok) return false;  // cycle detected or prior failure
+    continue;
+}
+```
+
 ### Parser Non-Owning Slice Pattern
 ```zig
 // Use non-owning slices in parsers; only dupe when storing:

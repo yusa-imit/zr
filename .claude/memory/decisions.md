@@ -73,6 +73,16 @@ Decisions are logged chronologically. Format:
   - 45/45 tests passing
 - Rationale: poll-based timeout watcher is simpler than timer syscalls, cross-platform, and 50ms granularity is sufficient for CI-level timeouts
 
+## [2026-02-18] deps_serial Implementation
+- Context: Phase 2 requires sequential dependency execution (PRD Section 5.2.2)
+- Decision: `deps_serial` tasks run inline (not via DAG) using `runSerialChain` helper
+  - `collectDeps` only traverses `deps` (not `deps_serial`) — serial tasks excluded from DAG
+  - `runSerialChain` executes serial deps one-at-a-time, recursing into nested serial chains
+  - Cycle detection via false sentinel inserted before recursion (prevents stack overflow)
+  - `runTaskSync` holds `results_mutex` to prevent data race with parallel worker threads
+  - Partial inner-string allocation leak fixed using duped-count tracking in errdefer
+- 48/48 tests passing; binary 1.88MB
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:

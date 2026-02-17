@@ -67,6 +67,24 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: Use `std.Thread.sleep(ns)` instead
 - Prevention: Always use `std.Thread.sleep(nanoseconds)` for sleep in Zig 0.15
 
+### [deps_serial tasks must NOT be in the DAG for level-based scheduling]
+- Symptom: deps_serial tasks ran twice — once via serial chain and once via DAG level runner
+- Cause: collectDeps traversed deps_serial edges, putting those tasks in the needed set; DAG scheduler then also ran them at their natural level
+- Fix: collectDeps only traverses `deps` (parallel edges); `deps_serial` tasks run exclusively via runSerialChain on-demand
+- Prevention: Keep DAG-scheduled tasks and serial-chain tasks as disjoint sets
+
+### [runSerialChain concurrent access to results list — data race]
+- Symptom: Not immediately visible but identified in code review
+- Cause: runSerialChain runs on main thread; worker threads also append to results under results_mutex; main thread had no lock
+- Fix: runTaskSync accepts and holds results_mutex before any append
+- Prevention: Any shared mutable state accessed from multiple threads must be protected
+
+### [Partial inner-slice leak in multi-level alloc+dupe loops]
+- Symptom: GPA would report leaks if dupe fails mid-loop in addTaskImpl
+- Cause: errdefer only freed outer slice, not already-duped inner strings
+- Fix: Track duped count (`deps_duped`, `serial_duped`) and free `slice[0..count]` in errdefer
+- Prevention: In loops where each iteration allocates, track count for safe partial cleanup
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed
