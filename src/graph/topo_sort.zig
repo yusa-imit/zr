@@ -187,7 +187,21 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
         }
 
         if (current_level.items.len == 0) {
+            // Check for cycle before deinit — if unprocessed nodes remain, it's a cycle.
+            // We must check first so that errdefer for current_level doesn't double-free.
+            var has_unprocessed = false;
+            var proc_it = processed.iterator();
+            while (proc_it.next()) |entry| {
+                if (!entry.value_ptr.*) {
+                    has_unprocessed = true;
+                    break;
+                }
+            }
             current_level.deinit(allocator);
+            current_level = .{}; // reset so errdefer doesn't double-free
+            if (has_unprocessed) {
+                return error.CycleDetected;
+            }
             break;
         }
 

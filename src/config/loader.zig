@@ -28,6 +28,18 @@ pub const Config = struct {
 
         return try parseToml(allocator, content);
     }
+
+    /// Add a task directly (useful for tests and programmatic construction).
+    pub fn addTask(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        cwd: ?[]const u8,
+        description: ?[]const u8,
+        deps: []const []const u8,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps);
+    }
 };
 
 pub const Task = struct {
@@ -74,7 +86,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
-                    try addTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
                 }
             }
 
@@ -120,21 +132,21 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
-            try addTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
         }
     }
 
     return config;
 }
 
-fn addTask(
+fn addTaskImpl(
     config: *Config,
     allocator: std.mem.Allocator,
     name: []const u8,
     cmd: []const u8,
     cwd: ?[]const u8,
     description: ?[]const u8,
-    deps: [][]const u8,
+    deps: []const []const u8,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
