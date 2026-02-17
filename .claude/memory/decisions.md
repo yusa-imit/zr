@@ -106,6 +106,20 @@ Decisions are logged chronologically. Format:
   - 68/68 tests passing; binary 1.86MB
 - Rationale: Fail-open prevents misconfigured conditions from silently breaking pipelines. Per-task env lookup enables environment-specific skipping without polluting process env.
 
+## [2026-02-18] Workflow System Implementation
+- Context: Phase 2 requires workflow system with stages (PRD Section 5.2.3)
+- Decision: Implemented `Workflow` + `Stage` structs in `config/loader.zig`; `zr workflow <name>` in `main.zig`
+  - TOML format: `[workflows.X]` for header, `[[workflows.X.stages]]` for each stage
+  - Stage fields: `name`, `tasks = [...]`, `parallel = true`, `fail_fast = false`, `condition`
+  - parseToml state machine: flush stage → flush workflow on any new section header
+  - `addWorkflow()` dupes all strings (same pattern as addTaskImpl)
+  - Key insight: `Config.deinit` must NOT free key separately — Workflow.deinit frees `.name` = same allocation as key
+  - `zr workflow <name>` runs stages sequentially; each stage's tasks via scheduler.run
+  - fail_fast: stops workflow immediately on stage failure
+  - `zr list` shows workflows section below tasks
+  - 74/74 tests passing
+- Rationale: Stage-based sequential execution is the natural model for CI-style pipelines; reusing scheduler.run for stage tasks avoids duplication
+
 ## [2026-02-18] Watch Mode Implementation
 - Context: Phase 2 requires watch mode for automatic task re-run on file changes
 - Decision: Polling-based watcher (500ms interval) in `src/watch/watcher.zig`

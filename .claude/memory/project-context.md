@@ -30,8 +30,9 @@
 - [x] Task `retry` field (retry_max, retry_delay_ms, retry_backoff — inline table: `retry = { max = 3, delay = "5s", backoff = "exponential" }`)
 - [x] Task `condition` field (expression engine: `true`/`false`, `env.VAR`, `env.VAR == "val"`, `env.VAR != "val"`) — `src/config/expr.zig`
 - [x] Watch mode (`zr watch <task> [path...]`) — `src/watch/watcher.zig` — polling-based, 500ms, skips .git/node_modules/zig-out/.zig-cache, records to history
+- [x] Workflow system (`zr workflow <name>`) — `[workflows.X]` + `[[workflows.X.stages]]` TOML parsing; stage-sequential execution with fail_fast; `zr list` shows workflows
 
-> **Status**: Phase 1 complete + Phase 2 partial. 72/72 tests passing. Next: workflow system, profile system.
+> **Status**: Phase 1 complete + Phase 2 partial. 74/74 tests passing. Next: profile system (`[profiles.*]`), `--dry-run` flag.
 
 ## Architecture (High-Level)
 

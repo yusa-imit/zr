@@ -317,6 +317,28 @@ try map.put(owned, mtime);  // errdefer runs if put OOMs
 - Tests use `std.testing.tmpDir` + explicit `checkPath` (not `waitForChange`)
 - `waitForChange` is an infinite loop — no clean shutdown on Ctrl+C (process exits naturally)
 
+### Workflow Parsing Pattern (config/loader.zig)
+```toml
+# TOML format:
+[workflows.release]
+description = "Full release pipeline"
+
+[[workflows.release.stages]]
+name = "prepare"
+tasks = ["clean", "install"]
+parallel = true
+
+[[workflows.release.stages]]
+name = "build"
+tasks = ["build"]
+fail_fast = true
+```
+- State machine: flush pending stage before `[[...stages]]`, flush stage+workflow before `[workflows.X]` and `[tasks.X]`
+- Stage tasks are non-owning slices during parse — duped when building Stage struct
+- `addWorkflow` dupes everything; after call, free workflow_stages items (they were duped, not moved)
+- `Config.deinit`: do NOT free key separately — `Workflow.deinit` frees `.name` = same allocation as map key
+- `zr list` shows workflows section with stage count after task list
+
 ### Expression Evaluator Pattern (config/expr.zig)
 ```zig
 // evalCondition is fail-open: unknown expressions return true (task runs).
@@ -331,3 +353,49 @@ const value_str = if (env_value) |v| v else "";
 - EvalError = error{OutOfMemory} — only OOM is returned; parse errors are fail-open
 - Tests use task_env pairs to avoid process env pollution (no setEnvVar in tests)
 - `getEnvVarOwned` errors other than OutOfMemory (e.g. InvalidWtf8) treated as not-found
+
+### HashMap Key == Value.name Double-Free Pattern
+```zig
+// When the HashMap key and a struct field point to the same allocation:
+// Config.workflows uses wf_name as both key and Workflow.name.
+// In deinit, do NOT free entry.key_ptr.* separately —
+// Workflow.deinit already frees self.name (= same pointer as key).
+var wit = self.workflows.iterator();
+while (wit.next()) |entry| {
+    // Do NOT: self.allocator.free(entry.key_ptr.*);
+    entry.value_ptr.deinit(self.allocator); // frees .name = key allocation
+}
+self.workflows.deinit();
+// Tasks use the same pattern: Task.deinit frees task.name (= key pointer).
+```
+- This matches the existing task HashMap pattern (key freed via task.name in Task.deinit)
+- Contrast: if you need keys independent from value fields, dupe the key separately and free key_ptr.* explicitly
+
+### Multi-Section TOML Parser State Machine Pattern
+```zig
+// When parsing TOML with multiple top-level section types ([tasks.X], [workflows.X],
+// [[workflows.X.stages]]), each section header must flush ALL pending state from
+// prior sections:
+//
+// [tasks.X] arrival:
+//   - flush pending stage -> workflow_stages
+//   - flush pending workflow -> config.addWorkflow + clear workflow_stages
+//   - flush pending task -> addTaskImpl
+//   - reset all task state
+//
+// [workflows.X] arrival:
+//   - flush pending stage -> workflow_stages
+//   - flush pending workflow -> config.addWorkflow + clear workflow_stages
+//   - flush pending TASK -> addTaskImpl + reset task state  ← easy to miss!
+//   - set current_workflow
+//
+// [[workflows.X.stages]] arrival:
+//   - flush pending stage -> workflow_stages
+//   - reset stage state
+//
+// End of file:
+//   - flush final stage, final workflow, final task
+//
+// Order of if-else branches matters:
+//   [[...stages]] MUST come before [workflows.X] (more specific before less specific)
+```
