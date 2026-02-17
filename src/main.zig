@@ -6,6 +6,7 @@ const cycle_detect = @import("graph/cycle_detect.zig");
 const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const color = @import("output/color.zig");
+const history = @import("history/store.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -16,6 +17,7 @@ comptime {
     _ = scheduler;
     _ = process;
     _ = color;
+    _ = history;
 }
 
 const CONFIG_FILE = "zr.toml";
@@ -82,6 +84,8 @@ fn run(
         return cmdList(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         return cmdGraph(allocator, w, ew, use_color);
+    } else if (std.mem.eql(u8, cmd, "history")) {
+        return cmdHistory(allocator, w, ew, use_color);
     } else {
         try color.printError(ew, use_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(w, use_color);
@@ -97,7 +101,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "Commands:\n", .{});
     try w.print("  run <task>   Run a task and its dependencies\n", .{});
     try w.print("  list         List all available tasks\n", .{});
-    try w.print("  graph        Show dependency tree\n\n", .{});
+    try w.print("  graph        Show dependency tree\n", .{});
+    try w.print("  history      Show recent run history\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h   Show this help message\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
@@ -163,6 +168,8 @@ fn cmdRun(
         return 1;
     }
 
+    const start_ns = std.time.nanoTimestamp();
+
     const task_names = [_][]const u8{task_name};
     var sched_result = scheduler.run(allocator, &config, &task_names, .{}) catch |err| {
         switch (err) {
@@ -185,6 +192,8 @@ fn cmdRun(
     };
     defer sched_result.deinit(allocator);
 
+    const elapsed_ms: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns, std.time.ns_per_ms));
+
     // Print results for each task that ran
     for (sched_result.results.items) |task_result| {
         if (task_result.success) {
@@ -200,7 +209,79 @@ fn cmdRun(
         }
     }
 
+    // Record to history (best-effort, ignore errors)
+    recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
+        @intCast(sched_result.results.items.len));
+
     return if (sched_result.total_success) 0 else 1;
+}
+
+fn recordHistory(
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    success: bool,
+    duration_ms: u64,
+    task_count: u32,
+) void {
+    const hist_path = history.defaultHistoryPath(allocator) catch return;
+    defer allocator.free(hist_path);
+
+    var store = history.Store.init(allocator, hist_path) catch return;
+    defer store.deinit();
+
+    store.append(.{
+        .timestamp = std.time.timestamp(),
+        .task_name = task_name,
+        .success = success,
+        .duration_ms = duration_ms,
+        .task_count = task_count,
+    }) catch {};
+}
+
+fn cmdHistory(
+    allocator: std.mem.Allocator,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    _ = err_writer;
+
+    const hist_path = try history.defaultHistoryPath(allocator);
+    defer allocator.free(hist_path);
+
+    var store = try history.Store.init(allocator, hist_path);
+    defer store.deinit();
+
+    var records = try store.loadLast(allocator, 20);
+    defer {
+        for (records.items) |r| r.deinit(allocator);
+        records.deinit(allocator);
+    }
+
+    if (records.items.len == 0) {
+        try color.printDim(w, use_color, "No history yet. Run a task with 'zr run <task>'.\n", .{});
+        return 0;
+    }
+
+    try color.printHeader(w, use_color, "Recent Runs:", .{});
+    try w.print("\n", .{});
+
+    for (records.items) |rec| {
+        const status_icon: []const u8 = if (rec.success) "✓" else "✗";
+        if (rec.success) {
+            try color.printSuccess(w, use_color, "  {s} ", .{status_icon});
+        } else {
+            try color.printError(w, use_color, "  {s} ", .{status_icon});
+        }
+        try color.printInfo(w, use_color, "{s:<20}", .{rec.task_name});
+        try color.printDim(w, use_color, "  {d}ms  ({d} task(s))  ts:{d}\n", .{
+            rec.duration_ms,
+            rec.task_count,
+            rec.timestamp,
+        });
+    }
+
+    return 0;
 }
 
 fn cmdList(
