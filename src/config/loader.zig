@@ -54,12 +54,16 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     errdefer config.deinit();
 
     var lines = std.mem.splitScalar(u8, content, '\n');
+
+    // These are non-owning slices into `content` — addTask dupes them
     var current_task: ?[]const u8 = null;
     var task_cmd: ?[]const u8 = null;
     var task_cwd: ?[]const u8 = null;
     var task_desc: ?[]const u8 = null;
-    var task_deps = std.ArrayList([]const u8).init(allocator);
-    defer task_deps.deinit();
+
+    // Non-owning slices into content — addTask dupes them
+    var task_deps = std.ArrayList([]const u8){};
+    defer task_deps.deinit(allocator);
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -67,12 +71,14 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
 
         if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
+            // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
                     try addTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
                 }
             }
 
+            // Reset state — no freeing needed since these are non-owning slices
             task_deps.clearRetainingCapacity();
             task_cmd = null;
             task_cwd = null;
@@ -80,7 +86,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             const start = "[tasks.".len;
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
-            current_task = try allocator.dupe(u8, trimmed[start..][0..end]);
+            // Non-owning slice into content
+            current_task = trimmed[start..][0..end];
         } else if (std.mem.indexOf(u8, trimmed, "=")) |eq_idx| {
             const key = std.mem.trim(u8, trimmed[0..eq_idx], " \t");
             var value = std.mem.trim(u8, trimmed[eq_idx + 1 ..], " \t");
@@ -90,11 +97,11 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
 
             if (std.mem.eql(u8, key, "cmd")) {
-                task_cmd = try allocator.dupe(u8, value);
+                task_cmd = value;
             } else if (std.mem.eql(u8, key, "cwd")) {
-                task_cwd = try allocator.dupe(u8, value);
+                task_cwd = value;
             } else if (std.mem.eql(u8, key, "description")) {
-                task_desc = try allocator.dupe(u8, value);
+                task_desc = value;
             } else if (std.mem.eql(u8, key, "deps")) {
                 if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
                     const deps_str = value[1 .. value.len - 1];
@@ -102,7 +109,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     while (deps_it.next()) |dep| {
                         const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
                         if (trimmed_dep.len > 0) {
-                            try task_deps.append(try allocator.dupe(u8, trimmed_dep));
+                            // Non-owning slice — addTask will dupe
+                            try task_deps.append(allocator, trimmed_dep);
                         }
                     }
                 }

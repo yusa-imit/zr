@@ -10,7 +10,7 @@ pub const DAG = struct {
         pub fn init(allocator: std.mem.Allocator, name: []const u8) !Node {
             return Node{
                 .name = try allocator.dupe(u8, name),
-                .dependencies = std.ArrayList([]const u8).init(allocator),
+                .dependencies = std.ArrayList([]const u8){},
             };
         }
 
@@ -19,11 +19,11 @@ pub const DAG = struct {
             for (self.dependencies.items) |dep| {
                 allocator.free(dep);
             }
-            self.dependencies.deinit();
+            self.dependencies.deinit(allocator);
         }
 
         pub fn addDependency(self: *Node, allocator: std.mem.Allocator, dep: []const u8) !void {
-            try self.dependencies.append(try allocator.dupe(u8, dep));
+            try self.dependencies.append(allocator, try allocator.dupe(u8, dep));
         }
     };
 
@@ -40,6 +40,8 @@ pub const DAG = struct {
     pub fn deinit(self: *DAG) void {
         var it = self.nodes.iterator();
         while (it.next()) |entry| {
+            // Free the separately-allocated map key
+            self.allocator.free(entry.key_ptr.*);
             var node = entry.value_ptr;
             node.deinit(self.allocator);
         }
@@ -87,14 +89,14 @@ pub const DAG = struct {
 
     /// Get all nodes with no dependencies (entry points)
     pub fn getEntryNodes(self: *DAG, allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
-        var result = std.ArrayList([]const u8).init(allocator);
-        errdefer result.deinit();
+        var result = std.ArrayList([]const u8){};
+        errdefer result.deinit(allocator);
 
         var it = self.nodes.iterator();
         while (it.next()) |entry| {
             const node = entry.value_ptr;
             if (node.dependencies.items.len == 0) {
-                try result.append(try allocator.dupe(u8, node.name));
+                try result.append(allocator, try allocator.dupe(u8, node.name));
             }
         }
 
@@ -162,7 +164,7 @@ test "DAG: get entry nodes" {
         for (entry_nodes.items) |node| {
             allocator.free(node);
         }
-        entry_nodes.deinit();
+        entry_nodes.deinit(allocator);
     }
 
     try std.testing.expect(entry_nodes.items.len == 2);

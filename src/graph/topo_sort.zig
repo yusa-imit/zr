@@ -18,7 +18,7 @@ pub const TopoSortResult = struct {
         for (self.order.items) |node| {
             allocator.free(node);
         }
-        self.order.deinit();
+        self.order.deinit(allocator);
 
         if (self.error_message) |msg| {
             allocator.free(msg);
@@ -34,78 +34,75 @@ pub fn topoSort(allocator: std.mem.Allocator, dag: *const DAG) !TopoSortResult {
     defer cycle_result.deinit(allocator);
 
     if (cycle_result.has_cycle) {
-        var error_msg = std.ArrayList(u8).init(allocator);
-        defer error_msg.deinit();
+        var error_msg = std.ArrayList(u8){};
+        defer error_msg.deinit(allocator);
 
-        try error_msg.appendSlice("Cycle detected in dependency graph: ");
+        try error_msg.appendSlice(allocator, "Cycle detected in dependency graph: ");
 
         if (cycle_result.cycle_path) |path| {
             for (path.items, 0..) |node, i| {
-                if (i > 0) try error_msg.appendSlice(" -> ");
-                try error_msg.appendSlice(node);
+                if (i > 0) try error_msg.appendSlice(allocator, " -> ");
+                try error_msg.appendSlice(allocator, node);
             }
         }
 
         return TopoSortResult{
-            .order = std.ArrayList([]const u8).init(allocator),
+            .order = std.ArrayList([]const u8){},
             .success = false,
             .error_message = try allocator.dupe(u8, error_msg.items),
         };
     }
 
-    // Calculate in-degrees
+    // Calculate in-degrees: each node's in-degree = number of its dependencies
+    // Nodes with in-degree 0 have no dependencies and can execute first
     var in_degree = std.StringHashMap(usize).init(allocator);
     defer in_degree.deinit();
 
     var it = dag.nodes.iterator();
     while (it.next()) |entry| {
-        try in_degree.put(entry.key_ptr.*, 0);
-    }
-
-    // Count incoming edges
-    it = dag.nodes.iterator();
-    while (it.next()) |entry| {
         const node = entry.value_ptr;
-        for (node.dependencies.items) |dep| {
-            const current = in_degree.get(dep) orelse 0;
-            try in_degree.put(dep, current + 1);
-        }
+        try in_degree.put(entry.key_ptr.*, node.dependencies.items.len);
     }
 
-    // Queue for nodes with in-degree 0
-    var queue = std.ArrayList([]const u8).init(allocator);
-    defer queue.deinit();
+    // Queue for nodes with in-degree 0 (no dependencies)
+    var queue = std.ArrayList([]const u8){};
+    defer queue.deinit(allocator);
 
     var degree_it = in_degree.iterator();
     while (degree_it.next()) |entry| {
         if (entry.value_ptr.* == 0) {
-            try queue.append(entry.key_ptr.*);
+            try queue.append(allocator, entry.key_ptr.*);
         }
     }
 
     // Result list
-    var result = std.ArrayList([]const u8).init(allocator);
+    var result = std.ArrayList([]const u8){};
     errdefer {
         for (result.items) |node| {
             allocator.free(node);
         }
-        result.deinit();
+        result.deinit(allocator);
     }
 
-    // Process nodes in topological order
+    // Process nodes in topological order.
+    // When a node is processed, decrement in-degree of all nodes that depend on it.
     while (queue.items.len > 0) {
         const current = queue.orderedRemove(0);
-        try result.append(try allocator.dupe(u8, current));
+        try result.append(allocator, try allocator.dupe(u8, current));
 
-        const node = dag.nodes.get(current) orelse continue;
-
-        // Reduce in-degree for all dependencies
-        for (node.dependencies.items) |dep| {
-            const degree = in_degree.getPtr(dep) orelse continue;
-            degree.* -= 1;
-
-            if (degree.* == 0) {
-                try queue.append(dep);
+        // Find all nodes that have `current` as a dependency and reduce their in-degree
+        it = dag.nodes.iterator();
+        while (it.next()) |entry| {
+            const node = entry.value_ptr;
+            for (node.dependencies.items) |dep| {
+                if (std.mem.eql(u8, dep, current)) {
+                    const degree = in_degree.getPtr(entry.key_ptr.*) orelse continue;
+                    degree.* -= 1;
+                    if (degree.* == 0) {
+                        try queue.append(allocator, entry.key_ptr.*);
+                    }
+                    break;
+                }
             }
         }
     }
@@ -128,23 +125,23 @@ pub const ExecutionLevels = struct {
             for (level.items) |node| {
                 allocator.free(node);
             }
-            level.deinit();
+            level.deinit(allocator);
         }
-        self.levels.deinit();
+        self.levels.deinit(allocator);
     }
 };
 
 /// Get execution levels for parallel execution planning
 pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !ExecutionLevels {
-    var levels = std.ArrayList(std.ArrayList([]const u8)).init(allocator);
+    var levels = std.ArrayList(std.ArrayList([]const u8)){};
     errdefer {
         for (levels.items) |*level| {
             for (level.items) |node| {
                 allocator.free(node);
             }
-            level.deinit();
+            level.deinit(allocator);
         }
-        levels.deinit();
+        levels.deinit(allocator);
     }
 
     // Track which nodes have been processed
@@ -158,12 +155,12 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
 
     // Process levels until all nodes are processed
     while (true) {
-        var current_level = std.ArrayList([]const u8).init(allocator);
+        var current_level = std.ArrayList([]const u8){};
         errdefer {
             for (current_level.items) |node| {
                 allocator.free(node);
             }
-            current_level.deinit();
+            current_level.deinit(allocator);
         }
 
         // Find nodes whose dependencies are all processed
@@ -185,12 +182,12 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
             }
 
             if (all_deps_processed) {
-                try current_level.append(try allocator.dupe(u8, node_name));
+                try current_level.append(allocator, try allocator.dupe(u8, node_name));
             }
         }
 
         if (current_level.items.len == 0) {
-            current_level.deinit();
+            current_level.deinit(allocator);
             break;
         }
 
@@ -199,7 +196,7 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
             try processed.put(node_name, true);
         }
 
-        try levels.append(current_level);
+        try levels.append(allocator, current_level);
     }
 
     return ExecutionLevels{ .levels = levels };

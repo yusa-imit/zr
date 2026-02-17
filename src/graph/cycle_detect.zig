@@ -11,7 +11,7 @@ pub const CycleDetectionResult = struct {
             for (path.items) |node| {
                 allocator.free(node);
             }
-            path.deinit();
+            path.deinit(allocator);
         }
     }
 };
@@ -21,53 +21,47 @@ pub const CycleDetectionResult = struct {
 pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectionResult {
     // Kahn's Algorithm for topological sort - if we can't sort all nodes, there's a cycle
 
-    // Calculate in-degrees for all nodes
+    // Calculate in-degrees: each node's in-degree = number of its dependencies
+    // Nodes with in-degree 0 have no dependencies (entry points)
     var in_degree = std.StringHashMap(usize).init(allocator);
     defer in_degree.deinit();
 
     var it = dag.nodes.iterator();
     while (it.next()) |entry| {
-        const node_name = entry.key_ptr.*;
-        try in_degree.put(node_name, 0);
-    }
-
-    // Count incoming edges
-    it = dag.nodes.iterator();
-    while (it.next()) |entry| {
         const node = entry.value_ptr;
-        for (node.dependencies.items) |dep| {
-            const current = in_degree.get(dep) orelse 0;
-            try in_degree.put(dep, current + 1);
-        }
+        try in_degree.put(entry.key_ptr.*, node.dependencies.items.len);
     }
 
-    // Queue for nodes with in-degree 0
-    var queue = std.ArrayList([]const u8).init(allocator);
-    defer queue.deinit();
+    // Queue for nodes with in-degree 0 (no dependencies)
+    var queue = std.ArrayList([]const u8){};
+    defer queue.deinit(allocator);
 
     var degree_it = in_degree.iterator();
     while (degree_it.next()) |entry| {
         if (entry.value_ptr.* == 0) {
-            try queue.append(entry.key_ptr.*);
+            try queue.append(allocator, entry.key_ptr.*);
         }
     }
 
-    // Process nodes
+    // Process nodes: when a node is processed, decrement all nodes that depend on it
     var processed_count: usize = 0;
     while (queue.items.len > 0) {
         const current = queue.orderedRemove(0);
         processed_count += 1;
 
-        // Get the current node
-        const node = dag.nodes.get(current) orelse continue;
-
-        // Reduce in-degree for all dependent nodes
-        for (node.dependencies.items) |dep| {
-            const degree = in_degree.getPtr(dep) orelse continue;
-            degree.* -= 1;
-
-            if (degree.* == 0) {
-                try queue.append(dep);
+        // Find all nodes that depend on `current` and reduce their in-degree
+        it = dag.nodes.iterator();
+        while (it.next()) |entry| {
+            const node = entry.value_ptr;
+            for (node.dependencies.items) |dep| {
+                if (std.mem.eql(u8, dep, current)) {
+                    const degree = in_degree.getPtr(entry.key_ptr.*) orelse continue;
+                    degree.* -= 1;
+                    if (degree.* == 0) {
+                        try queue.append(allocator, entry.key_ptr.*);
+                    }
+                    break;
+                }
             }
         }
     }
@@ -80,14 +74,14 @@ pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectio
         };
     }
 
-    // There's a cycle - find nodes involved
-    var cycle_nodes = std.ArrayList([]const u8).init(allocator);
-    errdefer cycle_nodes.deinit();
+    // There's a cycle - find nodes involved (those still with in-degree > 0)
+    var cycle_nodes = std.ArrayList([]const u8){};
+    errdefer cycle_nodes.deinit(allocator);
 
     degree_it = in_degree.iterator();
     while (degree_it.next()) |entry| {
         if (entry.value_ptr.* > 0) {
-            try cycle_nodes.append(try allocator.dupe(u8, entry.key_ptr.*));
+            try cycle_nodes.append(allocator, try allocator.dupe(u8, entry.key_ptr.*));
         }
     }
 
