@@ -28,6 +28,17 @@ Decisions are logged chronologically. Format:
 - Decision: Applied 18 changes with 75%+ approval: model assignments, CLAUDE.md restructure, CI artifact upload, checksum compatibility, settings cleanup, .gitignore simplification, validate command addition
 - Rationale: Voting-based review ensures quality through multi-perspective consensus
 
+## [2026-02-17] Color Output & Env Vars Implementation
+- Context: Phase 1 requires color output for UX and env var support for real-world tasks
+- Decision: Implemented:
+  - `output/color.zig`: TTY-aware ANSI color module with semantic helpers
+  - `process.zig`: env var overrides via merged EnvMap + `inherit_stdio` flag
+  - `main.zig`: all CLI output now uses color module
+- Rationale:
+  - TTY detection prevents ANSI codes in pipes/CI
+  - `inherit_stdio` flag solves test deadlock: production inherits stdio, tests use .Pipe
+  - Semantic helpers (printSuccess/printError/printInfo) enforce consistent UX
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:

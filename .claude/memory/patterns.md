@@ -99,6 +99,33 @@ pub fn deinit(self: *Self) void {
 }
 ```
 
+### Color Output Pattern (output/color.zig)
+```zig
+// Detect TTY for color enable/disable:
+const use_color = color.isTty(std.fs.File.stdout());
+
+// Use semantic helpers:
+try color.printSuccess(w, use_color, "{s} completed\n", .{name});
+try color.printError(ew, use_color, "Task '{s}' not found\n", .{name});
+try color.printInfo(w, use_color, "{s}\n", .{name});
+try color.printBold(w, use_color, "Header:\n", .{});
+try color.printDim(w, use_color, "({d}ms)\n", .{ms});
+```
+- Always detect TTY at the top of main() and pass `use_color` through
+- Never embed ANSI codes directly in strings; always use color module helpers
+- Color module auto-disables when not a TTY (pipes, CI)
+
+### Process Stdio Pattern
+```zig
+// Production (interactive): inherit_stdio = true (default)
+process.run(alloc, .{ .cmd = cmd, .cwd = cwd, .env = null });
+
+// Tests: inherit_stdio = false (prevents deadlock in background tasks)
+process.run(alloc, .{ .cmd = cmd, .cwd = null, .env = null, .inherit_stdio = false });
+```
+- Tests MUST use `inherit_stdio = false` to avoid deadlock
+- .Pipe for stdout/stderr is safe for small output (< ~64KB pipe buffer)
+
 ### Parser Non-Owning Slice Pattern
 ```zig
 // Use non-owning slices in parsers; only dupe when storing:

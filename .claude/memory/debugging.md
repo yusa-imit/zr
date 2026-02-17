@@ -43,6 +43,12 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: In `deinit`, free `entry.key_ptr.*` before freeing the value
 - Prevention: When using StringHashMap with owned keys, always free both key and value in deinit
 
+### [.Inherit stdio in process tests causes deadlock in background tasks]
+- Symptom: `zig build test` hangs indefinitely when run as a background task (e.g., in CI or background Bash)
+- Cause: Child processes with `.Inherit` stdio inherit the background task's stdin/stdout/stderr pipes; the test harness and child process deadlock waiting on each other
+- Fix: Add `inherit_stdio: bool = true` to ProcessConfig; tests use `inherit_stdio: false` (`.Pipe` for stdout/stderr); production uses `inherit_stdio: true`
+- Prevention: Never use `.Inherit` stdio in test contexts; use `.Pipe` for stdout/stderr in tests (safe for small output < 64KB pipe buffer)
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed
