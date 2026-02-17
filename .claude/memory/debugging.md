@@ -13,11 +13,11 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 
 ---
 
-### [openclaw CLI not available]
-- Symptom: `openclaw` command not found when trying to send Discord notifications
-- Cause: openclaw CLI is not installed or not in PATH
-- Fix: Document in session summary output instead of sending Discord message
-- Prevention: Check for openclaw availability before autonomous cycles, or use alternative notification method
+### [openclaw CLI not in PATH]
+- Symptom: `openclaw` command not found (exit 127)
+- Cause: openclaw is installed via fnm/npm but not symlinked to PATH
+- Fix: Use full path: `/Users/fn/.local/share/fnm/node-versions/v22.17.1/installation/bin/openclaw`
+- Prevention: Always use full path for openclaw in autonomous sessions
 
 ### [std.ArrayList is now unmanaged in Zig 0.15.2]
 - Symptom: `struct 'array_list.Aligned' has no member named 'init'` compiler error
