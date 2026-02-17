@@ -61,6 +61,12 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: Use `std.fmt.bufPrint(&line_buf, ...)` then `file.writeAll(line)` for direct, unbuffered writes to the file
 - Prevention: For file append operations, prefer `fmt.bufPrint` + `file.writeAll` over buffered File.writer
 
+### [std.time.sleep removed in Zig 0.15 — use std.Thread.sleep]
+- Symptom: `root source file struct 'time' has no member named 'sleep'` compiler error
+- Cause: `std.time.sleep(ns)` was renamed/removed in Zig 0.15
+- Fix: Use `std.Thread.sleep(ns)` instead
+- Prevention: Always use `std.Thread.sleep(nanoseconds)` for sleep in Zig 0.15
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed

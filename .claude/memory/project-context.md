@@ -23,8 +23,10 @@
 - [x] Cross-compile CI pipeline (ci.yml, release.yml 준비됨)
 - [x] 문서/설정/에이전트 인프라 구축 완료
 - [x] Execution history module (history/store.zig) + `zr history` CLI command
+- [x] Task `timeout` field (parse "5m"/"30s"/"1h"/"500ms", kill child on expiry)
+- [x] Task `allow_failure` field (non-zero exit doesn't fail pipeline)
 
-> **Status**: Phase 1 complete + Phase 2 history module done. 39/39 tests passing. Next: expression engine, watch mode, or workflow system.
+> **Status**: Phase 1 complete + Phase 2 partial. 45/45 tests passing. Next: expression engine, watch mode, workflow system, retry/deps_serial.
 
 ## Architecture (High-Level)
 

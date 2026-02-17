@@ -62,6 +62,17 @@ Decisions are logged chronologically. Format:
   - History file: `.zr_history` in CWD
 - Key fix: `File.writer(&buf)` with flush was unreliable for file appending; use `fmt.bufPrint` + `file.writeAll` for direct unbuffered writes
 
+## [2026-02-17] Timeout and allow_failure Implementation
+- Context: Phase 2 requires timeout enforcement and fault tolerance per PRD Section 5.1.1
+- Decision:
+  - `Task` struct gains `timeout_ms: ?u64` and `allow_failure: bool`
+  - `parseDurationMs()` in loader.zig parses "5m", "30s", "1h", "500ms"
+  - `process.zig`: after spawn, optionally start `timeoutWatcher` thread (50ms poll loop). On expiry, `posix.kill(pid, SIGKILL)`. After child.wait(), join watcher and check `timed_out` flag.
+  - `scheduler.zig`: `allow_failure` prevents setting global `failed` flag. Task result still records actual exit code.
+  - `std.Thread.sleep(ns)` is the correct API in Zig 0.15 (not `std.time.sleep`)
+  - 45/45 tests passing
+- Rationale: poll-based timeout watcher is simpler than timer syscalls, cross-platform, and 50ms granularity is sufficient for CI-level timeouts
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:

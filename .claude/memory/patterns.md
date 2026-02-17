@@ -157,6 +157,25 @@ fn workerFn(ctx: WorkerCtx) void {
 - Use `.acquire`/`.release` ordering for atomic reads/writes
 - Always join all threads in a level before proceeding to next level
 
+### Process Timeout Pattern (Zig 0.15)
+```zig
+// Poll-based timeout watcher thread:
+fn timeoutWatcher(ctx: TimeoutCtx) void {
+    const slice_ms: u64 = 50;
+    var elapsed_ms: u64 = 0;
+    while (elapsed_ms < ctx.timeout_ms) {
+        if (ctx.done.load(.acquire)) return; // exited normally
+        std.Thread.sleep(slice_ms * std.time.ns_per_ms); // NOT std.time.sleep
+        elapsed_ms += slice_ms;
+    }
+    if (ctx.done.load(.acquire)) return;
+    std.posix.kill(ctx.pid, std.posix.SIG.KILL) catch {};
+    ctx.timed_out.store(true, .release);
+}
+// After child.wait(): signal done, join watcher thread, check timed_out flag
+// IMPORTANT: std.Thread.sleep(ns) in Zig 0.15; std.time.sleep does NOT exist
+```
+
 ### File Append Pattern (Zig 0.15)
 ```zig
 // For reliable file appending, use fmt.bufPrint + file.writeAll:
