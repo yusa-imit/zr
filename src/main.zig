@@ -1,5 +1,6 @@
 const std = @import("std");
 const loader = @import("config/loader.zig");
+const expr = @import("config/expr.zig");
 const dag_mod = @import("graph/dag.zig");
 const topo_sort = @import("graph/topo_sort.zig");
 const cycle_detect = @import("graph/cycle_detect.zig");
@@ -11,6 +12,7 @@ const history = @import("history/store.zig");
 // Ensure tests in all imported modules are included in test binary
 comptime {
     _ = loader;
+    _ = expr;
     _ = dag_mod;
     _ = topo_sort;
     _ = cycle_detect;

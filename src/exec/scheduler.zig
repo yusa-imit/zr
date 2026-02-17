@@ -3,6 +3,7 @@ const loader = @import("../config/loader.zig");
 const dag_mod = @import("../graph/dag.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
 const process = @import("process.zig");
+const expr = @import("../config/expr.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -25,6 +26,8 @@ pub const TaskResult = struct {
     success: bool,
     exit_code: u8,
     duration_ms: u64,
+    /// True if the task was skipped due to a false condition expression.
+    skipped: bool = false,
 };
 
 pub const ScheduleResult = struct {
@@ -370,6 +373,27 @@ pub fn run(
 
             const task = config.tasks.get(task_name) orelse return error.TaskNotFound;
 
+            // Evaluate condition expression — skip task if condition is false.
+            if (task.condition) |cond| {
+                const task_env_for_cond: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
+                const should_run = expr.evalCondition(allocator, cond, task_env_for_cond) catch true;
+                if (!should_run) {
+                    const owned_name = try allocator.dupe(u8, task_name);
+                    results_mutex.lock();
+                    results.append(allocator, .{
+                        .task_name = owned_name,
+                        .success = true,
+                        .exit_code = 0,
+                        .duration_ms = 0,
+                        .skipped = true,
+                    }) catch {
+                        allocator.free(owned_name);
+                    };
+                    results_mutex.unlock();
+                    continue;
+                }
+            }
+
             // Run deps_serial chain synchronously before this task (if any)
             if (task.deps_serial.len > 0) {
                 const serial_ok = try runSerialChain(
@@ -684,4 +708,61 @@ test "run: retry exhausted still fails pipeline" {
     try std.testing.expect(!result.total_success);
     try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
     try std.testing.expect(!result.results.items[0].success);
+}
+
+test "run: task with condition=false is skipped" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+
+    // Task with condition = "false" — should be skipped, not run
+    try config.addTaskWithCondition("skip-me", "exit 1", "false");
+
+    const task_names = [_][]const u8{"skip-me"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    // Skipped task should not fail the pipeline
+    try std.testing.expect(result.total_success);
+    try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
+    try std.testing.expect(result.results.items[0].skipped);
+    try std.testing.expect(result.results.items[0].success);
+}
+
+test "run: task with condition=true runs normally" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+
+    // Task with condition = "true" — should run as normal
+    try config.addTaskWithCondition("run-me", "true", "true");
+
+    const task_names = [_][]const u8{"run-me"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.total_success);
+    try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
+    try std.testing.expect(!result.results.items[0].skipped);
+    try std.testing.expect(result.results.items[0].success);
+}
+
+test "run: task with no condition always runs" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+
+    // Task with no condition (null) — always runs regardless of env
+    try config.addTaskWithCondition("no-cond-task", "true", null);
+
+    const task_names = [_][]const u8{"no-cond-task"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.total_success);
+    try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
+    try std.testing.expect(!result.results.items[0].skipped);
 }

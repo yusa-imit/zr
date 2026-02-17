@@ -38,7 +38,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null);
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -52,7 +52,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null);
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -65,7 +65,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false, null);
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -78,7 +78,7 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false, null);
     }
 
     /// Add a task with retry settings (for tests or programmatic use).
@@ -93,7 +93,17 @@ pub const Config = struct {
         retry_delay_ms: u64,
         retry_backoff: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null);
+    }
+
+    /// Add a task with a condition expression (for tests or programmatic use).
+    pub fn addTaskWithCondition(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        condition: ?[]const u8,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition);
     }
 };
 
@@ -117,6 +127,9 @@ pub const Task = struct {
     retry_delay_ms: u64 = 0,
     /// If true, delay doubles on each retry attempt (exponential backoff).
     retry_backoff: bool = false,
+    /// Optional condition expression. If null, task always runs.
+    /// If set, evaluated before the task runs; task is skipped if false.
+    condition: ?[]const u8 = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -136,6 +149,7 @@ pub const Task = struct {
             allocator.free(pair[1]);
         }
         allocator.free(self.env);
+        if (self.condition) |c| allocator.free(c);
     }
 };
 
@@ -175,6 +189,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_retry_max: u32 = 0;
     var task_retry_delay_ms: u64 = 0;
     var task_retry_backoff: bool = false;
+    var task_condition: ?[]const u8 = null;
 
     // Non-owning slices into content — addTask dupes them
     var task_deps = std.ArrayList([]const u8){};
@@ -194,7 +209,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition);
                 }
             }
 
@@ -210,6 +225,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_retry_max = 0;
             task_retry_delay_ms = 0;
             task_retry_backoff = false;
+            task_condition = null;
 
             const start = "[tasks.".len;
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
@@ -229,6 +245,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_cwd = value;
             } else if (std.mem.eql(u8, key, "description")) {
                 task_desc = value;
+            } else if (std.mem.eql(u8, key, "condition")) {
+                task_condition = value;
             } else if (std.mem.eql(u8, key, "timeout")) {
                 task_timeout_ms = parseDurationMs(value);
             } else if (std.mem.eql(u8, key, "allow_failure")) {
@@ -299,7 +317,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition);
         }
     }
 
@@ -321,6 +339,7 @@ fn addTaskImpl(
     retry_max: u32,
     retry_delay_ms: u64,
     retry_backoff: bool,
+    condition: ?[]const u8,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -374,6 +393,9 @@ fn addTaskImpl(
         env_duped += 1;
     }
 
+    const task_condition = if (condition) |c| try allocator.dupe(u8, c) else null;
+    errdefer if (task_condition) |c| allocator.free(c);
+
     const task = Task{
         .name = task_name,
         .cmd = task_cmd,
@@ -387,6 +409,7 @@ fn addTaskImpl(
         .retry_max = retry_max,
         .retry_delay_ms = retry_delay_ms,
         .retry_backoff = retry_backoff,
+        .condition = task_condition,
     };
 
     try config.tasks.put(task_name, task);
@@ -589,4 +612,45 @@ test "task defaults: retry fields are zero/false by default" {
     try std.testing.expectEqual(@as(u32, 0), task.retry_max);
     try std.testing.expectEqual(@as(u64, 0), task.retry_delay_ms);
     try std.testing.expect(!task.retry_backoff);
+}
+
+test "parse condition from toml" {
+    const allocator = std.testing.allocator;
+
+    // Use single-quoted style to avoid escape complexity: condition = "true"
+    const toml_content =
+        \\[tasks.deploy]
+        \\cmd = "deploy.sh"
+        \\condition = "env.CI"
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("deploy").?;
+    try std.testing.expect(task.condition != null);
+    try std.testing.expectEqualStrings("env.CI", task.condition.?);
+}
+
+test "addTaskWithCondition: programmatic condition" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTaskWithCondition("cond-task", "echo hi", "true");
+    const task = config.tasks.get("cond-task").?;
+    try std.testing.expect(task.condition != null);
+    try std.testing.expectEqualStrings("true", task.condition.?);
+}
+
+test "task defaults: condition is null by default" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTask("no-cond", "echo hi", null, null, &[_][]const u8{});
+    const task = config.tasks.get("no-cond").?;
+    try std.testing.expect(task.condition == null);
 }
