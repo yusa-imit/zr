@@ -8,6 +8,7 @@ const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const color = @import("output/color.zig");
 const history = @import("history/store.zig");
+const watcher = @import("watch/watcher.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -20,6 +21,7 @@ comptime {
     _ = process;
     _ = color;
     _ = history;
+    _ = watcher;
 }
 
 const CONFIG_FILE = "zr.toml";
@@ -82,6 +84,14 @@ fn run(
         }
         const task_name = args[2];
         return cmdRun(allocator, task_name, w, ew, use_color);
+    } else if (std.mem.eql(u8, cmd, "watch")) {
+        if (args.len < 3) {
+            try color.printError(ew, use_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
+            return 1;
+        }
+        const task_name = args[2];
+        const watch_paths: []const []const u8 = if (args.len > 3) args[3..] else &[_][]const u8{"."};
+        return cmdWatch(allocator, task_name, watch_paths, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
         return cmdList(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
@@ -101,10 +111,11 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "Usage:\n", .{});
     try w.print("  zr <command> [arguments]\n\n", .{});
     try color.printBold(w, use_color, "Commands:\n", .{});
-    try w.print("  run <task>   Run a task and its dependencies\n", .{});
-    try w.print("  list         List all available tasks\n", .{});
-    try w.print("  graph        Show dependency tree\n", .{});
-    try w.print("  history      Show recent run history\n\n", .{});
+    try w.print("  run <task>             Run a task and its dependencies\n", .{});
+    try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
+    try w.print("  list                   List all available tasks\n", .{});
+    try w.print("  graph                  Show dependency tree\n", .{});
+    try w.print("  history                Show recent run history\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h   Show this help message\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
@@ -216,6 +227,102 @@ fn cmdRun(
         @intCast(sched_result.results.items.len));
 
     return if (sched_result.total_success) 0 else 1;
+}
+
+fn cmdWatch(
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    watch_paths: []const []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    // Verify task exists before starting the watch loop.
+    {
+        var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+        defer config.deinit();
+        if (config.tasks.get(task_name) == null) {
+            try color.printError(err_writer, use_color,
+                "watch: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
+                .{task_name},
+            );
+            return 1;
+        }
+    }
+
+    var watch = watcher.Watcher.init(allocator, watch_paths, 500) catch |err| {
+        try color.printError(err_writer, use_color,
+            "watch: Failed to initialize watcher: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+    defer watch.deinit();
+
+    try color.printInfo(w, use_color, "Watching", .{});
+    try w.print(" for changes (Ctrl+C to stop)...\n", .{});
+
+    // Run the task immediately on start, then loop.
+    var first_run = true;
+    while (true) {
+        if (!first_run) {
+            // Wait for a file change.
+            const event = watch.waitForChange() catch |err| switch (err) {
+                else => {
+                    try color.printError(err_writer, use_color,
+                        "watch: Watcher error: {s}\n", .{@errorName(err)});
+                    return 1;
+                },
+            };
+            try color.printInfo(w, use_color, "\nChange detected", .{});
+            try color.printDim(w, use_color, ": {s}\n", .{event.path});
+        }
+        first_run = false;
+
+        // Reload config in case zr.toml changed.
+        var config = (try loadConfig(allocator, err_writer)) orelse {
+            try color.printError(err_writer, use_color,
+                "watch: Config error — waiting for next change...\n", .{});
+            continue;
+        };
+        defer config.deinit();
+
+        if (config.tasks.get(task_name) == null) {
+            try color.printError(err_writer, use_color,
+                "watch: Task '{s}' not found in config — waiting for next change...\n",
+                .{task_name},
+            );
+            continue;
+        }
+
+        const start_ns = std.time.nanoTimestamp();
+        const task_names = [_][]const u8{task_name};
+        var sched_result = scheduler.run(allocator, &config, &task_names, .{}) catch |err| {
+            switch (err) {
+                error.CycleDetected => try color.printError(err_writer, use_color,
+                    "watch: Cycle detected in task dependencies\n", .{}),
+                else => try color.printError(err_writer, use_color,
+                    "watch: Scheduler error: {s}\n", .{@errorName(err)}),
+            }
+            continue;
+        };
+        defer sched_result.deinit(allocator);
+
+        const elapsed_ms: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns, std.time.ns_per_ms));
+
+        for (sched_result.results.items) |task_result| {
+            if (task_result.success) {
+                try color.printSuccess(w, use_color, "{s} ", .{task_result.task_name});
+                try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
+            } else {
+                try color.printError(w, use_color, "{s} ", .{task_result.task_name});
+                try color.printDim(w, use_color, "(exit: {d})\n", .{task_result.exit_code});
+            }
+        }
+
+        recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
+            @intCast(sched_result.results.items.len));
+
+        try color.printDim(w, use_color, "Watching for changes (Ctrl+C to stop)...\n", .{});
+    }
 }
 
 fn recordHistory(
