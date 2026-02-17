@@ -26,8 +26,9 @@
 - [x] Task `timeout` field (parse "5m"/"30s"/"1h"/"500ms", kill child on expiry)
 - [x] Task `allow_failure` field (non-zero exit doesn't fail pipeline)
 - [x] Task `deps_serial` field (sequential pre-dependencies, run in array order)
+- [x] Task `env` field (per-task env vars, TOML inline table: `env = { KEY = "value" }`)
 
-> **Status**: Phase 1 complete + Phase 2 partial. 48/48 tests passing. Next: expression engine, watch mode, workflow system, retry logic.
+> **Status**: Phase 1 complete + Phase 2 partial. 50/50 tests passing. Next: expression engine, watch mode, workflow system, retry logic.
 
 ## Architecture (High-Level)
 
