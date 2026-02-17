@@ -2,11 +2,13 @@ const std = @import("std");
 
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
+    workflows: std.StringHashMap(Workflow),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
         return .{
             .tasks = std.StringHashMap(Task).init(allocator),
+            .workflows = std.StringHashMap(Workflow).init(allocator),
             .allocator = allocator,
         };
     }
@@ -17,6 +19,13 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.tasks.deinit();
+        var wit = self.workflows.iterator();
+        while (wit.next()) |entry| {
+            // Workflow.deinit frees entry.value_ptr.name, which is the same
+            // allocation as entry.key_ptr.* — do NOT free the key separately.
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.workflows.deinit();
     }
 
     pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
@@ -105,6 +114,62 @@ pub const Config = struct {
     ) !void {
         return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition);
     }
+
+    /// Add a workflow (for tests or programmatic use).
+    pub fn addWorkflow(
+        self: *Config,
+        name: []const u8,
+        description: ?[]const u8,
+        stages: []const Stage,
+    ) !void {
+        const wf_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(wf_name);
+
+        const wf_desc = if (description) |d| try self.allocator.dupe(u8, d) else null;
+        errdefer if (wf_desc) |d| self.allocator.free(d);
+
+        const wf_stages = try self.allocator.alloc(Stage, stages.len);
+        var stages_duped: usize = 0;
+        errdefer {
+            for (wf_stages[0..stages_duped]) |*s| s.deinit(self.allocator);
+            self.allocator.free(wf_stages);
+        }
+        for (stages, 0..) |stage, i| {
+            const s_name = try self.allocator.dupe(u8, stage.name);
+            errdefer self.allocator.free(s_name);
+
+            const s_tasks = try self.allocator.alloc([]const u8, stage.tasks.len);
+            var tasks_duped: usize = 0;
+            errdefer {
+                for (s_tasks[0..tasks_duped]) |t| self.allocator.free(t);
+                self.allocator.free(s_tasks);
+            }
+            for (stage.tasks, 0..) |t, j| {
+                s_tasks[j] = try self.allocator.dupe(u8, t);
+                tasks_duped += 1;
+            }
+
+            const s_cond = if (stage.condition) |c| try self.allocator.dupe(u8, c) else null;
+            errdefer if (s_cond) |c| self.allocator.free(c);
+
+            wf_stages[i] = Stage{
+                .name = s_name,
+                .tasks = s_tasks,
+                .parallel = stage.parallel,
+                .fail_fast = stage.fail_fast,
+                .condition = s_cond,
+            };
+            stages_duped += 1;
+        }
+
+        const wf = Workflow{
+            .name = wf_name,
+            .description = wf_desc,
+            .stages = wf_stages,
+        };
+
+        try self.workflows.put(wf_name, wf);
+    }
 };
 
 pub const Task = struct {
@@ -150,6 +215,34 @@ pub const Task = struct {
         }
         allocator.free(self.env);
         if (self.condition) |c| allocator.free(c);
+    }
+};
+
+pub const Stage = struct {
+    name: []const u8,
+    tasks: [][]const u8,
+    parallel: bool = true,
+    fail_fast: bool = false,
+    condition: ?[]const u8 = null,
+
+    pub fn deinit(self: *Stage, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        for (self.tasks) |t| allocator.free(t);
+        allocator.free(self.tasks);
+        if (self.condition) |c| allocator.free(c);
+    }
+};
+
+pub const Workflow = struct {
+    name: []const u8,
+    description: ?[]const u8,
+    stages: []Stage,
+
+    pub fn deinit(self: *Workflow, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        if (self.description) |d| allocator.free(d);
+        for (self.stages) |*stage| stage.deinit(allocator);
+        allocator.free(self.stages);
     }
 };
 
@@ -200,12 +293,157 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_env = std.ArrayList([2][]const u8){};
     defer task_env.deinit(allocator);
 
+    // Workflow parsing state — non-owning slices into content
+    var current_workflow: ?[]const u8 = null;
+    var workflow_desc: ?[]const u8 = null;
+    // Stages accumulate here; each Stage is owned (duped) when built
+    var workflow_stages = std.ArrayList(Stage){};
+    defer {
+        for (workflow_stages.items) |*s| s.deinit(allocator);
+        workflow_stages.deinit(allocator);
+    }
+
+    // Stage parsing state (pending stage being built)
+    // stage_name is a non-owning slice into content
+    var stage_name: ?[]const u8 = null;
+    // stage_tasks items are non-owning slices into content
+    var stage_tasks = std.ArrayList([]const u8){};
+    defer stage_tasks.deinit(allocator);
+    var stage_parallel: bool = true;
+    var stage_fail_fast: bool = false;
+    var stage_condition: ?[]const u8 = null;
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
 
-        if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
+        if (std.mem.startsWith(u8, trimmed, "[[workflows.") and std.mem.endsWith(u8, trimmed, ".stages]]")) {
+            // Flush pending stage into workflow_stages
+            if (stage_name) |sn| {
+                const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
+                var tduped: usize = 0;
+                errdefer {
+                    for (s_tasks[0..tduped]) |t| allocator.free(t);
+                    allocator.free(s_tasks);
+                }
+                for (stage_tasks.items, 0..) |t, i| {
+                    s_tasks[i] = try allocator.dupe(u8, t);
+                    tduped += 1;
+                }
+                const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
+                errdefer if (s_cond) |c| allocator.free(c);
+                const new_stage = Stage{
+                    .name = try allocator.dupe(u8, sn),
+                    .tasks = s_tasks,
+                    .parallel = stage_parallel,
+                    .fail_fast = stage_fail_fast,
+                    .condition = s_cond,
+                };
+                try workflow_stages.append(allocator, new_stage);
+            }
+            // Reset stage state
+            stage_name = null;
+            stage_tasks.clearRetainingCapacity();
+            stage_parallel = true;
+            stage_fail_fast = false;
+            stage_condition = null;
+        } else if (std.mem.startsWith(u8, trimmed, "[workflows.") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            // Flush pending stage (if any)
+            if (stage_name) |sn| {
+                const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
+                var tduped: usize = 0;
+                errdefer {
+                    for (s_tasks[0..tduped]) |t| allocator.free(t);
+                    allocator.free(s_tasks);
+                }
+                for (stage_tasks.items, 0..) |t, i| {
+                    s_tasks[i] = try allocator.dupe(u8, t);
+                    tduped += 1;
+                }
+                const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
+                errdefer if (s_cond) |c| allocator.free(c);
+                const new_stage = Stage{
+                    .name = try allocator.dupe(u8, sn),
+                    .tasks = s_tasks,
+                    .parallel = stage_parallel,
+                    .fail_fast = stage_fail_fast,
+                    .condition = s_cond,
+                };
+                try workflow_stages.append(allocator, new_stage);
+                stage_name = null;
+                stage_tasks.clearRetainingCapacity();
+                stage_parallel = true;
+                stage_fail_fast = false;
+                stage_condition = null;
+            }
+            // Flush pending workflow (if any)
+            if (current_workflow) |wf_name_slice| {
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                for (workflow_stages.items) |*s| s.deinit(allocator);
+                workflow_stages.clearRetainingCapacity();
+            }
+            // Flush pending task (if any — tasks may precede workflow sections)
+            if (current_task) |task_name| {
+                if (task_cmd) |cmd| {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition);
+                }
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_condition = null;
+                current_task = null;
+            }
+            // Parse new workflow name from "[workflows.X]"
+            const wf_start = "[workflows.".len;
+            const wf_end = std.mem.indexOf(u8, trimmed[wf_start..], "]") orelse continue;
+            current_workflow = trimmed[wf_start..][0..wf_end];
+            workflow_desc = null;
+        } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
+            // Flush pending stage (if any)
+            if (stage_name) |sn| {
+                const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
+                var tduped: usize = 0;
+                errdefer {
+                    for (s_tasks[0..tduped]) |t| allocator.free(t);
+                    allocator.free(s_tasks);
+                }
+                for (stage_tasks.items, 0..) |t, i| {
+                    s_tasks[i] = try allocator.dupe(u8, t);
+                    tduped += 1;
+                }
+                const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
+                errdefer if (s_cond) |c| allocator.free(c);
+                const new_stage = Stage{
+                    .name = try allocator.dupe(u8, sn),
+                    .tasks = s_tasks,
+                    .parallel = stage_parallel,
+                    .fail_fast = stage_fail_fast,
+                    .condition = s_cond,
+                };
+                try workflow_stages.append(allocator, new_stage);
+                stage_name = null;
+                stage_tasks.clearRetainingCapacity();
+                stage_parallel = true;
+                stage_fail_fast = false;
+                stage_condition = null;
+            }
+            // Flush pending workflow (if any)
+            if (current_workflow) |wf_name_slice| {
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                for (workflow_stages.items) |*s| s.deinit(allocator);
+                workflow_stages.clearRetainingCapacity();
+                current_workflow = null;
+                workflow_desc = null;
+            }
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
@@ -239,75 +477,103 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 value = value[1 .. value.len - 1];
             }
 
-            if (std.mem.eql(u8, key, "cmd")) {
-                task_cmd = value;
-            } else if (std.mem.eql(u8, key, "cwd")) {
-                task_cwd = value;
-            } else if (std.mem.eql(u8, key, "description")) {
-                task_desc = value;
-            } else if (std.mem.eql(u8, key, "condition")) {
-                task_condition = value;
-            } else if (std.mem.eql(u8, key, "timeout")) {
-                task_timeout_ms = parseDurationMs(value);
-            } else if (std.mem.eql(u8, key, "allow_failure")) {
-                task_allow_failure = std.mem.eql(u8, value, "true");
-            } else if (std.mem.eql(u8, key, "deps")) {
-                if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
-                    const deps_str = value[1 .. value.len - 1];
-                    var deps_it = std.mem.splitScalar(u8, deps_str, ',');
-                    while (deps_it.next()) |dep| {
-                        const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
-                        if (trimmed_dep.len > 0) {
-                            // Non-owning slice — addTask will dupe
-                            try task_deps.append(allocator, trimmed_dep);
+            if (current_workflow != null and current_task == null) {
+                // We are inside a workflow or stage context
+                if (std.mem.eql(u8, key, "name") and stage_name == null) {
+                    // Stage name (first name= after [[workflows.X.stages]])
+                    stage_name = value;
+                } else if (std.mem.eql(u8, key, "tasks")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        stage_tasks.clearRetainingCapacity();
+                        const tasks_str = value[1 .. value.len - 1];
+                        var tasks_it = std.mem.splitScalar(u8, tasks_str, ',');
+                        while (tasks_it.next()) |t| {
+                            const trimmed_t = std.mem.trim(u8, t, " \t\"");
+                            if (trimmed_t.len > 0) try stage_tasks.append(allocator, trimmed_t);
                         }
                     }
+                } else if (std.mem.eql(u8, key, "parallel")) {
+                    stage_parallel = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "fail_fast")) {
+                    stage_fail_fast = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "condition") and stage_name != null) {
+                    stage_condition = value;
+                } else if (std.mem.eql(u8, key, "description") and stage_name == null) {
+                    // Workflow-level description (not inside a stage)
+                    workflow_desc = value;
                 }
-            } else if (std.mem.eql(u8, key, "deps_serial")) {
-                if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
-                    const deps_str = value[1 .. value.len - 1];
-                    var deps_it = std.mem.splitScalar(u8, deps_str, ',');
-                    while (deps_it.next()) |dep| {
-                        const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
-                        if (trimmed_dep.len > 0) {
-                            // Non-owning slice — addTask will dupe
-                            try task_deps_serial.append(allocator, trimmed_dep);
+            } else if (current_task != null) {
+                // Task-level key=value parsing
+                if (std.mem.eql(u8, key, "cmd")) {
+                    task_cmd = value;
+                } else if (std.mem.eql(u8, key, "cwd")) {
+                    task_cwd = value;
+                } else if (std.mem.eql(u8, key, "description")) {
+                    task_desc = value;
+                } else if (std.mem.eql(u8, key, "condition")) {
+                    task_condition = value;
+                } else if (std.mem.eql(u8, key, "timeout")) {
+                    task_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "allow_failure")) {
+                    task_allow_failure = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "deps")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                // Non-owning slice — addTask will dupe
+                                try task_deps.append(allocator, trimmed_dep);
+                            }
                         }
                     }
-                }
-            } else if (std.mem.eql(u8, key, "env")) {
-                // Parse inline table: { KEY = "value", FOO = "bar" }
-                // value has already had outer quotes stripped; strip braces now.
-                const inner = std.mem.trim(u8, value, " \t");
-                if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
-                    const pairs_str = inner[1 .. inner.len - 1];
-                    var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
-                    while (pairs_it.next()) |pair_str| {
-                        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
-                        const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
-                        const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
-                        if (env_key.len > 0) {
-                            // Non-owning slices into content — addTask will dupe
-                            try task_env.append(allocator, .{ env_key, env_val });
+                } else if (std.mem.eql(u8, key, "deps_serial")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                // Non-owning slice — addTask will dupe
+                                try task_deps_serial.append(allocator, trimmed_dep);
+                            }
                         }
                     }
-                }
-            } else if (std.mem.eql(u8, key, "retry")) {
-                // Parse inline table: { max = 3, delay = "5s", backoff = "exponential" }
-                const inner = std.mem.trim(u8, value, " \t");
-                if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
-                    const pairs_str = inner[1 .. inner.len - 1];
-                    var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
-                    while (pairs_it.next()) |pair_str| {
-                        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
-                        const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
-                        const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
-                        if (std.mem.eql(u8, rkey, "max")) {
-                            task_retry_max = std.fmt.parseInt(u32, rval, 10) catch 0;
-                        } else if (std.mem.eql(u8, rkey, "delay")) {
-                            task_retry_delay_ms = parseDurationMs(rval) orelse 0;
-                        } else if (std.mem.eql(u8, rkey, "backoff")) {
-                            task_retry_backoff = std.mem.eql(u8, rval, "exponential");
+                } else if (std.mem.eql(u8, key, "env")) {
+                    // Parse inline table: { KEY = "value", FOO = "bar" }
+                    // value has already had outer quotes stripped; strip braces now.
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                // Non-owning slices into content — addTask will dupe
+                                try task_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "retry")) {
+                    // Parse inline table: { max = 3, delay = "5s", backoff = "exponential" }
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (std.mem.eql(u8, rkey, "max")) {
+                                task_retry_max = std.fmt.parseInt(u32, rval, 10) catch 0;
+                            } else if (std.mem.eql(u8, rkey, "delay")) {
+                                task_retry_delay_ms = parseDurationMs(rval) orelse 0;
+                            } else if (std.mem.eql(u8, rkey, "backoff")) {
+                                task_retry_backoff = std.mem.eql(u8, rval, "exponential");
+                            }
                         }
                     }
                 }
@@ -315,6 +581,38 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         }
     }
 
+    // Flush final pending stage
+    if (stage_name) |sn| {
+        const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
+        var tduped: usize = 0;
+        errdefer {
+            for (s_tasks[0..tduped]) |t| allocator.free(t);
+            allocator.free(s_tasks);
+        }
+        for (stage_tasks.items, 0..) |t, i| {
+            s_tasks[i] = try allocator.dupe(u8, t);
+            tduped += 1;
+        }
+        const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
+        errdefer if (s_cond) |c| allocator.free(c);
+        const new_stage = Stage{
+            .name = try allocator.dupe(u8, sn),
+            .tasks = s_tasks,
+            .parallel = stage_parallel,
+            .fail_fast = stage_fail_fast,
+            .condition = s_cond,
+        };
+        try workflow_stages.append(allocator, new_stage);
+    }
+
+    // Flush final pending workflow
+    if (current_workflow) |wf_name_slice| {
+        try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+        for (workflow_stages.items) |*s| s.deinit(allocator);
+        workflow_stages.clearRetainingCapacity();
+    }
+
+    // Flush final pending task
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
             try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition);
@@ -653,4 +951,75 @@ test "task defaults: condition is null by default" {
     try config.addTask("no-cond", "echo hi", null, null, &[_][]const u8{});
     const task = config.tasks.get("no-cond").?;
     try std.testing.expect(task.condition == null);
+}
+
+test "parse workflow from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.clean]
+        \\cmd = "echo clean"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[workflows.release]
+        \\description = "Full release pipeline"
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "prepare"
+        \\tasks = ["clean"]
+        \\parallel = true
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "build"
+        \\tasks = ["build"]
+        \\parallel = false
+        \\fail_fast = true
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), config.tasks.count());
+    try std.testing.expectEqual(@as(usize, 1), config.workflows.count());
+
+    const wf = config.workflows.get("release").?;
+    try std.testing.expectEqualStrings("Full release pipeline", wf.description.?);
+    try std.testing.expectEqual(@as(usize, 2), wf.stages.len);
+
+    const s0 = wf.stages[0];
+    try std.testing.expectEqualStrings("prepare", s0.name);
+    try std.testing.expectEqual(@as(usize, 1), s0.tasks.len);
+    try std.testing.expectEqualStrings("clean", s0.tasks[0]);
+    try std.testing.expect(s0.parallel);
+    try std.testing.expect(!s0.fail_fast);
+
+    const s1 = wf.stages[1];
+    try std.testing.expectEqualStrings("build", s1.name);
+    try std.testing.expect(!s1.parallel);
+    try std.testing.expect(s1.fail_fast);
+}
+
+test "addWorkflow: programmatic workflow construction" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var stages = [_]Stage{
+        .{
+            .name = "s1",
+            .tasks = @constCast(&[_][]const u8{"task-a"}),
+            .parallel = true,
+            .fail_fast = false,
+            .condition = null,
+        },
+    };
+    try config.addWorkflow("my-workflow", "desc", &stages);
+
+    const wf = config.workflows.get("my-workflow").?;
+    try std.testing.expectEqualStrings("desc", wf.description.?);
+    try std.testing.expectEqual(@as(usize, 1), wf.stages.len);
+    try std.testing.expectEqualStrings("s1", wf.stages[0].name);
 }

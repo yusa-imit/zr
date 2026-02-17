@@ -92,6 +92,13 @@ fn run(
         const task_name = args[2];
         const watch_paths: []const []const u8 = if (args.len > 3) args[3..] else &[_][]const u8{"."};
         return cmdWatch(allocator, task_name, watch_paths, w, ew, use_color);
+    } else if (std.mem.eql(u8, cmd, "workflow")) {
+        if (args.len < 3) {
+            try color.printError(ew, use_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
+            return 1;
+        }
+        const wf_name = args[2];
+        return cmdWorkflow(allocator, wf_name, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
         return cmdList(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
@@ -113,6 +120,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "Commands:\n", .{});
     try w.print("  run <task>             Run a task and its dependencies\n", .{});
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
+    try w.print("  workflow <name>        Run a workflow by name\n", .{});
     try w.print("  list                   List all available tasks\n", .{});
     try w.print("  graph                  Show dependency tree\n", .{});
     try w.print("  history                Show recent run history\n\n", .{});
@@ -325,6 +333,105 @@ fn cmdWatch(
     }
 }
 
+fn cmdWorkflow(
+    allocator: std.mem.Allocator,
+    wf_name: []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+    defer config.deinit();
+
+    const wf = config.workflows.get(wf_name) orelse {
+        try color.printError(err_writer, use_color,
+            "workflow: '{s}' not found\n\n  Hint: Run 'zr list' to see available workflows\n",
+            .{wf_name},
+        );
+        return 1;
+    };
+
+    try color.printBold(w, use_color, "Workflow: {s}", .{wf_name});
+    if (wf.description) |desc| {
+        try color.printDim(w, use_color, " — {s}", .{desc});
+    }
+    try w.print("\n", .{});
+
+    const overall_start_ns = std.time.nanoTimestamp();
+    var any_failed = false;
+
+    for (wf.stages) |stage| {
+        try color.printInfo(w, use_color, "\nStage: {s}\n", .{stage.name});
+
+        if (stage.tasks.len == 0) continue;
+
+        const stage_start_ns = std.time.nanoTimestamp();
+
+        var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
+            .inherit_stdio = true,
+        }) catch |err| {
+            switch (err) {
+                error.TaskNotFound => {
+                    try color.printError(err_writer, use_color,
+                        "workflow: A task in stage '{s}' was not found\n", .{stage.name});
+                },
+                error.CycleDetected => {
+                    try color.printError(err_writer, use_color,
+                        "workflow: Cycle detected in stage '{s}' dependencies\n", .{stage.name});
+                },
+                else => {
+                    try color.printError(err_writer, use_color,
+                        "workflow: Scheduler error in stage '{s}': {s}\n",
+                        .{ stage.name, @errorName(err) });
+                },
+            }
+            if (stage.fail_fast) return 1;
+            any_failed = true;
+            continue;
+        };
+        defer sched_result.deinit(allocator);
+
+        const stage_elapsed_ms: u64 = @intCast(@divTrunc(
+            std.time.nanoTimestamp() - stage_start_ns, std.time.ns_per_ms));
+
+        for (sched_result.results.items) |task_result| {
+            if (task_result.success) {
+                try color.printSuccess(w, use_color, "  {s} ", .{task_result.task_name});
+                try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
+            } else {
+                try color.printError(w, use_color, "  {s} ", .{task_result.task_name});
+                try color.printDim(w, use_color, "(exit: {d})\n", .{task_result.exit_code});
+            }
+        }
+
+        try color.printDim(w, use_color, "  Stage '{s}' done ({d}ms)\n",
+            .{ stage.name, stage_elapsed_ms });
+
+        if (!sched_result.total_success) {
+            any_failed = true;
+            if (stage.fail_fast) {
+                try color.printError(err_writer, use_color,
+                    "\nworkflow: Stage '{s}' failed — stopping (fail_fast)\n", .{stage.name});
+                return 1;
+            }
+        }
+    }
+
+    const overall_elapsed_ms: u64 = @intCast(@divTrunc(
+        std.time.nanoTimestamp() - overall_start_ns, std.time.ns_per_ms));
+
+    try w.print("\n", .{});
+    if (!any_failed) {
+        try color.printSuccess(w, use_color,
+            "Workflow '{s}' completed ({d}ms)\n", .{ wf_name, overall_elapsed_ms });
+        return 0;
+    } else {
+        try color.printError(w, use_color,
+            "Workflow '{s}' finished with failures ({d}ms)\n", .{ wf_name, overall_elapsed_ms });
+        return 1;
+    }
+}
+
 fn recordHistory(
     allocator: std.mem.Allocator,
     task_name: []const u8,
@@ -428,6 +535,35 @@ fn cmdList(
             try color.printDim(w, use_color, " {s}", .{desc});
         }
         try w.print("\n", .{});
+    }
+
+    if (config.workflows.count() > 0) {
+        try w.print("\n", .{});
+        try color.printHeader(w, use_color, "Workflows:", .{});
+
+        var wf_names = std.ArrayList([]const u8){};
+        defer wf_names.deinit(allocator);
+
+        var wit = config.workflows.keyIterator();
+        while (wit.next()) |key| {
+            try wf_names.append(allocator, key.*);
+        }
+        std.mem.sort([]const u8, wf_names.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        for (wf_names.items) |name| {
+            const wf = config.workflows.get(name).?;
+            try w.print("  ", .{});
+            try color.printInfo(w, use_color, "{s:<20}", .{name});
+            if (wf.description) |desc| {
+                try color.printDim(w, use_color, " {s}", .{desc});
+            }
+            try color.printDim(w, use_color, " ({d} stages)", .{wf.stages.len});
+            try w.print("\n", .{});
+        }
     }
 
     return 0;
