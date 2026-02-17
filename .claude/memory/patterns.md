@@ -227,3 +227,56 @@ current_task = trimmed[start..][0..end]; // no dupe - slice into content
 // ...
 try storeTask(allocator, current_task, ...); // storeTask does the dupe
 ```
+
+### Env Pair Slice Pattern (Task.env field)
+```zig
+// Task struct field type:
+env: [][2][]const u8,  // owned; each pair[0]=key, pair[1]=value
+
+// In addTaskImpl: dupe with partial-cleanup safety:
+const task_env = try allocator.alloc([2][]const u8, env.len);
+var env_duped: usize = 0;
+errdefer {
+    for (task_env[0..env_duped]) |pair| {
+        allocator.free(pair[0]);
+        allocator.free(pair[1]);
+    }
+    allocator.free(task_env);
+}
+for (env, 0..) |pair, i| {
+    task_env[i][0] = try allocator.dupe(u8, pair[0]);
+    errdefer allocator.free(task_env[i][0]);
+    task_env[i][1] = try allocator.dupe(u8, pair[1]);
+    env_duped += 1;
+}
+
+// In Task.deinit:
+for (self.env) |pair| {
+    allocator.free(pair[0]);
+    allocator.free(pair[1]);
+}
+allocator.free(self.env);
+
+// In scheduler: convert empty slice to null for process.run:
+.env = if (task.env.len > 0) task.env else null,
+
+// process.run accepts: env: ?[]const [2][]const u8
+```
+
+### TOML Inline Table Parsing Pattern
+```zig
+// Parse: env = { KEY = "value", FOO = "bar" }
+// After outer `value` extraction (key=value line), `value` is the raw rhs.
+// The outer quote-strip (for string values) won't fire on `{...}` tables.
+const inner = std.mem.trim(u8, value, " \t");
+if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+    const pairs_str = inner[1 .. inner.len - 1];
+    var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+    while (pairs_it.next()) |pair_str| {
+        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+        const k = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+        const v = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+        if (k.len > 0) try list.append(allocator, .{ k, v });
+    }
+}
+```
