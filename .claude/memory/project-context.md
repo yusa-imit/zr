@@ -28,8 +28,9 @@
 - [x] Task `deps_serial` field (sequential pre-dependencies, run in array order)
 - [x] Task `env` field (per-task env vars, TOML inline table: `env = { KEY = "value" }`)
 - [x] Task `retry` field (retry_max, retry_delay_ms, retry_backoff — inline table: `retry = { max = 3, delay = "5s", backoff = "exponential" }`)
+- [x] Task `condition` field (expression engine: `true`/`false`, `env.VAR`, `env.VAR == "val"`, `env.VAR != "val"`) — `src/config/expr.zig`
 
-> **Status**: Phase 1 complete + Phase 2 partial. 55/55 tests passing. Next: expression engine, watch mode, workflow system.
+> **Status**: Phase 1 complete + Phase 2 partial. 68/68 tests passing. Next: watch mode, workflow system, profile system.
 
 ## Architecture (High-Level)
 

@@ -297,3 +297,18 @@ if (!proc_result.success and task.retry_max > 0) {
 // Use delay_ms = 0 in tests for speed (no actual sleep).
 // Both parallel workers (WorkerCtx) and serial sync runners use the same pattern.
 ```
+
+### Expression Evaluator Pattern (config/expr.zig)
+```zig
+// evalCondition is fail-open: unknown expressions return true (task runs).
+// Lookup order: task_env pairs first, then process env, then "" (not found).
+// getEnvVarOwned returns owned slice — free it; use defer for safety.
+
+const env_value = try lookupEnv(allocator, var_name, task_env);
+defer if (env_value) |v| allocator.free(v);
+const value_str = if (env_value) |v| v else "";
+```
+- Supported: `true`/`false`, `env.VAR`, `env.VAR == "val"`, `env.VAR != 'val'`
+- EvalError = error{OutOfMemory} — only OOM is returned; parse errors are fail-open
+- Tests use task_env pairs to avoid process env pollution (no setEnvVar in tests)
+- `getEnvVarOwned` errors other than OutOfMemory (e.g. InvalidWtf8) treated as not-found

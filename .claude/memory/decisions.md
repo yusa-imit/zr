@@ -94,6 +94,18 @@ Decisions are logged chronologically. Format:
   - Partial inner-string allocation leak fixed using duped-count tracking in errdefer
 - 48/48 tests passing; binary 1.88MB
 
+## [2026-02-18] Condition Expression Engine
+- Context: Phase 2 requires conditional task execution (PRD Section 5.1.1: `condition = "expr"`)
+- Decision: Implemented `config/expr.zig` — standalone expression evaluator
+  - Supports: `true`/`false` literals, `env.VAR` truthy check, `env.VAR == "val"`, `env.VAR != "val"`
+  - Fail-open: unknown/unparseable expressions return `true` (task runs)
+  - Task env pairs checked before process environment (allows test isolation)
+  - `Task.condition: ?[]const u8` field added; duped on store, freed in `Task.deinit`
+  - Scheduler evaluates condition before spawning worker thread; false → skipped result (success=true, skipped=true)
+  - `EvalError = error{OutOfMemory}` only — no parse errors propagate
+  - 68/68 tests passing; binary 1.86MB
+- Rationale: Fail-open prevents misconfigured conditions from silently breaking pipelines. Per-task env lookup enables environment-specific skipping without polluting process env.
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:
