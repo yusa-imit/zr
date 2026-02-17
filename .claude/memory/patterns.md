@@ -157,6 +157,18 @@ fn workerFn(ctx: WorkerCtx) void {
 - Use `.acquire`/`.release` ordering for atomic reads/writes
 - Always join all threads in a level before proceeding to next level
 
+### File Append Pattern (Zig 0.15)
+```zig
+// For reliable file appending, use fmt.bufPrint + file.writeAll:
+const file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+defer file.close();
+try file.seekFromEnd(0);
+var line_buf: [1024]u8 = undefined;
+const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\n", .{ val1, val2 });
+try file.writeAll(line);
+// Do NOT use file.writer(&buf) + flush for appending — unreliable
+```
+
 ### Parser Non-Owning Slice Pattern
 ```zig
 // Use non-owning slices in parsers; only dupe when storing:

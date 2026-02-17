@@ -55,6 +55,12 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: Immediately after deinit, reset to empty: `list = .{};` so errdefer sees len=0
 - Prevention: Whenever manually calling deinit before function return, always reset the variable to `= .{}`
 
+### [File.writer(&buf) unreliable for file appending]
+- Symptom: History store tests: appended records not found on readback (only 1 of 2 records loaded)
+- Cause: `file.writer(&buf)` with `fw.interface.flush()` did not reliably flush all data to the file when used for appending with `seekFromEnd`
+- Fix: Use `std.fmt.bufPrint(&line_buf, ...)` then `file.writeAll(line)` for direct, unbuffered writes to the file
+- Prevention: For file append operations, prefer `fmt.bufPrint` + `file.writeAll` over buffered File.writer
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed

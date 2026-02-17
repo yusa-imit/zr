@@ -51,6 +51,17 @@ Decisions are logged chronologically. Format:
 - Also fixed: `getExecutionLevels` now returns `error.CycleDetected` instead of silently returning empty levels
 - Also added: `Config.addTask()` public method for programmatic config construction
 
+## [2026-02-17] Execution History Module
+- Context: Phase 2 requires execution history for traceability and UX
+- Decision: Implemented `history/store.zig` with line-delimited text file backend
+  - Format: `<timestamp>\t<task>\t<ok|fail>\t<duration_ms>\t<task_count>`
+  - `Store.append()` uses `fmt.bufPrint` + `file.writeAll` (not buffered File.writer — caused partial writes)
+  - `Store.loadLast(limit)` returns last N records efficiently
+  - `zr history` CLI command shows last 20 runs
+  - History recording in `cmdRun` is best-effort (errors silently ignored)
+  - History file: `.zr_history` in CWD
+- Key fix: `File.writer(&buf)` with flush was unreliable for file appending; use `fmt.bufPrint` + `file.writeAll` for direct unbuffered writes
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:

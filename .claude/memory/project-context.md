@@ -22,8 +22,9 @@
 - [x] Color output, error formatting
 - [x] Cross-compile CI pipeline (ci.yml, release.yml 준비됨)
 - [x] 문서/설정/에이전트 인프라 구축 완료
+- [x] Execution history module (history/store.zig) + `zr history` CLI command
 
-> **Status**: All Phase 1 MVP features complete. 33/33 tests passing. Parallel execution engine (worker pool) implemented. Next: code review, then target Phase 2 (workflows, expressions, watch mode, history).
+> **Status**: Phase 1 complete + Phase 2 history module done. 39/39 tests passing. Next: expression engine, watch mode, or workflow system.
 
 ## Architecture (High-Level)
 
