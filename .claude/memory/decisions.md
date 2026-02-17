@@ -73,6 +73,17 @@ Decisions are logged chronologically. Format:
   - 45/45 tests passing
 - Rationale: poll-based timeout watcher is simpler than timer syscalls, cross-platform, and 50ms granularity is sufficient for CI-level timeouts
 
+## [2026-02-18] Retry Logic Implementation
+- Context: Phase 2 requires retry on failure per PRD Section 5.1.1 (`retry = { max = 3, delay = "5s", backoff = "exponential" }`)
+- Decision:
+  - `Task` struct gains `retry_max: u32`, `retry_delay_ms: u64`, `retry_backoff: bool`
+  - TOML parser handles `retry = { ... }` inline table (same pattern as `env`)
+  - `workerFn` (parallel) and `runTaskSync` (serial) both loop up to `retry_max` times on failure
+  - Delay between retries via `std.Thread.sleep(delay_ms * ns_per_ms)`; doubles if `retry_backoff`
+  - `delay_ms = 0` means no delay (safe for tests)
+  - 55/55 tests passing; binary 1.8MB
+- Rationale: inline loop retry is simple and sufficient; no separate thread needed
+
 ## [2026-02-18] deps_serial Implementation
 - Context: Phase 2 requires sequential dependency execution (PRD Section 5.2.2)
 - Decision: `deps_serial` tasks run inline (not via DAG) using `runSerialChain` helper

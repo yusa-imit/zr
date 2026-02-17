@@ -280,3 +280,20 @@ if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
     }
 }
 ```
+
+### Retry Loop Pattern (scheduler.zig)
+```zig
+// In workerFn / runTaskSync — retry on failure up to retry_max times:
+var proc_result = process.run(allocator, config) catch fallback;
+if (!proc_result.success and task.retry_max > 0) {
+    var delay_ms: u64 = task.retry_delay_ms;
+    var attempt: u32 = 0;
+    while (!proc_result.success and attempt < task.retry_max) : (attempt += 1) {
+        if (delay_ms > 0) std.Thread.sleep(delay_ms * std.time.ns_per_ms);
+        proc_result = process.run(allocator, config) catch fallback;
+        if (task.retry_backoff and delay_ms > 0) delay_ms *= 2;
+    }
+}
+// Use delay_ms = 0 in tests for speed (no actual sleep).
+// Both parallel workers (WorkerCtx) and serial sync runners use the same pattern.
+```

@@ -27,8 +27,9 @@
 - [x] Task `allow_failure` field (non-zero exit doesn't fail pipeline)
 - [x] Task `deps_serial` field (sequential pre-dependencies, run in array order)
 - [x] Task `env` field (per-task env vars, TOML inline table: `env = { KEY = "value" }`)
+- [x] Task `retry` field (retry_max, retry_delay_ms, retry_backoff — inline table: `retry = { max = 3, delay = "5s", backoff = "exponential" }`)
 
-> **Status**: Phase 1 complete + Phase 2 partial. 50/50 tests passing. Next: expression engine, watch mode, workflow system, retry logic.
+> **Status**: Phase 1 complete + Phase 2 partial. 55/55 tests passing. Next: expression engine, watch mode, workflow system.
 
 ## Architecture (High-Level)
 
