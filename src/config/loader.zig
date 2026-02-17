@@ -38,7 +38,21 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, null, false);
+    }
+
+    /// Add a task with all fields (for tests or programmatic use with full options).
+    pub fn addTaskFull(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        cwd: ?[]const u8,
+        description: ?[]const u8,
+        deps: []const []const u8,
+        timeout_ms: ?u64,
+        allow_failure: bool,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, timeout_ms, allow_failure);
     }
 };
 
@@ -48,6 +62,10 @@ pub const Task = struct {
     cwd: ?[]const u8,
     description: ?[]const u8,
     deps: [][]const u8,
+    /// Timeout in milliseconds. null means no timeout.
+    timeout_ms: ?u64 = null,
+    /// If true, a non-zero exit code is treated as success for dependency purposes.
+    allow_failure: bool = false,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -61,6 +79,26 @@ pub const Task = struct {
     }
 };
 
+/// Parse a duration string like "5m", "30s", "1h", "500ms" into milliseconds.
+/// Returns null if the format is unrecognized.
+pub fn parseDurationMs(s: []const u8) ?u64 {
+    if (s.len == 0) return null;
+    if (std.mem.endsWith(u8, s, "ms")) {
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 2], 10) catch return null;
+        return n;
+    } else if (std.mem.endsWith(u8, s, "h")) {
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 1], 10) catch return null;
+        return n * 3_600_000;
+    } else if (std.mem.endsWith(u8, s, "m")) {
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 1], 10) catch return null;
+        return n * 60_000;
+    } else if (std.mem.endsWith(u8, s, "s")) {
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 1], 10) catch return null;
+        return n * 1_000;
+    }
+    return null;
+}
+
 fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
     errdefer config.deinit();
@@ -72,6 +110,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_cmd: ?[]const u8 = null;
     var task_cwd: ?[]const u8 = null;
     var task_desc: ?[]const u8 = null;
+    var task_timeout_ms: ?u64 = null;
+    var task_allow_failure: bool = false;
 
     // Non-owning slices into content — addTask dupes them
     var task_deps = std.ArrayList([]const u8){};
@@ -86,7 +126,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_timeout_ms, task_allow_failure);
                 }
             }
 
@@ -95,6 +135,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_cmd = null;
             task_cwd = null;
             task_desc = null;
+            task_timeout_ms = null;
+            task_allow_failure = false;
 
             const start = "[tasks.".len;
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
@@ -114,6 +156,10 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_cwd = value;
             } else if (std.mem.eql(u8, key, "description")) {
                 task_desc = value;
+            } else if (std.mem.eql(u8, key, "timeout")) {
+                task_timeout_ms = parseDurationMs(value);
+            } else if (std.mem.eql(u8, key, "allow_failure")) {
+                task_allow_failure = std.mem.eql(u8, value, "true");
             } else if (std.mem.eql(u8, key, "deps")) {
                 if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
                     const deps_str = value[1 .. value.len - 1];
@@ -132,7 +178,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_timeout_ms, task_allow_failure);
         }
     }
 
@@ -147,6 +193,8 @@ fn addTaskImpl(
     cwd: ?[]const u8,
     description: ?[]const u8,
     deps: []const []const u8,
+    timeout_ms: ?u64,
+    allow_failure: bool,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -173,9 +221,38 @@ fn addTaskImpl(
         .cwd = task_cwd,
         .description = task_desc,
         .deps = task_deps,
+        .timeout_ms = timeout_ms,
+        .allow_failure = allow_failure,
     };
 
     try config.tasks.put(task_name, task);
+}
+
+test "parseDurationMs: various units" {
+    try std.testing.expectEqual(@as(?u64, 500), parseDurationMs("500ms"));
+    try std.testing.expectEqual(@as(?u64, 30_000), parseDurationMs("30s"));
+    try std.testing.expectEqual(@as(?u64, 5 * 60_000), parseDurationMs("5m"));
+    try std.testing.expectEqual(@as(?u64, 2 * 3_600_000), parseDurationMs("2h"));
+    try std.testing.expectEqual(@as(?u64, null), parseDurationMs(""));
+    try std.testing.expectEqual(@as(?u64, null), parseDurationMs("xyz"));
+}
+
+test "parse timeout and allow_failure from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\timeout = "5m"
+        \\allow_failure = true
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqual(@as(?u64, 5 * 60_000), task.timeout_ms);
+    try std.testing.expect(task.allow_failure);
 }
 
 test "parse simple toml config" {

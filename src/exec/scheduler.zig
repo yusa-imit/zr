@@ -46,6 +46,8 @@ const WorkerCtx = struct {
     cmd: []const u8,
     cwd: ?[]const u8,
     inherit_stdio: bool,
+    timeout_ms: ?u64,
+    allow_failure: bool,
     /// Pointer to shared results list — protected by results_mutex.
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
@@ -67,6 +69,7 @@ fn workerFn(ctx: WorkerCtx) void {
         .cwd = ctx.cwd,
         .env = null,
         .inherit_stdio = ctx.inherit_stdio,
+        .timeout_ms = ctx.timeout_ms,
     }) catch process.ProcessResult{
         .exit_code = 1,
         .duration_ms = 0,
@@ -75,7 +78,7 @@ fn workerFn(ctx: WorkerCtx) void {
 
     // Allocate an owned copy of the name for TaskResult
     const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch {
-        if (!proc_result.success) ctx.failed.store(true, .release);
+        if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     };
 
@@ -89,11 +92,12 @@ fn workerFn(ctx: WorkerCtx) void {
         .duration_ms = proc_result.duration_ms,
     }) catch {
         ctx.allocator.free(owned_name);
-        if (!proc_result.success) ctx.failed.store(true, .release);
+        if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     };
 
-    if (!proc_result.success) {
+    // Only propagate failure to global flag if allow_failure is not set
+    if (!proc_result.success and !ctx.allow_failure) {
         ctx.failed.store(true, .release);
     }
 }
@@ -237,6 +241,8 @@ pub fn run(
                 .cmd = task.cmd,
                 .cwd = task.cwd,
                 .inherit_stdio = sched_config.inherit_stdio,
+                .timeout_ms = task.timeout_ms,
+                .allow_failure = task.allow_failure,
                 .results = &results,
                 .results_mutex = &results_mutex,
                 .semaphore = &semaphore,
@@ -386,6 +392,39 @@ test "run: dependency order is respected" {
 
     try std.testing.expect(result.total_success);
     try std.testing.expectEqual(@as(usize, 2), result.results.items.len);
+}
+
+test "run: allow_failure lets pipeline continue on failure" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    // Failing task with allow_failure = true
+    try config.addTaskFull("fail-ok", "exit 1", null, null, &[_][]const u8{}, null, true);
+
+    const task_names = [_][]const u8{"fail-ok"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    // total_success should be true because allow_failure is set
+    try std.testing.expect(result.total_success);
+    try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
+    // The task itself is still recorded as failed
+    try std.testing.expect(!result.results.items[0].success);
+}
+
+test "run: allow_failure false (default) fails pipeline" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTaskFull("fail-bad", "exit 1", null, null, &[_][]const u8{}, null, false);
+
+    const task_names = [_][]const u8{"fail-bad"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.total_success);
 }
 
 test "run: cycle detected returns error" {
