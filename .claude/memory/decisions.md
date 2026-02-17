@@ -39,6 +39,18 @@ Decisions are logged chronologically. Format:
   - `inherit_stdio` flag solves test deadlock: production inherits stdio, tests use .Pipe
   - Semantic helpers (printSuccess/printError/printInfo) enforce consistent UX
 
+## [2026-02-17] Parallel Execution Engine
+- Context: Phase 1 requires parallel task execution for performance
+- Decision: Implemented thread-based parallel execution in scheduler.zig:
+  - `WorkerCtx` struct carries task context to worker threads
+  - `std.Thread.Semaphore` caps concurrency to `max_jobs` (default = CPU count)
+  - `std.atomic.Value(bool)` tracks failure across threads
+  - `std.Thread.Mutex` protects shared results list
+  - Levels run sequentially; tasks within a level run in parallel
+  - `SchedulerConfig.inherit_stdio` flag (default: true) for test safety
+- Also fixed: `getExecutionLevels` now returns `error.CycleDetected` instead of silently returning empty levels
+- Also added: `Config.addTask()` public method for programmatic config construction
+
 ## [2026-02-17] Graph Module Implementation
 - Context: Phase 1 requires DAG construction, cycle detection, and topological sort
 - Decision: Implemented three modules:

@@ -17,13 +17,13 @@
 - [x] Dependency graph (DAG) construction & cycle detection
 - [x] Topological sort with Kahn's Algorithm
 - [x] Execution level calculation for parallel planning
-- [ ] Parallel execution engine (worker pool)
+- [x] Parallel execution engine (worker pool)
 - [x] Basic CLI (run, list, graph)
 - [x] Color output, error formatting
 - [x] Cross-compile CI pipeline (ci.yml, release.yml 준비됨)
 - [x] 문서/설정/에이전트 인프라 구축 완료
 
-> **Status**: CLI commands complete (run/list/graph), color output (ANSI, TTY-aware), env vars support. 26/26 tests passing. Next: parallel execution engine (worker pool).
+> **Status**: All Phase 1 MVP features complete. 33/33 tests passing. Parallel execution engine (worker pool) implemented. Next: code review, then target Phase 2 (workflows, expressions, watch mode, history).
 
 ## Architecture (High-Level)
 

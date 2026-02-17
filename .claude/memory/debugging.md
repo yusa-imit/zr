@@ -49,6 +49,12 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: Add `inherit_stdio: bool = true` to ProcessConfig; tests use `inherit_stdio: false` (`.Pipe` for stdout/stderr); production uses `inherit_stdio: true`
 - Prevention: Never use `.Inherit` stdio in test contexts; use `.Pipe` for stdout/stderr in tests (safe for small output < 64KB pipe buffer)
 
+### [ArrayList.deinit does NOT zero items slice - errdefer double-free]
+- Symptom: Segfault at 0xaaaaaaaaaaaaaaaa in errdefer loop after deinit
+- Cause: After `list.deinit(allocator)`, the `items` field still points to freed memory with non-zero len — Zig fills freed memory with 0xaa in debug builds. Errdefer that iterates `items` then accesses freed memory.
+- Fix: Immediately after deinit, reset to empty: `list = .{};` so errdefer sees len=0
+- Prevention: Whenever manually calling deinit before function return, always reset the variable to `= .{}`
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed

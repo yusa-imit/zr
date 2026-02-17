@@ -126,6 +126,37 @@ process.run(alloc, .{ .cmd = cmd, .cwd = null, .env = null, .inherit_stdio = fal
 - Tests MUST use `inherit_stdio = false` to avoid deadlock
 - .Pipe for stdout/stderr is safe for small output (< ~64KB pipe buffer)
 
+### Parallel Worker Thread Pattern
+```zig
+// Worker context — all pointers to shared state, task_name is owned by worker
+const WorkerCtx = struct {
+    allocator: std.mem.Allocator,
+    task_name: []const u8,     // owned; freed in worker defer
+    results: *std.ArrayList(T),
+    results_mutex: *std.Thread.Mutex,
+    semaphore: *std.Thread.Semaphore,  // limits concurrency
+    failed: *std.atomic.Value(bool),   // cross-thread failure flag
+};
+
+fn workerFn(ctx: WorkerCtx) void {
+    defer {
+        ctx.semaphore.post();         // always release slot
+        ctx.allocator.free(ctx.task_name);
+    }
+    // ... do work ...
+    ctx.results_mutex.lock();
+    defer ctx.results_mutex.unlock();
+    ctx.results.append(...) catch {};
+    if (failure) ctx.failed.store(true, .release);
+}
+
+// Spawning: semaphore.wait() before spawn, semaphore.post() in worker defer
+// Joining: collect all threads, then join all before next level
+```
+- Use `std.Thread.Semaphore{ .permits = max_jobs }` to cap concurrency
+- Use `.acquire`/`.release` ordering for atomic reads/writes
+- Always join all threads in a level before proceeding to next level
+
 ### Parser Non-Owning Slice Pattern
 ```zig
 // Use non-owning slices in parsers; only dupe when storing:
