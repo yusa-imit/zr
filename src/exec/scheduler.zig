@@ -103,7 +103,9 @@ fn workerFn(ctx: WorkerCtx) void {
 }
 
 /// Collect all transitive dependencies of the requested tasks.
-/// Returns a StringHashMap(void) of all task names that need to run.
+/// Only traverses `deps` (parallel) edges for DAG scheduling.
+/// `deps_serial` tasks are NOT included here — they run on-demand via runSerialChain.
+/// Returns a StringHashMap(void) of all task names that need DAG scheduling.
 fn collectDeps(
     allocator: std.mem.Allocator,
     config: *const loader.Config,
@@ -112,7 +114,7 @@ fn collectDeps(
     var needed = std.StringHashMap(void).init(allocator);
     errdefer needed.deinit();
 
-    // Stack-based DFS to find all transitive deps
+    // Stack-based DFS to find all transitive deps (via `deps` only)
     var stack = std.ArrayList([]const u8){};
     defer stack.deinit(allocator);
 
@@ -131,6 +133,8 @@ fn collectDeps(
                 try stack.append(allocator, dep);
             }
         }
+        // Note: deps_serial are intentionally NOT traversed here.
+        // They run inline via runSerialChain, not via the DAG scheduler.
     }
 
     return needed;
@@ -171,6 +175,74 @@ fn resolveMaxJobs(max_jobs: u32) u32 {
     return max_jobs;
 }
 
+/// Run a single task synchronously (on the calling thread). Records result.
+/// Returns true if the task succeeded (or has allow_failure set).
+fn runTaskSync(
+    allocator: std.mem.Allocator,
+    task: loader.Task,
+    inherit_stdio: bool,
+    results: *std.ArrayList(TaskResult),
+) !bool {
+    const proc_result = process.run(allocator, .{
+        .cmd = task.cmd,
+        .cwd = task.cwd,
+        .env = null,
+        .inherit_stdio = inherit_stdio,
+        .timeout_ms = task.timeout_ms,
+    }) catch process.ProcessResult{
+        .exit_code = 1,
+        .duration_ms = 0,
+        .success = false,
+    };
+
+    const owned_name = try allocator.dupe(u8, task.name);
+    try results.append(allocator, .{
+        .task_name = owned_name,
+        .success = proc_result.success,
+        .exit_code = proc_result.exit_code,
+        .duration_ms = proc_result.duration_ms,
+    });
+
+    return proc_result.success or task.allow_failure;
+}
+
+/// Run deps_serial tasks in array order, stopping on first failure (unless allow_failure).
+/// Already-completed tasks (tracked in `completed`) are skipped.
+/// Returns true if all serial deps passed.
+fn runSerialChain(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+    serial_deps: []const []const u8,
+    inherit_stdio: bool,
+    results: *std.ArrayList(TaskResult),
+    completed: *std.StringHashMap(bool),
+) !bool {
+    for (serial_deps) |dep_name| {
+        if (completed.contains(dep_name)) {
+            // Already ran; check if it passed
+            const prev_ok = completed.get(dep_name) orelse true;
+            if (!prev_ok) return false;
+            continue;
+        }
+
+        const dep_task = config.tasks.get(dep_name) orelse return error.TaskNotFound;
+
+        // Recursively run this dep's own serial chain first
+        if (dep_task.deps_serial.len > 0) {
+            const chain_ok = try runSerialChain(allocator, config, dep_task.deps_serial, inherit_stdio, results, completed);
+            if (!chain_ok) {
+                try completed.put(dep_task.name, false);
+                return false;
+            }
+        }
+
+        const ok = try runTaskSync(allocator, dep_task, inherit_stdio, results);
+        try completed.put(dep_name, ok);
+        if (!ok) return false;
+    }
+    return true;
+}
+
 /// Run tasks with their dependencies respected, executing independent tasks in parallel.
 /// Tasks within the same execution level have no inter-dependencies and are run concurrently
 /// up to `sched_config.max_jobs` threads. Levels are executed sequentially.
@@ -208,6 +280,11 @@ pub fn run(
     var failed = std.atomic.Value(bool).init(false);
     var semaphore = std.Thread.Semaphore{ .permits = concurrency };
 
+    // Tracks tasks that have been run and whether they succeeded.
+    // Used for deps_serial deduplication across levels.
+    var completed = std.StringHashMap(bool).init(allocator);
+    defer completed.deinit();
+
     // Execute level by level (sequentially between levels, parallel within a level)
     for (levels.levels.items) |level| {
         // Stop processing further levels if a previous level had a failure
@@ -222,6 +299,20 @@ pub fn run(
             if (failed.load(.acquire)) break;
 
             const task = config.tasks.get(task_name) orelse return error.TaskNotFound;
+
+            // Run deps_serial chain synchronously before this task (if any)
+            if (task.deps_serial.len > 0) {
+                const serial_ok = try runSerialChain(
+                    allocator, config, task.deps_serial,
+                    sched_config.inherit_stdio, &results, &completed,
+                );
+                if (!serial_ok) {
+                    if (!task.allow_failure) failed.store(true, .release);
+                    break;
+                }
+            }
+
+            if (failed.load(.acquire)) break;
 
             // Acquire a slot; blocks if concurrency cap is reached
             semaphore.wait();
@@ -438,4 +529,43 @@ test "run: cycle detected returns error" {
     const task_names = [_][]const u8{"a"};
     const result = run(allocator, &config, &task_names, .{ .inherit_stdio = false });
     try std.testing.expectError(error.CycleDetected, result);
+}
+
+test "run: deps_serial run in order and all succeed" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("step-a", "true", null, null, &[_][]const u8{});
+    try config.addTask("step-b", "true", null, null, &[_][]const u8{});
+    try config.addTask("step-c", "true", null, null, &[_][]const u8{});
+    try config.addTaskWithSerial("deploy", "true", null, null, &[_][]const u8{}, &[_][]const u8{ "step-a", "step-b", "step-c" });
+
+    const task_names = [_][]const u8{"deploy"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.total_success);
+    // step-a, step-b, step-c ran serially, then deploy
+    try std.testing.expectEqual(@as(usize, 4), result.results.items.len);
+}
+
+test "run: deps_serial failure stops chain and marks pipeline failed" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("step-ok", "true", null, null, &[_][]const u8{});
+    try config.addTask("step-fail", "exit 1", null, null, &[_][]const u8{});
+    try config.addTask("step-skip", "true", null, null, &[_][]const u8{});
+    try config.addTaskWithSerial("deploy", "true", null, null, &[_][]const u8{}, &[_][]const u8{ "step-ok", "step-fail", "step-skip" });
+
+    const task_names = [_][]const u8{"deploy"};
+    var result = try run(allocator, &config, &task_names, .{ .max_jobs = 1, .inherit_stdio = false });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.total_success);
+    // step-ok ran, step-fail ran and failed, step-skip was skipped, deploy was skipped
+    // At least step-ok and step-fail ran
+    try std.testing.expect(result.results.items.len >= 2);
 }

@@ -38,7 +38,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, null, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, null, false);
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -52,7 +52,20 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, timeout_ms, allow_failure);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, timeout_ms, allow_failure);
+    }
+
+    /// Add a task with deps_serial (for tests or programmatic use).
+    pub fn addTaskWithSerial(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        cwd: ?[]const u8,
+        description: ?[]const u8,
+        deps: []const []const u8,
+        deps_serial: []const []const u8,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, null, false);
     }
 };
 
@@ -62,6 +75,8 @@ pub const Task = struct {
     cwd: ?[]const u8,
     description: ?[]const u8,
     deps: [][]const u8,
+    /// Sequential dependencies: run in array order before this task, one at a time.
+    deps_serial: [][]const u8,
     /// Timeout in milliseconds. null means no timeout.
     timeout_ms: ?u64 = null,
     /// If true, a non-zero exit code is treated as success for dependency purposes.
@@ -76,6 +91,10 @@ pub const Task = struct {
             allocator.free(dep);
         }
         allocator.free(self.deps);
+        for (self.deps_serial) |dep| {
+            allocator.free(dep);
+        }
+        allocator.free(self.deps_serial);
     }
 };
 
@@ -116,6 +135,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Non-owning slices into content — addTask dupes them
     var task_deps = std.ArrayList([]const u8){};
     defer task_deps.deinit(allocator);
+    var task_deps_serial = std.ArrayList([]const u8){};
+    defer task_deps_serial.deinit(allocator);
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -126,12 +147,13 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_timeout_ms, task_allow_failure);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_timeout_ms, task_allow_failure);
                 }
             }
 
             // Reset state — no freeing needed since these are non-owning slices
             task_deps.clearRetainingCapacity();
+            task_deps_serial.clearRetainingCapacity();
             task_cmd = null;
             task_cwd = null;
             task_desc = null;
@@ -172,13 +194,25 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (std.mem.eql(u8, key, "deps_serial")) {
+                if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                    const deps_str = value[1 .. value.len - 1];
+                    var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                    while (deps_it.next()) |dep| {
+                        const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                        if (trimmed_dep.len > 0) {
+                            // Non-owning slice — addTask will dupe
+                            try task_deps_serial.append(allocator, trimmed_dep);
+                        }
+                    }
+                }
             }
         }
     }
 
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_timeout_ms, task_allow_failure);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_timeout_ms, task_allow_failure);
         }
     }
 
@@ -193,6 +227,7 @@ fn addTaskImpl(
     cwd: ?[]const u8,
     description: ?[]const u8,
     deps: []const []const u8,
+    deps_serial: []const []const u8,
     timeout_ms: ?u64,
     allow_failure: bool,
 ) !void {
@@ -210,9 +245,14 @@ fn addTaskImpl(
 
     const task_deps = try allocator.alloc([]const u8, deps.len);
     errdefer allocator.free(task_deps);
-
     for (deps, 0..) |dep, i| {
         task_deps[i] = try allocator.dupe(u8, dep);
+    }
+
+    const task_deps_serial = try allocator.alloc([]const u8, deps_serial.len);
+    errdefer allocator.free(task_deps_serial);
+    for (deps_serial, 0..) |dep, i| {
+        task_deps_serial[i] = try allocator.dupe(u8, dep);
     }
 
     const task = Task{
@@ -221,6 +261,7 @@ fn addTaskImpl(
         .cwd = task_cwd,
         .description = task_desc,
         .deps = task_deps,
+        .deps_serial = task_deps_serial,
         .timeout_ms = timeout_ms,
         .allow_failure = allow_failure,
     };
@@ -281,4 +322,33 @@ test "parse simple toml config" {
     try std.testing.expectEqualStrings("zig build test", test_task.cmd);
     try std.testing.expect(test_task.deps.len == 1);
     try std.testing.expectEqualStrings("build", test_task.deps[0]);
+}
+
+test "parse deps_serial from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.backup]
+        \\cmd = "echo backup"
+        \\
+        \\[tasks.migrate]
+        \\cmd = "echo migrate"
+        \\
+        \\[tasks.verify]
+        \\cmd = "echo verify"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\deps_serial = ["backup", "migrate", "verify"]
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const deploy = config.tasks.get("deploy").?;
+    try std.testing.expectEqual(@as(usize, 3), deploy.deps_serial.len);
+    try std.testing.expectEqualStrings("backup", deploy.deps_serial[0]);
+    try std.testing.expectEqualStrings("migrate", deploy.deps_serial[1]);
+    try std.testing.expectEqualStrings("verify", deploy.deps_serial[2]);
+    try std.testing.expectEqual(@as(usize, 0), deploy.deps.len);
 }
