@@ -4,6 +4,7 @@ const dag_mod = @import("../graph/dag.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
 const process = @import("process.zig");
 const expr = @import("../config/expr.zig");
+const cache_store = @import("../cache/store.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -139,6 +140,10 @@ const WorkerCtx = struct {
     task_semaphore: ?*std.Thread.Semaphore,
     /// Set to true if any task fails; checked before launching new tasks.
     failed: *std.atomic.Value(bool),
+    /// If true, check/update the cache for this task.
+    cache: bool,
+    /// Pre-computed cache key (owned by worker, freed in defer).
+    cache_key: ?[]u8,
 };
 
 fn workerFn(ctx: WorkerCtx) void {
@@ -146,6 +151,31 @@ fn workerFn(ctx: WorkerCtx) void {
         if (ctx.task_semaphore) |ts| ts.post();
         ctx.semaphore.post();
         ctx.allocator.free(ctx.task_name);
+        if (ctx.cache_key) |k| ctx.allocator.free(k);
+    }
+
+    // Check cache hit — skip execution if already succeeded with same cmd+env
+    if (ctx.cache) {
+        if (ctx.cache_key) |key| {
+            var store = cache_store.CacheStore.init(ctx.allocator) catch null;
+            if (store) |*s| {
+                defer s.deinit();
+                if (s.hasHit(key)) {
+                    // Cache hit: record a skipped success result
+                    const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+                    ctx.results_mutex.lock();
+                    defer ctx.results_mutex.unlock();
+                    ctx.results.append(ctx.allocator, .{
+                        .task_name = owned_name,
+                        .success = true,
+                        .exit_code = 0,
+                        .duration_ms = 0,
+                        .skipped = true,
+                    }) catch ctx.allocator.free(owned_name);
+                    return;
+                }
+            }
+        }
     }
 
     // Run the process with retry logic
@@ -209,6 +239,17 @@ fn workerFn(ctx: WorkerCtx) void {
     // Only propagate failure to global flag if allow_failure is not set
     if (!proc_result.success and !ctx.allow_failure) {
         ctx.failed.store(true, .release);
+    }
+
+    // Record cache entry on success
+    if (proc_result.success and ctx.cache) {
+        if (ctx.cache_key) |key| {
+            var store = cache_store.CacheStore.init(ctx.allocator) catch null;
+            if (store) |*s| {
+                defer s.deinit();
+                s.recordHit(key) catch {};
+            }
+        }
     }
 }
 
@@ -553,12 +594,19 @@ pub fn run(
             // Dupe task_name so the worker owns it (freed in workerFn defer)
             const owned_task_name = try allocator.dupe(u8, task_name);
 
+            // Compute cache key if caching is enabled for this task
+            const task_env_slice: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
+            const cache_key: ?[]u8 = if (task.cache)
+                cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch null
+            else
+                null;
+
             const ctx = WorkerCtx{
                 .allocator = allocator,
                 .task_name = owned_task_name,
                 .cmd = task.cmd,
                 .cwd = task.cwd,
-                .env = if (task.env.len > 0) task.env else null,
+                .env = task_env_slice,
                 .inherit_stdio = sched_config.inherit_stdio,
                 .timeout_ms = task.timeout_ms,
                 .allow_failure = task.allow_failure,
@@ -570,6 +618,8 @@ pub fn run(
                 .semaphore = &semaphore,
                 .task_semaphore = task_sem_ptr,
                 .failed = &failed,
+                .cache = task.cache,
+                .cache_key = cache_key,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
@@ -577,6 +627,7 @@ pub fn run(
                 if (task_sem_ptr) |ts| ts.post();
                 semaphore.post();
                 allocator.free(owned_task_name);
+                if (cache_key) |k| allocator.free(k);
                 failed.store(true, .release);
                 break;
             };

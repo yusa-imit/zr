@@ -156,7 +156,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false);
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -170,7 +170,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, 0, false);
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -183,7 +183,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false);
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -196,7 +196,7 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false, null, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false, null, 0, false);
     }
 
     /// Add a task with retry settings (for tests or programmatic use).
@@ -211,7 +211,7 @@ pub const Config = struct {
         retry_delay_ms: u64,
         retry_backoff: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, 0, false);
     }
 
     /// Add a task with a condition expression (for tests or programmatic use).
@@ -221,7 +221,7 @@ pub const Config = struct {
         cmd: []const u8,
         condition: ?[]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, 0, false);
     }
 
     /// Add a workflow (for tests or programmatic use).
@@ -306,6 +306,8 @@ pub const Task = struct {
     condition: ?[]const u8 = null,
     /// Maximum number of concurrent instances of this task (0 = unlimited).
     max_concurrent: u32 = 0,
+    /// If true, cache successful runs and skip on subsequent runs with same cmd+env.
+    cache: bool = false,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -453,6 +455,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_retry_backoff: bool = false;
     var task_condition: ?[]const u8 = null;
     var task_max_concurrent: u32 = 0;
+    var task_cache: bool = false;
     // Matrix raw inline table string (non-owning slice into content)
     var task_matrix_raw: ?[]const u8 = null;
 
@@ -594,9 +597,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
                     if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, mraw);
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache);
                     }
                 }
                 task_deps.clearRetainingCapacity();
@@ -612,6 +615,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_retry_backoff = false;
                 task_condition = null;
                 task_max_concurrent = 0;
+                task_cache = false;
                 task_matrix_raw = null;
                 current_task = null;
             }
@@ -705,9 +709,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
                     if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, mraw);
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache);
                     }
                 }
                 task_deps.clearRetainingCapacity();
@@ -716,7 +720,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_cmd = null; task_cwd = null; task_desc = null;
                 task_timeout_ms = null; task_allow_failure = false;
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_condition = null; task_max_concurrent = 0; task_matrix_raw = null; current_task = null;
+                task_condition = null; task_max_concurrent = 0; task_cache = false; task_matrix_raw = null; current_task = null;
             }
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
@@ -751,14 +755,14 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
                     if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, mraw);
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache);
                     }
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_matrix_raw = null; current_task = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_cache = false; task_matrix_raw = null; current_task = null;
             }
             if (current_profile) |pname| {
                 if (current_profile_task) |ptask| {
@@ -852,9 +856,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
                     if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, mraw);
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache);
                     }
                 }
             }
@@ -873,6 +877,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_retry_backoff = false;
             task_condition = null;
             task_max_concurrent = 0;
+            task_cache = false;
             task_matrix_raw = null;
 
             in_workspace = false;
@@ -1044,6 +1049,8 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     }
                 } else if (std.mem.eql(u8, key, "max_concurrent")) {
                     task_max_concurrent = std.fmt.parseInt(u32, value, 10) catch 0;
+                } else if (std.mem.eql(u8, key, "cache")) {
+                    task_cache = std.mem.eql(u8, value, "true");
                 } else if (std.mem.eql(u8, key, "matrix")) {
                     // Store raw inline table for matrix expansion at flush time.
                     // value has already had outer quotes stripped; re-use trimmed rhs.
@@ -1089,9 +1096,9 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     if (current_task) |task_name| {
         if (task_cmd) |cmd| {
             if (task_matrix_raw) |mraw| {
-                try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, mraw);
+                try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, mraw);
             } else {
-                try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent);
+                try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache);
             }
         }
     }
@@ -1228,6 +1235,7 @@ fn addTaskImpl(
     retry_backoff: bool,
     condition: ?[]const u8,
     max_concurrent: u32,
+    cache: bool,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -1299,6 +1307,7 @@ fn addTaskImpl(
         .retry_backoff = retry_backoff,
         .condition = task_condition,
         .max_concurrent = max_concurrent,
+        .cache = cache,
     };
 
     try config.tasks.put(task_name, task);
@@ -1408,6 +1417,7 @@ fn addMatrixTask(
     retry_backoff: bool,
     condition: ?[]const u8,
     max_concurrent: u32,
+    cache: bool,
     matrix_raw: []const u8,
 ) !void {
     // Parse the matrix inline table into dims
@@ -1420,7 +1430,7 @@ fn addMatrixTask(
 
     if (dims.items.len == 0) {
         // No matrix dims parsed; fall back to plain task
-        return addTaskImpl(config, allocator, name, cmd, cwd, description, deps, deps_serial, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent);
+        return addTaskImpl(config, allocator, name, cmd, cwd, description, deps, deps_serial, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent, cache);
     }
 
     // Build sorted key list for deterministic variant name ordering
@@ -1495,7 +1505,7 @@ fn addMatrixTask(
         }
 
         // Add the variant task (addTaskImpl dupes everything, so our locals can be freed)
-        try addTaskImpl(config, allocator, vname, v_cmd, v_cwd, v_desc, deps, deps_serial, v_env_list.items, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent);
+        try addTaskImpl(config, allocator, vname, v_cmd, v_cwd, v_desc, deps, deps_serial, v_env_list.items, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent, cache);
 
         // Free our allocations (addTaskImpl duped them)
         allocator.free(v_cmd);
@@ -1526,7 +1536,7 @@ fn addMatrixTask(
     const meta_cmd = try std.fmt.allocPrint(allocator, "echo \"Matrix task: {s}\"", .{name});
     defer allocator.free(meta_cmd);
 
-    try addTaskImpl(config, allocator, name, meta_cmd, null, description, variant_names.items, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0);
+    try addTaskImpl(config, allocator, name, meta_cmd, null, description, variant_names.items, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false);
 }
 
 test "parseDurationMs: various units" {
@@ -2146,4 +2156,29 @@ test "matrix: meta-task has no-op cmd" {
     // Variants have substituted cmds
     const v1 = config.tasks.get("lint:target=js").?;
     try std.testing.expectEqualStrings("lint js", v1.cmd);
+}
+
+test "parse cache = true from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\cache = true
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    const task = config.tasks.get("build").?;
+    try std.testing.expect(task.cache);
+}
+
+test "cache defaults to false" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    const task = config.tasks.get("build").?;
+    try std.testing.expect(!task.cache);
 }

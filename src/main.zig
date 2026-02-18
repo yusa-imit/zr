@@ -9,6 +9,7 @@ const process = @import("exec/process.zig");
 const color = @import("output/color.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
+const cache_store = @import("cache/store.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -22,6 +23,7 @@ comptime {
     _ = color;
     _ = history;
     _ = watcher;
+    _ = cache_store;
 }
 
 const CONFIG_FILE = "zr.toml";
@@ -246,6 +248,9 @@ fn run(
                 "workspace: unknown subcommand '{s}'\n\n  Hint: zr workspace list | zr workspace run <task>\n", .{sub});
             return 1;
         }
+    } else if (std.mem.eql(u8, cmd, "cache")) {
+        const sub = if (effective_args.len >= 3) effective_args[2] else "";
+        return cmdCache(allocator, sub, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -267,6 +272,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  history                Show recent run history\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
+    try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
@@ -1605,6 +1611,40 @@ fn cmdInit(
         "\nNext steps:\n  zr list          # see available tasks\n  zr run hello     # run the example task\n",
         .{});
     return 0;
+}
+
+fn cmdCache(
+    allocator: std.mem.Allocator,
+    sub: []const u8,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    if (std.mem.eql(u8, sub, "clear")) {
+        var store = cache_store.CacheStore.init(allocator) catch |err| {
+            try color.printError(ew, use_color,
+                "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
+                .{err});
+            return 1;
+        };
+        defer store.deinit();
+
+        const removed = store.clearAll() catch |err| {
+            try color.printError(ew, use_color,
+                "cache: error while clearing cache: {}\n", .{err});
+            return 1;
+        };
+        try color.printSuccess(w, use_color, "Cleared {d} cached task result(s)\n", .{removed});
+        return 0;
+    } else if (sub.len == 0) {
+        try color.printError(ew, use_color,
+            "cache: missing subcommand\n\n  Hint: zr cache clear\n", .{});
+        return 1;
+    } else {
+        try color.printError(ew, use_color,
+            "cache: unknown subcommand '{s}'\n\n  Hint: zr cache clear\n", .{sub});
+        return 1;
+    }
 }
 
 test "basic functionality" {
