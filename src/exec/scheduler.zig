@@ -134,12 +134,16 @@ const WorkerCtx = struct {
     results_mutex: *std.Thread.Mutex,
     /// Semaphore used to limit concurrency; released when worker finishes.
     semaphore: *std.Thread.Semaphore,
+    /// Optional per-task semaphore (from max_concurrent). null = unlimited.
+    /// The semaphore is owned by the `task_semaphores` map in `run()`, not by worker.
+    task_semaphore: ?*std.Thread.Semaphore,
     /// Set to true if any task fails; checked before launching new tasks.
     failed: *std.atomic.Value(bool),
 };
 
 fn workerFn(ctx: WorkerCtx) void {
     defer {
+        if (ctx.task_semaphore) |ts| ts.post();
         ctx.semaphore.post();
         ctx.allocator.free(ctx.task_name);
     }
@@ -426,6 +430,18 @@ pub fn run(
     var failed = std.atomic.Value(bool).init(false);
     var semaphore = std.Thread.Semaphore{ .permits = concurrency };
 
+    // Per-task semaphores for max_concurrent limits.
+    // Keys are task name slices (pointing into config.tasks keys — not owned).
+    // Values are heap-allocated semaphores.
+    var task_semaphores = std.StringHashMap(*std.Thread.Semaphore).init(allocator);
+    defer {
+        var ts_it = task_semaphores.iterator();
+        while (ts_it.next()) |entry| {
+            allocator.destroy(entry.value_ptr.*);
+        }
+        task_semaphores.deinit();
+    }
+
     // Tracks tasks that have been run and whether they succeeded.
     // Used for deps_serial deduplication across levels.
     var completed = std.StringHashMap(bool).init(allocator);
@@ -436,9 +452,12 @@ pub fn run(
         // Stop processing further levels if a previous level had a failure
         if (failed.load(.acquire)) break;
 
-        // Collect threads for this level so we can join them all
+        // Collect threads for this level so we can join them all.
+        // Pre-reserve capacity to ensure append() cannot fail after a thread is spawned
+        // (which would leave a live thread whose join is skipped on OOM unwind).
         var threads = std.ArrayList(std.Thread){};
         defer threads.deinit(allocator);
+        try threads.ensureTotalCapacity(allocator, level.items.len);
 
         for (level.items) |task_name| {
             // Stop spawning new tasks if failure detected
@@ -498,11 +517,35 @@ pub fn run(
 
             if (failed.load(.acquire)) break;
 
-            // Acquire a slot; blocks if concurrency cap is reached
+            // Acquire the global concurrency slot first to avoid hold-and-wait deadlock.
+            // The task semaphore is acquired after, so a blocked task_sem never holds
+            // a global slot while waiting.
             semaphore.wait();
 
             // If failure was detected while we were waiting, release and stop
             if (failed.load(.acquire)) {
+                semaphore.post();
+                break;
+            }
+
+            // Get or create per-task semaphore for max_concurrent (acquired after global slot).
+            var task_sem_ptr: ?*std.Thread.Semaphore = null;
+            if (task.max_concurrent > 0) {
+                if (task_semaphores.get(task_name)) |existing| {
+                    task_sem_ptr = existing;
+                } else {
+                    const new_sem = try allocator.create(std.Thread.Semaphore);
+                    errdefer allocator.destroy(new_sem);
+                    new_sem.* = std.Thread.Semaphore{ .permits = task.max_concurrent };
+                    try task_semaphores.put(task_name, new_sem);
+                    task_sem_ptr = new_sem;
+                }
+                task_sem_ptr.?.wait();
+            }
+
+            // If failure was detected after acquiring semaphores, release and stop
+            if (failed.load(.acquire)) {
+                if (task_sem_ptr) |ts| ts.post();
                 semaphore.post();
                 break;
             }
@@ -525,17 +568,19 @@ pub fn run(
                 .results = &results,
                 .results_mutex = &results_mutex,
                 .semaphore = &semaphore,
+                .task_semaphore = task_sem_ptr,
                 .failed = &failed,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
-                // If spawn fails, release the semaphore slot we reserved and the name
+                // If spawn fails, release the semaphore slots we reserved and the name
+                if (task_sem_ptr) |ts| ts.post();
                 semaphore.post();
                 allocator.free(owned_task_name);
                 failed.store(true, .release);
                 break;
             };
-            try threads.append(allocator, thread);
+            threads.appendAssumeCapacity(thread);
         }
 
         // Join all threads spawned for this level
@@ -970,4 +1015,13 @@ test "run: dry_run with dependency chain skips all tasks" {
         try std.testing.expect(r.skipped);
         try std.testing.expect(r.success);
     }
+}
+
+test "max_concurrent: field parsed and defaults to 0" {
+    const allocator = std.testing.allocator;
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("build", "true", null, null, &[_][]const u8{});
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqual(@as(u32, 0), task.max_concurrent);
 }
