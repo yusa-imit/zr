@@ -33,8 +33,10 @@
 - [x] Workflow system (`zr workflow <name>`) — `[workflows.X]` + `[[workflows.X.stages]]` TOML parsing; stage-sequential execution with fail_fast; `zr list` shows workflows
 - [x] Profile system (`zr --profile <name>` or `ZR_PROFILE=<name>`) — `[profiles.X]` global env overrides + `[profiles.X.tasks.Y]` per-task cmd/cwd/env overrides; `Config.applyProfile()` merges at load time
 - [x] `--dry-run` / `-n` flag — `zr --dry-run run <task>` and `zr --dry-run workflow <name>` show execution plan (levels, parallelism) without running; `planDryRun()` in scheduler returns `DryRunPlan`
+- [x] `zr init` command — scaffolds starter `zr.toml` in current dir; accepts `std.fs.Dir` param for testability; deletes partial file on write failure; refuses to overwrite
+- [x] `zr completion <bash|zsh|fish>` — prints shell completion scripts that complete subcommands, task names (from `zr list`), and workflow names
 
-> **Status**: Phase 1 complete + Phase 2 partial. 86/86 tests passing. Next: shell completion (`zr completion`), `zr init` command, or resource limits.
+> **Status**: Phase 1 complete + Phase 2 complete. 88/88 tests passing. Next: resource limits (`max_jobs` per-task config), TUI progress, or monorepo workspace support.
 
 ## Architecture (High-Level)
 

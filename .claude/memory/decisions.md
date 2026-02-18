@@ -132,6 +132,19 @@ Decisions are logged chronologically. Format:
   - 86/86 tests passing; binary 2.1MB
 - Rationale: Separate planDryRun() is cleaner than threading a writer through scheduler; dry_run in SchedulerConfig handles the "skip but track" case in existing tests
 
+## [2026-02-18] zr init & zr completion Implementation
+- Context: Phase 2 UX improvements — scaffolding and shell integration
+- Decision:
+  - `zr init`: creates starter `zr.toml` with 4 example tasks (hello, build, test, clean)
+  - `cmdInit(dir: std.fs.Dir, ...)` accepts a Dir param for testability; call site passes `std.fs.cwd()`
+  - On write failure: close file, delete partial artifact, then return error (user can safely retry)
+  - Control flow: explicit `exists: bool` local using labeled block — readable, not buried in `catch`
+  - `zr completion <bash|zsh|fish>`: embeds static completion scripts as Zig string literals
+  - Scripts complete: subcommands, task names (via `zr list` awk parse), workflow names, shell names
+  - 88/88 tests passing; binary 2.3MB
+- Rationale: Static string literal scripts avoid runtime generation complexity; `zr list` awk parsing
+  is a pragmatic tradeoff (coupled to output format, but simple and works without JSON output)
+
 ## [2026-02-18] Profile System Implementation
 - Context: Phase 2 requires named profiles for environment-specific config overrides
 - Decision: Implemented `Profile` + `ProfileTaskOverride` structs in `config/loader.zig`

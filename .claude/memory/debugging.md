@@ -85,6 +85,24 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: Track duped count (`deps_duped`, `serial_duped`) and free `slice[0..count]` in errdefer
 - Prevention: In loops where each iteration allocates, track count for safe partial cleanup
 
+### [Inverted control flow when using access() to check file existence]
+- Symptom: Code review flagged: happy path buried inside catch block is confusing
+- Cause: `access() catch |err| { if err != FileNotFound { ... } ... return 0; }; return 1;` — the success path lives inside error handler
+- Fix: Use labeled block to extract a `exists: bool`, then branch explicitly:
+  ```zig
+  const exists: bool = blk: {
+      dir.access(file, .{}) catch |err| {
+          if (err == error.FileNotFound) break :blk false;
+          // handle other errors
+          return 1;
+      };
+      break :blk true;
+  };
+  if (exists) { /* refuse */ return 1; }
+  // happy path
+  ```
+- Prevention: Never put the success path inside a catch block; use labeled blocks to extract booleans
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed

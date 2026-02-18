@@ -371,6 +371,33 @@ self.workflows.deinit();
 - This matches the existing task HashMap pattern (key freed via task.name in Task.deinit)
 - Contrast: if you need keys independent from value fields, dupe the key separately and free key_ptr.* explicitly
 
+### Testable Filesystem Function Pattern
+```zig
+// Accept std.fs.Dir instead of calling std.fs.cwd() directly:
+fn cmdInit(dir: std.fs.Dir, w: *std.Io.Writer, ...) !u8 {
+    dir.access(CONFIG_FILE, .{}) catch |err| { ... };
+    const file = try dir.createFile(CONFIG_FILE, .{});
+}
+// Call site: cmdInit(std.fs.cwd(), ...)
+// Test:      cmdInit(tmp.dir, ...)  — uses std.testing.tmpDir(.{})
+```
+- Any function that touches the filesystem should accept Dir not use cwd() directly
+- Enables unit testing without changing the process working directory
+
+### Filesystem Existence Check Pattern (Zig 0.15)
+```zig
+// Extract boolean from access() result using labeled block:
+const exists: bool = blk: {
+    dir.access(path, .{}) catch |err| {
+        if (err == error.FileNotFound) break :blk false;
+        // handle other errors
+        return error.SomethingElse;
+    };
+    break :blk true;
+};
+// Never put success path inside catch block — use labeled block instead
+```
+
 ### Multi-Section TOML Parser State Machine Pattern
 ```zig
 // When parsing TOML with multiple top-level section types ([tasks.X], [workflows.X],
