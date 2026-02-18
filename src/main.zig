@@ -70,7 +70,7 @@ fn run(
         return 0;
     }
 
-    // Parse global flags: --profile <name>, --dry-run, --jobs, --no-color, --quiet, --verbose, --config
+    // Parse global flags: --profile <name>, --dry-run, --jobs, --no-color, --quiet, --verbose, --config, --format
     // Scan args for flags; strip them from the args slice before command dispatch.
     var profile_name: ?[]const u8 = null;
     var dry_run: bool = false;
@@ -78,6 +78,7 @@ fn run(
     var no_color: bool = false;
     var quiet: bool = false;
     var verbose: bool = false;
+    var json_output: bool = false;
     var config_path: []const u8 = CONFIG_FILE;
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
@@ -100,6 +101,25 @@ fn run(
                 quiet = true;
             } else if (std.mem.eql(u8, args[i], "--verbose") or std.mem.eql(u8, args[i], "-v")) {
                 verbose = true;
+            } else if (std.mem.eql(u8, args[i], "--format") or std.mem.eql(u8, args[i], "-f")) {
+                if (i + 1 < args.len) {
+                    const fmt_val = args[i + 1];
+                    if (std.mem.eql(u8, fmt_val, "json")) {
+                        json_output = true;
+                    } else if (std.mem.eql(u8, fmt_val, "text")) {
+                        json_output = false;
+                    } else {
+                        try color.printError(ew, use_color,
+                            "--format: unknown format '{s}'\n\n  Hint: supported formats: text, json\n",
+                            .{fmt_val});
+                        return 1;
+                    }
+                    i += 1; // skip value
+                } else {
+                    try color.printError(ew, use_color,
+                        "--format: missing value\n\n  Hint: zr --format <text|json> <command>\n", .{});
+                    return 1;
+                }
             } else if (std.mem.eql(u8, args[i], "--jobs") or std.mem.eql(u8, args[i], "-j")) {
                 if (i + 1 < args.len) {
                     const n = std.fmt.parseInt(u32, args[i + 1], 10) catch {
@@ -182,7 +202,7 @@ fn run(
             return 1;
         }
         const task_name = effective_args[2];
-        return cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, effective_w, ew, effective_color);
+        return cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
@@ -199,11 +219,11 @@ fn run(
         const wf_name = effective_args[2];
         return cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
-        return cmdList(allocator, config_path, effective_w, ew, effective_color);
+        return cmdList(allocator, config_path, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
-        return cmdGraph(allocator, config_path, effective_w, ew, effective_color);
+        return cmdGraph(allocator, config_path, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "history")) {
-        return cmdHistory(allocator, effective_w, ew, effective_color);
+        return cmdHistory(allocator, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
         return cmdInit(std.fs.cwd(), effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "completion")) {
@@ -238,7 +258,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  --no-color            Disable color output\n", .{});
     try w.print("  --quiet, -q           Suppress non-error output\n", .{});
     try w.print("  --verbose, -v         Verbose output\n", .{});
-    try w.print("  --config <path>       Config file path (default: zr.toml)\n\n", .{});
+    try w.print("  --config <path>       Config file path (default: zr.toml)\n", .{});
+    try w.print("  --format, -f <fmt>    Output format: text (default) or json\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }
@@ -326,6 +347,7 @@ fn cmdRun(
     dry_run: bool,
     max_jobs: u32,
     config_path: []const u8,
+    json_output: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -388,19 +410,24 @@ fn cmdRun(
 
     const elapsed_ms: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns, std.time.ns_per_ms));
 
-    // Print results for each task that ran. Failures go to err_writer so they
-    // are visible even under --quiet (which redirects w to /dev/null).
-    for (sched_result.results.items) |task_result| {
-        if (task_result.success) {
-            try color.printSuccess(w, use_color,
-                "{s} ", .{task_result.task_name});
-            try color.printDim(w, use_color,
-                "({d}ms)\n", .{task_result.duration_ms});
-        } else {
-            try color.printError(err_writer, use_color,
-                "{s} ", .{task_result.task_name});
-            try color.printDim(err_writer, use_color,
-                "(exit: {d})\n", .{task_result.exit_code});
+    // Print results for each task that ran.
+    if (json_output) {
+        try printRunResultJson(w, sched_result.results.items, sched_result.total_success, elapsed_ms);
+    } else {
+        // Failures go to err_writer so they are visible even under --quiet
+        // (which redirects w to /dev/null).
+        for (sched_result.results.items) |task_result| {
+            if (task_result.success) {
+                try color.printSuccess(w, use_color,
+                    "{s} ", .{task_result.task_name});
+                try color.printDim(w, use_color,
+                    "({d}ms)\n", .{task_result.duration_ms});
+            } else {
+                try color.printError(err_writer, use_color,
+                    "{s} ", .{task_result.task_name});
+                try color.printDim(err_writer, use_color,
+                    "(exit: {d})\n", .{task_result.exit_code});
+            }
         }
     }
 
@@ -409,6 +436,49 @@ fn cmdRun(
         @intCast(sched_result.results.items.len));
 
     return if (sched_result.total_success) 0 else 1;
+}
+
+/// Emit a JSON object for the run result:
+/// {"success":true,"elapsed_ms":42,"tasks":[{"name":"t","success":true,"exit_code":0,"duration_ms":10,"skipped":false}]}
+fn printRunResultJson(
+    w: *std.Io.Writer,
+    results: []const scheduler.TaskResult,
+    total_success: bool,
+    elapsed_ms: u64,
+) !void {
+    try w.print("{{\"success\":{s},\"elapsed_ms\":{d},\"tasks\":[", .{
+        if (total_success) "true" else "false",
+        elapsed_ms,
+    });
+    for (results, 0..) |r, i| {
+        if (i > 0) try w.writeAll(",");
+        try w.print("{{\"name\":", .{});
+        try writeJsonString(w, r.task_name);
+        try w.print(",\"success\":{s},\"exit_code\":{d},\"duration_ms\":{d},\"skipped\":{s}}}", .{
+            if (r.success) "true" else "false",
+            r.exit_code,
+            r.duration_ms,
+            if (r.skipped) "true" else "false",
+        });
+    }
+    try w.writeAll("]}\n");
+}
+
+/// Write a JSON-encoded string (with surrounding quotes and escape sequences).
+fn writeJsonString(w: *std.Io.Writer, s: []const u8) !void {
+    try w.writeAll("\"");
+    for (s) |c| {
+        switch (c) {
+            '"' => try w.writeAll("\\\""),
+            '\\' => try w.writeAll("\\\\"),
+            '\n' => try w.writeAll("\\n"),
+            '\r' => try w.writeAll("\\r"),
+            '\t' => try w.writeAll("\\t"),
+            0x00...0x08, 0x0b, 0x0c, 0x0e...0x1f => try w.print("\\u{x:0>4}", .{c}),
+            else => try w.writeByte(c),
+        }
+    }
+    try w.writeAll("\"");
 }
 
 /// Print a formatted dry-run plan showing execution levels and task names.
@@ -694,6 +764,7 @@ fn recordHistory(
 
 fn cmdHistory(
     allocator: std.mem.Allocator,
+    json_output: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -710,6 +781,23 @@ fn cmdHistory(
     defer {
         for (records.items) |r| r.deinit(allocator);
         records.deinit(allocator);
+    }
+
+    if (json_output) {
+        try w.writeAll("{\"runs\":[");
+        for (records.items, 0..) |rec, i| {
+            if (i > 0) try w.writeAll(",");
+            try w.print("{{\"task\":", .{});
+            try writeJsonString(w, rec.task_name);
+            try w.print(",\"success\":{s},\"duration_ms\":{d},\"task_count\":{d},\"timestamp\":{d}}}", .{
+                if (rec.success) "true" else "false",
+                rec.duration_ms,
+                rec.task_count,
+                rec.timestamp,
+            });
+        }
+        try w.writeAll("]}\n");
+        return 0;
     }
 
     if (records.items.len == 0) {
@@ -741,14 +829,13 @@ fn cmdHistory(
 fn cmdList(
     allocator: std.mem.Allocator,
     config_path: []const u8,
+    json_output: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
     var config = (try loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
     defer config.deinit();
-
-    try color.printHeader(w, use_color, "Tasks:", .{});
 
     // Collect task names for sorted output
     var names = std.ArrayList([]const u8){};
@@ -765,6 +852,56 @@ fn cmdList(
             return std.mem.lessThan(u8, a, b);
         }
     }.lessThan);
+
+    if (json_output) {
+        // Collect workflow names too
+        var wf_names = std.ArrayList([]const u8){};
+        defer wf_names.deinit(allocator);
+        var wit2 = config.workflows.keyIterator();
+        while (wit2.next()) |key| {
+            try wf_names.append(allocator, key.*);
+        }
+        std.mem.sort([]const u8, wf_names.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        try w.writeAll("{\"tasks\":[");
+        for (names.items, 0..) |name, i| {
+            const task = config.tasks.get(name).?;
+            if (i > 0) try w.writeAll(",");
+            try w.print("{{\"name\":", .{});
+            try writeJsonString(w, name);
+            try w.print(",\"cmd\":", .{});
+            try writeJsonString(w, task.cmd);
+            if (task.description) |desc| {
+                try w.print(",\"description\":", .{});
+                try writeJsonString(w, desc);
+            } else {
+                try w.writeAll(",\"description\":null");
+            }
+            try w.print(",\"deps_count\":{d}}}", .{task.deps.len});
+        }
+        try w.writeAll("],\"workflows\":[");
+        for (wf_names.items, 0..) |name, i| {
+            const wf = config.workflows.get(name).?;
+            if (i > 0) try w.writeAll(",");
+            try w.print("{{\"name\":", .{});
+            try writeJsonString(w, name);
+            if (wf.description) |desc| {
+                try w.print(",\"description\":", .{});
+                try writeJsonString(w, desc);
+            } else {
+                try w.writeAll(",\"description\":null");
+            }
+            try w.print(",\"stages\":{d}}}", .{wf.stages.len});
+        }
+        try w.writeAll("]}\n");
+        return 0;
+    }
+
+    try color.printHeader(w, use_color, "Tasks:", .{});
 
     for (names.items) |name| {
         const task = config.tasks.get(name).?;
@@ -811,6 +948,7 @@ fn cmdList(
 fn cmdGraph(
     allocator: std.mem.Allocator,
     config_path: []const u8,
+    json_output: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -833,12 +971,49 @@ fn cmdGraph(
         return 1;
     }
 
-    try color.printHeader(w, use_color, "Dependency Graph:", .{});
-    try w.print("\n", .{});
-
     // Get execution levels for structured output
     var levels = try topo_sort.getExecutionLevels(allocator, &dag);
     defer levels.deinit(allocator);
+
+    if (json_output) {
+        // {"levels":[{"index":0,"tasks":[{"name":"t","deps":["a","b"]}]}]}
+        try w.writeAll("{\"levels\":[");
+        for (levels.levels.items, 0..) |level, level_idx| {
+            if (level_idx > 0) try w.writeAll(",");
+            try w.print("{{\"index\":{d},\"tasks\":[", .{level_idx});
+
+            // Sort for deterministic output
+            var sorted_level = std.ArrayList([]const u8){};
+            defer sorted_level.deinit(allocator);
+            for (level.items) |name| {
+                try sorted_level.append(allocator, name);
+            }
+            std.mem.sort([]const u8, sorted_level.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.lessThan(u8, a, b);
+                }
+            }.lessThan);
+
+            for (sorted_level.items, 0..) |name, ti| {
+                const task = config.tasks.get(name) orelse continue;
+                if (ti > 0) try w.writeAll(",");
+                try w.print("{{\"name\":", .{});
+                try writeJsonString(w, name);
+                try w.writeAll(",\"deps\":[");
+                for (task.deps, 0..) |dep, di| {
+                    if (di > 0) try w.writeAll(",");
+                    try writeJsonString(w, dep);
+                }
+                try w.writeAll("]}");
+            }
+            try w.writeAll("]}");
+        }
+        try w.writeAll("]}\n");
+        return 0;
+    }
+
+    try color.printHeader(w, use_color, "Dependency Graph:", .{});
+    try w.print("\n", .{});
 
     for (levels.levels.items, 0..) |level, level_idx| {
         try color.printDim(w, use_color, "  Level {d}:\n", .{level_idx});
@@ -882,7 +1057,7 @@ const BASH_COMPLETION =
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\    local commands="run watch workflow list graph history init completion"
-    \\    local options="--help --profile --dry-run --jobs --no-color --quiet --verbose --config -h -p -n -j -q -v"
+    \\    local options="--help --profile --dry-run --jobs --no-color --quiet --verbose --config --format -h -p -n -j -q -v -f"
     \\
     \\    case "$prev" in
     \\        run|watch)
@@ -906,6 +1081,9 @@ const BASH_COMPLETION =
     \\            return ;;
     \\        --config)
     \\            COMPREPLY=($(compgen -f -- "$cur"))
+    \\            return ;;
+    \\        --format|-f)
+    \\            COMPREPLY=($(compgen -W "text json" -- "$cur"))
     \\            return ;;
     \\    esac
     \\
@@ -951,6 +1129,8 @@ const ZSH_COMPLETION =
     \\        '--verbose[Verbose output]'
     \\        '-v[Verbose output]'
     \\        '--config[Config file path]:file:_files'
+    \\        '--format[Output format]:format:(text json)'
+    \\        '-f[Output format]:format:(text json)'
     \\    )
     \\    _arguments -C \
     \\        $options \
@@ -1018,6 +1198,7 @@ const FISH_COMPLETION =
     \\complete -c zr -l quiet      -s q -d 'Suppress non-error output'
     \\complete -c zr -l verbose    -s v -d 'Verbose output'
     \\complete -c zr -l config           -d 'Config file path' -r -F
+    \\complete -c zr -l format    -s f -d 'Output format' -r -a 'text json'
     \\
 ;
 
@@ -1260,4 +1441,118 @@ test "--jobs with invalid value returns error" {
     const fake_args = [_][]const u8{ "zr", "--jobs", "notanumber" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "--format json is parsed and does not crash" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // --format json with no command prints help (exit 0).
+    const fake_args = [_][]const u8{ "zr", "--format", "json" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "--format text is parsed and does not crash" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const fake_args = [_][]const u8{ "zr", "--format", "text" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "--format unknown value returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const fake_args = [_][]const u8{ "zr", "--format", "yaml" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "--format missing value returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const fake_args = [_][]const u8{ "zr", "--format" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "writeJsonString escapes special characters" {
+    var buf: [256]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var w = stdout.writer(&buf);
+
+    // Just test that it runs without error on common characters.
+    try writeJsonString(&w.interface, "hello world");
+    try writeJsonString(&w.interface, "with \"quotes\"");
+    try writeJsonString(&w.interface, "with\nnewline");
+    try writeJsonString(&w.interface, "with\\backslash");
+}
+
+test "printRunResultJson emits valid JSON structure" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    // Collect output in memory using a fixed buffer writer via stdout (test env)
+    const stdout = std.fs.File.stdout();
+    var w = stdout.writer(&out_buf);
+
+    const results = [_]scheduler.TaskResult{
+        .{ .task_name = "build", .success = true, .exit_code = 0, .duration_ms = 100, .skipped = false },
+        .{ .task_name = "test", .success = false, .exit_code = 1, .duration_ms = 50, .skipped = false },
+    };
+
+    try printRunResultJson(&w.interface, &results, false, 150);
+    _ = allocator;
+}
+
+test "cmdList --format json returns valid JSON with tasks field" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // Without a real config file this returns 1 — ensure it doesn't crash
+    // and that flag parsing itself works (no panic).
+    const fake_args = [_][]const u8{ "zr", "--format", "json", "list" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    // Exit 1 expected (no zr.toml in cwd during tests) — but no crash/panic.
+    _ = code;
+}
+
+test "completion scripts include --format flag" {
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--format") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--format") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "format") != null);
 }

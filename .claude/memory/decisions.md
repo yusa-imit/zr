@@ -210,3 +210,15 @@ Decisions are logged chronologically. Format:
   - Execution levels enable parallel execution planning by grouping independent tasks
   - StringHashMap provides O(1) node lookup for large graphs
   - Each module is independently testable with comprehensive test coverage
+
+## [2026-02-18] JSON/Machine-Readable Output (--format flag)
+
+- **Decision**: Add `--format json` global flag (alias `-f`) alongside existing `--format text` default
+- **Scope**: `list`, `graph`, `run`, `history` commands
+- **Implementation**:
+  - Flag parsed in `run()` alongside other global flags; `json_output: bool` passed to each cmd function
+  - `writeJsonString()` helper handles all JSON string escaping (incl. control chars via `\\u{x:0>4}`)
+  - Switch case range `0x00...0x1f` split: `\n`, `\r`, `\t` as named escapes; remainder as `\\uXXXX`
+  - JSON schemas: `list` → `{tasks:[...],workflows:[...]}`, `graph` → `{levels:[...]}`, `run` → `{success,elapsed_ms,tasks:[...]}`, `history` → `{runs:[...]}`
+  - Shell completions (bash/zsh/fish) updated to complete `--format` with `text json`
+- **Tests**: 8 new tests added (flag parsing, error cases, JSON structure smoke tests)
