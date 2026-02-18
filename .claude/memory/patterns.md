@@ -546,3 +546,20 @@ while (di > 0) {
     combo[di] = 0;
 }
 ```
+
+### Task Output Cache Pattern (cache/store.zig)
+```toml
+# TOML syntax:
+[tasks.build]
+cmd = "make release"
+cache = true   # skip if same cmd+env ran successfully before
+```
+- `CacheStore.init(allocator)` creates `~/.zr/cache/` dir; returns error on permission failure
+- Key = `Wyhash64(cmd + env-pairs)` formatted as 16 hex chars (`{x:0>16}`)
+- Hit = `~/.zr/cache/<key>.ok` file exists (empty marker file, atomic on POSIX)
+- `recordHit(key)` creates the marker; `invalidate(key)` deletes it; `clearAll()` removes all `*.ok`
+- In scheduler: `WorkerCtx` holds `cache: bool` + `cache_key: ?[]u8` (owned, freed in defer)
+- Cache key computed AFTER semaphore acquisition (after the early-break paths) to avoid allocation leaks
+- On thread spawn failure: free `cache_key` explicitly before `break`
+- Cache miss → normal execution; cache hit → record `skipped=true` result and return early
+- `task_cache = false` must be added to EVERY reset section in loader.zig (same pattern as `task_matrix_raw`)

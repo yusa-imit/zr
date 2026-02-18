@@ -240,3 +240,19 @@ Decisions are logged chronologically. Format:
   - Parse-time expansion (vs. runtime): simpler, no scheduler changes needed, variants visible in `list`/`graph`
   - Alphabetical key sort: deterministic variant names independent of TOML definition order
   - `std.mem.replaceOwned` allows multiple substitutions cleanly with owned result
+
+## [2026-02-19] Task Output Caching (Phase 4 start)
+
+- **Decision**: Implement task output caching as `cache = true` TOML field; `src/cache/store.zig`
+- **Scope**: loader.zig (Task struct + TOML parsing), scheduler.zig (worker integration), main.zig (`zr cache clear` command)
+- **Implementation**:
+  - `CacheStore` in `src/cache/store.zig`: init creates `~/.zr/cache/` dir; key = Wyhash64(cmd + env pairs) as 16-char hex string; hit = `<key>.ok` file exists; `recordHit` creates empty marker file; `clearAll` removes `*.ok` files
+  - `Task.cache: bool = false`; parsed as `cache = true` in TOML
+  - Scheduler: `WorkerCtx` gains `cache: bool` + `cache_key: ?[]u8` (computed before spawn, freed in defer); `workerFn` checks hit before exec → returns skipped=true; records hit after success
+  - `zr cache clear` → `cmdCache()` in main.zig; prints count of removed entries
+  - All `addTaskImpl`/`addMatrixTask` call sites updated with new `cache` parameter
+  - 9 new tests; 124/124 total passing
+- **Rationale**:
+  - File-based cache: simple, cross-process, no daemon needed; Wyhash64 is fast and sufficient for fingerprinting
+  - Marker file (`.ok` suffix): trivially clearable, atomic creation, no locking needed for reads
+  - Cache key covers cmd+env (not cwd/task-name) — focused on command identity, not location
