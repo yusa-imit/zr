@@ -281,6 +281,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin install <path>  Install a local plugin to ~/.zr/plugins/\n", .{});
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
+    try w.print("  plugin update <n> <p>  Update an installed plugin from a new path\n", .{});
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
@@ -1820,13 +1821,49 @@ fn cmdPlugin(
             }
         }
         return 0;
+    } else if (std.mem.eql(u8, sub, "update")) {
+        // zr plugin update <name> <path>
+        // args: [zr, plugin, update, <name>, <path>]
+        if (args.len < 5) {
+            try color.printError(ew, use_color,
+                "plugin update: usage: zr plugin update <name> <path>\n", .{});
+            return 1;
+        }
+        const plugin_name = args[3];
+        const src_path = args[4];
+
+        // Resolve to absolute path.
+        var abs_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const abs_src = std.fs.realpath(src_path, &abs_buf) catch {
+            try color.printError(ew, use_color,
+                "plugin update: path not found: {s}\n", .{src_path});
+            return 1;
+        };
+
+        const dest = plugin_loader.updateLocalPlugin(allocator, plugin_name, abs_src) catch |err| switch (err) {
+            error.PluginNotFound => {
+                try color.printError(ew, use_color,
+                    "plugin update: plugin '{s}' is not installed\n\n  Hint: Install it first with 'zr plugin install {s} {s}'\n",
+                    .{ plugin_name, src_path, plugin_name });
+                return 1;
+            },
+            plugin_loader.InstallError.SourceNotFound => {
+                try color.printError(ew, use_color,
+                    "plugin update: path not found: {s}\n", .{src_path});
+                return 1;
+            },
+            else => return err,
+        };
+        defer allocator.free(dest);
+        try color.printSuccess(w, use_color, "Updated plugin '{s}' → {s}\n", .{ plugin_name, dest });
+        return 0;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
-            "plugin: missing subcommand\n\n  Hint: zr plugin list | install | remove | info\n", .{});
+            "plugin: missing subcommand\n\n  Hint: zr plugin list | install | remove | update | info\n", .{});
         return 1;
     } else {
         try color.printError(ew, use_color,
-            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | install | remove | info\n", .{sub});
+            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | install | remove | update | info\n", .{sub});
         return 1;
     }
 }

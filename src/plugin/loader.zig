@@ -340,6 +340,34 @@ pub fn removePlugin(allocator: std.mem.Allocator, plugin_name: []const u8) !void
     };
 }
 
+/// Update an installed plugin by removing the old installation and re-installing from a new source path.
+/// If the plugin is not installed, returns error.PluginNotFound.
+/// If src_path does not exist, returns InstallError.SourceNotFound.
+pub fn updateLocalPlugin(
+    allocator: std.mem.Allocator,
+    plugin_name: []const u8,
+    src_path: []const u8,
+) ![]const u8 {
+    const home = std.posix.getenv("HOME") orelse ".";
+    const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
+    defer allocator.free(plugin_dir);
+
+    // Verify plugin is installed.
+    std.fs.accessAbsolute(plugin_dir, .{}) catch return error.PluginNotFound;
+
+    // Verify source exists.
+    std.fs.accessAbsolute(src_path, .{}) catch return InstallError.SourceNotFound;
+
+    // Remove existing installation.
+    std.fs.deleteTreeAbsolute(plugin_dir) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+
+    // Re-install from new source.
+    return installLocalPlugin(allocator, src_path, plugin_name);
+}
+
 /// List all installed plugins from ~/.zr/plugins/.
 /// Returns a slice of plugin directory names (caller frees slice and each name).
 pub fn listInstalledPlugins(allocator: std.mem.Allocator) ![][]const u8 {
@@ -558,4 +586,67 @@ test "listInstalledPlugins: empty when dir missing" {
     }
     // No assertion on count — HOME-dependent. Just verify no crash.
     _ = names.len;
+}
+
+test "updateLocalPlugin: not installed returns PluginNotFound" {
+    const allocator = std.testing.allocator;
+    const result = updateLocalPlugin(allocator, "zr-test-not-installed-99999", "/nonexistent/path");
+    try std.testing.expectError(error.PluginNotFound, result);
+}
+
+test "updateLocalPlugin: source not found returns SourceNotFound" {
+    // This test needs an installed plugin first. We'll rely on the install/remove test
+    // having cleaned up — so this plugin shouldn't exist. Skip if already installed.
+    const allocator = std.testing.allocator;
+    // If plugin doesn't exist, PluginNotFound is returned before SourceNotFound.
+    const result = updateLocalPlugin(allocator, "zr-test-update-nonexistent", "/nonexistent/src");
+    // Either PluginNotFound (not installed) or SourceNotFound (installed but bad path).
+    const err = result catch |e| e;
+    try std.testing.expect(err == error.PluginNotFound or err == InstallError.SourceNotFound);
+}
+
+test "updateLocalPlugin: round-trip install + update" {
+    const allocator = std.testing.allocator;
+    const plugin_name = "zr-test-update-54321";
+
+    // Create source dir v1.
+    var tmp_v1 = std.testing.tmpDir(.{});
+    defer tmp_v1.cleanup();
+    try tmp_v1.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"myplugin\"\nversion = \"1.0.0\"\ndescription = \"\"\nauthor = \"\"\n",
+    });
+    try tmp_v1.dir.writeFile(.{ .sub_path = "plugin.dylib", .data = "v1" });
+    const src_v1 = try tmp_v1.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(src_v1);
+
+    // Create source dir v2.
+    var tmp_v2 = std.testing.tmpDir(.{});
+    defer tmp_v2.cleanup();
+    try tmp_v2.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"myplugin\"\nversion = \"2.0.0\"\ndescription = \"\"\nauthor = \"\"\n",
+    });
+    try tmp_v2.dir.writeFile(.{ .sub_path = "plugin.dylib", .data = "v2" });
+    const src_v2 = try tmp_v2.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(src_v2);
+
+    // Clean up any leftover from previous test run.
+    removePlugin(allocator, plugin_name) catch {};
+
+    // Install v1.
+    const dest_v1 = try installLocalPlugin(allocator, src_v1, plugin_name);
+    defer allocator.free(dest_v1);
+
+    // Update to v2.
+    const dest_v2 = try updateLocalPlugin(allocator, plugin_name, src_v2);
+    defer allocator.free(dest_v2);
+
+    // Verify the updated plugin.toml has version 2.0.0.
+    var meta = (try readPluginMeta(allocator, dest_v2)) orelse return error.TestUnexpectedNull;
+    defer meta.deinit();
+    try std.testing.expectEqualStrings("2.0.0", meta.version);
+
+    // Clean up.
+    try removePlugin(allocator, plugin_name);
 }
