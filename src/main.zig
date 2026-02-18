@@ -70,7 +70,36 @@ fn run(
         return 0;
     }
 
-    const cmd = args[1];
+    // Parse global flags: --profile <name>
+    // Scan args for --profile flag; strip it from the args slice before command dispatch.
+    var profile_name: ?[]const u8 = null;
+    var remaining_args = std.ArrayList([]const u8){};
+    defer remaining_args.deinit(allocator);
+    {
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            if (std.mem.eql(u8, args[i], "--profile") or std.mem.eql(u8, args[i], "-p")) {
+                if (i + 1 < args.len) {
+                    profile_name = args[i + 1];
+                    i += 1; // skip value
+                } else {
+                    try color.printError(ew, use_color, "--profile: missing profile name\n\n  Hint: zr --profile <name> run <task>\n", .{});
+                    return 1;
+                }
+            } else {
+                try remaining_args.append(allocator, args[i]);
+            }
+        }
+    }
+    // ZR_PROFILE env var is checked inside loadConfig (--profile flag takes precedence).
+
+    const effective_args = remaining_args.items;
+    if (effective_args.len < 2) {
+        try printHelp(w, use_color);
+        return 0;
+    }
+
+    const cmd = effective_args[1];
 
     if (std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         try printHelp(w, use_color);
@@ -78,27 +107,27 @@ fn run(
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
-        if (args.len < 3) {
+        if (effective_args.len < 3) {
             try color.printError(ew, use_color, "run: missing task name\n\n  Hint: zr run <task-name>\n", .{});
             return 1;
         }
-        const task_name = args[2];
-        return cmdRun(allocator, task_name, w, ew, use_color);
+        const task_name = effective_args[2];
+        return cmdRun(allocator, task_name, profile_name, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "watch")) {
-        if (args.len < 3) {
+        if (effective_args.len < 3) {
             try color.printError(ew, use_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
             return 1;
         }
-        const task_name = args[2];
-        const watch_paths: []const []const u8 = if (args.len > 3) args[3..] else &[_][]const u8{"."};
-        return cmdWatch(allocator, task_name, watch_paths, w, ew, use_color);
+        const task_name = effective_args[2];
+        const watch_paths: []const []const u8 = if (effective_args.len > 3) effective_args[3..] else &[_][]const u8{"."};
+        return cmdWatch(allocator, task_name, watch_paths, profile_name, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "workflow")) {
-        if (args.len < 3) {
+        if (effective_args.len < 3) {
             try color.printError(ew, use_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
             return 1;
         }
-        const wf_name = args[2];
-        return cmdWorkflow(allocator, wf_name, w, ew, use_color);
+        const wf_name = effective_args[2];
+        return cmdWorkflow(allocator, wf_name, profile_name, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
         return cmdList(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
@@ -116,7 +145,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "zr v0.0.4", .{});
     try w.print(" - Zig Task Runner\n\n", .{});
     try color.printBold(w, use_color, "Usage:\n", .{});
-    try w.print("  zr <command> [arguments]\n\n", .{});
+    try w.print("  zr [options] <command> [arguments]\n\n", .{});
     try color.printBold(w, use_color, "Commands:\n", .{});
     try w.print("  run <task>             Run a task and its dependencies\n", .{});
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
@@ -125,18 +154,19 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  graph                  Show dependency tree\n", .{});
     try w.print("  history                Show recent run history\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
-    try w.print("  --help, -h   Show this help message\n\n", .{});
+    try w.print("  --help, -h            Show this help message\n", .{});
+    try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
+    try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }
 
 fn loadConfig(
     allocator: std.mem.Allocator,
+    profile_name_opt: ?[]const u8,
     err_writer: *std.Io.Writer,
 ) !?loader.Config {
-    // Color is disabled for config errors since we don't have a TTY handle here;
-    // callers should pass use_color if needed. For simplicity, detect directly.
     const use_color = color.isTty(std.fs.File.stderr());
-    return loader.Config.loadFromFile(allocator, CONFIG_FILE) catch |err| {
+    var config = loader.Config.loadFromFile(allocator, CONFIG_FILE) catch |err| {
         switch (err) {
             error.FileNotFound => {
                 try color.printError(err_writer, use_color,
@@ -153,6 +183,40 @@ fn loadConfig(
         }
         return null;
     };
+
+    // Resolve effective profile: --profile flag, then ZR_PROFILE env var.
+    var effective_profile: ?[]const u8 = profile_name_opt;
+    var env_profile_buf: [256]u8 = undefined;
+    if (effective_profile == null) {
+        if (std.process.getEnvVarOwned(allocator, "ZR_PROFILE")) |pname| {
+            defer allocator.free(pname);
+            if (pname.len > 0 and pname.len <= env_profile_buf.len) {
+                @memcpy(env_profile_buf[0..pname.len], pname);
+                effective_profile = env_profile_buf[0..pname.len];
+            }
+        } else |_| {}
+    }
+
+    if (effective_profile) |pname| {
+        config.applyProfile(pname) catch |err| switch (err) {
+            error.ProfileNotFound => {
+                try color.printError(err_writer, use_color,
+                    "profile: '{s}' not found in {s}\n\n  Hint: Add [profiles.{s}] to your zr.toml\n",
+                    .{ pname, CONFIG_FILE, pname },
+                );
+                config.deinit();
+                return null;
+            },
+            else => {
+                try color.printError(err_writer, use_color,
+                    "profile: Failed to apply '{s}': {s}\n", .{ pname, @errorName(err) });
+                config.deinit();
+                return null;
+            },
+        };
+    }
+
+    return config;
 }
 
 fn buildDag(allocator: std.mem.Allocator, config: *const loader.Config) !dag_mod.DAG {
@@ -174,11 +238,12 @@ fn buildDag(allocator: std.mem.Allocator, config: *const loader.Config) !dag_mod
 fn cmdRun(
     allocator: std.mem.Allocator,
     task_name: []const u8,
+    profile_name: ?[]const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, profile_name, err_writer)) orelse return 1;
     defer config.deinit();
 
     if (config.tasks.get(task_name) == null) {
@@ -241,13 +306,14 @@ fn cmdWatch(
     allocator: std.mem.Allocator,
     task_name: []const u8,
     watch_paths: []const []const u8,
+    profile_name: ?[]const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
     // Verify task exists before starting the watch loop.
     {
-        var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+        var config = (try loadConfig(allocator, profile_name, err_writer)) orelse return 1;
         defer config.deinit();
         if (config.tasks.get(task_name) == null) {
             try color.printError(err_writer, use_color,
@@ -286,7 +352,7 @@ fn cmdWatch(
         first_run = false;
 
         // Reload config in case zr.toml changed.
-        var config = (try loadConfig(allocator, err_writer)) orelse {
+        var config = (try loadConfig(allocator, profile_name, err_writer)) orelse {
             try color.printError(err_writer, use_color,
                 "watch: Config error — waiting for next change...\n", .{});
             continue;
@@ -336,11 +402,12 @@ fn cmdWatch(
 fn cmdWorkflow(
     allocator: std.mem.Allocator,
     wf_name: []const u8,
+    profile_name: ?[]const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, profile_name, err_writer)) orelse return 1;
     defer config.deinit();
 
     const wf = config.workflows.get(wf_name) orelse {
@@ -506,7 +573,7 @@ fn cmdList(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, null, err_writer)) orelse return 1;
     defer config.deinit();
 
     try color.printHeader(w, use_color, "Tasks:", .{});
@@ -575,7 +642,7 @@ fn cmdGraph(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, null, err_writer)) orelse return 1;
     defer config.deinit();
 
     var dag = try buildDag(allocator, &config);

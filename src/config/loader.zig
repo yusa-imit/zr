@@ -3,12 +3,14 @@ const std = @import("std");
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
+    profiles: std.StringHashMap(Profile),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
         return .{
             .tasks = std.StringHashMap(Task).init(allocator),
             .workflows = std.StringHashMap(Workflow).init(allocator),
+            .profiles = std.StringHashMap(Profile).init(allocator),
             .allocator = allocator,
         };
     }
@@ -26,6 +28,94 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.workflows.deinit();
+        var pit = self.profiles.iterator();
+        while (pit.next()) |entry| {
+            // Profile.deinit frees entry.value_ptr.name (same allocation as key)
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.profiles.deinit();
+    }
+
+    /// Apply a named profile to this config. Merges profile env vars into all tasks
+    /// and applies any task-level overrides (cmd, cwd, env additions).
+    /// Returns error.ProfileNotFound if the profile doesn't exist.
+    pub fn applyProfile(self: *Config, profile_name: []const u8) !void {
+        const profile = self.profiles.get(profile_name) orelse return error.ProfileNotFound;
+
+        var task_it = self.tasks.iterator();
+        while (task_it.next()) |entry| {
+            const task = entry.value_ptr;
+
+            // Build merged env: existing task env + profile global env (profile wins)
+            // First find if there's a task-level override in the profile
+            const task_override: ?ProfileTaskOverride = if (profile.task_overrides.get(task.name)) |ov| ov else null;
+
+            // Count extra env entries: profile global + task-override env
+            const extra_global = profile.env.len;
+            const extra_task = if (task_override) |ov| ov.env.len else 0;
+            const total_env = task.env.len + extra_global + extra_task;
+
+            if (total_env > task.env.len) {
+                // Allocate new env slice
+                const new_env = try self.allocator.alloc([2][]const u8, total_env);
+                var env_duped: usize = 0;
+                errdefer {
+                    for (new_env[0..env_duped]) |pair| {
+                        self.allocator.free(pair[0]);
+                        self.allocator.free(pair[1]);
+                    }
+                    self.allocator.free(new_env);
+                }
+
+                // Copy existing task env
+                for (task.env, 0..) |pair, i| {
+                    new_env[i][0] = try self.allocator.dupe(u8, pair[0]);
+                    errdefer self.allocator.free(new_env[i][0]);
+                    new_env[i][1] = try self.allocator.dupe(u8, pair[1]);
+                    env_duped += 1;
+                }
+
+                // Append profile global env
+                for (profile.env, 0..) |pair, i| {
+                    const idx = task.env.len + i;
+                    new_env[idx][0] = try self.allocator.dupe(u8, pair[0]);
+                    errdefer self.allocator.free(new_env[idx][0]);
+                    new_env[idx][1] = try self.allocator.dupe(u8, pair[1]);
+                    env_duped += 1;
+                }
+
+                // Append profile task-level env overrides
+                if (task_override) |ov| {
+                    for (ov.env, 0..) |pair, i| {
+                        const idx = task.env.len + extra_global + i;
+                        new_env[idx][0] = try self.allocator.dupe(u8, pair[0]);
+                        errdefer self.allocator.free(new_env[idx][0]);
+                        new_env[idx][1] = try self.allocator.dupe(u8, pair[1]);
+                        env_duped += 1;
+                    }
+                }
+
+                // Free old env and replace
+                for (task.env) |pair| {
+                    self.allocator.free(pair[0]);
+                    self.allocator.free(pair[1]);
+                }
+                self.allocator.free(task.env);
+                task.env = new_env;
+            }
+
+            // Apply task-level cmd/cwd overrides
+            if (task_override) |ov| {
+                if (ov.cmd) |new_cmd| {
+                    self.allocator.free(task.cmd);
+                    task.cmd = try self.allocator.dupe(u8, new_cmd);
+                }
+                if (ov.cwd) |new_cwd| {
+                    if (task.cwd) |old_cwd| self.allocator.free(old_cwd);
+                    task.cwd = try self.allocator.dupe(u8, new_cwd);
+                }
+            }
+        }
     }
 
     pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
@@ -246,6 +336,52 @@ pub const Workflow = struct {
     }
 };
 
+/// Per-task overrides within a profile.
+pub const ProfileTaskOverride = struct {
+    /// Optional command override (replaces task cmd).
+    cmd: ?[]const u8 = null,
+    /// Optional working directory override.
+    cwd: ?[]const u8 = null,
+    /// Additional env vars merged into task env (profile wins over task defaults).
+    env: [][2][]const u8,
+
+    pub fn deinit(self: *ProfileTaskOverride, allocator: std.mem.Allocator) void {
+        if (self.cmd) |c| allocator.free(c);
+        if (self.cwd) |c| allocator.free(c);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(self.env);
+    }
+};
+
+/// A named profile that overrides config at runtime.
+pub const Profile = struct {
+    name: []const u8,
+    /// Global env vars added to all tasks when this profile is active.
+    env: [][2][]const u8,
+    /// Per-task overrides keyed by task name.
+    task_overrides: std.StringHashMap(ProfileTaskOverride),
+
+    pub fn deinit(self: *Profile, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(self.env);
+        var it = self.task_overrides.iterator();
+        while (it.next()) |entry| {
+            // key is same allocation as ProfileTaskOverride name stored inside
+            // the map; we manage keys separately.
+            allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(allocator);
+        }
+        self.task_overrides.deinit();
+    }
+};
+
 /// Parse a duration string like "5m", "30s", "1h", "500ms" into milliseconds.
 /// Returns null if the format is unrecognized.
 pub fn parseDurationMs(s: []const u8) ?u64 {
@@ -312,6 +448,31 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var stage_parallel: bool = true;
     var stage_fail_fast: bool = false;
     var stage_condition: ?[]const u8 = null;
+
+    // Profile parsing state
+    // current_profile: non-owning slice into content (profile name)
+    var current_profile: ?[]const u8 = null;
+    // profile_env: accumulated non-owning env pairs for the current profile's global env
+    var profile_env = std.ArrayList([2][]const u8){};
+    defer profile_env.deinit(allocator);
+    // current_profile_task: if inside [profiles.X.tasks.Y], this is Y (non-owning)
+    var current_profile_task: ?[]const u8 = null;
+    // profile_task_env: env pairs for current profile task override (non-owning)
+    var profile_task_env = std.ArrayList([2][]const u8){};
+    defer profile_task_env.deinit(allocator);
+    // profile_task_cmd / profile_task_cwd: non-owning slices into content
+    var profile_task_cmd: ?[]const u8 = null;
+    var profile_task_cwd: ?[]const u8 = null;
+    // Per-profile accumulated task overrides (owned, flushed into Profile on profile end)
+    var profile_task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+    defer {
+        var pit2 = profile_task_overrides.iterator();
+        while (pit2.next()) |e| {
+            allocator.free(e.key_ptr.*);
+            e.value_ptr.deinit(allocator);
+        }
+        profile_task_overrides.deinit();
+    }
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -407,6 +568,111 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const wf_end = std.mem.indexOf(u8, trimmed[wf_start..], "]") orelse continue;
             current_workflow = trimmed[wf_start..][0..wf_end];
             workflow_desc = null;
+        } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.indexOf(u8, trimmed, ".tasks.") != null) {
+            // Section: [profiles.X.tasks.Y] — per-task override within profile X
+            // Flush pending profile task override (if any)
+            if (current_profile_task) |ptask| {
+                const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+                var ptenv_duped: usize = 0;
+                errdefer {
+                    for (pto_env[0..ptenv_duped]) |pair| {
+                        allocator.free(pair[0]);
+                        allocator.free(pair[1]);
+                    }
+                    allocator.free(pto_env);
+                }
+                for (profile_task_env.items, 0..) |pair, i| {
+                    pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                    errdefer allocator.free(pto_env[i][0]);
+                    pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                    ptenv_duped += 1;
+                }
+                const pto = ProfileTaskOverride{
+                    .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null,
+                    .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null,
+                    .env = pto_env,
+                };
+                const pto_key = try allocator.dupe(u8, ptask);
+                errdefer allocator.free(pto_key);
+                try profile_task_overrides.put(pto_key, pto);
+            }
+            profile_task_env.clearRetainingCapacity();
+            profile_task_cmd = null;
+            profile_task_cwd = null;
+
+            // Parse task name: "[profiles.X.tasks.Y]" → Y
+            const tasks_marker = ".tasks.";
+            const tm_idx = std.mem.indexOf(u8, trimmed, tasks_marker) orelse continue;
+            const after_tasks = trimmed[tm_idx + tasks_marker.len ..];
+            const rbracket = std.mem.indexOf(u8, after_tasks, "]") orelse continue;
+            current_profile_task = after_tasks[0..rbracket];
+            // Entering a profile task context; clear task context
+            current_task = null;
+            current_workflow = null;
+        } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            // Section: [profiles.X] — new profile header
+            // Flush pending profile task override (if any)
+            if (current_profile_task) |ptask| {
+                const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+                var ptenv_duped: usize = 0;
+                errdefer {
+                    for (pto_env[0..ptenv_duped]) |pair| {
+                        allocator.free(pair[0]);
+                        allocator.free(pair[1]);
+                    }
+                    allocator.free(pto_env);
+                }
+                for (profile_task_env.items, 0..) |pair, i| {
+                    pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                    errdefer allocator.free(pto_env[i][0]);
+                    pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                    ptenv_duped += 1;
+                }
+                const pto = ProfileTaskOverride{
+                    .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null,
+                    .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null,
+                    .env = pto_env,
+                };
+                const pto_key = try allocator.dupe(u8, ptask);
+                errdefer allocator.free(pto_key);
+                try profile_task_overrides.put(pto_key, pto);
+                current_profile_task = null;
+                profile_task_env.clearRetainingCapacity();
+                profile_task_cmd = null;
+                profile_task_cwd = null;
+            }
+            // Flush pending profile (if any)
+            if (current_profile) |pname| {
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+                profile_env.clearRetainingCapacity();
+                // profile_task_overrides already cleared by flushProfile
+            }
+            // Flush pending task (if any)
+            if (current_task) |task_name| {
+                if (task_cmd) |cmd| {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition);
+                }
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_cmd = null; task_cwd = null; task_desc = null;
+                task_timeout_ms = null; task_allow_failure = false;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
+                task_condition = null; current_task = null;
+            }
+            // Flush pending workflow (if any)
+            if (current_workflow) |wf_name_slice| {
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                for (workflow_stages.items) |*s| s.deinit(allocator);
+                workflow_stages.clearRetainingCapacity();
+                current_workflow = null;
+                workflow_desc = null;
+            }
+
+            // Parse new profile name: "[profiles.X]" → X
+            const pstart = "[profiles.".len;
+            const pend = std.mem.indexOf(u8, trimmed[pstart..], "]") orelse continue;
+            current_profile = trimmed[pstart..][0..pend];
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
             // Flush pending stage (if any)
             if (stage_name) |sn| {
@@ -444,6 +710,41 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 current_workflow = null;
                 workflow_desc = null;
             }
+            // Flush pending profile (if any)
+            if (current_profile) |pname| {
+                if (current_profile_task) |ptask| {
+                    const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+                    var ptenv_duped: usize = 0;
+                    errdefer {
+                        for (pto_env[0..ptenv_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
+                        allocator.free(pto_env);
+                    }
+                    for (profile_task_env.items, 0..) |pair, i| {
+                        pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pto_env[i][0]);
+                        pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                        ptenv_duped += 1;
+                    }
+                    const pto = ProfileTaskOverride{
+                        .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null,
+                        .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null,
+                        .env = pto_env,
+                    };
+                    const pto_key = try allocator.dupe(u8, ptask);
+                    errdefer allocator.free(pto_key);
+                    try profile_task_overrides.put(pto_key, pto);
+                    current_profile_task = null;
+                    profile_task_env.clearRetainingCapacity();
+                    profile_task_cmd = null;
+                    profile_task_cwd = null;
+                }
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+                profile_env.clearRetainingCapacity();
+                current_profile = null;
+            }
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
@@ -477,7 +778,41 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 value = value[1 .. value.len - 1];
             }
 
-            if (current_workflow != null and current_task == null) {
+            if (current_profile_task != null) {
+                // Inside [profiles.X.tasks.Y] — parse task override fields
+                if (std.mem.eql(u8, key, "cmd")) {
+                    profile_task_cmd = value;
+                } else if (std.mem.eql(u8, key, "cwd")) {
+                    profile_task_cwd = value;
+                } else if (std.mem.eql(u8, key, "env")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq2 = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq2], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq2 + 1 ..], " \t\"");
+                            if (env_key.len > 0) try profile_task_env.append(allocator, .{ env_key, env_val });
+                        }
+                    }
+                }
+            } else if (current_profile != null and current_task == null and current_workflow == null) {
+                // Inside [profiles.X] (global profile level) — parse global env
+                if (std.mem.eql(u8, key, "env")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq2 = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq2], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq2 + 1 ..], " \t\"");
+                            if (env_key.len > 0) try profile_env.append(allocator, .{ env_key, env_val });
+                        }
+                    }
+                }
+            } else if (current_workflow != null and current_task == null) {
                 // We are inside a workflow or stage context
                 if (std.mem.eql(u8, key, "name") and stage_name == null) {
                     // Stage name (first name= after [[workflows.X.stages]])
@@ -619,7 +954,94 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         }
     }
 
+    // Flush final pending profile task override
+    if (current_profile_task) |ptask| {
+        const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+        var ptenv_duped: usize = 0;
+        errdefer {
+            for (pto_env[0..ptenv_duped]) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            allocator.free(pto_env);
+        }
+        for (profile_task_env.items, 0..) |pair, i| {
+            pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+            errdefer allocator.free(pto_env[i][0]);
+            pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+            ptenv_duped += 1;
+        }
+        const pto = ProfileTaskOverride{
+            .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null,
+            .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null,
+            .env = pto_env,
+        };
+        const pto_key = try allocator.dupe(u8, ptask);
+        errdefer allocator.free(pto_key);
+        try profile_task_overrides.put(pto_key, pto);
+    }
+
+    // Flush final pending profile
+    if (current_profile) |pname| {
+        try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+        profile_env.clearRetainingCapacity();
+    }
+
     return config;
+}
+
+/// Helper: flush accumulated profile state into config.profiles.
+/// Clears profile_task_overrides after transferring ownership to the Profile.
+fn flushProfile(
+    allocator: std.mem.Allocator,
+    config: *Config,
+    pname: []const u8,
+    profile_env: *std.ArrayList([2][]const u8),
+    profile_task_overrides: *std.StringHashMap(ProfileTaskOverride),
+) !void {
+    const p_name = try allocator.dupe(u8, pname);
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, profile_env.items.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (p_env[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(p_env);
+    }
+    for (profile_env.items, 0..) |pair, i| {
+        p_env[i][0] = try allocator.dupe(u8, pair[0]);
+        errdefer allocator.free(p_env[i][0]);
+        p_env[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
+    // Transfer ownership of task_overrides map
+    var new_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+    errdefer {
+        var oit = new_overrides.iterator();
+        while (oit.next()) |e| {
+            allocator.free(e.key_ptr.*);
+            e.value_ptr.deinit(allocator);
+        }
+        new_overrides.deinit();
+    }
+    var src_it = profile_task_overrides.iterator();
+    while (src_it.next()) |entry| {
+        // Move key and value into new_overrides (steal ownership)
+        try new_overrides.put(entry.key_ptr.*, entry.value_ptr.*);
+    }
+    // Clear source map without freeing (ownership transferred)
+    profile_task_overrides.clearRetainingCapacity();
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = new_overrides,
+    };
+    try config.profiles.put(p_name, profile);
 }
 
 fn addTaskImpl(
@@ -1022,4 +1444,166 @@ test "addWorkflow: programmatic workflow construction" {
     try std.testing.expectEqualStrings("desc", wf.description.?);
     try std.testing.expectEqual(@as(usize, 1), wf.stages.len);
     try std.testing.expectEqualStrings("s1", wf.stages[0].name);
+}
+
+test "parse profile with global env from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+        \\[profiles.dev]
+        \\env = { NODE_ENV = "development", DEBUG = "true" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), config.profiles.count());
+
+    const prof = config.profiles.get("dev").?;
+    try std.testing.expectEqualStrings("dev", prof.name);
+    try std.testing.expectEqual(@as(usize, 2), prof.env.len);
+
+    var found_node_env = false;
+    var found_debug = false;
+    for (prof.env) |pair| {
+        if (std.mem.eql(u8, pair[0], "NODE_ENV")) {
+            try std.testing.expectEqualStrings("development", pair[1]);
+            found_node_env = true;
+        } else if (std.mem.eql(u8, pair[0], "DEBUG")) {
+            try std.testing.expectEqualStrings("true", pair[1]);
+            found_debug = true;
+        }
+    }
+    try std.testing.expect(found_node_env);
+    try std.testing.expect(found_debug);
+}
+
+test "parse profile with task override from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+        \\[profiles.ci]
+        \\env = { CI = "true" }
+        \\
+        \\[profiles.ci.tasks.build]
+        \\cmd = "zig build -Doptimize=ReleaseSafe"
+        \\env = { RELEASE = "1" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const prof = config.profiles.get("ci").?;
+    try std.testing.expectEqualStrings("ci", prof.name);
+    try std.testing.expectEqual(@as(usize, 1), prof.env.len);
+    try std.testing.expectEqualStrings("CI", prof.env[0][0]);
+    try std.testing.expectEqualStrings("true", prof.env[0][1]);
+
+    const ov = prof.task_overrides.get("build").?;
+    try std.testing.expect(ov.cmd != null);
+    try std.testing.expectEqualStrings("zig build -Doptimize=ReleaseSafe", ov.cmd.?);
+    try std.testing.expectEqual(@as(usize, 1), ov.env.len);
+    try std.testing.expectEqualStrings("RELEASE", ov.env[0][0]);
+    try std.testing.expectEqualStrings("1", ov.env[0][1]);
+}
+
+test "applyProfile: global env added to all tasks" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+        \\[tasks.test]
+        \\cmd = "zig build test"
+        \\
+        \\[profiles.dev]
+        \\env = { DEBUG = "1" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try config.applyProfile("dev");
+
+    // Both tasks should now have DEBUG=1 in their env
+    const build = config.tasks.get("build").?;
+    var found = false;
+    for (build.env) |pair| {
+        if (std.mem.eql(u8, pair[0], "DEBUG") and std.mem.eql(u8, pair[1], "1")) found = true;
+    }
+    try std.testing.expect(found);
+
+    const tst = config.tasks.get("test").?;
+    found = false;
+    for (tst.env) |pair| {
+        if (std.mem.eql(u8, pair[0], "DEBUG") and std.mem.eql(u8, pair[1], "1")) found = true;
+    }
+    try std.testing.expect(found);
+}
+
+test "applyProfile: task-level cmd override" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+        \\[profiles.release]
+        \\env = {}
+        \\
+        \\[profiles.release.tasks.build]
+        \\cmd = "zig build -Doptimize=ReleaseFast"
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try config.applyProfile("release");
+
+    const build = config.tasks.get("build").?;
+    try std.testing.expectEqualStrings("zig build -Doptimize=ReleaseFast", build.cmd);
+}
+
+test "applyProfile: error on unknown profile" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const result = config.applyProfile("nonexistent");
+    try std.testing.expectError(error.ProfileNotFound, result);
+}
+
+test "parse multiple profiles from toml" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+        \\[profiles.dev]
+        \\env = { DEBUG = "true" }
+        \\
+        \\[profiles.prod]
+        \\env = { OPTIMIZE = "true" }
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), config.profiles.count());
+    try std.testing.expect(config.profiles.get("dev") != null);
+    try std.testing.expect(config.profiles.get("prod") != null);
 }
