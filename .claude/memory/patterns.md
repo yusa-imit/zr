@@ -614,3 +614,11 @@ while (try it.next()) |entry| {
 - args[0] = "zr", args[1] = "plugin", args[2] = subcommand, args[3] = first argument
 - Check `args.len < 4` before accessing `args[3]`
 - For optional second arg (like plugin name override in install): check `args.len >= 5`, use `args[4]`
+- For required two-arg subcommands (like `update <name> <path>`): check `args.len < 5`
+
+## Plugin Update Pattern (updateLocalPlugin)
+- Delete-then-reinstall: `deleteTreeAbsolute` + delegate to `installLocalPlugin`
+- Verify install exists first (accessAbsolute), return `error.PluginNotFound` if absent
+- Then verify source exists, return `InstallError.SourceNotFound` if absent
+- Ignore `error.FileNotFound` in deleteTree (idempotent cleanup)
+- Caller owns the returned dest path slice
