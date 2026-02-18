@@ -145,6 +145,23 @@ Decisions are logged chronologically. Format:
 - Rationale: Static string literal scripts avoid runtime generation complexity; `zr list` awk parsing
   is a pragmatic tradeoff (coupled to output format, but simple and works without JSON output)
 
+## [2026-02-18] Global CLI Flags Implementation
+- Context: PRD Section 5.3.1 specifies --jobs/-j, --no-color, --quiet/-q, --verbose/-v, --config flags
+- Decision:
+  - All global flags parsed in `run()` before command dispatch; non-flag args go to `remaining_args`
+  - `--jobs N`: validated >= 1 (0 rejected with hint), passed to `scheduler.run()` as `max_jobs`
+  - `--no-color`: overrides `use_color = TTY-detect and !no_color`
+  - `--quiet`: opens `/dev/null` and replaces `w` (stdout writer) — task failures still go to `err_writer`
+  - `--verbose`: prints `[verbose mode]` dim line after the no-subcommand guard
+  - `--config <path>`: `loadConfig()` now accepts `config_path: []const u8` parameter
+  - `loadConfig` also accepts `use_color: bool` (was re-deriving from stderr TTY, ignoring --no-color)
+  - Shell completions updated for all 3 shells
+  - 94/94 tests passing; binary 2.4MB
+- Key fixes from code review:
+  - Quiet writer: use plain `var quiet_writer: std.fs.File.Writer` (not optional) before taking &interface
+  - Task failure lines route to `err_writer` not `w` (visible under --quiet)
+  - --jobs 0 rejected (was silently treated as CPU-count, confusing intent)
+
 ## [2026-02-18] Profile System Implementation
 - Context: Phase 2 requires named profiles for environment-specific config overrides
 - Decision: Implemented `Profile` + `ProfileTaskOverride` structs in `config/loader.zig`

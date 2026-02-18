@@ -35,8 +35,9 @@
 - [x] `--dry-run` / `-n` flag — `zr --dry-run run <task>` and `zr --dry-run workflow <name>` show execution plan (levels, parallelism) without running; `planDryRun()` in scheduler returns `DryRunPlan`
 - [x] `zr init` command — scaffolds starter `zr.toml` in current dir; accepts `std.fs.Dir` param for testability; deletes partial file on write failure; refuses to overwrite
 - [x] `zr completion <bash|zsh|fish>` — prints shell completion scripts that complete subcommands, task names (from `zr list`), and workflow names
+- [x] Global CLI flags: `--jobs/-j <N>` (max parallel), `--no-color`, `--quiet/-q`, `--verbose/-v`, `--config <path>` — all parsed in `run()` flag-scan loop; `--jobs` propagated to `scheduler.run()` as `max_jobs`; `--config` replaces hardcoded `CONFIG_FILE` via `loadConfig(config_path)` param; `--quiet` redirects `w` to `/dev/null`; `--no-color` overrides TTY detection
 
-> **Status**: Phase 1 complete + Phase 2 complete. 88/88 tests passing. Next: resource limits (`max_jobs` per-task config), TUI progress, or monorepo workspace support.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags). 94/94 tests passing. Next: `max_concurrent` per-task resource limit, TUI progress, or monorepo workspace support.
 
 ## Architecture (High-Level)
 

@@ -103,6 +103,12 @@ Record solutions to tricky bugs here. Future agents will check this before debug
   ```
 - Prevention: Never put the success path inside a catch block; use labeled blocks to extract booleans
 
+### [Optional field pointer is fragile — use plain var for stable &field reference]
+- Symptom: Code review flagged: `&optional_var.?.interface` — the `.?` unwrap may produce a copy, making the pointer point into a temporary
+- Cause: `var x: ?SomeStruct = null; x = value; break :blk &x.?.someField;` — the `.?` dereference may return a copy of the inner value, not a stable reference
+- Fix: Use a plain (non-optional) variable: `var plain: SomeStruct = undefined; plain = value; break :blk &plain.someField;`
+- Prevention: Never take `&optional.?.field` — always unwrap to a plain var first, then take address of that
+
 ### [std.process.exit bypasses defers - buffered writers not flushed]
 - Symptom: Error messages written to err_writer never appeared in stderr
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed

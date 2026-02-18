@@ -426,3 +426,44 @@ const exists: bool = blk: {
 // Order of if-else branches matters:
 //   [[...stages]] MUST come before [workflows.X] (more specific before less specific)
 ```
+
+### Global Flag Parsing Pattern (main.zig)
+```zig
+// Declare all flag variables before the scan loop:
+var max_jobs: u32 = 0;
+var no_color: bool = false;
+var quiet: bool = false;
+var verbose: bool = false;
+var config_path: []const u8 = CONFIG_FILE;
+
+// After the loop, compute derived values:
+const effective_color = use_color and !no_color;
+
+// For quiet mode: open /dev/null as null sink (Unix only; falls back silently):
+var quiet_file_opt: ?std.fs.File = null;
+defer if (quiet_file_opt) |f| f.close();
+var quiet_buf: [64]u8 = undefined;
+var quiet_writer_storage: ?std.fs.File.Writer = null;
+const effective_w: *std.Io.Writer = blk: {
+    if (quiet) {
+        if (std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only })) |qf| {
+            quiet_file_opt = qf;
+            quiet_writer_storage = qf.writer(&quiet_buf);
+            break :blk &quiet_writer_storage.?.interface;
+        } else |_| {}
+    }
+    break :blk w;
+};
+```
+- All cmd* functions receive `max_jobs: u32` and `config_path: []const u8` so callers can override
+- `loadConfig` accepts `config_path` instead of using the `CONFIG_FILE` constant directly
+- `scheduler.run()` calls pass `.max_jobs = max_jobs` via `SchedulerConfig`
+- Tests for flag parsing call `run()` directly with synthetic `fake_args` slices
+
+### Null-Writer Pattern for --quiet (Zig 0.15, Unix)
+```zig
+// Open /dev/null as write-only; wrap with File.writer(&buf)
+// The interface pointer (&quiet_writer_storage.?.interface) is valid as long as
+// quiet_writer_storage and quiet_buf are in scope (they live in run() stack frame).
+// quiet_file_opt holds the file so it can be closed via defer.
+```
