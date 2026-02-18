@@ -102,12 +102,18 @@ fn run(
                 verbose = true;
             } else if (std.mem.eql(u8, args[i], "--jobs") or std.mem.eql(u8, args[i], "-j")) {
                 if (i + 1 < args.len) {
-                    max_jobs = std.fmt.parseInt(u32, args[i + 1], 10) catch {
+                    const n = std.fmt.parseInt(u32, args[i + 1], 10) catch {
                         try color.printError(ew, use_color,
-                            "--jobs: invalid value '{s}' — must be a non-negative integer\n\n  Hint: zr --jobs 4 run <task>\n",
+                            "--jobs: invalid value '{s}' — must be a positive integer\n\n  Hint: zr --jobs 4 run <task>\n",
                             .{args[i + 1]});
                         return 1;
                     };
+                    if (n == 0) {
+                        try color.printError(ew, use_color,
+                            "--jobs: value must be >= 1 (use 1 for sequential execution)\n\n  Hint: zr --jobs 4 run <task>\n", .{});
+                        return 1;
+                    }
+                    max_jobs = n;
                     i += 1; // skip value
                 } else {
                     try color.printError(ew, use_color,
@@ -137,28 +143,30 @@ fn run(
     // On non-Unix systems this silently falls back to normal output.
     var quiet_file_opt: ?std.fs.File = null;
     defer if (quiet_file_opt) |f| f.close();
-    var quiet_buf: [64]u8 = undefined;
-    var quiet_writer_storage: ?std.fs.File.Writer = null;
+    var quiet_buf: [4096]u8 = undefined;
+    // quiet_writer must be a plain (non-optional) var so that &quiet_writer.interface
+    // is a stable pointer into this stack frame (not into an optional wrapper).
+    var quiet_writer: std.fs.File.Writer = undefined;
     const effective_w: *std.Io.Writer = blk: {
         if (quiet) {
             if (std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only })) |qf| {
                 quiet_file_opt = qf;
-                quiet_writer_storage = qf.writer(&quiet_buf);
-                break :blk &quiet_writer_storage.?.interface;
+                quiet_writer = qf.writer(&quiet_buf);
+                break :blk &quiet_writer.interface;
             } else |_| {}
         }
         break :blk w;
     };
 
-    // --verbose: print a dim note at startup.
-    if (verbose) {
-        try color.printDim(effective_w, effective_color, "[verbose mode]\n", .{});
-    }
-
     const effective_args = remaining_args.items;
     if (effective_args.len < 2) {
         try printHelp(effective_w, effective_color);
         return 0;
+    }
+
+    // --verbose: print a dim note after the help guard.
+    if (verbose) {
+        try color.printDim(effective_w, effective_color, "[verbose mode]\n", .{});
     }
 
     const cmd = effective_args[1];
@@ -240,8 +248,8 @@ fn loadConfig(
     config_path: []const u8,
     profile_name_opt: ?[]const u8,
     err_writer: *std.Io.Writer,
+    use_color: bool,
 ) !?loader.Config {
-    const use_color = color.isTty(std.fs.File.stderr());
     var config = loader.Config.loadFromFile(allocator, config_path) catch |err| {
         switch (err) {
             error.FileNotFound => {
@@ -322,7 +330,7 @@ fn cmdRun(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     if (config.tasks.get(task_name) == null) {
@@ -380,7 +388,8 @@ fn cmdRun(
 
     const elapsed_ms: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns, std.time.ns_per_ms));
 
-    // Print results for each task that ran
+    // Print results for each task that ran. Failures go to err_writer so they
+    // are visible even under --quiet (which redirects w to /dev/null).
     for (sched_result.results.items) |task_result| {
         if (task_result.success) {
             try color.printSuccess(w, use_color,
@@ -388,9 +397,9 @@ fn cmdRun(
             try color.printDim(w, use_color,
                 "({d}ms)\n", .{task_result.duration_ms});
         } else {
-            try color.printError(w, use_color,
+            try color.printError(err_writer, use_color,
                 "{s} ", .{task_result.task_name});
-            try color.printDim(w, use_color,
+            try color.printDim(err_writer, use_color,
                 "(exit: {d})\n", .{task_result.exit_code});
         }
     }
@@ -439,7 +448,7 @@ fn cmdWatch(
 ) !u8 {
     // Verify task exists before starting the watch loop.
     {
-        var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse return 1;
+        var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
         defer config.deinit();
         if (config.tasks.get(task_name) == null) {
             try color.printError(err_writer, use_color,
@@ -478,7 +487,7 @@ fn cmdWatch(
         first_run = false;
 
         // Reload config in case zr.toml changed.
-        var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse {
+        var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse {
             try color.printError(err_writer, use_color,
                 "watch: Config error — waiting for next change...\n", .{});
             continue;
@@ -515,8 +524,8 @@ fn cmdWatch(
                 try color.printSuccess(w, use_color, "{s} ", .{task_result.task_name});
                 try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
             } else {
-                try color.printError(w, use_color, "{s} ", .{task_result.task_name});
-                try color.printDim(w, use_color, "(exit: {d})\n", .{task_result.exit_code});
+                try color.printError(err_writer, use_color, "{s} ", .{task_result.task_name});
+                try color.printDim(err_writer, use_color, "(exit: {d})\n", .{task_result.exit_code});
             }
         }
 
@@ -538,7 +547,7 @@ fn cmdWorkflow(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     const wf = config.workflows.get(wf_name) orelse {
@@ -736,7 +745,7 @@ fn cmdList(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, null, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     try color.printHeader(w, use_color, "Tasks:", .{});
@@ -806,7 +815,7 @@ fn cmdGraph(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, null, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     var dag = try buildDag(allocator, &config);
