@@ -1,9 +1,26 @@
 const std = @import("std");
 
+/// Workspace (monorepo) configuration from [workspace] section.
+pub const Workspace = struct {
+    /// Glob patterns for member directories (e.g. "packages/*", "apps/*").
+    members: [][]const u8,
+    /// Patterns to ignore when discovering members.
+    ignore: [][]const u8,
+
+    pub fn deinit(self: *Workspace, allocator: std.mem.Allocator) void {
+        for (self.members) |m| allocator.free(m);
+        allocator.free(self.members);
+        for (self.ignore) |ig| allocator.free(ig);
+        allocator.free(self.ignore);
+    }
+};
+
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
     profiles: std.StringHashMap(Profile),
+    /// Workspace config from [workspace] section, or null if not present.
+    workspace: ?Workspace = null,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -11,6 +28,7 @@ pub const Config = struct {
             .tasks = std.StringHashMap(Task).init(allocator),
             .workflows = std.StringHashMap(Workflow).init(allocator),
             .profiles = std.StringHashMap(Profile).init(allocator),
+            .workspace = null,
             .allocator = allocator,
         };
     }
@@ -34,6 +52,7 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.profiles.deinit();
+        if (self.workspace) |*ws| ws.deinit(self.allocator);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks
@@ -477,12 +496,21 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         profile_task_overrides.deinit();
     }
 
+    // Workspace parsing state
+    var in_workspace: bool = false;
+    // Accumulated non-owning slices for workspace fields; flushed at end
+    var ws_members = std.ArrayList([]const u8){};
+    defer ws_members.deinit(allocator);
+    var ws_ignore = std.ArrayList([]const u8){};
+    defer ws_ignore.deinit(allocator);
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
 
         if (std.mem.startsWith(u8, trimmed, "[[workflows.") and std.mem.endsWith(u8, trimmed, ".stages]]")) {
+            in_workspace = false;
             // Flush pending stage into workflow_stages
             if (stage_name) |sn| {
                 const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
@@ -513,6 +541,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_fail_fast = false;
             stage_condition = null;
         } else if (std.mem.startsWith(u8, trimmed, "[workflows.") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            in_workspace = false;
             // Flush pending stage (if any)
             if (stage_name) |sn| {
                 const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
@@ -573,6 +602,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             current_workflow = trimmed[wf_start..][0..wf_end];
             workflow_desc = null;
         } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.indexOf(u8, trimmed, ".tasks.") != null) {
+            in_workspace = false;
             // Section: [profiles.X.tasks.Y] — per-task override within profile X
             // Flush pending profile task override (if any)
             if (current_profile_task) |ptask| {
@@ -614,6 +644,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             current_task = null;
             current_workflow = null;
         } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            in_workspace = false;
             // Section: [profiles.X] — new profile header
             // Flush pending profile task override (if any)
             if (current_profile_task) |ptask| {
@@ -677,6 +708,47 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const pstart = "[profiles.".len;
             const pend = std.mem.indexOf(u8, trimmed[pstart..], "]") orelse continue;
             current_profile = trimmed[pstart..][0..pend];
+        } else if (std.mem.eql(u8, trimmed, "[workspace]")) {
+            // Flush pending task/workflow/profile contexts
+            if (stage_name) |sn| {
+                const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
+                var tduped: usize = 0;
+                errdefer { for (s_tasks[0..tduped]) |t| allocator.free(t); allocator.free(s_tasks); }
+                for (stage_tasks.items, 0..) |t, i| { s_tasks[i] = try allocator.dupe(u8, t); tduped += 1; }
+                const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
+                errdefer if (s_cond) |c| allocator.free(c);
+                try workflow_stages.append(allocator, Stage{ .name = try allocator.dupe(u8, sn), .tasks = s_tasks, .parallel = stage_parallel, .fail_fast = stage_fail_fast, .condition = s_cond });
+                stage_name = null; stage_tasks.clearRetainingCapacity(); stage_parallel = true; stage_fail_fast = false; stage_condition = null;
+            }
+            if (current_workflow) |wf_name_slice| {
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                for (workflow_stages.items) |*s| s.deinit(allocator);
+                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null;
+            }
+            if (current_task) |task_name| {
+                if (task_cmd) |cmd| {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent);
+                }
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity();
+                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; current_task = null;
+            }
+            if (current_profile) |pname| {
+                if (current_profile_task) |ptask| {
+                    const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+                    var ptenv_duped: usize = 0;
+                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
+                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
+                    const pto_key = try allocator.dupe(u8, ptask);
+                    errdefer allocator.free(pto_key);
+                    try profile_task_overrides.put(pto_key, pto);
+                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                }
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+                profile_env.clearRetainingCapacity(); current_profile = null;
+            }
+            in_workspace = true;
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
             // Flush pending stage (if any)
             if (stage_name) |sn| {
@@ -771,6 +843,7 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_condition = null;
             task_max_concurrent = 0;
 
+            in_workspace = false;
             const start = "[tasks.".len;
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
             // Non-owning slice into content
@@ -841,6 +914,27 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "description") and stage_name == null) {
                     // Workflow-level description (not inside a stage)
                     workflow_desc = value;
+                }
+            } else if (in_workspace) {
+                // Inside [workspace] — parse members and ignore arrays
+                if (std.mem.eql(u8, key, "members")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const t = std.mem.trim(u8, item, " \t\"");
+                            if (t.len > 0) try ws_members.append(allocator, t);
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "ignore")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const t = std.mem.trim(u8, item, " \t\"");
+                            if (t.len > 0) try ws_ignore.append(allocator, t);
+                        }
+                    }
                 }
             } else if (current_task != null) {
                 // Task-level key=value parsing
@@ -992,6 +1086,31 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     if (current_profile) |pname| {
         try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
         profile_env.clearRetainingCapacity();
+    }
+
+    // Flush workspace if present
+    if (in_workspace or ws_members.items.len > 0) {
+        const members = try allocator.alloc([]const u8, ws_members.items.len);
+        var mduped: usize = 0;
+        errdefer {
+            for (members[0..mduped]) |m| allocator.free(m);
+            allocator.free(members);
+        }
+        for (ws_members.items, 0..) |m, i| {
+            members[i] = try allocator.dupe(u8, m);
+            mduped += 1;
+        }
+        const ignore = try allocator.alloc([]const u8, ws_ignore.items.len);
+        var iduped: usize = 0;
+        errdefer {
+            for (ignore[0..iduped]) |ig| allocator.free(ig);
+            allocator.free(ignore);
+        }
+        for (ws_ignore.items, 0..) |ig, i| {
+            ignore[i] = try allocator.dupe(u8, ig);
+            iduped += 1;
+        }
+        config.workspace = Workspace{ .members = members, .ignore = ignore };
     }
 
     return config;
@@ -1640,4 +1759,37 @@ test "max_concurrent defaults to 0" {
     defer config.deinit();
     const task = config.tasks.get("build").?;
     try std.testing.expectEqual(@as(u32, 0), task.max_concurrent);
+}
+
+test "parse workspace section from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\
+        \\[workspace]
+        \\members = ["packages/*", "apps/*"]
+        \\ignore = ["**/node_modules"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.workspace != null);
+    const ws = config.workspace.?;
+    try std.testing.expectEqual(@as(usize, 2), ws.members.len);
+    try std.testing.expectEqualStrings("packages/*", ws.members[0]);
+    try std.testing.expectEqualStrings("apps/*", ws.members[1]);
+    try std.testing.expectEqual(@as(usize, 1), ws.ignore.len);
+    try std.testing.expectEqualStrings("**/node_modules", ws.ignore[0]);
+}
+
+test "workspace null when no workspace section" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.workspace == null);
 }
