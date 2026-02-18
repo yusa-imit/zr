@@ -162,6 +162,15 @@ Decisions are logged chronologically. Format:
   - Task failure lines route to `err_writer` not `w` (visible under --quiet)
   - --jobs 0 rejected (was silently treated as CPU-count, confusing intent)
 
+## [2026-02-18] max_concurrent Per-Task Resource Limit
+- Context: Phase 3 requires per-task concurrency control for matrix builds and resource-constrained tasks
+- Decision: `Task.max_concurrent: u32` field; scheduler maintains `StringHashMap(*std.Thread.Semaphore)` keyed by task name
+  - Created lazily in dispatch loop; heap-allocated with `allocator.create`; destroyed in map defer
+  - `errdefer allocator.destroy(new_sem)` before `put()` prevents memory leak on OOM
+  - Acquisition order: global semaphore FIRST, then per-task semaphore (avoids hold-and-wait deadlock)
+  - `threads.ensureTotalCapacity(level.items.len)` + `appendAssumeCapacity` prevents live-thread use-after-free if append OOMs
+  - 98/98 tests passing; binary 2.4MB
+
 ## [2026-02-18] Profile System Implementation
 - Context: Phase 2 requires named profiles for environment-specific config overrides
 - Decision: Implemented `Profile` + `ProfileTaskOverride` structs in `config/loader.zig`

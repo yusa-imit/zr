@@ -36,8 +36,9 @@
 - [x] `zr init` command — scaffolds starter `zr.toml` in current dir; accepts `std.fs.Dir` param for testability; deletes partial file on write failure; refuses to overwrite
 - [x] `zr completion <bash|zsh|fish>` — prints shell completion scripts that complete subcommands, task names (from `zr list`), and workflow names
 - [x] Global CLI flags: `--jobs/-j <N>` (max parallel), `--no-color`, `--quiet/-q`, `--verbose/-v`, `--config <path>` — all parsed in `run()` flag-scan loop; `--jobs` propagated to `scheduler.run()` as `max_jobs`; `--config` replaces hardcoded `CONFIG_FILE` via `loadConfig(config_path)` param; `--quiet` redirects `w` to `/dev/null`; `--no-color` overrides TTY detection
+- [x] `max_concurrent` per-task resource limit — `Task.max_concurrent: u32` (0=unlimited); scheduler uses `StringHashMap(*Semaphore)` keyed by task name; global semaphore acquired first (avoids hold-and-wait), then per-task; heap semaphores destroyed after all threads joined; threads list pre-reserved to avoid live-thread leak on OOM
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags). 94/94 tests passing. Next: `max_concurrent` per-task resource limit, TUI progress, or monorepo workspace support.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags + max_concurrent). 98/98 tests passing. Next: TUI progress bars, monorepo workspace support, or matrix task execution.
 
 ## Architecture (High-Level)
 

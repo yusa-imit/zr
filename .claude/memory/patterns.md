@@ -460,6 +460,43 @@ const effective_w: *std.Io.Writer = blk: {
 - `scheduler.run()` calls pass `.max_jobs = max_jobs` via `SchedulerConfig`
 - Tests for flag parsing call `run()` directly with synthetic `fake_args` slices
 
+### Per-Task Semaphore Pattern (max_concurrent)
+```zig
+// In run(): create lazily, destroy in defer after all threads joined
+var task_semaphores = std.StringHashMap(*std.Thread.Semaphore).init(allocator);
+defer {
+    var ts_it = task_semaphores.iterator();
+    while (ts_it.next()) |entry| allocator.destroy(entry.value_ptr.*);
+    task_semaphores.deinit();
+}
+
+// In dispatch loop — ACQUIRE GLOBAL FIRST to avoid hold-and-wait deadlock:
+semaphore.wait();  // global slot first
+var task_sem_ptr: ?*std.Thread.Semaphore = null;
+if (task.max_concurrent > 0) {
+    if (task_semaphores.get(task_name)) |existing| {
+        task_sem_ptr = existing;
+    } else {
+        const new_sem = try allocator.create(std.Thread.Semaphore);
+        errdefer allocator.destroy(new_sem);  // CRITICAL: prevents leak if put() OOMs
+        new_sem.* = std.Thread.Semaphore{ .permits = task.max_concurrent };
+        try task_semaphores.put(task_name, new_sem);
+        task_sem_ptr = new_sem;
+    }
+    task_sem_ptr.?.wait();  // per-task slot after global
+}
+
+// In workerFn defer: release per-task first, then global
+defer {
+    if (ctx.task_semaphore) |ts| ts.post();
+    ctx.semaphore.post();
+    ctx.allocator.free(ctx.task_name);
+}
+```
+- Keys are non-owning slices into config.tasks map keys (safe since config is not mutated during run)
+- Pre-reserve threads list before spawn: `try threads.ensureTotalCapacity(allocator, level.items.len)`
+  then use `threads.appendAssumeCapacity(thread)` — prevents live-thread use-after-free on OOM
+
 ### Null-Writer Pattern for --quiet (Zig 0.15, Unix)
 ```zig
 // Open /dev/null as write-only; wrap with File.writer(&buf)
