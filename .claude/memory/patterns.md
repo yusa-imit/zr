@@ -504,3 +504,18 @@ defer {
 // quiet_writer_storage and quiet_buf are in scope (they live in run() stack frame).
 // quiet_file_opt holds the file so it can be closed via defer.
 ```
+
+### Workspace TOML Section Pattern
+- New `[workspace]` section in TOML state machine needs `in_workspace = false` in ALL other section branches
+  (including [[workflows.*]], [workflows.*], [profiles.*], [profiles.*.tasks.*], [tasks.*])
+- Workspace flush uses `if (in_workspace or ws_members.items.len > 0)` but `or ws_members...` is redundant
+  (ws_members only populated while in_workspace=true) — acceptable but `if (in_workspace)` is cleaner
+
+### JSON Array Separator in Loops with Continue
+- Do NOT use loop index `i > 0` as JSON comma separator when `continue` may skip items before the emit point
+- Use a separate counter (`json_emitted: usize = 0`) and check `json_emitted > 0` at the emit point
+- Increment `json_emitted` exactly where you write the JSON object, including error-fallback paths
+
+### Dry-Run + JSON Output Conflict
+- When a command supports both `--dry-run` and `--format json`, dry-run output is text that can't nest in JSON
+- Use `const effective_json = json_output and !dry_run;` to disable JSON framing during dry runs

@@ -38,8 +38,9 @@
 - [x] Global CLI flags: `--jobs/-j <N>` (max parallel), `--no-color`, `--quiet/-q`, `--verbose/-v`, `--config <path>` — all parsed in `run()` flag-scan loop; `--jobs` propagated to `scheduler.run()` as `max_jobs`; `--config` replaces hardcoded `CONFIG_FILE` via `loadConfig(config_path)` param; `--quiet` redirects `w` to `/dev/null`; `--no-color` overrides TTY detection
 - [x] `max_concurrent` per-task resource limit — `Task.max_concurrent: u32` (0=unlimited); scheduler uses `StringHashMap(*Semaphore)` keyed by task name; global semaphore acquired first (avoids hold-and-wait), then per-task; heap semaphores destroyed after all threads joined; threads list pre-reserved to avoid live-thread leak on OOM
 - [x] `--format json` / `-f json` global flag — machine-readable JSON output for `list`, `graph`, `run`, `history`; `writeJsonString()` helper in main.zig handles escaping; completions updated for all 3 shells
+- [x] Workspace/monorepo support — `[workspace] members = ["packages/*"]`; `zr workspace list` discovers member dirs; `zr workspace run <task>` runs task across all members with `zr.toml`; `resolveWorkspaceMembers()` handles `dir/*` glob; supports `--format json`, `--dry-run`; 109/109 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags + max_concurrent + JSON output). 106/106 tests passing. Next: TUI progress bars, monorepo workspace support, or matrix task execution.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags + max_concurrent + JSON output + workspace). 109/109 tests passing. Next: TUI progress bars or matrix task execution.
 
 ## Architecture (High-Level)
 
