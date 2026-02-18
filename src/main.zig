@@ -70,9 +70,10 @@ fn run(
         return 0;
     }
 
-    // Parse global flags: --profile <name>
-    // Scan args for --profile flag; strip it from the args slice before command dispatch.
+    // Parse global flags: --profile <name>, --dry-run
+    // Scan args for flags; strip them from the args slice before command dispatch.
     var profile_name: ?[]const u8 = null;
+    var dry_run: bool = false;
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
     {
@@ -86,6 +87,8 @@ fn run(
                     try color.printError(ew, use_color, "--profile: missing profile name\n\n  Hint: zr --profile <name> run <task>\n", .{});
                     return 1;
                 }
+            } else if (std.mem.eql(u8, args[i], "--dry-run") or std.mem.eql(u8, args[i], "-n")) {
+                dry_run = true;
             } else {
                 try remaining_args.append(allocator, args[i]);
             }
@@ -112,7 +115,7 @@ fn run(
             return 1;
         }
         const task_name = effective_args[2];
-        return cmdRun(allocator, task_name, profile_name, w, ew, use_color);
+        return cmdRun(allocator, task_name, profile_name, dry_run, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, use_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
@@ -127,7 +130,7 @@ fn run(
             return 1;
         }
         const wf_name = effective_args[2];
-        return cmdWorkflow(allocator, wf_name, profile_name, w, ew, use_color);
+        return cmdWorkflow(allocator, wf_name, profile_name, dry_run, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
         return cmdList(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
@@ -155,7 +158,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  history                Show recent run history\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
-    try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n\n", .{});
+    try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
+    try w.print("  --dry-run, -n         Show what would run without executing (run/workflow only)\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }
@@ -239,6 +243,7 @@ fn cmdRun(
     allocator: std.mem.Allocator,
     task_name: []const u8,
     profile_name: ?[]const u8,
+    dry_run: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -254,9 +259,28 @@ fn cmdRun(
         return 1;
     }
 
+    const task_names = [_][]const u8{task_name};
+
+    // Dry-run: show the execution plan without running tasks.
+    if (dry_run) {
+        var plan = scheduler.planDryRun(allocator, &config, &task_names) catch |err| {
+            switch (err) {
+                error.TaskNotFound => try color.printError(err_writer, use_color,
+                    "run: A dependency task was not found in config\n", .{}),
+                error.CycleDetected => try color.printError(err_writer, use_color,
+                    "run: Cycle detected in task dependencies\n\n  Hint: Check your deps fields for circular references\n", .{}),
+                else => try color.printError(err_writer, use_color,
+                    "run: Scheduler error: {s}\n", .{@errorName(err)}),
+            }
+            return 1;
+        };
+        defer plan.deinit();
+        try printDryRunPlan(w, use_color, plan);
+        return 0;
+    }
+
     const start_ns = std.time.nanoTimestamp();
 
-    const task_names = [_][]const u8{task_name};
     var sched_result = scheduler.run(allocator, &config, &task_names, .{}) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -300,6 +324,30 @@ fn cmdRun(
         @intCast(sched_result.results.items.len));
 
     return if (sched_result.total_success) 0 else 1;
+}
+
+/// Print a formatted dry-run plan showing execution levels and task names.
+fn printDryRunPlan(w: *std.Io.Writer, use_color: bool, plan: scheduler.DryRunPlan) !void {
+    try color.printBold(w, use_color, "Dry run — execution plan:\n", .{});
+    if (plan.levels.len == 0) {
+        try color.printDim(w, use_color, "  (no tasks to run)\n", .{});
+        return;
+    }
+    for (plan.levels, 0..) |level, i| {
+        if (level.tasks.len == 0) continue;
+        if (level.tasks.len == 1) {
+            try color.printDim(w, use_color, "  Level {d}  ", .{i});
+            try color.printInfo(w, use_color, "{s}\n", .{level.tasks[0]});
+        } else {
+            try color.printDim(w, use_color, "  Level {d}  ", .{i});
+            try color.printDim(w, use_color, "[parallel]\n", .{});
+            for (level.tasks) |t| {
+                try w.print("    ", .{});
+                try color.printInfo(w, use_color, "{s}\n", .{t});
+            }
+        }
+    }
+    try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
 }
 
 fn cmdWatch(
@@ -403,6 +451,7 @@ fn cmdWorkflow(
     allocator: std.mem.Allocator,
     wf_name: []const u8,
     profile_name: ?[]const u8,
+    dry_run: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -417,6 +466,36 @@ fn cmdWorkflow(
         );
         return 1;
     };
+
+    // Dry-run: show per-stage execution plans without running.
+    if (dry_run) {
+        try color.printBold(w, use_color, "Dry run — workflow: {s}\n", .{wf_name});
+        if (wf.description) |desc| {
+            try color.printDim(w, use_color, "  {s}\n", .{desc});
+        }
+        for (wf.stages) |stage| {
+            try color.printInfo(w, use_color, "\nStage: {s}\n", .{stage.name});
+            if (stage.tasks.len == 0) {
+                try color.printDim(w, use_color, "  (no tasks)\n", .{});
+                continue;
+            }
+            var plan = scheduler.planDryRun(allocator, &config, stage.tasks) catch |err| {
+                switch (err) {
+                    error.TaskNotFound => try color.printError(err_writer, use_color,
+                        "workflow: A task in stage '{s}' was not found\n", .{stage.name}),
+                    error.CycleDetected => try color.printError(err_writer, use_color,
+                        "workflow: Cycle detected in stage '{s}'\n", .{stage.name}),
+                    else => try color.printError(err_writer, use_color,
+                        "workflow: Error in stage '{s}': {s}\n", .{ stage.name, @errorName(err) }),
+                }
+                return 1;
+            };
+            defer plan.deinit();
+            try printDryRunPlan(w, use_color, plan);
+        }
+        try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
+        return 0;
+    }
 
     try color.printBold(w, use_color, "Workflow: {s}", .{wf_name});
     if (wf.description) |desc| {

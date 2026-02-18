@@ -19,7 +19,80 @@ pub const SchedulerConfig = struct {
     /// Whether child processes inherit parent stdio.
     /// Set to false in tests to prevent deadlock in background test environments.
     inherit_stdio: bool = true,
+    /// If true, compute the execution plan but do not run any tasks.
+    /// Each task appears in the result with skipped=true, success=true, duration_ms=0.
+    dry_run: bool = false,
 };
+
+/// A single level in the dry-run execution plan.
+pub const DryRunLevel = struct {
+    /// Task names that would run at this level (owned, duped).
+    tasks: [][]const u8,
+
+    pub fn deinit(self: DryRunLevel, allocator: std.mem.Allocator) void {
+        for (self.tasks) |t| allocator.free(t);
+        allocator.free(self.tasks);
+    }
+};
+
+/// The result of a dry-run: ordered list of levels with task names per level.
+pub const DryRunPlan = struct {
+    levels: []DryRunLevel,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *DryRunPlan) void {
+        for (self.levels) |level| level.deinit(self.allocator);
+        self.allocator.free(self.levels);
+    }
+};
+
+/// Compute the execution plan (what would run, in what order) without running anything.
+/// Returns an ordered slice of levels, each containing the task names that would
+/// execute in parallel at that level.
+pub fn planDryRun(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+    task_names: []const []const u8,
+) SchedulerError!DryRunPlan {
+    var needed = try collectDeps(allocator, config, task_names);
+    defer needed.deinit();
+
+    var subdag = try buildSubgraph(allocator, config, &needed);
+    defer subdag.deinit();
+
+    var levels = topo_sort.getExecutionLevels(allocator, &subdag) catch {
+        return error.CycleDetected;
+    };
+    defer levels.deinit(allocator);
+
+    // Build owned DryRunLevel array
+    const plan_levels = try allocator.alloc(DryRunLevel, levels.levels.items.len);
+    var levels_built: usize = 0;
+    errdefer {
+        for (plan_levels[0..levels_built]) |lvl| lvl.deinit(allocator);
+        allocator.free(plan_levels);
+    }
+
+    for (levels.levels.items, 0..) |level, i| {
+        const tasks = try allocator.alloc([]const u8, level.items.len);
+        var tasks_duped: usize = 0;
+        errdefer {
+            for (tasks[0..tasks_duped]) |t| allocator.free(t);
+            allocator.free(tasks);
+        }
+        for (level.items, 0..) |name, j| {
+            tasks[j] = try allocator.dupe(u8, name);
+            tasks_duped += 1;
+        }
+        plan_levels[i] = DryRunLevel{ .tasks = tasks };
+        levels_built += 1;
+    }
+
+    return DryRunPlan{
+        .levels = plan_levels,
+        .allocator = allocator,
+    };
+}
 
 pub const TaskResult = struct {
     task_name: []const u8,
@@ -372,6 +445,23 @@ pub fn run(
             if (failed.load(.acquire)) break;
 
             const task = config.tasks.get(task_name) orelse return error.TaskNotFound;
+
+            // Dry-run: record a synthetic skipped result without executing.
+            if (sched_config.dry_run) {
+                const owned_name = try allocator.dupe(u8, task_name);
+                results_mutex.lock();
+                results.append(allocator, .{
+                    .task_name = owned_name,
+                    .success = true,
+                    .exit_code = 0,
+                    .duration_ms = 0,
+                    .skipped = true,
+                }) catch {
+                    allocator.free(owned_name);
+                };
+                results_mutex.unlock();
+                continue;
+            }
 
             // Evaluate condition expression — skip task if condition is false.
             if (task.condition) |cond| {
@@ -765,4 +855,119 @@ test "run: task with no condition always runs" {
     try std.testing.expect(result.total_success);
     try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
     try std.testing.expect(!result.results.items[0].skipped);
+}
+
+test "planDryRun: single task returns one level" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+
+    const task_names = [_][]const u8{"build"};
+    var plan = try planDryRun(allocator, &config, &task_names);
+    defer plan.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), plan.levels.len);
+    try std.testing.expectEqual(@as(usize, 1), plan.levels[0].tasks.len);
+    try std.testing.expectEqualStrings("build", plan.levels[0].tasks[0]);
+}
+
+test "planDryRun: dependency chain produces ordered levels" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("base", "true", null, null, &[_][]const u8{});
+    try config.addTask("mid", "true", null, null, &[_][]const u8{"base"});
+    try config.addTask("top", "true", null, null, &[_][]const u8{"mid"});
+
+    const task_names = [_][]const u8{"top"};
+    var plan = try planDryRun(allocator, &config, &task_names);
+    defer plan.deinit();
+
+    // 3 levels: base → mid → top
+    try std.testing.expectEqual(@as(usize, 3), plan.levels.len);
+    try std.testing.expectEqual(@as(usize, 1), plan.levels[0].tasks.len);
+    try std.testing.expectEqualStrings("base", plan.levels[0].tasks[0]);
+    try std.testing.expectEqualStrings("mid", plan.levels[1].tasks[0]);
+    try std.testing.expectEqualStrings("top", plan.levels[2].tasks[0]);
+}
+
+test "planDryRun: parallel tasks appear in same level" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    // Two independent tasks — should appear at level 0
+    try config.addTask("a", "true", null, null, &[_][]const u8{});
+    try config.addTask("b", "true", null, null, &[_][]const u8{});
+
+    const task_names = [_][]const u8{ "a", "b" };
+    var plan = try planDryRun(allocator, &config, &task_names);
+    defer plan.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), plan.levels.len);
+    try std.testing.expectEqual(@as(usize, 2), plan.levels[0].tasks.len);
+}
+
+test "planDryRun: cycle returns error" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("x", "true", null, null, &[_][]const u8{"y"});
+    try config.addTask("y", "true", null, null, &[_][]const u8{"x"});
+
+    const task_names = [_][]const u8{"x"};
+    const result = planDryRun(allocator, &config, &task_names);
+    try std.testing.expectError(error.CycleDetected, result);
+}
+
+test "run: dry_run flag skips execution and marks tasks skipped" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    // This task would fail if actually run
+    try config.addTask("fail-if-run", "exit 1", null, null, &[_][]const u8{});
+
+    const task_names = [_][]const u8{"fail-if-run"};
+    var result = try run(allocator, &config, &task_names, .{
+        .max_jobs = 1,
+        .inherit_stdio = false,
+        .dry_run = true,
+    });
+    defer result.deinit(allocator);
+
+    // Dry-run: task was skipped, pipeline succeeds
+    try std.testing.expect(result.total_success);
+    try std.testing.expectEqual(@as(usize, 1), result.results.items.len);
+    try std.testing.expect(result.results.items[0].skipped);
+    try std.testing.expect(result.results.items[0].success);
+    try std.testing.expectEqualStrings("fail-if-run", result.results.items[0].task_name);
+}
+
+test "run: dry_run with dependency chain skips all tasks" {
+    const allocator = std.testing.allocator;
+
+    var config = loader.Config.init(allocator);
+    defer config.deinit();
+    try config.addTask("dep", "exit 1", null, null, &[_][]const u8{});
+    try config.addTask("main", "exit 1", null, null, &[_][]const u8{"dep"});
+
+    const task_names = [_][]const u8{"main"};
+    var result = try run(allocator, &config, &task_names, .{
+        .max_jobs = 1,
+        .inherit_stdio = false,
+        .dry_run = true,
+    });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.total_success);
+    try std.testing.expectEqual(@as(usize, 2), result.results.items.len);
+    for (result.results.items) |r| {
+        try std.testing.expect(r.skipped);
+        try std.testing.expect(r.success);
+    }
 }
