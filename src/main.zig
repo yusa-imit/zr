@@ -10,6 +10,7 @@ const color = @import("output/color.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
+const plugin_loader = @import("plugin/loader.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -24,6 +25,7 @@ comptime {
     _ = history;
     _ = watcher;
     _ = cache_store;
+    _ = plugin_loader;
 }
 
 const CONFIG_FILE = "zr.toml";
@@ -251,6 +253,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "cache")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return cmdCache(allocator, sub, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "plugin")) {
+        const sub = if (effective_args.len >= 3) effective_args[2] else "";
+        return cmdPlugin(allocator, sub, config_path, json_output, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -273,6 +278,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace list         List workspace member directories\n", .{});
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
+    try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
@@ -1643,6 +1649,59 @@ fn cmdCache(
     } else {
         try color.printError(ew, use_color,
             "cache: unknown subcommand '{s}'\n\n  Hint: zr cache clear\n", .{sub});
+        return 1;
+    }
+}
+
+fn cmdPlugin(
+    allocator: std.mem.Allocator,
+    sub: []const u8,
+    config_path: []const u8,
+    json_output: bool,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    if (std.mem.eql(u8, sub, "list")) {
+        var config = (try loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
+        defer config.deinit();
+
+        if (json_output) {
+            try w.print("[", .{});
+            for (config.plugins, 0..) |p, i| {
+                if (i > 0) try w.print(",", .{});
+                try w.print("{{\"name\":", .{});
+                try writeJsonString(w, p.name);
+                try w.print(",\"source\":", .{});
+                try writeJsonString(w, p.source);
+                try w.print(",\"kind\":\"{s}\"}}", .{@tagName(p.kind)});
+            }
+            try w.print("]\n", .{});
+        } else {
+            if (config.plugins.len == 0) {
+                try color.printDim(w, use_color, "No plugins configured in {s}\n\n  Hint: Add [plugins.NAME] sections to declare plugins\n", .{config_path});
+                return 0;
+            }
+            try color.printBold(w, use_color, "Plugins ({d})\n", .{config.plugins.len});
+            for (config.plugins) |p| {
+                try w.print("  ", .{});
+                try color.printBold(w, use_color, "{s}", .{p.name});
+                try w.print("  [{s}]  {s}\n", .{ @tagName(p.kind), p.source });
+                if (p.config.len > 0) {
+                    for (p.config) |pair| {
+                        try color.printDim(w, use_color, "    {s} = {s}\n", .{ pair[0], pair[1] });
+                    }
+                }
+            }
+        }
+        return 0;
+    } else if (sub.len == 0) {
+        try color.printError(ew, use_color,
+            "plugin: missing subcommand\n\n  Hint: zr plugin list\n", .{});
+        return 1;
+    } else {
+        try color.printError(ew, use_color,
+            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list\n", .{sub});
         return 1;
     }
 }

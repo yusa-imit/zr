@@ -1,4 +1,7 @@
 const std = @import("std");
+const plugin_loader = @import("../plugin/loader.zig");
+pub const PluginConfig = plugin_loader.PluginConfig;
+pub const PluginSourceKind = plugin_loader.SourceKind;
 
 /// Workspace (monorepo) configuration from [workspace] section.
 pub const Workspace = struct {
@@ -21,6 +24,8 @@ pub const Config = struct {
     profiles: std.StringHashMap(Profile),
     /// Workspace config from [workspace] section, or null if not present.
     workspace: ?Workspace = null,
+    /// Plugin configs from [plugins.NAME] sections (owned).
+    plugins: []PluginConfig = &.{},
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -29,6 +34,7 @@ pub const Config = struct {
             .workflows = std.StringHashMap(Workflow).init(allocator),
             .profiles = std.StringHashMap(Profile).init(allocator),
             .workspace = null,
+            .plugins = &.{},
             .allocator = allocator,
         };
     }
@@ -53,6 +59,11 @@ pub const Config = struct {
         }
         self.profiles.deinit();
         if (self.workspace) |*ws| ws.deinit(self.allocator);
+        for (self.plugins) |*p| {
+            var pc = p.*;
+            pc.deinit(self.allocator);
+        }
+        if (self.plugins.len > 0) self.allocator.free(self.plugins);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks
@@ -521,6 +532,22 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var ws_ignore = std.ArrayList([]const u8){};
     defer ws_ignore.deinit(allocator);
 
+    // Plugin parsing state
+    // current_plugin_name: non-owning slice into content (plugin key under [plugins.*])
+    var current_plugin_name: ?[]const u8 = null;
+    // plugin_source: non-owning slice into content
+    var plugin_source: ?[]const u8 = null;
+    var plugin_kind: PluginSourceKind = .local;
+    // Accumulated config pairs for the current plugin (non-owning slices into content)
+    var plugin_cfg_pairs = std.ArrayList([2][]const u8){};
+    defer plugin_cfg_pairs.deinit(allocator);
+    // Collected PluginConfig list (owned) — transferred to config.plugins at end
+    var plugin_list = std.ArrayList(PluginConfig){};
+    defer {
+        for (plugin_list.items) |*pc| pc.deinit(allocator);
+        plugin_list.deinit(allocator);
+    }
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
@@ -780,6 +807,54 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 profile_env.clearRetainingCapacity(); current_profile = null;
             }
             in_workspace = true;
+        } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            in_workspace = false;
+            // Flush pending task (if any)
+            if (current_task) |task_name| {
+                if (task_cmd) |cmd| {
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache);
+                    }
+                }
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity();
+                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_cache = false; task_matrix_raw = null;
+                current_task = null;
+            }
+            // Flush pending plugin (if any)
+            if (current_plugin_name) |pn| {
+                if (plugin_source) |src| {
+                    const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
+                    var pc_duped: usize = 0;
+                    errdefer {
+                        for (pc_pairs[0..pc_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); }
+                        allocator.free(pc_pairs);
+                    }
+                    for (plugin_cfg_pairs.items, 0..) |pair, i| {
+                        pc_pairs[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pc_pairs[i][0]);
+                        pc_pairs[i][1] = try allocator.dupe(u8, pair[1]);
+                        pc_duped += 1;
+                    }
+                    const pc = PluginConfig{
+                        .name = try allocator.dupe(u8, pn),
+                        .kind = plugin_kind,
+                        .source = try allocator.dupe(u8, src),
+                        .config = pc_pairs,
+                    };
+                    try plugin_list.append(allocator, pc);
+                }
+                plugin_cfg_pairs.clearRetainingCapacity();
+                current_plugin_name = null;
+                plugin_source = null;
+                plugin_kind = .local;
+            }
+            // Parse new plugin name: "[plugins.X]" → X
+            const plstart = "[plugins.".len;
+            const plend = std.mem.indexOf(u8, trimmed[plstart..], "]") orelse continue;
+            current_plugin_name = trimmed[plstart..][0..plend];
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
             // Flush pending stage (if any)
             if (stage_name) |sn| {
@@ -851,6 +926,29 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
                 profile_env.clearRetainingCapacity();
                 current_profile = null;
+            }
+            // Flush pending plugin (if any)
+            if (current_plugin_name) |pn| {
+                if (plugin_source) |src| {
+                    const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
+                    var pc_duped: usize = 0;
+                    errdefer {
+                        for (pc_pairs[0..pc_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); }
+                        allocator.free(pc_pairs);
+                    }
+                    for (plugin_cfg_pairs.items, 0..) |pair, i| {
+                        pc_pairs[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pc_pairs[i][0]);
+                        pc_pairs[i][1] = try allocator.dupe(u8, pair[1]);
+                        pc_duped += 1;
+                    }
+                    const pc = PluginConfig{ .name = try allocator.dupe(u8, pn), .kind = plugin_kind, .source = try allocator.dupe(u8, src), .config = pc_pairs };
+                    try plugin_list.append(allocator, pc);
+                }
+                plugin_cfg_pairs.clearRetainingCapacity();
+                current_plugin_name = null;
+                plugin_source = null;
+                plugin_kind = .local;
             }
             // Flush pending task before starting new one
             if (current_task) |task_name| {
@@ -951,6 +1049,37 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "description") and stage_name == null) {
                     // Workflow-level description (not inside a stage)
                     workflow_desc = value;
+                }
+            } else if (current_plugin_name != null and current_task == null and current_workflow == null and current_profile == null and !in_workspace) {
+                // Inside [plugins.X] — parse source and config fields
+                if (std.mem.eql(u8, key, "source")) {
+                    // Detect source kind from prefix: "registry:", "git:", else local
+                    if (std.mem.startsWith(u8, value, "registry:")) {
+                        plugin_kind = .registry;
+                        plugin_source = value["registry:".len..];
+                    } else if (std.mem.startsWith(u8, value, "git:")) {
+                        plugin_kind = .git;
+                        plugin_source = value["git:".len..];
+                    } else if (std.mem.startsWith(u8, value, "local:")) {
+                        plugin_kind = .local;
+                        plugin_source = value["local:".len..];
+                    } else {
+                        plugin_kind = .local;
+                        plugin_source = value;
+                    }
+                } else if (std.mem.eql(u8, key, "config")) {
+                    // Inline table: config = { key = "val", ... }
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq2 = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const cfg_key = std.mem.trim(u8, pair_str[0..eq2], " \t\"");
+                            const cfg_val = std.mem.trim(u8, pair_str[eq2 + 1 ..], " \t\"");
+                            if (cfg_key.len > 0) try plugin_cfg_pairs.append(allocator, .{ cfg_key, cfg_val });
+                        }
+                    }
                 }
             } else if (in_workspace) {
                 // Inside [workspace] — parse members and ignore arrays
@@ -1159,6 +1288,40 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             iduped += 1;
         }
         config.workspace = Workspace{ .members = members, .ignore = ignore };
+    }
+
+    // Flush final pending plugin (if any)
+    if (current_plugin_name) |pn| {
+        if (plugin_source) |src| {
+            const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
+            var pc_duped: usize = 0;
+            errdefer {
+                for (pc_pairs[0..pc_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); }
+                allocator.free(pc_pairs);
+            }
+            for (plugin_cfg_pairs.items, 0..) |pair, i| {
+                pc_pairs[i][0] = try allocator.dupe(u8, pair[0]);
+                errdefer allocator.free(pc_pairs[i][0]);
+                pc_pairs[i][1] = try allocator.dupe(u8, pair[1]);
+                pc_duped += 1;
+            }
+            const pc = PluginConfig{
+                .name = try allocator.dupe(u8, pn),
+                .kind = plugin_kind,
+                .source = try allocator.dupe(u8, src),
+                .config = pc_pairs,
+            };
+            try plugin_list.append(allocator, pc);
+        }
+    }
+
+    // Transfer owned plugin list to config
+    if (plugin_list.items.len > 0) {
+        const owned = try allocator.alloc(PluginConfig, plugin_list.items.len);
+        @memcpy(owned, plugin_list.items);
+        // Clear plugin_list so defer doesn't double-free
+        plugin_list.clearRetainingCapacity();
+        config.plugins = owned;
     }
 
     return config;
@@ -2181,4 +2344,113 @@ test "cache defaults to false" {
     defer config.deinit();
     const task = config.tasks.get("build").?;
     try std.testing.expect(!task.cache);
+}
+
+test "parse local plugin from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\
+        \\[plugins.myplugin]
+        \\source = "local:./plugins/myplugin"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    const p = config.plugins[0];
+    try std.testing.expectEqualStrings("myplugin", p.name);
+    try std.testing.expectEqual(PluginSourceKind.local, p.kind);
+    try std.testing.expectEqualStrings("./plugins/myplugin", p.source);
+    try std.testing.expectEqual(@as(usize, 0), p.config.len);
+}
+
+test "parse registry plugin from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.docker]
+        \\source = "registry:zr/docker@1.2.0"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    const p = config.plugins[0];
+    try std.testing.expectEqualStrings("docker", p.name);
+    try std.testing.expectEqual(PluginSourceKind.registry, p.kind);
+    try std.testing.expectEqualStrings("zr/docker@1.2.0", p.source);
+}
+
+test "parse git plugin from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.custom]
+        \\source = "git:https://github.com/user/plugin"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    const p = config.plugins[0];
+    try std.testing.expectEqualStrings("custom", p.name);
+    try std.testing.expectEqual(PluginSourceKind.git, p.kind);
+    try std.testing.expectEqualStrings("https://github.com/user/plugin", p.source);
+}
+
+test "parse plugin with config inline table" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.notify]
+        \\source = "local:./plugins/notify"
+        \\config = { webhook_url = "https://hooks.example.com/abc", channel = "#alerts" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    const p = config.plugins[0];
+    try std.testing.expectEqual(@as(usize, 2), p.config.len);
+    // Order not guaranteed, find by key
+    var found_webhook = false;
+    for (p.config) |pair| {
+        if (std.mem.eql(u8, pair[0], "webhook_url")) {
+            try std.testing.expectEqualStrings("https://hooks.example.com/abc", pair[1]);
+            found_webhook = true;
+        }
+    }
+    try std.testing.expect(found_webhook);
+}
+
+test "multiple plugins parsed correctly" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.docker]
+        \\source = "registry:zr/docker@1.0.0"
+        \\
+        \\[plugins.notify]
+        \\source = "local:./notify"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 2), config.plugins.len);
+}
+
+test "no plugins section gives empty plugins slice" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 0), config.plugins.len);
+}
+
+test "plugin without source is ignored" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.broken]
+        \\config = { key = "value" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    // Plugin with no source should be ignored (source is required).
+    try std.testing.expectEqual(@as(usize, 0), config.plugins.len);
 }
