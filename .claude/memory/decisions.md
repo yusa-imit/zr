@@ -271,3 +271,16 @@ Decisions are logged chronologically. Format:
   - `std.DynLib` is idiomatic Zig for dynamic loading; C-ABI hooks are the simplest stable interface
   - Three source kinds cover all PRD scenarios; registry/git marked as "not yet supported" for now
   - Plugin system is additive — no changes to existing task execution path; hooks called optionally
+
+## [2026-02-19] Plugin Management CLI (install/remove/info)
+- Context: Phase 4 — after foundation, need to manage locally-installed plugins in `~/.zr/plugins/`
+- Decision:
+  - `zr plugin install <path> [name]`: copies local plugin dir to `~/.zr/plugins/<name>/` (shallow file copy)
+  - `zr plugin remove <name>`: deletes `~/.zr/plugins/<name>/` via `std.fs.deleteTreeAbsolute`
+  - `zr plugin info <name>`: reads `plugin.toml` from installed dir, displays name/version/description/author
+  - `readPluginMeta()`: simple flat key=value TOML parser (quote-stripping); returns null if no plugin.toml
+  - `installLocalPlugin()`: resolves abs path, checks no collision, copies all files (shallow one-level)
+  - `listInstalledPlugins()`: enumerates dirs in `~/.zr/plugins/` via `Dir.iterate()`
+  - args indexing: args[0]=zr, args[1]=plugin, args[2]=subcommand, args[3]=first-arg (name/path)
+  - 5 new tests; 143/143 total passing
+- Rationale: Local-first install covers most plugin development workflows; registry/git install deferred to later phase

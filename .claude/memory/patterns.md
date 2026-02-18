@@ -586,3 +586,31 @@ try list.append(allocator, item);
 list.deinit(allocator);
 ```
 Use `.empty` for zero-initialization. `init(allocator)` does NOT exist in Zig 0.15.
+
+## Plugin Install/Remove Pattern (filesystem management)
+```zig
+// Shallow directory copy:
+var src_dir = try std.fs.openDirAbsolute(src_path, .{ .iterate = true });
+defer src_dir.close();
+std.fs.makeDirAbsolute(dest_dir) catch return error;
+var dest = try std.fs.openDirAbsolute(dest_dir, .{});
+defer dest.close();
+var it = src_dir.iterate();
+while (try it.next()) |entry| {
+    if (entry.kind != .file) continue;
+    // copy file: open src, createFile dest, read/write loop
+}
+```
+- `std.fs.deleteTreeAbsolute(path)` for recursive removal; maps `error.FileNotFound` to custom error
+- `std.fs.accessAbsolute(path, .{})` in labeled block to extract existence bool
+
+## Plugin Metadata (plugin.toml) Pattern
+- Simple flat key=value TOML parser (no sections, no arrays needed for metadata)
+- Strip quotes: check `raw[0] == '"' and raw[len-1] == '"'` → slice `[1..len-1]`
+- `readPluginMeta()` returns `?PluginMeta` (null when file not found)
+- Caller must call `meta.deinit()` on the returned struct
+
+## Plugin Subcommand Args Indexing
+- args[0] = "zr", args[1] = "plugin", args[2] = subcommand, args[3] = first argument
+- Check `args.len < 4` before accessing `args[3]`
+- For optional second arg (like plugin name override in install): check `args.len >= 5`, use `args[4]`
