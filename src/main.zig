@@ -255,7 +255,7 @@ fn run(
         return cmdCache(allocator, sub, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "plugin")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
-        return cmdPlugin(allocator, sub, config_path, json_output, effective_w, ew, effective_color);
+        return cmdPlugin(allocator, sub, effective_args, config_path, json_output, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -279,6 +279,9 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
+    try w.print("  plugin install <path>  Install a local plugin to ~/.zr/plugins/\n", .{});
+    try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
+    try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
@@ -1656,6 +1659,7 @@ fn cmdCache(
 fn cmdPlugin(
     allocator: std.mem.Allocator,
     sub: []const u8,
+    args: []const []const u8,
     config_path: []const u8,
     json_output: bool,
     w: *std.Io.Writer,
@@ -1695,13 +1699,134 @@ fn cmdPlugin(
             }
         }
         return 0;
+    } else if (std.mem.eql(u8, sub, "install")) {
+        // zr plugin install <path> [<name>]
+        // args: [zr, plugin, install, <path>, [<name>]]
+        if (args.len < 4) {
+            try color.printError(ew, use_color,
+                "plugin install: missing <path>\n\n  Hint: zr plugin install ./my-plugin [name]\n", .{});
+            return 1;
+        }
+        const src_path = args[3];
+        // Derive name from last path component if not provided.
+        const plugin_name: []const u8 = if (args.len >= 5)
+            args[4]
+        else blk: {
+            const last = std.mem.lastIndexOfScalar(u8, src_path, '/');
+            break :blk if (last) |idx| src_path[idx + 1 ..] else src_path;
+        };
+
+        // Resolve src_path to absolute if needed.
+        const abs_src = if (std.fs.path.isAbsolute(src_path))
+            try allocator.dupe(u8, src_path)
+        else blk: {
+            const cwd = try std.fs.cwd().realpathAlloc(allocator, src_path);
+            break :blk cwd;
+        };
+        defer allocator.free(abs_src);
+
+        const dest = plugin_loader.installLocalPlugin(allocator, abs_src, plugin_name) catch |err| switch (err) {
+            plugin_loader.InstallError.SourceNotFound => {
+                try color.printError(ew, use_color,
+                    "plugin install: path not found: {s}\n", .{src_path});
+                return 1;
+            },
+            plugin_loader.InstallError.AlreadyInstalled => {
+                try color.printError(ew, use_color,
+                    "plugin install: '{s}' is already installed\n\n  Hint: Run 'zr plugin remove {s}' first\n",
+                    .{ plugin_name, plugin_name });
+                return 1;
+            },
+            else => return err,
+        };
+        defer allocator.free(dest);
+
+        try color.printSuccess(w, use_color, "Installed plugin '{s}' → {s}\n", .{ plugin_name, dest });
+        return 0;
+    } else if (std.mem.eql(u8, sub, "remove")) {
+        // args: [zr, plugin, remove, <name>]
+        if (args.len < 4) {
+            try color.printError(ew, use_color,
+                "plugin remove: missing <name>\n\n  Hint: zr plugin remove <name>\n", .{});
+            return 1;
+        }
+        const plugin_name = args[3];
+        plugin_loader.removePlugin(allocator, plugin_name) catch |err| switch (err) {
+            error.PluginNotFound => {
+                try color.printError(ew, use_color,
+                    "plugin remove: plugin '{s}' is not installed\n", .{plugin_name});
+                return 1;
+            },
+            else => return err,
+        };
+        try color.printSuccess(w, use_color, "Removed plugin '{s}'\n", .{plugin_name});
+        return 0;
+    } else if (std.mem.eql(u8, sub, "info")) {
+        // args: [zr, plugin, info, <name>]
+        if (args.len < 4) {
+            try color.printError(ew, use_color,
+                "plugin info: missing <name>\n\n  Hint: zr plugin info <name>\n", .{});
+            return 1;
+        }
+        const plugin_name = args[3];
+        const home = std.posix.getenv("HOME") orelse ".";
+        const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
+        defer allocator.free(plugin_dir);
+
+        // Check the plugin dir exists.
+        std.fs.accessAbsolute(plugin_dir, .{}) catch {
+            try color.printError(ew, use_color,
+                "plugin info: plugin '{s}' is not installed\n\n  Hint: Install it with 'zr plugin install <path> {s}'\n",
+                .{ plugin_name, plugin_name });
+            return 1;
+        };
+
+        const meta_opt = try plugin_loader.readPluginMeta(allocator, plugin_dir);
+        if (meta_opt) |meta_val| {
+            var meta = meta_val;
+            defer meta.deinit();
+            if (json_output) {
+                try w.print("{{\"name\":", .{});
+                try writeJsonString(w, meta.name);
+                try w.print(",\"version\":", .{});
+                try writeJsonString(w, meta.version);
+                try w.print(",\"description\":", .{});
+                try writeJsonString(w, meta.description);
+                try w.print(",\"author\":", .{});
+                try writeJsonString(w, meta.author);
+                try w.print(",\"path\":", .{});
+                try writeJsonString(w, plugin_dir);
+                try w.print("}}\n", .{});
+            } else {
+                try color.printBold(w, use_color, "{s}", .{if (meta.name.len > 0) meta.name else plugin_name});
+                if (meta.version.len > 0) try w.print(" v{s}", .{meta.version});
+                try w.print("\n", .{});
+                if (meta.description.len > 0) try w.print("  {s}\n", .{meta.description});
+                if (meta.author.len > 0) try color.printDim(w, use_color, "  Author: {s}\n", .{meta.author});
+                try color.printDim(w, use_color, "  Path:   {s}\n", .{plugin_dir});
+            }
+        } else {
+            // No plugin.toml — show basic info.
+            if (json_output) {
+                try w.print("{{\"name\":", .{});
+                try writeJsonString(w, plugin_name);
+                try w.print(",\"path\":", .{});
+                try writeJsonString(w, plugin_dir);
+                try w.print("}}\n", .{});
+            } else {
+                try color.printBold(w, use_color, "{s}\n", .{plugin_name});
+                try color.printDim(w, use_color, "  Path:   {s}\n", .{plugin_dir});
+                try color.printDim(w, use_color, "  (no plugin.toml found)\n", .{});
+            }
+        }
+        return 0;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
-            "plugin: missing subcommand\n\n  Hint: zr plugin list\n", .{});
+            "plugin: missing subcommand\n\n  Hint: zr plugin list | install | remove | info\n", .{});
         return 1;
     } else {
         try color.printError(ew, use_color,
-            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list\n", .{sub});
+            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | install | remove | info\n", .{sub});
         return 1;
     }
 }
