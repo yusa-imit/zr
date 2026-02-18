@@ -519,3 +519,30 @@ defer {
 ### Dry-Run + JSON Output Conflict
 - When a command supports both `--dry-run` and `--format json`, dry-run output is text that can't nest in JSON
 - Use `const effective_json = json_output and !dry_run;` to disable JSON framing during dry runs
+
+### Matrix Task Expansion Pattern (config/loader.zig)
+```toml
+# TOML syntax:
+[tasks.test]
+cmd = "cargo test --target ${matrix.arch}"
+matrix = { arch = ["x86_64", "aarch64"], os = ["linux", "macos"] }
+```
+- `matrix` key is stored as raw string `task_matrix_raw: ?[]const u8` (non-owning slice into content)
+- At flush time: if `task_matrix_raw != null`, call `addMatrixTask` instead of `addTaskImpl`
+- `parseMatrixTable`: bracket-depth tracking scanner to correctly handle `[...]` values inside `{...}` tables
+- `interpolateMatrixVars`: replaces `${matrix.KEY}` in cmd/cwd/description/env values using `std.mem.replaceOwned`
+- `addMatrixTask`: sorts dims alphabetically, computes Cartesian product, calls `addTaskImpl` for each variant
+- Variant name format: `basename:key1=val1:key2=val2` (keys sorted alphabetically for determinism)
+- Meta-task: original name, cmd = `echo "Matrix task: NAME"`, deps = all variant names
+- `task_matrix_raw = null` must be added to EVERY reset section — easy to miss
+- Cartesian product counter: little-endian increment (last dim increments fastest)
+```zig
+// After emitting variant, advance combo (little-endian):
+var di = n_dims;
+while (di > 0) {
+    di -= 1;
+    combo[di] += 1;
+    if (combo[di] < dims.items[di].values.len) break;
+    combo[di] = 0;
+}
+```
