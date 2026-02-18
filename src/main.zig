@@ -139,6 +139,9 @@ fn run(
         return cmdHistory(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
         return cmdInit(w, ew, use_color);
+    } else if (std.mem.eql(u8, cmd, "completion")) {
+        const shell = if (effective_args.len >= 3) effective_args[2] else "";
+        return cmdCompletion(shell, w, ew, use_color);
     } else {
         try color.printError(ew, use_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(w, use_color);
@@ -158,7 +161,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  list                   List all available tasks\n", .{});
     try w.print("  graph                  Show dependency tree\n", .{});
     try w.print("  history                Show recent run history\n", .{});
-    try w.print("  init                   Scaffold a new zr.toml in the current directory\n\n", .{});
+    try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
+    try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
@@ -784,6 +788,161 @@ fn cmdGraph(
     return 0;
 }
 
+// ── Shell completion scripts ──────────────────────────────────────────────────
+
+const BASH_COMPLETION =
+    \\_zr_completion() {
+    \\    local cur="${COMP_WORDS[COMP_CWORD]}"
+    \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    \\    local commands="run watch workflow list graph history init completion"
+    \\    local options="--help --profile --dry-run -h -p -n"
+    \\
+    \\    case "$prev" in
+    \\        run|watch)
+    \\            # Complete task names from zr.toml
+    \\            local tasks
+    \\            tasks=$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')
+    \\            COMPREPLY=($(compgen -W "$tasks" -- "$cur"))
+    \\            return ;;
+    \\        workflow)
+    \\            # Complete workflow names from zr list
+    \\            local workflows
+    \\            workflows=$(zr list 2>/dev/null | awk '/^Workflows:/,0 {if (/^  /) print $1}')
+    \\            COMPREPLY=($(compgen -W "$workflows" -- "$cur"))
+    \\            return ;;
+    \\        completion)
+    \\            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
+    \\            return ;;
+    \\        --profile|-p)
+    \\            return ;;
+    \\    esac
+    \\
+    \\    if [[ "$cur" == -* ]]; then
+    \\        COMPREPLY=($(compgen -W "$options" -- "$cur"))
+    \\    else
+    \\        COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+    \\    fi
+    \\}
+    \\
+    \\complete -F _zr_completion zr
+    \\
+;
+
+const ZSH_COMPLETION =
+    \\#compdef zr
+    \\
+    \\_zr() {
+    \\    local state
+    \\    local -a commands options
+    \\    commands=(
+    \\        'run:Run a task and its dependencies'
+    \\        'watch:Watch files and auto-run task on changes'
+    \\        'workflow:Run a workflow by name'
+    \\        'list:List all available tasks'
+    \\        'graph:Show dependency tree'
+    \\        'history:Show recent run history'
+    \\        'init:Scaffold a new zr.toml'
+    \\        'completion:Print shell completion script'
+    \\    )
+    \\    options=(
+    \\        '--help[Show help]'
+    \\        '-h[Show help]'
+    \\        '--profile[Activate named profile]:profile name'
+    \\        '-p[Activate named profile]:profile name'
+    \\        '--dry-run[Show plan without executing]'
+    \\        '-n[Show plan without executing]'
+    \\    )
+    \\    _arguments -C \
+    \\        $options \
+    \\        '1: :->command' \
+    \\        '*: :->args' && return
+    \\    case $state in
+    \\        command)
+    \\            _describe 'command' commands ;;
+    \\        args)
+    \\            case $words[2] in
+    \\                run|watch)
+    \\                    local -a tasks
+    \\                    tasks=(${(f)"$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')"})
+    \\                    _describe 'task' tasks ;;
+    \\                workflow)
+    \\                    local -a workflows
+    \\                    workflows=(${(f)"$(zr list 2>/dev/null | awk '/^Workflows:/,0 {if (/^  /) print $1}')"})
+    \\                    _describe 'workflow' workflows ;;
+    \\                completion)
+    \\                    _values 'shell' bash zsh fish ;;
+    \\            esac ;;
+    \\    esac
+    \\}
+    \\
+    \\_zr "$@"
+    \\
+;
+
+const FISH_COMPLETION =
+    \\# Fish completion for zr
+    \\
+    \\function __zr_tasks
+    \\    zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}'
+    \\end
+    \\
+    \\function __zr_workflows
+    \\    zr list 2>/dev/null | awk '/^Workflows:/,0 {if (/^  /) print $1}'
+    \\end
+    \\
+    \\# Subcommands
+    \\complete -c zr -f -n '__fish_use_subcommand' -a run        -d 'Run a task'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a watch      -d 'Watch and auto-run task'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a workflow   -d 'Run a workflow'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a list       -d 'List tasks'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a graph      -d 'Show dependency tree'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a history    -d 'Show run history'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a init       -d 'Scaffold zr.toml'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a completion -d 'Print completion script'
+    \\
+    \\# Task name completions for run/watch
+    \\complete -c zr -f -n '__fish_seen_subcommand_from run watch' -a '(__zr_tasks)'
+    \\
+    \\# Workflow name completions for workflow
+    \\complete -c zr -f -n '__fish_seen_subcommand_from workflow' -a '(__zr_workflows)'
+    \\
+    \\# Shell completions for completion
+    \\complete -c zr -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+    \\
+    \\# Global options
+    \\complete -c zr -l help       -s h -d 'Show help'
+    \\complete -c zr -l profile    -s p -d 'Activate named profile' -r
+    \\complete -c zr -l dry-run    -s n -d 'Show plan without executing'
+    \\
+;
+
+fn cmdCompletion(
+    shell: []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    if (std.mem.eql(u8, shell, "bash")) {
+        try w.writeAll(BASH_COMPLETION);
+        return 0;
+    } else if (std.mem.eql(u8, shell, "zsh")) {
+        try w.writeAll(ZSH_COMPLETION);
+        return 0;
+    } else if (std.mem.eql(u8, shell, "fish")) {
+        try w.writeAll(FISH_COMPLETION);
+        return 0;
+    } else if (shell.len == 0) {
+        try color.printError(err_writer, use_color,
+            "completion: missing shell name\n\n  Hint: zr completion <bash|zsh|fish>\n", .{});
+        return 1;
+    } else {
+        try color.printError(err_writer, use_color,
+            "completion: unknown shell '{s}'\n\n  Hint: supported shells: bash, zsh, fish\n",
+            .{shell});
+        return 1;
+    }
+}
+
 const INIT_TEMPLATE =
     \\# zr.toml — generated by `zr init`
     \\# Docs: https://github.com/fnproject/zr
@@ -859,4 +1018,13 @@ test "cmdInit creates zr.toml" {
     try std.testing.expect(INIT_TEMPLATE.len > 0);
     try std.testing.expect(std.mem.indexOf(u8, INIT_TEMPLATE, "[tasks.") != null);
     _ = tmp;
+}
+
+test "completion scripts are non-empty and contain key markers" {
+    try std.testing.expect(BASH_COMPLETION.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "_zr_completion") != null);
+    try std.testing.expect(ZSH_COMPLETION.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "#compdef zr") != null);
+    try std.testing.expect(FISH_COMPLETION.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "complete -c zr") != null);
 }
