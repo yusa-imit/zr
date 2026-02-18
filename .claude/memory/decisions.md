@@ -120,6 +120,32 @@ Decisions are logged chronologically. Format:
   - 74/74 tests passing
 - Rationale: Stage-based sequential execution is the natural model for CI-style pipelines; reusing scheduler.run for stage tasks avoids duplication
 
+## [2026-02-18] Dry-Run Implementation
+- Context: Phase 2 / UX requires showing execution plan without running tasks
+- Decision: Added `dry_run: bool` to `SchedulerConfig` + separate `planDryRun()` function
+  - `SchedulerConfig.dry_run = true`: existing `run()` skips process execution, records skipped=true results
+  - `planDryRun()`: standalone function returning `DryRunPlan` with `[]DryRunLevel` (task names per level)
+  - `DryRunPlan.deinit()` and `DryRunLevel.deinit()` follow standard owned-slice cleanup pattern
+  - `printDryRunPlan()` in main.zig formats levels: single task = inline, multiple = [parallel] with indented list
+  - `--dry-run` / `-n` global flag parsed alongside `--profile` in args scan loop
+  - `cmdWorkflow` dry-run: calls `planDryRun` per stage and prints each stage's plan
+  - 86/86 tests passing; binary 2.1MB
+- Rationale: Separate planDryRun() is cleaner than threading a writer through scheduler; dry_run in SchedulerConfig handles the "skip but track" case in existing tests
+
+## [2026-02-18] Profile System Implementation
+- Context: Phase 2 requires named profiles for environment-specific config overrides
+- Decision: Implemented `Profile` + `ProfileTaskOverride` structs in `config/loader.zig`
+  - TOML format: `[profiles.X]` for profile header with global env; `[profiles.X.tasks.Y]` for per-task overrides
+  - Profile fields: `name`, `env: [][2][]const u8`, `task_overrides: StringHashMap(ProfileTaskOverride)`
+  - Task override fields: `cmd`, `cwd`, `env` (all optional)
+  - `Config.applyProfile(name)` mutates task env/cmd/cwd in-place; returns `error.ProfileNotFound`
+  - CLI: `zr --profile <name>` or `zr -p <name>`; env: `ZR_PROFILE=<name>` (flag takes precedence)
+  - Profile resolution: flag > ZR_PROFILE env var; done inside `loadConfig` after file parse
+  - flushProfile() helper transfers ownership of accumulated `profile_task_overrides` StringHashMap
+  - Key insight: profile_task_overrides map keys must be cleared without freeing after transfer
+  - 80/80 tests passing; binary 2.1MB
+- Rationale: Profiles enable CI/dev/prod environment differentiation without separate config files. In-place mutation keeps the rest of the pipeline unchanged.
+
 ## [2026-02-18] Watch Mode Implementation
 - Context: Phase 2 requires watch mode for automatic task re-run on file changes
 - Decision: Polling-based watcher (500ms interval) in `src/watch/watcher.zig`

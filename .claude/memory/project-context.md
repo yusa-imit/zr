@@ -31,8 +31,10 @@
 - [x] Task `condition` field (expression engine: `true`/`false`, `env.VAR`, `env.VAR == "val"`, `env.VAR != "val"`) — `src/config/expr.zig`
 - [x] Watch mode (`zr watch <task> [path...]`) — `src/watch/watcher.zig` — polling-based, 500ms, skips .git/node_modules/zig-out/.zig-cache, records to history
 - [x] Workflow system (`zr workflow <name>`) — `[workflows.X]` + `[[workflows.X.stages]]` TOML parsing; stage-sequential execution with fail_fast; `zr list` shows workflows
+- [x] Profile system (`zr --profile <name>` or `ZR_PROFILE=<name>`) — `[profiles.X]` global env overrides + `[profiles.X.tasks.Y]` per-task cmd/cwd/env overrides; `Config.applyProfile()` merges at load time
+- [x] `--dry-run` / `-n` flag — `zr --dry-run run <task>` and `zr --dry-run workflow <name>` show execution plan (levels, parallelism) without running; `planDryRun()` in scheduler returns `DryRunPlan`
 
-> **Status**: Phase 1 complete + Phase 2 partial. 74/74 tests passing. Next: profile system (`[profiles.*]`), `--dry-run` flag.
+> **Status**: Phase 1 complete + Phase 2 partial. 86/86 tests passing. Next: shell completion (`zr completion`), `zr init` command, or resource limits.
 
 ## Architecture (High-Level)
 
