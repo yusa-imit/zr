@@ -70,10 +70,15 @@ fn run(
         return 0;
     }
 
-    // Parse global flags: --profile <name>, --dry-run
+    // Parse global flags: --profile <name>, --dry-run, --jobs, --no-color, --quiet, --verbose, --config
     // Scan args for flags; strip them from the args slice before command dispatch.
     var profile_name: ?[]const u8 = null;
     var dry_run: bool = false;
+    var max_jobs: u32 = 0;
+    var no_color: bool = false;
+    var quiet: bool = false;
+    var verbose: bool = false;
+    var config_path: []const u8 = CONFIG_FILE;
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
     {
@@ -89,6 +94,35 @@ fn run(
                 }
             } else if (std.mem.eql(u8, args[i], "--dry-run") or std.mem.eql(u8, args[i], "-n")) {
                 dry_run = true;
+            } else if (std.mem.eql(u8, args[i], "--no-color")) {
+                no_color = true;
+            } else if (std.mem.eql(u8, args[i], "--quiet") or std.mem.eql(u8, args[i], "-q")) {
+                quiet = true;
+            } else if (std.mem.eql(u8, args[i], "--verbose") or std.mem.eql(u8, args[i], "-v")) {
+                verbose = true;
+            } else if (std.mem.eql(u8, args[i], "--jobs") or std.mem.eql(u8, args[i], "-j")) {
+                if (i + 1 < args.len) {
+                    max_jobs = std.fmt.parseInt(u32, args[i + 1], 10) catch {
+                        try color.printError(ew, use_color,
+                            "--jobs: invalid value '{s}' — must be a non-negative integer\n\n  Hint: zr --jobs 4 run <task>\n",
+                            .{args[i + 1]});
+                        return 1;
+                    };
+                    i += 1; // skip value
+                } else {
+                    try color.printError(ew, use_color,
+                        "--jobs: missing value\n\n  Hint: zr --jobs <N> run <task>\n", .{});
+                    return 1;
+                }
+            } else if (std.mem.eql(u8, args[i], "--config")) {
+                if (i + 1 < args.len) {
+                    config_path = args[i + 1];
+                    i += 1; // skip value
+                } else {
+                    try color.printError(ew, use_color,
+                        "--config: missing path\n\n  Hint: zr --config <path> run <task>\n", .{});
+                    return 1;
+                }
             } else {
                 try remaining_args.append(allocator, args[i]);
             }
@@ -96,55 +130,80 @@ fn run(
     }
     // ZR_PROFILE env var is checked inside loadConfig (--profile flag takes precedence).
 
+    // Apply --no-color override.
+    const effective_color = use_color and !no_color;
+
+    // For --quiet: redirect stdout to /dev/null so non-error output is suppressed.
+    // On non-Unix systems this silently falls back to normal output.
+    var quiet_file_opt: ?std.fs.File = null;
+    defer if (quiet_file_opt) |f| f.close();
+    var quiet_buf: [64]u8 = undefined;
+    var quiet_writer_storage: ?std.fs.File.Writer = null;
+    const effective_w: *std.Io.Writer = blk: {
+        if (quiet) {
+            if (std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only })) |qf| {
+                quiet_file_opt = qf;
+                quiet_writer_storage = qf.writer(&quiet_buf);
+                break :blk &quiet_writer_storage.?.interface;
+            } else |_| {}
+        }
+        break :blk w;
+    };
+
+    // --verbose: print a dim note at startup.
+    if (verbose) {
+        try color.printDim(effective_w, effective_color, "[verbose mode]\n", .{});
+    }
+
     const effective_args = remaining_args.items;
     if (effective_args.len < 2) {
-        try printHelp(w, use_color);
+        try printHelp(effective_w, effective_color);
         return 0;
     }
 
     const cmd = effective_args[1];
 
     if (std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
-        try printHelp(w, use_color);
+        try printHelp(effective_w, effective_color);
         return 0;
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, use_color, "run: missing task name\n\n  Hint: zr run <task-name>\n", .{});
+            try color.printError(ew, effective_color, "run: missing task name\n\n  Hint: zr run <task-name>\n", .{});
             return 1;
         }
         const task_name = effective_args[2];
-        return cmdRun(allocator, task_name, profile_name, dry_run, w, ew, use_color);
+        return cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, use_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
+            try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
             return 1;
         }
         const task_name = effective_args[2];
         const watch_paths: []const []const u8 = if (effective_args.len > 3) effective_args[3..] else &[_][]const u8{"."};
-        return cmdWatch(allocator, task_name, watch_paths, profile_name, w, ew, use_color);
+        return cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "workflow")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, use_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
+            try color.printError(ew, effective_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
             return 1;
         }
         const wf_name = effective_args[2];
-        return cmdWorkflow(allocator, wf_name, profile_name, dry_run, w, ew, use_color);
+        return cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
-        return cmdList(allocator, w, ew, use_color);
+        return cmdList(allocator, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
-        return cmdGraph(allocator, w, ew, use_color);
+        return cmdGraph(allocator, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "history")) {
-        return cmdHistory(allocator, w, ew, use_color);
+        return cmdHistory(allocator, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
-        return cmdInit(std.fs.cwd(), w, ew, use_color);
+        return cmdInit(std.fs.cwd(), effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "completion")) {
         const shell = if (effective_args.len >= 3) effective_args[2] else "";
-        return cmdCompletion(shell, w, ew, use_color);
+        return cmdCompletion(shell, effective_w, ew, effective_color);
     } else {
-        try color.printError(ew, use_color, "Unknown command: {s}\n\n", .{cmd});
-        try printHelp(w, use_color);
+        try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
+        try printHelp(effective_w, effective_color);
         return 1;
     }
 }
@@ -166,29 +225,35 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
-    try w.print("  --dry-run, -n         Show what would run without executing (run/workflow only)\n\n", .{});
+    try w.print("  --dry-run, -n         Show what would run without executing (run/workflow only)\n", .{});
+    try w.print("  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n", .{});
+    try w.print("  --no-color            Disable color output\n", .{});
+    try w.print("  --quiet, -q           Suppress non-error output\n", .{});
+    try w.print("  --verbose, -v         Verbose output\n", .{});
+    try w.print("  --config <path>       Config file path (default: zr.toml)\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }
 
 fn loadConfig(
     allocator: std.mem.Allocator,
+    config_path: []const u8,
     profile_name_opt: ?[]const u8,
     err_writer: *std.Io.Writer,
 ) !?loader.Config {
     const use_color = color.isTty(std.fs.File.stderr());
-    var config = loader.Config.loadFromFile(allocator, CONFIG_FILE) catch |err| {
+    var config = loader.Config.loadFromFile(allocator, config_path) catch |err| {
         switch (err) {
             error.FileNotFound => {
                 try color.printError(err_writer, use_color,
                     "Config: {s} not found\n\n  Hint: Create a zr.toml file in the current directory\n",
-                    .{CONFIG_FILE},
+                    .{config_path},
                 );
             },
             else => {
                 try color.printError(err_writer, use_color,
                     "Config: Failed to load {s}: {s}\n",
-                    .{ CONFIG_FILE, @errorName(err) },
+                    .{ config_path, @errorName(err) },
                 );
             },
         }
@@ -213,7 +278,7 @@ fn loadConfig(
             error.ProfileNotFound => {
                 try color.printError(err_writer, use_color,
                     "profile: '{s}' not found in {s}\n\n  Hint: Add [profiles.{s}] to your zr.toml\n",
-                    .{ pname, CONFIG_FILE, pname },
+                    .{ pname, config_path, pname },
                 );
                 config.deinit();
                 return null;
@@ -251,11 +316,13 @@ fn cmdRun(
     task_name: []const u8,
     profile_name: ?[]const u8,
     dry_run: bool,
+    max_jobs: u32,
+    config_path: []const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, profile_name, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse return 1;
     defer config.deinit();
 
     if (config.tasks.get(task_name) == null) {
@@ -288,7 +355,9 @@ fn cmdRun(
 
     const start_ns = std.time.nanoTimestamp();
 
-    var sched_result = scheduler.run(allocator, &config, &task_names, .{}) catch |err| {
+    var sched_result = scheduler.run(allocator, &config, &task_names, .{
+        .max_jobs = max_jobs,
+    }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
                 try color.printError(err_writer, use_color,
@@ -362,13 +431,15 @@ fn cmdWatch(
     task_name: []const u8,
     watch_paths: []const []const u8,
     profile_name: ?[]const u8,
+    max_jobs: u32,
+    config_path: []const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
     // Verify task exists before starting the watch loop.
     {
-        var config = (try loadConfig(allocator, profile_name, err_writer)) orelse return 1;
+        var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse return 1;
         defer config.deinit();
         if (config.tasks.get(task_name) == null) {
             try color.printError(err_writer, use_color,
@@ -407,7 +478,7 @@ fn cmdWatch(
         first_run = false;
 
         // Reload config in case zr.toml changed.
-        var config = (try loadConfig(allocator, profile_name, err_writer)) orelse {
+        var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse {
             try color.printError(err_writer, use_color,
                 "watch: Config error — waiting for next change...\n", .{});
             continue;
@@ -424,7 +495,9 @@ fn cmdWatch(
 
         const start_ns = std.time.nanoTimestamp();
         const task_names = [_][]const u8{task_name};
-        var sched_result = scheduler.run(allocator, &config, &task_names, .{}) catch |err| {
+        var sched_result = scheduler.run(allocator, &config, &task_names, .{
+            .max_jobs = max_jobs,
+        }) catch |err| {
             switch (err) {
                 error.CycleDetected => try color.printError(err_writer, use_color,
                     "watch: Cycle detected in task dependencies\n", .{}),
@@ -459,11 +532,13 @@ fn cmdWorkflow(
     wf_name: []const u8,
     profile_name: ?[]const u8,
     dry_run: bool,
+    max_jobs: u32,
+    config_path: []const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, profile_name, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, profile_name, err_writer)) orelse return 1;
     defer config.deinit();
 
     const wf = config.workflows.get(wf_name) orelse {
@@ -522,6 +597,7 @@ fn cmdWorkflow(
 
         var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
             .inherit_stdio = true,
+            .max_jobs = max_jobs,
         }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
@@ -655,11 +731,12 @@ fn cmdHistory(
 
 fn cmdList(
     allocator: std.mem.Allocator,
+    config_path: []const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, null, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, null, err_writer)) orelse return 1;
     defer config.deinit();
 
     try color.printHeader(w, use_color, "Tasks:", .{});
@@ -724,11 +801,12 @@ fn cmdList(
 
 fn cmdGraph(
     allocator: std.mem.Allocator,
+    config_path: []const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, null, err_writer)) orelse return 1;
+    var config = (try loadConfig(allocator, config_path, null, err_writer)) orelse return 1;
     defer config.deinit();
 
     var dag = try buildDag(allocator, &config);
@@ -795,7 +873,7 @@ const BASH_COMPLETION =
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\    local commands="run watch workflow list graph history init completion"
-    \\    local options="--help --profile --dry-run -h -p -n"
+    \\    local options="--help --profile --dry-run --jobs --no-color --quiet --verbose --config -h -p -n -j -q -v"
     \\
     \\    case "$prev" in
     \\        run|watch)
@@ -814,6 +892,11 @@ const BASH_COMPLETION =
     \\            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
     \\            return ;;
     \\        --profile|-p)
+    \\            return ;;
+    \\        --jobs|-j)
+    \\            return ;;
+    \\        --config)
+    \\            COMPREPLY=($(compgen -f -- "$cur"))
     \\            return ;;
     \\    esac
     \\
@@ -851,6 +934,14 @@ const ZSH_COMPLETION =
     \\        '-p[Activate named profile]:profile name'
     \\        '--dry-run[Show plan without executing]'
     \\        '-n[Show plan without executing]'
+    \\        '--jobs[Max parallel tasks]:count'
+    \\        '-j[Max parallel tasks]:count'
+    \\        '--no-color[Disable color output]'
+    \\        '--quiet[Suppress non-error output]'
+    \\        '-q[Suppress non-error output]'
+    \\        '--verbose[Verbose output]'
+    \\        '-v[Verbose output]'
+    \\        '--config[Config file path]:file:_files'
     \\    )
     \\    _arguments -C \
     \\        $options \
@@ -913,6 +1004,11 @@ const FISH_COMPLETION =
     \\complete -c zr -l help       -s h -d 'Show help'
     \\complete -c zr -l profile    -s p -d 'Activate named profile' -r
     \\complete -c zr -l dry-run    -s n -d 'Show plan without executing'
+    \\complete -c zr -l jobs       -s j -d 'Max parallel tasks' -r
+    \\complete -c zr -l no-color         -d 'Disable color output'
+    \\complete -c zr -l quiet      -s q -d 'Suppress non-error output'
+    \\complete -c zr -l verbose    -s v -d 'Verbose output'
+    \\complete -c zr -l config           -d 'Config file path' -r -F
     \\
 ;
 
@@ -1053,4 +1149,106 @@ test "completion scripts are non-empty and contain key markers" {
     try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "#compdef zr") != null);
     try std.testing.expect(FISH_COMPLETION.len > 0);
     try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "complete -c zr") != null);
+}
+
+test "completion scripts include new global flags" {
+    // BASH should list the new flags in the options variable.
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--jobs") != null);
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--no-color") != null);
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--quiet") != null);
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--verbose") != null);
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--config") != null);
+    // ZSH should describe each new flag.
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--jobs") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--no-color") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--quiet") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--verbose") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--config") != null);
+    // Fish should have complete entries for each new flag.
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "jobs") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "no-color") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "quiet") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "verbose") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "config") != null);
+}
+
+test "--no-color and --jobs are consumed before command dispatch" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // With only flags and no command after them, should print help (exit 0),
+    // not "Unknown command: --no-color".
+    const fake_args = [_][]const u8{ "zr", "--no-color", "--jobs", "4" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, true);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "--quiet flag is parsed and does not crash" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // --quiet with no command prints help (exit 0).
+    const fake_args = [_][]const u8{ "zr", "--quiet" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, true);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "--verbose flag is parsed and does not crash" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // --verbose with no command prints help (exit 0).
+    const fake_args = [_][]const u8{ "zr", "--verbose" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "--config flag missing value returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // --config without a value should return exit code 1.
+    const fake_args = [_][]const u8{ "zr", "--config" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "--jobs with invalid value returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // --jobs with non-numeric value should return exit code 1.
+    const fake_args = [_][]const u8{ "zr", "--jobs", "notanumber" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
 }
