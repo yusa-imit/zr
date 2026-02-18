@@ -256,3 +256,18 @@ Decisions are logged chronologically. Format:
   - File-based cache: simple, cross-process, no daemon needed; Wyhash64 is fast and sufficient for fingerprinting
   - Marker file (`.ok` suffix): trivially clearable, atomic creation, no locking needed for reads
   - Cache key covers cmd+env (not cwd/task-name) — focused on command identity, not location
+
+## [2026-02-19] Plugin System Foundation
+- Context: Phase 4 — Extensibility; PRD §5.5 requires plugin system with native .so/.dylib loading and TOML configuration
+- Decision:
+  - `src/plugin/loader.zig`: `PluginConfig` (name, kind, source, config pairs) + `PluginRegistry` (ArrayListUnmanaged of Plugin)
+  - Native loading via `std.DynLib` with optional C-ABI hooks: `zr_on_init`, `zr_on_before_task`, `zr_on_after_task`
+  - `SourceKind` enum: local / registry / git; source prefix parsing: "registry:", "git:", "local:" or bare path
+  - TOML: `[plugins.NAME]` sections, `source =` field, `config = { k = "v" }` inline table
+  - `Config.plugins: []PluginConfig` field added to loader; flushed at end of parseToml
+  - `zr plugin list` CLI command with text + JSON output
+  - 14 new tests; 138/138 total passing
+- Rationale:
+  - `std.DynLib` is idiomatic Zig for dynamic loading; C-ABI hooks are the simplest stable interface
+  - Three source kinds cover all PRD scenarios; registry/git marked as "not yet supported" for now
+  - Plugin system is additive — no changes to existing task execution path; hooks called optionally

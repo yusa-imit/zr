@@ -41,8 +41,9 @@
 - [x] Workspace/monorepo support — `[workspace] members = ["packages/*"]`; `zr workspace list` discovers member dirs; `zr workspace run <task>` runs task across all members with `zr.toml`; `resolveWorkspaceMembers()` handles `dir/*` glob; supports `--format json`, `--dry-run`; 109/109 tests passing
 - [x] Matrix task execution — `matrix = { arch = ["x86_64", "aarch64"], os = ["linux", "macos"] }` in task def; Cartesian product expansion generates variants like `test:arch=x86_64:os=linux`; meta-task deps on all variants; `${matrix.KEY}` interpolation in cmd/cwd/description/env; 115/115 tests passing
 - [x] Task output caching — `cache = true` field in TOML; `src/cache/store.zig` stores Wyhash64 fingerprints as `~/.zr/cache/<key>.ok` marker files; scheduler checks cache pre-run and records hit on success; cache hit produces skipped=true result; `zr cache clear` removes all entries; 124/124 tests passing
+- [x] Plugin system foundation — `src/plugin/loader.zig`: `PluginConfig` + `PluginRegistry` (native .so/.dylib via `std.DynLib`); `PluginSourceKind` (local/registry/git); `zr_on_init`, `zr_on_before_task`, `zr_on_after_task` C-ABI hooks; `[plugins.NAME]` TOML sections parsed into `Config.plugins: []PluginConfig`; `zr plugin list` CLI command with JSON support; 138/138 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 started (task caching). 124/124 tests passing. Next: full plugin system (native .so/.dylib loading) or TUI.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation). 138/138 tests passing. Next: plugin registry/git install support, or TUI dashboard.
 
 ## Architecture (High-Level)
 

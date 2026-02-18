@@ -563,3 +563,26 @@ cache = true   # skip if same cmd+env ran successfully before
 - On thread spawn failure: free `cache_key` explicitly before `break`
 - Cache miss → normal execution; cache hit → record `skipped=true` result and return early
 - `task_cache = false` must be added to EVERY reset section in loader.zig (same pattern as `task_matrix_raw`)
+
+## DynLib Plugin Loading (Zig 0.15)
+```zig
+var lib = std.DynLib.open(lib_path) catch return LoadError.LibraryNotFound;
+errdefer lib.close();
+const hook = lib.lookup(*const fn () callconv(.c) void, "export_name");
+// hook is ?FnType — null if symbol not exported (always test before calling)
+```
+
+## Plugin TOML Parsing Pattern
+- Section `[plugins.NAME]` parsed same as other top-level sections
+- Must flush pending task/workflow/profile when entering plugin section
+- Must also flush pending plugin when entering [tasks.] section
+- `plugin_source = null` means plugin has no source → skip in flush (ignored)
+- Inline table `config = { k = "v" }` reuses the standard pair-split pattern
+
+## ArrayListUnmanaged (Zig 0.15 ArrayList pattern)
+```zig
+var list: std.ArrayListUnmanaged(T) = .empty;
+try list.append(allocator, item);
+list.deinit(allocator);
+```
+Use `.empty` for zero-initialization. `init(allocator)` does NOT exist in Zig 0.15.
