@@ -222,3 +222,21 @@ Decisions are logged chronologically. Format:
   - JSON schemas: `list` → `{tasks:[...],workflows:[...]}`, `graph` → `{levels:[...]}`, `run` → `{success,elapsed_ms,tasks:[...]}`, `history` → `{runs:[...]}`
   - Shell completions (bash/zsh/fish) updated to complete `--format` with `text json`
 - **Tests**: 8 new tests added (flag parsing, error cases, JSON structure smoke tests)
+
+## [2026-02-19] Matrix Task Execution
+
+- **Decision**: Implement matrix task expansion via `matrix = { key = ["v1", "v2"] }` in task definitions
+- **Scope**: `config/loader.zig` only — no CLI changes needed (meta-task handles routing)
+- **Implementation**:
+  - `MatrixDim` public struct: `key: []const u8`, `values: [][]const u8`
+  - `task_matrix_raw: ?[]const u8` parse-time state (non-owning slice into content)
+  - `parseMatrixTable`: bracket-depth + quote-aware scanner for inline table of arrays
+  - `interpolateMatrixVars`: `${matrix.KEY}` substitution using `std.mem.replaceOwned` (errdefer guards result)
+  - `addMatrixTask`: expansion engine — sorts dims alphabetically, computes Cartesian product via little-endian counter, creates variants + meta-task
+  - Variant naming: `basename:key1=val1:key2=val2` (keys sorted alphabetically for determinism)
+  - Meta-task: original name, `echo "Matrix task: NAME"` cmd, deps = all variant names
+  - 4 new tests; 115/115 total passing
+- **Rationale**:
+  - Parse-time expansion (vs. runtime): simpler, no scheduler changes needed, variants visible in `list`/`graph`
+  - Alphabetical key sort: deterministic variant names independent of TOML definition order
+  - `std.mem.replaceOwned` allows multiple substitutions cleanly with owned result

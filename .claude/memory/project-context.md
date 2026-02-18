@@ -39,8 +39,9 @@
 - [x] `max_concurrent` per-task resource limit — `Task.max_concurrent: u32` (0=unlimited); scheduler uses `StringHashMap(*Semaphore)` keyed by task name; global semaphore acquired first (avoids hold-and-wait), then per-task; heap semaphores destroyed after all threads joined; threads list pre-reserved to avoid live-thread leak on OOM
 - [x] `--format json` / `-f json` global flag — machine-readable JSON output for `list`, `graph`, `run`, `history`; `writeJsonString()` helper in main.zig handles escaping; completions updated for all 3 shells
 - [x] Workspace/monorepo support — `[workspace] members = ["packages/*"]`; `zr workspace list` discovers member dirs; `zr workspace run <task>` runs task across all members with `zr.toml`; `resolveWorkspaceMembers()` handles `dir/*` glob; supports `--format json`, `--dry-run`; 109/109 tests passing
+- [x] Matrix task execution — `matrix = { arch = ["x86_64", "aarch64"], os = ["linux", "macos"] }` in task def; Cartesian product expansion generates variants like `test:arch=x86_64:os=linux`; meta-task deps on all variants; `${matrix.KEY}` interpolation in cmd/cwd/description/env; 115/115 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags + max_concurrent + JSON output + workspace). 109/109 tests passing. Next: TUI progress bars or matrix task execution.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 (global flags + max_concurrent + JSON output + workspace + matrix tasks). 115/115 tests passing. Next: TUI progress bars or plugin system (Phase 4).
 
 ## Architecture (High-Level)
 
