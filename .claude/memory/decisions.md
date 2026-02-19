@@ -300,3 +300,11 @@ Decisions are logged chronologically. Format:
   - New functions: `writeGitUrlToMeta()`, `readGitUrl()`, `updateGitPlugin()`, `GitUpdateError`
   - Error types: GitUpdateError{PluginNotFound, NotAGitPlugin, GitNotFound, PullFailed}
   - 6 new tests; 157/157 total passing
+
+## [Feb 19, 2026] Plugin Registry Support
+- Context: PRD specifies `registry:org/name@version` format for installing plugins from a registry
+- Decision: Resolve registry refs to GitHub repos (`https://github.com/<org>/zr-plugin-<name>`) and use `git clone --branch <version>` (reusing existing git infrastructure); store `registry_ref` in plugin.toml for traceability; `PluginRegistry.loadAll()` now tries to load installed git/registry plugins from `~/.zr/plugins/<name>` instead of warning "not supported"
+- Rationale: Reusing git clone avoids building a separate HTTP client; GitHub as default registry host is practical for Phase 4; version pinning via git tags is standard practice
+  - New functions: `parseRegistryRef()`, `installRegistryPlugin()`, `writeRegistryRefToMeta()`, `readRegistryRef()`
+  - CLI: `zr plugin install registry:org/name@version` in cmdPlugin
+  - 10 new tests; 167/167 total passing

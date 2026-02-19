@@ -630,3 +630,12 @@ while (try it.next()) |entry| {
 - Check `.wait()` `term == .Exited` and `code != 0` → `CloneFailed`
 - `stderr_behavior = .Ignore` to suppress git output during install
 - Name derivation: `lastIndexOfScalar(u8, url, '/')` + strip `.git` suffix with `endsWith`
+
+### Registry plugin install pattern
+- Parse `registry:org/name@version` source: strip `registry:` prefix, then `parseRegistryRef()`
+- `parseRegistryRef()`: split on `/` for org, then split on `@` for version; all slices point into source (no alloc)
+- URL resolution: org present → `https://github.com/<org>/zr-plugin-<name>`; no org → use `default_registry_base`
+- Skip `zr-plugin-` prefix doubling: `if (std.mem.startsWith(u8, ref.name, "zr-plugin-"))`
+- Add `--branch <version>` to git clone argv when version is non-empty (ArrayListUnmanaged build)
+- Store `registry_ref = "org/name@version"` in plugin.toml (idempotent, same pattern as git_url)
+- `PluginRegistry.loadAll()` for git/registry: check `~/.zr/plugins/<name>` exists; if yes, create synthetic local PluginConfig pointing there; if no, print info message
