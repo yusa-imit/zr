@@ -10,6 +10,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            // Link libc on non-Windows targets for setenv(3) in builtin_env.zig.
+            // Windows targets don't have bundled MSVC libc in Zig's cross-compiler.
+            .link_libc = if (target.result.os.tag != .windows) true else null,
         }),
     });
 
