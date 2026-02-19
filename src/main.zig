@@ -13,6 +13,7 @@ const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
 const plugin_loader = @import("plugin/loader.zig");
 const plugin_builtin = @import("plugin/builtin.zig");
+const types = @import("config/types.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -30,6 +31,7 @@ comptime {
     _ = cache_store;
     _ = plugin_loader;
     _ = plugin_builtin;
+    _ = types;
 }
 
 const CONFIG_FILE = "zr.toml";
@@ -312,7 +314,7 @@ fn loadConfig(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !?loader.Config {
-    var config = loader.Config.loadFromFile(allocator, config_path) catch |err| {
+    var config = loader.loadFromFile(allocator, config_path) catch |err| {
         switch (err) {
             error.FileNotFound => {
                 try color.printError(err_writer, use_color,
@@ -1262,7 +1264,7 @@ fn cmdWorkspaceRun(
         const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, CONFIG_FILE });
         defer allocator.free(member_cfg);
 
-        var member_config = loader.Config.loadFromFile(allocator, member_cfg) catch |err| {
+        var member_config = loader.loadFromFile(allocator, member_cfg) catch |err| {
             if (err == error.FileNotFound) continue;
             try color.printError(ew, use_color,
                 "workspace: failed to load {s}: {s}\n", .{ member_cfg, @errorName(err) });
