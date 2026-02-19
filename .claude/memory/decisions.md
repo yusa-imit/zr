@@ -316,3 +316,13 @@ Decisions are logged chronologically. Format:
   - New: `searchInstalledPlugins()`, `SearchResult` in loader.zig
   - CLI: `zr plugin search [query]` in cmdPlugin
   - 8 new tests; 175/175 total passing
+
+## [2026-02-19] Built-in Plugin System
+- Context: Phase 4 requires "빌트인 플러그인 (docker, git, env, notify, cache)" compiled into zr binary
+- Decision: Implemented `src/plugin/builtin.zig` with `BuiltinHandle`, `EnvPlugin`, `GitPlugin`, `NotifyPlugin`; added `SourceKind.builtin` to loader; `source = "builtin:<name>"` TOML syntax; `PluginRegistry` gains `builtins: ArrayListUnmanaged(BuiltinHandle)` alongside `plugins`; `zr plugin builtins` CLI command lists all 5 built-ins
+- Rationale: Compiling built-ins directly into zr avoids distributing separate .so files; `EnvPlugin` uses C `setenv(3)` extern (std.posix.setenv doesn't exist in Zig 0.15); `NotifyPlugin` uses curl subprocess (no HTTP client needed); `GitPlugin` uses git subprocess (no libgit2 needed); docker/cache are stubs ready for expansion
+  - New file: `src/plugin/builtin.zig` (~700 lines with tests)
+  - Modified: loader.zig (SourceKind.builtin, PluginRegistry.builtins), config/loader.zig (builtin: prefix parsing), main.zig (plugin builtins command)
+  - Pattern: `extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;` for POSIX setenv
+  - Pattern: fmt.allocPrint format strings must be comptime — use fixed format, not runtime message template
+  - 18 new tests; 193/193 total passing

@@ -114,3 +114,13 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Cause: `std.process.exit()` terminates without running defers; buffered writer was never flushed
 - Fix: Refactor to return exit codes from inner functions, flush all writers in main() before calling exit, never call std.process.exit from helper functions
 - Prevention: Always flush buffered writers before process termination; use return-based exit code propagation instead of direct exit calls
+
+## std.posix.setenv does not exist (Zig 0.15)
+- **Problem**: `std.posix.setenv(key_z, val_z, 1)` → compile error: no member setenv
+- **Solution**: Use C extern directly: `extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;`
+- **Prevention**: Check std.posix docs; setenv is a C standard library function not wrapped by Zig
+
+## std.fmt.allocPrint requires comptime format string
+- **Problem**: `std.fmt.allocPrint(allocator, runtime_string, .{args...})` → compile error: argument to comptime parameter must be comptime-known
+- **Solution**: Use a fixed comptime format string; embed the configurable part as a runtime argument, not as the format itself
+- **Example**: `std.fmt.allocPrint(allocator, "{s}: task '{s}' finished (exit {d})", .{prefix, task, code})` where prefix is runtime

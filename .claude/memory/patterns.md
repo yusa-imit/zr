@@ -641,3 +641,12 @@ while (try it.next()) |entry| {
 - `PluginRegistry.loadAll()` for git/registry: check `~/.zr/plugins/<name>` exists; if yes, create synthetic local PluginConfig pointing there; if no, print info message
 - **Plugin search pattern**: `searchInstalledPlugins()` calls `listInstalledPlugins()` then `readPluginMeta()` per dir; case-insensitive match via `std.ascii.toLower` into stack buffers; `SearchResult` owns duped strings, freed via `deinit()`; always free `meta_copy` via `var meta_copy = meta_opt; if (meta_copy) |*m| m.deinit()` pattern (avoids mutable capture of optional)
 - **Mutable optional deinit pattern**: `var copy = optional_val; if (copy) |*item| item.deinit();` — needed because Zig doesn't allow `if (opt) |*ptr|` on immutable captures from `const` optionals
+
+### Built-in plugin pattern
+- `extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;` — POSIX setenv (std.posix.setenv doesn't exist in Zig 0.15)
+- `std.fmt.allocPrint` requires comptime format string — use fixed format `"{s}: task '{s}' finished (exit {d})"`, not runtime template
+- BuiltinHandle.BuiltinKind enum maps source string → handler; `loadBuiltin()` factory returns `?BuiltinHandle`
+- `PluginRegistry` has both `plugins: ArrayList(Plugin)` (native) and `builtins: ArrayList(BuiltinHandle)` (built-in); `count()` returns their sum
+- `SourceKind.builtin` in loader.zig parsed from `builtin:` prefix in TOML source string
+- Git subprocess pattern for built-in plugins: `Child.init(argv, allocator)`, `.stdout_behavior = .Pipe`, collect via `pipe.read(&buf)` loop, check `.Exited` term
+- curl subprocess for webhooks: `-s -X POST -H "Content-Type: application/json" -d <payload> <url>`
