@@ -639,3 +639,5 @@ while (try it.next()) |entry| {
 - Add `--branch <version>` to git clone argv when version is non-empty (ArrayListUnmanaged build)
 - Store `registry_ref = "org/name@version"` in plugin.toml (idempotent, same pattern as git_url)
 - `PluginRegistry.loadAll()` for git/registry: check `~/.zr/plugins/<name>` exists; if yes, create synthetic local PluginConfig pointing there; if no, print info message
+- **Plugin search pattern**: `searchInstalledPlugins()` calls `listInstalledPlugins()` then `readPluginMeta()` per dir; case-insensitive match via `std.ascii.toLower` into stack buffers; `SearchResult` owns duped strings, freed via `deinit()`; always free `meta_copy` via `var meta_copy = meta_opt; if (meta_copy) |*m| m.deinit()` pattern (avoids mutable capture of optional)
+- **Mutable optional deinit pattern**: `var copy = optional_val; if (copy) |*item| item.deinit();` — needed because Zig doesn't allow `if (opt) |*ptr|` on immutable captures from `const` optionals

@@ -308,3 +308,11 @@ Decisions are logged chronologically. Format:
   - New functions: `parseRegistryRef()`, `installRegistryPlugin()`, `writeRegistryRefToMeta()`, `readRegistryRef()`
   - CLI: `zr plugin install registry:org/name@version` in cmdPlugin
   - 10 new tests; 167/167 total passing
+
+## [2026-02-19] Plugin Search Command
+- Context: Plugin management was missing discoverability — users couldn't search installed plugins
+- Decision: Implement `zr plugin search [query]` as local search over `~/.zr/plugins/`; case-insensitive substring match on dir name, display name (from plugin.toml), and description; supports `--format json`
+- Rationale: Local search (no network) is fast and sufficient for Phase 4; avoids need for central index server; SearchResult struct owns its memory via deinit pattern
+  - New: `searchInstalledPlugins()`, `SearchResult` in loader.zig
+  - CLI: `zr plugin search [query]` in cmdPlugin
+  - 8 new tests; 175/175 total passing

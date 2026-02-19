@@ -47,8 +47,9 @@
 - [x] Plugin git install — `zr plugin install <git-url> [name]` clones from https://, http://, git://, git@ URLs using `git clone --depth=1`; `installGitPlugin()` in loader.zig; auto-strips .git suffix for name derivation; 151/151 tests passing
 - [x] Plugin git update — `zr plugin update <name>` (no path) runs `git pull` in plugin dir for git-installed plugins; `installGitPlugin` writes `git_url` to plugin.toml after clone; `updateGitPlugin()`, `writeGitUrlToMeta()`, `readGitUrl()` in loader.zig; graceful errors for NotAGitPlugin/PluginNotFound/PullFailed; 157/157 tests passing
 - [x] Plugin registry support — `zr plugin install registry:org/name@version`; `parseRegistryRef()` parses org/name@version format; `installRegistryPlugin()` resolves to `https://github.com/<org>/zr-plugin-<name>` and uses `git clone --branch <version>`; `writeRegistryRefToMeta()` / `readRegistryRef()` persist registry_ref in plugin.toml; `PluginRegistry.loadAll()` now loads git/registry plugins if already installed; 167/167 tests passing
+- [x] Plugin search — `zr plugin search [query]`; `searchInstalledPlugins()` + `SearchResult` in loader.zig; case-insensitive substring search across dir name, display name, description; supports `--format json`; 175/175 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation + plugin management + plugin update + git install + git pull update + registry install). 167/167 tests passing. Next: built-in plugins (docker, git, notify), WASM runtime sandbox, or plugin registry index (central metadata server).
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation + plugin management + plugin update + git install + git pull update + registry install + plugin search). 175/175 tests passing. Next: built-in plugins (docker, git, notify), WASM runtime sandbox, or plugin registry index (central metadata server).
 
 ## Architecture (High-Level)
 
