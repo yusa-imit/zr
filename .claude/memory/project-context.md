@@ -45,8 +45,9 @@
 - [x] Plugin management CLI — `zr plugin install <path> [name]` copies local plugin dir to `~/.zr/plugins/<name>/`; `zr plugin remove <name>` deletes it; `zr plugin info <name>` reads `plugin.toml` metadata; `readPluginMeta()` parses flat key=value TOML; `installLocalPlugin()` shallow-copies all files; `listInstalledPlugins()` enumerates dirs; 143/143 tests passing
 - [x] Plugin update CLI — `zr plugin update <name> <path>` re-installs a plugin from a new source dir (delete-then-reinstall); `updateLocalPlugin()` in loader.zig; 147/147 tests passing
 - [x] Plugin git install — `zr plugin install <git-url> [name]` clones from https://, http://, git://, git@ URLs using `git clone --depth=1`; `installGitPlugin()` in loader.zig; auto-strips .git suffix for name derivation; 151/151 tests passing
+- [x] Plugin git update — `zr plugin update <name>` (no path) runs `git pull` in plugin dir for git-installed plugins; `installGitPlugin` writes `git_url` to plugin.toml after clone; `updateGitPlugin()`, `writeGitUrlToMeta()`, `readGitUrl()` in loader.zig; graceful errors for NotAGitPlugin/PluginNotFound/PullFailed; 157/157 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation + plugin management + plugin update + git install). 151/151 tests passing. Next: plugin registry support (registry:org/name@version), built-in plugins, or WASM runtime sandbox.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation + plugin management + plugin update + git install + git pull update). 157/157 tests passing. Next: plugin registry support (registry:org/name@version), built-in plugins, or WASM runtime sandbox.
 
 ## Architecture (High-Level)
 

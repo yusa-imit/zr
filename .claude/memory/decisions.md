@@ -292,3 +292,11 @@ Decisions are logged chronologically. Format:
   - Name derivation: strip trailing .git suffix from last URL segment
   - Error types: GitInstallError{GitNotFound, CloneFailed, AlreadyInstalled}
   - 4 new tests; 151/151 total passing
+
+## [2026-02-19] Git Plugin Update via git pull
+- Context: `zr plugin update <name> <path>` required a local path even for git-installed plugins; users shouldn't need to remember the original URL
+- Decision: Write `git_url` key to `plugin.toml` after `installGitPlugin()` succeeds; `updateGitPlugin()` reads it and runs `git -C <plugin_dir> pull`; `zr plugin update <name>` (no path) auto-detects git vs local and routes accordingly
+- Rationale: Storing metadata in plugin.toml keeps the source of truth in the plugin dir; no separate manifest needed; `git pull` is idiomatic for git-sourced updates
+  - New functions: `writeGitUrlToMeta()`, `readGitUrl()`, `updateGitPlugin()`, `GitUpdateError`
+  - Error types: GitUpdateError{PluginNotFound, NotAGitPlugin, GitNotFound, PullFailed}
+  - 6 new tests; 157/157 total passing
