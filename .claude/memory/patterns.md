@@ -650,3 +650,34 @@ while (try it.next()) |entry| {
 - `SourceKind.builtin` in loader.zig parsed from `builtin:` prefix in TOML source string
 - Git subprocess pattern for built-in plugins: `Child.init(argv, allocator)`, `.stdout_behavior = .Pipe`, collect via `pipe.read(&buf)` loop, check `.Exited` term
 - curl subprocess for webhooks: `-s -X POST -H "Content-Type: application/json" -d <payload> <url>`
+
+### In-memory Writer for Tests (Zig 0.15)
+```zig
+// Create a fixed-buffer writer for test output capture:
+var buf: [512]u8 = undefined;
+var writer = std.Io.Writer.fixed(&buf);
+// ... call functions that take *std.Io.Writer ...
+const out = buf[0..writer.end];  // bytes written so far
+try std.testing.expect(std.mem.indexOf(u8, out, "expected") != null);
+```
+- `std.Io.Writer.fixed(&buf)` is the Zig 0.15 replacement for deprecated `std.io.fixedBufferStream`
+- `writer.end` tracks bytes written (same as old `fbs.pos`)
+- `buf[0..writer.end]` gives the written slice (same as old `fbs.getWritten()`)
+- Do NOT use `std.Io.Writer.fromStream()` — does not exist in Zig 0.15
+- For output to real stdout in tests: `std.fs.File.stdout().writer(&buf)` → `.interface`
+
+### Progress Bar Pattern (output/progress.zig)
+```zig
+// Usage in a caller that runs tasks:
+var bar = progress.ProgressBar.init(err_writer, use_color, task_count);
+for (tasks) |task| {
+    run(task);
+    bar.tick(task.name);
+}
+bar.finish();
+try progress.printSummary(w, use_color, passed, failed, skipped, elapsed_ms);
+```
+- Writer should be stderr (not stdout) when task output goes to stdout
+- `tick(label)` advances by 1 and re-renders; `finish()` sets 100% and adds newline
+- `printSummary()` is standalone — call after ScheduleResult is available
+- Only shows ANSI codes when `use_color = true` (pass same flag as rest of CLI)

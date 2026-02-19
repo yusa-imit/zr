@@ -326,3 +326,14 @@ Decisions are logged chronologically. Format:
   - Pattern: `extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;` for POSIX setenv
   - Pattern: fmt.allocPrint format strings must be comptime — use fixed format, not runtime message template
   - 18 new tests; 193/193 total passing
+
+## [2026-02-19] Progress Bar Output Module
+- Context: PRD requires progress output (`src/output/progress.zig`); UX improvement for multi-task runs
+- Decision: Standalone `ProgressBar` struct (no scheduler integration) + `printSummary()` function
+  - `ProgressBar.init(writer, use_color, total)` / `tick(label)` / `finish()` — in-place ANSI render via `\r`
+  - BAR_WIDTH=20 chars fill region; `=` for filled, `>` for cursor, ` ` for empty
+  - `printSummary(writer, use_color, passed, failed, skipped, elapsed_ms)` — post-run compact summary
+  - TTY-aware: color mode uses ANSI codes, plain mode uses ASCII
+  - Tests use `std.Io.Writer.fixed(&buf)` — new Zig 0.15 API; written bytes tracked via `writer.end`
+  - 7 new tests; 200/200 total passing
+- Rationale: Standalone module keeps scope small; no scheduler changes needed; future callers (e.g., cmdRun) can opt into progress display by wrapping ScheduleResult
