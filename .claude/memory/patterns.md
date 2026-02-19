@@ -681,3 +681,35 @@ try progress.printSummary(w, use_color, passed, failed, skipped, elapsed_ms);
 - `tick(label)` advances by 1 and re-renders; `finish()` sets 100% and adds newline
 - `printSummary()` is standalone — call after ScheduleResult is available
 - Only shows ANSI codes when `use_color = true` (pass same flag as rest of CLI)
+
+### Sub-module Extraction Pattern (config/matrix.zig)
+When extracting functions from an oversized file into a sub-module:
+1. New file imports from `types.zig` directly (not via the parent module) to avoid circular deps
+2. Parent module adds `const sub_mod = @import("sub.zig");` and re-exports the public API: `pub const pubFn = sub_mod.pubFn;`
+3. Internal calls inside the parent module can still use the bare name `pubFn(...)` because the file-scope const resolves it
+4. Private helper functions stay private in the sub-module (not re-exported from parent)
+5. For tests in the sub-module that need the parent's private function (e.g. `parseToml`), make that function `pub` in the parent
+6. Sub-module tests import the parent with `const loader = @import("loader.zig");` inside the test block (local import)
+7. Add the new sub-module to main.zig's comptime block for test inclusion: `_ = matrix;`
+8. Re-export avoids breaking callers outside the package who call `loader.addMatrixTask`
+
+### CLI Helper Extraction Pattern (cli/common.zig)
+When extracting shared helpers from main.zig into a cli/ sub-module:
+1. New file at `src/cli/common.zig` imports via `../config/loader.zig`, `../graph/dag.zig` etc.
+2. All extracted items are `pub` — `CONFIG_FILE` constant, `loadConfig`, `buildDag`, `writeJsonString`
+3. main.zig adds `const common = @import("cli/common.zig");` and `_ = common;` in comptime block
+4. ALL call sites in main.zig updated: `loadConfig(` → `common.loadConfig(`, etc.
+5. Replace-all with unique enough strings to avoid double-replacement (e.g. replace `try writeJsonString(w, ` not just `writeJsonString`)
+6. Watch for double-replacement: `common.CONFIG_FILE` getting replaced again — verify with grep after mass replace
+7. Tests that were in main.zig for the extracted functions move to common.zig (they call the local bare name, not `common.`)
+8. Tests that remain in main.zig for the extracted functions update their call to `common.writeJsonString(...)` etc.
+
+### CLI Command Extraction Pattern (cli/list.zig)
+When extracting command functions from main.zig into a dedicated cli/ command file:
+1. New file at `src/cli/list.zig` imports via `../output/color.zig`, `common.zig`, `../graph/cycle_detect.zig`, etc.
+2. All extracted command functions are `pub` — `cmdList`, `cmdGraph`, `cmdCache`
+3. main.zig adds `const list_cmd = @import("cli/list.zig");` and `_ = list_cmd;` in comptime block
+4. ALL call sites in main.zig updated: `cmdList(` → `list_cmd.cmdList(`, etc.
+5. Tests that call `run()` from main.zig (not the extracted function directly) STAY in main.zig — they test dispatch, not the function itself
+6. Imports that were only used by the extracted functions stay in main.zig's comptime block for test inclusion (e.g. `_ = topo_sort`, `_ = cycle_detect`, `_ = cache_store`)
+7. No `_ = list_cmd;` needed in the sub-module itself — main.zig's comptime reference is sufficient
