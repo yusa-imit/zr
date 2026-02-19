@@ -1,4 +1,5 @@
 const std = @import("std");
+const platform = @import("../util/platform.zig");
 
 /// Built-in plugin names recognized by zr.
 pub const BUILTIN_NAMES = [_][]const u8{ "env", "git", "notify", "cache", "docker" };
@@ -378,7 +379,7 @@ test "BuiltinHandle.onInit: env plugin loads .env file" {
     handle.onInit();
 
     // The variable should now be set in the environment.
-    const val = std.posix.getenv("ZR_TEST_BUILTIN_ENV_VAR");
+    const val = platform.getenv("ZR_TEST_BUILTIN_ENV_VAR");
     try std.testing.expect(val != null);
     try std.testing.expectEqualStrings("hello_builtin", val.?);
 }

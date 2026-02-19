@@ -2,6 +2,7 @@ const std = @import("std");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const plugin_loader = @import("../plugin/loader.zig");
+const platform = @import("../util/platform.zig");
 
 pub fn cmdPlugin(
     allocator: std.mem.Allocator,
@@ -193,7 +194,7 @@ pub fn cmdPlugin(
             return 1;
         }
         const plugin_name = args[3];
-        const home = std.posix.getenv("HOME") orelse ".";
+        const home = platform.getHome();
         const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
         defer allocator.free(plugin_dir);
 

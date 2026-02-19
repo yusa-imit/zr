@@ -1,5 +1,6 @@
 const std = @import("std");
 const install = @import("install.zig");
+const platform = @import("../util/platform.zig");
 
 /// Result entry from searchInstalledPlugins.
 pub const SearchResult = struct {
@@ -32,7 +33,7 @@ pub fn searchInstalledPlugins(allocator: std.mem.Allocator, query: []const u8) !
         results.deinit(allocator);
     }
 
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
 
     for (names) |name| {
         const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, name });

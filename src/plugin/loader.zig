@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin_mod = @import("builtin.zig");
+const platform = @import("../util/platform.zig");
 pub const install = @import("install.zig");
 pub const registry = @import("registry.zig");
 pub const search = @import("search.zig");
@@ -162,7 +163,7 @@ pub const PluginRegistry = struct {
                 .git, .registry => {
                     // For git/registry plugins, check if already installed in ~/.zr/plugins/<name>.
                     // If installed, load from there. Otherwise warn the user to install first.
-                    const home = std.posix.getenv("HOME") orelse ".";
+                    const home = platform.getHome();
                     const installed_path = try std.fmt.allocPrint(self.allocator, "{s}/.zr/plugins/{s}", .{ home, cfg.name });
                     defer self.allocator.free(installed_path);
 

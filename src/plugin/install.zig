@@ -1,4 +1,5 @@
 const std = @import("std");
+const platform = @import("../util/platform.zig");
 
 /// Metadata read from a plugin's plugin.toml file.
 pub const PluginMeta = struct {
@@ -49,7 +50,7 @@ pub fn resolveLocalPath(allocator: std.mem.Allocator, source: []const u8) ![]con
     {
         return allocator.dupe(u8, source);
     }
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     return std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, source });
 }
 
@@ -195,7 +196,7 @@ pub fn installLocalPlugin(
     // Verify source exists.
     std.fs.accessAbsolute(src_path, .{}) catch return InstallError.SourceNotFound;
 
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const dest_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
     errdefer allocator.free(dest_dir);
 
@@ -243,7 +244,7 @@ pub fn installLocalPlugin(
 
 /// Remove an installed plugin from ~/.zr/plugins/<name>/.
 pub fn removePlugin(allocator: std.mem.Allocator, plugin_name: []const u8) !void {
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
     defer allocator.free(plugin_dir);
 
@@ -261,7 +262,7 @@ pub fn updateLocalPlugin(
     plugin_name: []const u8,
     src_path: []const u8,
 ) ![]const u8 {
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
     defer allocator.free(plugin_dir);
 
@@ -289,7 +290,7 @@ pub fn installGitPlugin(
     git_url: []const u8,
     plugin_name: []const u8,
 ) ![]const u8 {
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const dest_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
     errdefer allocator.free(dest_dir);
 
@@ -331,7 +332,7 @@ pub fn installGitPlugin(
 /// Reads the git_url from plugin.toml to verify it is a git plugin.
 /// Returns GitUpdateError.NotAGitPlugin if no git_url is stored.
 pub fn updateGitPlugin(allocator: std.mem.Allocator, plugin_name: []const u8) !void {
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
     defer allocator.free(plugin_dir);
 
@@ -363,7 +364,7 @@ pub fn updateGitPlugin(allocator: std.mem.Allocator, plugin_name: []const u8) !v
 /// List all installed plugins from ~/.zr/plugins/.
 /// Returns a slice of plugin directory names (caller frees slice and each name).
 pub fn listInstalledPlugins(allocator: std.mem.Allocator) ![][]const u8 {
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const plugins_dir_path = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins", .{home});
     defer allocator.free(plugins_dir_path);
 
@@ -408,7 +409,7 @@ test "resolveLocalPath: relative ./ path returned as-is" {
 
 test "resolveLocalPath: bare name expands to ~/.zr/plugins/<name>" {
     const allocator = std.testing.allocator;
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const path = try resolveLocalPath(allocator, "myplugin");
     defer allocator.free(path);
     const expected = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/myplugin", .{home});
@@ -547,7 +548,7 @@ test "installGitPlugin: already installed returns AlreadyInstalled" {
     removePlugin(allocator, "zr-test-git-dup-99999") catch {};
 
     // Create a fake dir manually to simulate "already installed".
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const fake_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/zr-test-git-dup-99999", .{home});
     defer allocator.free(fake_dir);
 

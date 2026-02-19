@@ -1,5 +1,6 @@
 const std = @import("std");
 const install = @import("install.zig");
+const platform = @import("../util/platform.zig");
 
 /// Parsed components of a registry reference string.
 /// Format: "org/name@version" or "name@version" or "org/name".
@@ -84,7 +85,7 @@ pub fn installRegistryPlugin(
     // Determine install name: prefer override, then fall back to ref.name.
     const install_name = plugin_name_override orelse ref.name;
 
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const dest_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, install_name });
     errdefer allocator.free(dest_dir);
 
@@ -231,7 +232,7 @@ test "installRegistryPlugin: already installed returns AlreadyInstalled" {
     install.removePlugin(allocator, plugin_name) catch {};
 
     // Create a fake installed dir to simulate "already installed".
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const fake_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
     defer allocator.free(fake_dir);
 

@@ -1,7 +1,15 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const native_os = builtin.os.tag;
 
-// C extern for setenv (POSIX, available on macOS and Linux).
-extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+// POSIX setenv(3) — only available on non-Windows targets.
+// The extern declaration is behind a comptime branch so it doesn't
+// generate a linker reference on Windows.
+fn posixSetenv(name_z: [*:0]const u8, val_z: [*:0]const u8, overwrite: bool) void {
+    if (comptime native_os == .windows) return;
+    const c_setenv = @extern(*const fn ([*:0]const u8, [*:0]const u8, c_int) callconv(.c) c_int, .{ .name = "setenv" });
+    _ = c_setenv(name_z, val_z, if (overwrite) 1 else 0);
+}
 
 pub const EnvPlugin = struct {
     /// Load a .env file and merge variables into the process environment via setenv(3).
@@ -37,12 +45,13 @@ pub const EnvPlugin = struct {
             } else if (val.len >= 2 and val[0] == '\'' and val[val.len - 1] == '\'') {
                 val = val[1 .. val.len - 1];
             }
-            // Set the env var via C setenv(3).
+            // Set the env var via POSIX setenv(3). No-op on Windows.
+            if (comptime native_os == .windows) continue;
             const key_z = try allocator.dupeZ(u8, key);
             defer allocator.free(key_z);
             const val_z = try allocator.dupeZ(u8, val);
             defer allocator.free(val_z);
-            _ = setenv(key_z, val_z, if (overwrite) 1 else 0);
+            posixSetenv(key_z, val_z, overwrite);
         }
     }
 

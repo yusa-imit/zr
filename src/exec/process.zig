@@ -1,4 +1,5 @@
 const std = @import("std");
+const platform = @import("../util/platform.zig");
 
 pub const ProcessError = error{
     SpawnFailed,
@@ -48,7 +49,7 @@ fn timeoutWatcher(ctx: TimeoutCtx) void {
     }
     if (ctx.done.load(.acquire)) return; // child exited just before we fired
     // Kill the child process
-    std.posix.kill(ctx.pid, std.posix.SIG.KILL) catch {};
+    platform.killProcess(ctx.pid);
     ctx.timed_out.store(true, .release);
 }
 

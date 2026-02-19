@@ -28,6 +28,7 @@ const workspace = @import("cli/workspace.zig");
 const plugin_cli = @import("cli/plugin.zig");
 const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
+const platform = @import("util/platform.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -60,6 +61,7 @@ comptime {
     _ = plugin_cli;
     _ = run_cmd;
     _ = list_cmd;
+    _ = platform;
 }
 
 pub fn main() !void {
