@@ -327,6 +327,12 @@ Decisions are logged chronologically. Format:
   - Pattern: fmt.allocPrint format strings must be comptime — use fixed format, not runtime message template
   - 18 new tests; 193/193 total passing
 
+## [2026-02-20] Progress Summary Integration into cmdRun/cmdWorkflow
+- Context: `progress.printSummary()` was implemented but only referenced via `_ = progress` in main.zig — not called anywhere
+- Decision: Wired into `src/cli/run.zig` — both `cmdRun` (text path) and `cmdWorkflow` (per-stage); only fires when `results.len > 1` to avoid noise for single-task runs
+- Implementation: Count passed/failed/skipped by checking `TaskResult.skipped` first (skipped tasks aren't success or failure in UX terms); workflow single-task stages keep original "Stage done" dim line; import added to run.zig directly
+- 200/200 tests passing; binary 2.8MB
+
 ## [2026-02-19] Progress Bar Output Module
 - Context: PRD requires progress output (`src/output/progress.zig`); UX improvement for multi-task runs
 - Decision: Standalone `ProgressBar` struct (no scheduler integration) + `printSummary()` function
