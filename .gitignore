@@ -4,7 +4,15 @@
 .zig-cache
 zig-out
 
-# js
-node_modules
-.turbo
-.next
+# Claude Code
+.claude/settings.local.json
+.claude/teams/
+.claude/tasks/
+.claude/projects/
+
+# zr runtime files
+.zr_history
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,4 +1,0 @@
-# zr configuration file
-repositories:
-  - name: pnpm-turbo
-    path: ./repositories/pnpm-turbo

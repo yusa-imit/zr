@@ -1,104 +1,59 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    // Standard target options
     const target = b.standardTargetOptions(.{});
-
-    // Standard optimization options
     const optimize = b.standardOptimizeOption(.{});
 
-    // Create an executable for the default target
     const exe = b.addExecutable(.{
         .name = "zr",
-        .root_source_file = .{ .src_path = .{
-            .owner = b,
-            .sub_path = "src/main.zig",
-        } },
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            // Link libc on non-Windows targets for setenv(3) in builtin_env.zig.
+            // Windows targets don't have bundled MSVC libc in Zig's cross-compiler.
+            .link_libc = if (target.result.os.tag != .windows) true else null,
+        }),
     });
 
-    // Install step for default target
-    const install = b.addInstallArtifact(exe, .{});
-    b.getInstallStep().dependOn(&install.step);
+    b.installArtifact(exe);
 
-    // Add test step
-    const unit_tests = b.addTest(.{
-        .root_source_file = .{ .src_path = .{
-            .owner = b,
-            .sub_path = "src/main.zig",
-        } },
-        .target = target,
-        .optimize = optimize,
-    });
+    const run_cmd = b.addRunArtifact(exe);
+    run_cmd.step.dependOn(b.getInstallStep());
 
-    const run_unit_tests = b.addRunArtifact(unit_tests);
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_unit_tests.step);
-
-    // Create release build step
-    const release_step = b.step("release", "Create release builds for all targets");
-
-    // Cross compilation target configurations
-    const targets = [_]struct {
-        query: std.Target.Query,
-        name: []const u8,
-    }{
-        .{
-            .query = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .msvc,
-            },
-            .name = "x86_64-windows",
-        },
-        .{
-            .query = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .linux,
-                .abi = .gnu,
-            },
-            .name = "x86_64-linux",
-        },
-        .{
-            .query = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .macos,
-                .abi = .none,
-            },
-            .name = "x86_64-macos",
-        },
-        .{
-            .query = .{
-                .cpu_arch = .aarch64,
-                .os_tag = .macos,
-                .abi = .none,
-            },
-            .name = "aarch64-macos",
-        },
-    };
-
-    for (targets) |t| {
-        // Resolve the target
-        const resolved_target = b.resolveTargetQuery(t.query);
-
-        const target_exe = b.addExecutable(.{
-            .name = b.fmt("zr-{s}", .{t.name}),
-            .root_source_file = .{ .src_path = .{
-                .owner = b,
-                .sub_path = "src/main.zig",
-            } },
-            .target = resolved_target,
-            .optimize = .ReleaseSafe,
-        });
-
-        // Configure installation with custom path
-        const target_install = b.addInstallArtifact(target_exe, .{});
-        target_install.dest_sub_path = if (t.query.os_tag == .windows)
-            b.fmt("bin/zr-{s}.exe", .{t.name})
-        else
-            b.fmt("bin/zr-{s}", .{t.name});
-
-        release_step.dependOn(&target_install.step);
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
     }
+
+    const run_step = b.step("run", "Run the app");
+    run_step.dependOn(&run_cmd.step);
+
+    const exe_tests = b.addTest(.{
+        .root_module = exe.root_module,
+    });
+
+    const run_exe_tests = b.addRunArtifact(exe_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_exe_tests.step);
+
+    // --- Integration Tests ---
+    // Build options: inject binary path for integration tests
+    const opts = b.addOptions();
+    opts.addOption([]const u8, "zr_bin_path", "zig-out/bin/zr");
+
+    const int_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    int_tests.root_module.addOptions("build_options", opts);
+
+    const run_int_tests = b.addRunArtifact(int_tests);
+    run_int_tests.step.dependOn(b.getInstallStep()); // ensures zr binary is built first
+
+    const integration_step = b.step("integration-test", "Run integration tests");
+    integration_step.dependOn(&run_int_tests.step);
 }
