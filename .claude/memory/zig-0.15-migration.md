@@ -85,3 +85,12 @@ const page_size = std.heap.pageSize();
 - Use `.c` calling convention (lowercase) for signal handlers
 - `posix.sigaction()` returns void
 - Use `std.mem.zeroes(posix.sigset_t)` instead of removed `empty_sigset`
+
+## Cross-Platform / Cross-Compilation
+
+- `std.posix.*` namespace doesn't exist on Windows — all calls must be behind `comptime` guards
+- `@extern` for C functions (e.g., `setenv`) does NOT auto-link libc — requires `.link_libc = true` in build.zig
+- Zig doesn't bundle MSVC libc — use `.link_libc = if (target.result.os.tag != .windows) true else null`
+- `std.posix.getenv` signature: `fn(key: []const u8) ?[:0]const u8` (NOT `[*:0]const u8`)
+- `std.process.Child.Id` is platform-specific (pid_t on POSIX, HANDLE on Windows)
+- Pattern: centralize POSIX wrappers in a single `platform.zig` with comptime guards

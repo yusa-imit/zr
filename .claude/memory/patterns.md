@@ -37,6 +37,37 @@ Patterns confirmed to work well in this project. Update as patterns evolve.
 - Always test both success and failure paths
 - Use `defer` for cleanup in tests
 
+### Cross-Platform POSIX Wrappers (src/util/platform.zig)
+All POSIX-only API calls must go through `platform.zig` with comptime guards:
+```zig
+const builtin = @import("builtin");
+const native_os = builtin.os.tag;
+
+pub fn getHome() []const u8 {
+    if (comptime native_os == .windows) return ".";
+    return std.posix.getenv("HOME") orelse ".";
+}
+
+pub fn killProcess(pid: std.process.Child.Id) void {
+    if (comptime native_os == .windows) return;
+    std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+}
+```
+- Import in modules: `const platform = @import("../util/platform.zig");`
+- Never use `std.posix.getenv`, `std.posix.kill`, `std.posix.SIG` directly
+- For C extern functions (e.g., `setenv`), use `@extern` with comptime guard + `link_libc`
+
+### Module Extraction / Re-export Pattern
+When splitting large files into sub-modules:
+```zig
+// In parent (e.g., loader.zig) — re-export for backward compatibility
+pub const SomeType = @import("types.zig").SomeType;
+pub const someFunc = @import("sub.zig").someFunc;
+```
+- Add `comptime { _ = @import("sub.zig"); }` in main.zig for test inclusion
+- Import siblings with relative path: `@import("sibling.zig")`
+- Import cross-directory: `@import("../other_dir/file.zig")`
+
 ### Process Execution Pattern (Zig 0.15)
 ```zig
 const argv = [_][]const u8{ "sh", "-c", cmd };

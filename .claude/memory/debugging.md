@@ -117,8 +117,28 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 
 ## std.posix.setenv does not exist (Zig 0.15)
 - **Problem**: `std.posix.setenv(key_z, val_z, 1)` → compile error: no member setenv
-- **Solution**: Use C extern directly: `extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;`
+- **Solution**: Use `@extern` with comptime platform guard:
+  ```zig
+  fn posixSetenv(name_z: [*:0]const u8, val_z: [*:0]const u8, overwrite: bool) void {
+      if (comptime native_os == .windows) return;
+      const c_setenv = @extern(*const fn ([*:0]const u8, [*:0]const u8, c_int) callconv(.c) c_int, .{ .name = "setenv" });
+      _ = c_setenv(name_z, val_z, if (overwrite) 1 else 0);
+  }
+  ```
+- **Caveat**: `@extern` does NOT trigger automatic libc linking — must set `.link_libc = true` in build.zig
 - **Prevention**: Check std.posix docs; setenv is a C standard library function not wrapped by Zig
+
+## Windows cross-compile: undefined POSIX symbols
+- **Symptom**: `std.posix.kill`, `std.posix.SIG.KILL`, `std.posix.getenv` → compile error on Windows targets
+- **Cause**: `std.posix` namespace doesn't exist for Windows builds
+- **Fix**: Centralize ALL POSIX-only calls in `src/util/platform.zig` with `if (comptime native_os == .windows) return;` guards
+- **Prevention**: Never use `std.posix.*` directly in module code; always use `platform.zig` wrappers
+
+## link_libc breaks Windows cross-compile
+- **Symptom**: `unable to provide libc for target 'aarch64-windows-msvc'`
+- **Cause**: `link_libc = true` applies to all targets; Zig doesn't bundle MSVC libc
+- **Fix**: Conditional: `.link_libc = if (target.result.os.tag != .windows) true else null`
+- **Prevention**: Always condition link_libc on target OS when cross-compiling for Windows
 
 ## std.fmt.allocPrint requires comptime format string
 - **Problem**: `std.fmt.allocPrint(allocator, runtime_string, .{args...})` → compile error: argument to comptime parameter must be comptime-known
