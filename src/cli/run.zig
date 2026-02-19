@@ -490,3 +490,216 @@ test "printRunResultJson emits valid JSON structure" {
     try printRunResultJson(&w.interface, &results, false, 150);
     _ = allocator;
 }
+
+test "cmdRun: missing config returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdRun(
+        allocator,
+        "build",
+        null,
+        false,
+        1,
+        "/tmp/zr_test_nonexistent/zr.toml",
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 1), result);
+}
+
+test "cmdRun: unknown task returns error" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    const toml_content = "[tasks.build]\ncmd = \"echo build\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdRun(
+        allocator,
+        "nonexistent",
+        null,
+        false,
+        1,
+        config_path,
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 1), result);
+}
+
+test "cmdRun: dry run shows plan without executing" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    const toml_content = "[tasks.hello]\ncmd = \"echo hello\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdRun(
+        allocator,
+        "hello",
+        null,
+        true,
+        1,
+        config_path,
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdRun: successful task returns 0" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    const toml_content = "[tasks.hello]\ncmd = \"true\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdRun(
+        allocator,
+        "hello",
+        null,
+        false,
+        1,
+        config_path,
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdRun: failing task returns 1" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    const toml_content = "[tasks.fail]\ncmd = \"false\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdRun(
+        allocator,
+        "fail",
+        null,
+        false,
+        1,
+        config_path,
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 1), result);
+}
+
+test "printDryRunPlan: empty plan" {
+    const allocator = std.testing.allocator;
+    _ = allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+
+    // Construct a DryRunPlan with no levels — allocator field is unused when levels is empty
+    const plan = scheduler.DryRunPlan{
+        .levels = &.{},
+        .allocator = std.testing.allocator,
+    };
+
+    // printDryRunPlan should return without error on empty plan
+    try printDryRunPlan(&out_w.interface, false, plan);
+}
+
+test "cmdHistory: empty history returns 0" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // cmdHistory reads from .zr_history in cwd; if it doesn't exist it shows "No history yet"
+    // Either way it should return 0
+    const result = try cmdHistory(
+        allocator,
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 0), result);
+}

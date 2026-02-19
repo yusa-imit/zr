@@ -665,6 +665,30 @@ try std.testing.expect(std.mem.indexOf(u8, out, "expected") != null);
 - `buf[0..writer.end]` gives the written slice (same as old `fbs.getWritten()`)
 - Do NOT use `std.Io.Writer.fromStream()` — does not exist in Zig 0.15
 - For output to real stdout in tests: `std.fs.File.stdout().writer(&buf)` → `.interface`
+- Use `std.Io.Writer.fixed` when you need to assert on output content; use real stdout writer when only testing exit code
+
+### CLI Command Test with Temp Config File (Zig 0.15)
+```zig
+// Pattern for testing CLI commands that load a TOML config from disk:
+const allocator = std.testing.allocator;
+var tmp = std.testing.tmpDir(.{});
+defer tmp.cleanup();
+
+const toml = "[tasks.build]\ncmd = \"make\"\n";
+try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+defer allocator.free(tmp_path);
+
+const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+defer allocator.free(config_path);
+
+// Now call cmd*(allocator, config_path, ...) with the absolute path
+```
+- `realpathAlloc(allocator, ".")` resolves the tmpDir's absolute path (required — relative paths fail)
+- `std.fmt.allocPrint` builds `"{tmp_path}/zr.toml"` as an owned string
+- Always `defer allocator.free(tmp_path)` and `defer allocator.free(config_path)` to avoid leaks
+- `tmp.cleanup()` removes the temp directory and all its contents
 
 ### Progress Bar Pattern (output/progress.zig)
 ```zig
@@ -703,6 +727,108 @@ When extracting shared helpers from main.zig into a cli/ sub-module:
 6. Watch for double-replacement: `common.CONFIG_FILE` getting replaced again — verify with grep after mass replace
 7. Tests that were in main.zig for the extracted functions move to common.zig (they call the local bare name, not `common.`)
 8. Tests that remain in main.zig for the extracted functions update their call to `common.writeJsonString(...)` etc.
+
+### Circular-Import-Free Sub-module Extraction (plugin/install.zig)
+When extracting from file A into file B where B would need types from A (creating a circular dep):
+1. Move the shared types to B (the new sub-module) — they become B's own types
+2. A re-exports them: `pub const SharedType = install.SharedType;`
+3. B does NOT import A at all — no circular dependency
+4. For error types used by helper functions in B that A also needs (e.g. `LoadError.LibraryNotFound`),
+   define the error in B (`pub const LibraryNotFoundError = error{LibraryNotFound};`) and return `error.LibraryNotFound` directly
+5. Zig error union tags coerce by name — `error.LibraryNotFound` from B is compatible with `LoadError.LibraryNotFound` in A
+6. Tests in B that test types from A: move them to A (since B can't import A without circularity)
+   - e.g. `PluginConfig.deinit` test lives in loader.zig (where PluginConfig is defined), not install.zig
+7. The `pub const install = @import("install.zig");` in A makes B's types accessible via `loader.install.X`
+   but re-exports like `pub const PluginMeta = install.PluginMeta;` keep the public API stable
+
+### Direct Profile Construction in Unit Tests (types.zig)
+When writing unit tests that call `Config.applyProfile` without going through TOML parsing:
+```zig
+// Profile.deinit frees: name, env pairs, task_overrides keys + values.
+// Config.deinit calls Profile.deinit — so dupe everything.
+
+// 1. Dupe the profile name (used as both map key and Profile.name):
+const p_name = try allocator.dupe(u8, "release");
+// errdefer only needed if put() might fail before deinit() takes over
+
+// 2. Alloc env slice (can be zero-length):
+const p_env = try allocator.alloc([2][]const u8, 0);
+
+// 3. Build task_overrides map; keys must be separate allocations:
+var task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+const ov_key = try allocator.dupe(u8, "deploy");  // key owned by map
+const ov_cmd = try allocator.dupe(u8, "overridden");
+const ov_env = try allocator.alloc([2][]const u8, 0);
+const ov = ProfileTaskOverride{ .cmd = ov_cmd, .cwd = null, .env = ov_env };
+try task_overrides.put(ov_key, ov);
+
+// 4. Build Profile and put into config.profiles — key is p_name (same allocation):
+const profile = Profile{ .name = p_name, .env = p_env, .task_overrides = task_overrides };
+try config.profiles.put(p_name, profile);
+// Config.deinit -> Profile.deinit frees everything above; no extra cleanup needed.
+```
+- Do NOT add errdefer cleanup for task_overrides after `config.profiles.put` succeeds — `config.deinit()` handles it
+- Keys in task_overrides are freed by `Profile.deinit` via `allocator.free(entry.key_ptr.*)`
+- Profile.name and config.profiles map key point to the same allocation — freed once via Profile.deinit
+- When testing env merge: check `task.env.len` count AND iterate to verify specific key/value pairs (order may vary)
+
+### Workspace Member Resolution Test Pattern
+When testing `resolveWorkspaceMembers` (or any function using `std.fs.cwd().openDir/access`):
+```zig
+// Use absolute paths in member patterns to avoid cwd sensitivity:
+var tmp = std.testing.tmpDir(.{});
+defer tmp.cleanup();
+
+const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+defer allocator.free(tmp_path);
+
+try tmp.dir.makePath("packages/foo");
+try tmp.dir.writeFile(.{ .sub_path = "packages/foo/zr.toml", .data = "..." });
+
+const pattern = try std.fmt.allocPrint(allocator, "{s}/packages/*", .{tmp_path});
+defer allocator.free(pattern);
+
+// IMPORTANT: coerce to slice with [0..] — &patterns gives *const [1][]const u8 (wrong type):
+var patterns = [_][]const u8{pattern};
+const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+
+const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
+defer {
+    for (result) |m| allocator.free(m);
+    allocator.free(result);
+}
+```
+- `&patterns` where patterns is `[1][]const u8` gives `*const [1][]const u8`, NOT `[][]const u8`
+- Use `patterns[0..]` to coerce to the `[][]const u8` slice type that Workspace.members expects
+- Results from `resolveWorkspaceMembers` are sorted alphabetically — account for this in assertions
+- `&.{}` is valid for empty `[][]const u8` fields (e.g. Workspace.ignore)
+
+### Child Process stdout Read-Before-Wait Pattern (Zig 0.15)
+In Zig 0.15.2, `std.process.Child.wait()` calls `cleanupStreams()` internally, which closes and nulls
+`child.stdout`. Reading from `child.stdout` AFTER `wait()` will always yield zero bytes (pipe is closed).
+**Always read stdout (and stderr) BEFORE calling wait():**
+
+```zig
+child.spawn() catch return null;
+
+// Drain pipe BEFORE wait() — wait() closes it via cleanupStreams().
+var output = std.ArrayList(u8){};
+defer output.deinit(allocator);
+
+if (child.stdout) |pipe| {
+    var read_buf: [4096]u8 = undefined;
+    while (true) {
+        const bytes_read = pipe.read(&read_buf) catch break;
+        if (bytes_read == 0) break;
+        try output.appendSlice(allocator, read_buf[0..bytes_read]);
+    }
+}
+
+const result = try child.wait();
+```
+- This pattern also avoids pipe-buffer deadlocks for larger output (> OS pipe buffer, typically 64KB)
+- `std.process.Child.collectOutput()` is the stdlib helper that does this correctly with polling
+- `fileHasChanges`, `changedFiles`, `currentBranch`, `lastCommitMessage` in builtin_git.zig all use this pattern
 
 ### CLI Command Extraction Pattern (cli/list.zig)
 When extracting command functions from main.zig into a dedicated cli/ command file:

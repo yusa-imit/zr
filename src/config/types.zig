@@ -438,6 +438,161 @@ pub fn parseDurationMs(s: []const u8) ?u64 {
     return null;
 }
 
+test "applyProfile: unknown profile returns ProfileNotFound" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+
+    const result = config.applyProfile("nonexistent");
+    try std.testing.expectError(error.ProfileNotFound, result);
+}
+
+test "applyProfile: profile global env is merged into tasks" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Add a task with no env vars.
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+
+    // Build a Profile with global env [["NODE_ENV", "production"]] and no task overrides.
+    const p_name = try allocator.dupe(u8, "staging");
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, 1);
+    p_env[0][0] = try allocator.dupe(u8, "NODE_ENV");
+    p_env[0][1] = try allocator.dupe(u8, "production");
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator),
+    };
+
+    try config.profiles.put(p_name, profile);
+
+    try config.applyProfile("staging");
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqual(@as(usize, 1), task.env.len);
+    try std.testing.expectEqualStrings("NODE_ENV", task.env[0][0]);
+    try std.testing.expectEqualStrings("production", task.env[0][1]);
+}
+
+test "applyProfile: task-level cmd override" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Add a task with cmd = "original".
+    try config.addTask("deploy", "original", null, null, &[_][]const u8{});
+
+    // Build a Profile with a task_override for "deploy" that overrides cmd.
+    const p_name = try allocator.dupe(u8, "release");
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, 0);
+
+    var task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+    errdefer {
+        var it = task_overrides.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(allocator);
+        }
+        task_overrides.deinit();
+    }
+
+    const ov_key = try allocator.dupe(u8, "deploy");
+    const ov_cmd = try allocator.dupe(u8, "overridden");
+    const ov_env = try allocator.alloc([2][]const u8, 0);
+
+    const ov = ProfileTaskOverride{
+        .cmd = ov_cmd,
+        .cwd = null,
+        .env = ov_env,
+    };
+    try task_overrides.put(ov_key, ov);
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = task_overrides,
+    };
+    try config.profiles.put(p_name, profile);
+
+    try config.applyProfile("release");
+
+    const task = config.tasks.get("deploy").?;
+    try std.testing.expectEqualStrings("overridden", task.cmd);
+}
+
+test "applyProfile: task-level env override merges with global" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Add a task with no env vars.
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+
+    // Build a Profile with global env [["A", "1"]] and a task override with env [["B", "2"]].
+    const p_name = try allocator.dupe(u8, "mixed");
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, 1);
+    p_env[0][0] = try allocator.dupe(u8, "A");
+    p_env[0][1] = try allocator.dupe(u8, "1");
+
+    var task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+    errdefer {
+        var it = task_overrides.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(allocator);
+        }
+        task_overrides.deinit();
+    }
+
+    const ov_key = try allocator.dupe(u8, "build");
+    const ov_env = try allocator.alloc([2][]const u8, 1);
+    ov_env[0][0] = try allocator.dupe(u8, "B");
+    ov_env[0][1] = try allocator.dupe(u8, "2");
+
+    const ov = ProfileTaskOverride{
+        .cmd = null,
+        .cwd = null,
+        .env = ov_env,
+    };
+    try task_overrides.put(ov_key, ov);
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = task_overrides,
+    };
+    try config.profiles.put(p_name, profile);
+
+    try config.applyProfile("mixed");
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqual(@as(usize, 2), task.env.len);
+
+    var found_a = false;
+    var found_b = false;
+    for (task.env) |pair| {
+        if (std.mem.eql(u8, pair[0], "A") and std.mem.eql(u8, pair[1], "1")) found_a = true;
+        if (std.mem.eql(u8, pair[0], "B") and std.mem.eql(u8, pair[1], "2")) found_b = true;
+    }
+    try std.testing.expect(found_a);
+    try std.testing.expect(found_b);
+}
+
 pub fn addTaskImpl(
     config: *Config,
     allocator: std.mem.Allocator,

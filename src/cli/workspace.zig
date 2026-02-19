@@ -292,3 +292,158 @@ test "workspace: Workspace struct deinit is safe" {
     ws.deinit(allocator);
     // If we get here without crash/leak, the test passes
 }
+
+test "resolveWorkspaceMembers: glob pattern finds dirs with config" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Get absolute path to the tmp directory
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create packages/foo/, packages/bar/, packages/baz/
+    try tmp.dir.makePath("packages/foo");
+    try tmp.dir.makePath("packages/bar");
+    try tmp.dir.makePath("packages/baz");
+
+    // Write zr.toml in foo and bar but NOT baz
+    try tmp.dir.writeFile(.{ .sub_path = "packages/foo/zr.toml", .data = "[tasks.build]\ncmd = \"echo foo\"\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "packages/bar/zr.toml", .data = "[tasks.build]\ncmd = \"echo bar\"\n" });
+
+    // Build the glob pattern as absolute path
+    const pattern = try std.fmt.allocPrint(allocator, "{s}/packages/*", .{tmp_path});
+    defer allocator.free(pattern);
+
+    var patterns = [_][]const u8{pattern};
+    const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+
+    const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
+    defer {
+        for (result) |m| allocator.free(m);
+        allocator.free(result);
+    }
+
+    // foo and bar should be included; baz excluded
+    try std.testing.expectEqual(@as(usize, 2), result.len);
+
+    // Results are sorted, so bar comes before foo
+    const bar_path = try std.fmt.allocPrint(allocator, "{s}/packages/bar", .{tmp_path});
+    defer allocator.free(bar_path);
+    const foo_path = try std.fmt.allocPrint(allocator, "{s}/packages/foo", .{tmp_path});
+    defer allocator.free(foo_path);
+
+    try std.testing.expectEqualStrings(bar_path, result[0]);
+    try std.testing.expectEqualStrings(foo_path, result[1]);
+}
+
+test "resolveWorkspaceMembers: literal path with config" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create myapp/ with a zr.toml
+    try tmp.dir.makePath("myapp");
+    try tmp.dir.writeFile(.{ .sub_path = "myapp/zr.toml", .data = "[tasks.start]\ncmd = \"echo myapp\"\n" });
+
+    const pattern = try std.fmt.allocPrint(allocator, "{s}/myapp", .{tmp_path});
+    defer allocator.free(pattern);
+
+    var patterns = [_][]const u8{pattern};
+    const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+
+    const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
+    defer {
+        for (result) |m| allocator.free(m);
+        allocator.free(result);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), result.len);
+    try std.testing.expectEqualStrings(pattern, result[0]);
+}
+
+test "resolveWorkspaceMembers: literal path without config returns empty" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create myapp/ but do NOT write a zr.toml inside
+    try tmp.dir.makePath("myapp");
+
+    const pattern = try std.fmt.allocPrint(allocator, "{s}/myapp", .{tmp_path});
+    defer allocator.free(pattern);
+
+    var patterns = [_][]const u8{pattern};
+    const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+
+    const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
+    defer {
+        for (result) |m| allocator.free(m);
+        allocator.free(result);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "resolveWorkspaceMembers: empty members list" {
+    const allocator = std.testing.allocator;
+
+    const ws = loader.Workspace{ .members = &.{}, .ignore = &.{} };
+
+    const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
+    defer {
+        for (result) |m| allocator.free(m);
+        allocator.free(result);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "cmdWorkspaceList: no workspace section returns error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Write a zr.toml with tasks but no [workspace] section
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = "[tasks.build]\ncmd = \"make\"\n" });
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdWorkspaceList(allocator, config_path, false, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "cmdWorkspaceList: missing config returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdWorkspaceList(allocator, "/nonexistent/path/to/zr.toml", false, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
