@@ -1710,22 +1710,61 @@ fn cmdPlugin(
         }
         const src_path = args[3];
 
-        // Detect git URLs: https://, http://, git://, git@
-        const is_git_url = std.mem.startsWith(u8, src_path, "https://") or
+        // Detect source type.
+        const is_registry = std.mem.startsWith(u8, src_path, "registry:");
+        const is_git_url = !is_registry and (std.mem.startsWith(u8, src_path, "https://") or
             std.mem.startsWith(u8, src_path, "http://") or
             std.mem.startsWith(u8, src_path, "git://") or
-            std.mem.startsWith(u8, src_path, "git@");
+            std.mem.startsWith(u8, src_path, "git@"));
 
         // Derive name from last path component (strip trailing .git) if not provided.
         const plugin_name: []const u8 = if (args.len >= 5)
             args[4]
-        else blk: {
+        else if (is_registry) blk: {
+            // For registry refs, use the plugin name portion: "org/name@ver" → "name"
+            const registry_source = src_path["registry:".len..];
+            const ref = plugin_loader.parseRegistryRef(registry_source);
+            break :blk ref.name;
+        } else blk: {
             const last = std.mem.lastIndexOfScalar(u8, src_path, '/');
             var raw = if (last) |idx| src_path[idx + 1 ..] else src_path;
             // Strip .git suffix for git URLs.
             if (std.mem.endsWith(u8, raw, ".git")) raw = raw[0 .. raw.len - 4];
             break :blk raw;
         };
+
+        if (is_registry) {
+            // Registry install path: "registry:org/name@version"
+            const registry_source = src_path["registry:".len..];
+            const name_override: ?[]const u8 = if (args.len >= 5) args[4] else null;
+            const dest = plugin_loader.installRegistryPlugin(allocator, registry_source, name_override) catch |err| switch (err) {
+                plugin_loader.RegistryInstallError.AlreadyInstalled => {
+                    try color.printError(ew, use_color,
+                        "plugin install: '{s}' is already installed\n\n  Hint: Run 'zr plugin remove {s}' first\n",
+                        .{ plugin_name, plugin_name });
+                    return 1;
+                },
+                plugin_loader.RegistryInstallError.GitNotFound => {
+                    try color.printError(ew, use_color,
+                        "plugin install: 'git' not found in PATH\n\n  Hint: Install git to use registry installs\n", .{});
+                    return 1;
+                },
+                plugin_loader.RegistryInstallError.CloneFailed => {
+                    try color.printError(ew, use_color,
+                        "plugin install: registry install failed for '{s}'\n\n  Hint: Check the registry ref and your network connection\n        Format: registry:org/name@version\n", .{src_path});
+                    return 1;
+                },
+                plugin_loader.RegistryInstallError.InvalidRef => {
+                    try color.printError(ew, use_color,
+                        "plugin install: invalid registry ref '{s}'\n\n  Hint: Format: registry:org/name@version or registry:name@version\n", .{src_path});
+                    return 1;
+                },
+                else => return err,
+            };
+            defer allocator.free(dest);
+            try color.printSuccess(w, use_color, "Installed plugin '{s}' → {s}\n", .{ plugin_name, dest });
+            return 0;
+        }
 
         if (is_git_url) {
             // Git install path.
