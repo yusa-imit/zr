@@ -622,3 +622,11 @@ while (try it.next()) |entry| {
 - Then verify source exists, return `InstallError.SourceNotFound` if absent
 - Ignore `error.FileNotFound` in deleteTree (idempotent cleanup)
 - Caller owns the returned dest path slice
+
+### Git plugin install pattern
+- Detect git URLs by prefix: `std.mem.startsWith(u8, src, "https://")` etc., check https/http/git:///git@ 
+- Run `git clone --depth=1 <url> <dest>` via `std.process.Child.init(&argv, allocator)` + `.spawn()` + `.wait()`
+- Check `.spawn() catch return GitNotFound` to handle git-not-in-PATH
+- Check `.wait()` `term == .Exited` and `code != 0` → `CloneFailed`
+- `stderr_behavior = .Ignore` to suppress git output during install
+- Name derivation: `lastIndexOfScalar(u8, url, '/')` + strip `.git` suffix with `endsWith`

@@ -284,3 +284,11 @@ Decisions are logged chronologically. Format:
   - args indexing: args[0]=zr, args[1]=plugin, args[2]=subcommand, args[3]=first-arg (name/path)
   - 5 new tests; 143/143 total passing
 - Rationale: Local-first install covers most plugin development workflows; registry/git install deferred to later phase
+
+## [2026-02-19] Plugin git install via git clone
+- Context: PRD requires git URL source kind for plugin install
+- Decision: `installGitPlugin(allocator, git_url, plugin_name) ![]const u8` in loader.zig; detect URLs by prefix (https://, http://, git://, git@) in cmdPlugin; run `git clone --depth=1 <url> <dest>` as subprocess
+- Rationale: Shallow clone is fastest for install; subprocess avoids linking libgit2; detection by prefix is robust without regex
+  - Name derivation: strip trailing .git suffix from last URL segment
+  - Error types: GitInstallError{GitNotFound, CloneFailed, AlreadyInstalled}
+  - 4 new tests; 151/151 total passing

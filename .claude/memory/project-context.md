@@ -44,8 +44,9 @@
 - [x] Plugin system foundation — `src/plugin/loader.zig`: `PluginConfig` + `PluginRegistry` (native .so/.dylib via `std.DynLib`); `PluginSourceKind` (local/registry/git); `zr_on_init`, `zr_on_before_task`, `zr_on_after_task` C-ABI hooks; `[plugins.NAME]` TOML sections parsed into `Config.plugins: []PluginConfig`; `zr plugin list` CLI command with JSON support; 138/138 tests passing
 - [x] Plugin management CLI — `zr plugin install <path> [name]` copies local plugin dir to `~/.zr/plugins/<name>/`; `zr plugin remove <name>` deletes it; `zr plugin info <name>` reads `plugin.toml` metadata; `readPluginMeta()` parses flat key=value TOML; `installLocalPlugin()` shallow-copies all files; `listInstalledPlugins()` enumerates dirs; 143/143 tests passing
 - [x] Plugin update CLI — `zr plugin update <name> <path>` re-installs a plugin from a new source dir (delete-then-reinstall); `updateLocalPlugin()` in loader.zig; 147/147 tests passing
+- [x] Plugin git install — `zr plugin install <git-url> [name]` clones from https://, http://, git://, git@ URLs using `git clone --depth=1`; `installGitPlugin()` in loader.zig; auto-strips .git suffix for name derivation; 151/151 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation + plugin management + plugin update). 147/147 tests passing. Next: plugin registry/git install support, built-in plugins, or WASM runtime sandbox.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete + Phase 4 in progress (task caching + plugin foundation + plugin management + plugin update + git install). 151/151 tests passing. Next: plugin registry support (registry:org/name@version), built-in plugins, or WASM runtime sandbox.
 
 ## Architecture (High-Level)
 
