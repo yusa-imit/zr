@@ -52,8 +52,9 @@
 - [x] Progress bar output module — `src/output/progress.zig`: `ProgressBar` struct with in-place ANSI rendering (\r carriage return); `tick(label)` / `finish()` API; `printSummary()` for post-run passed/failed/skipped count summary line; TTY-aware via `use_color` flag; `std.Io.Writer.fixed(&buf)` used for tests; 7 new tests; 200/200 tests passing
 - [x] Progress summary wired into CLI — `cmdRun` and `cmdWorkflow` in `src/cli/run.zig` now call `progress.printSummary()` after multi-task runs; tallies passed/failed/skipped from `TaskResult.skipped` flag; only shown when >1 task ran; 200/200 tests passing
 - [x] Interactive TUI mode — `src/cli/tui.zig`: `zr interactive` / `zr i` command; arrow-key navigable task/workflow picker; raw terminal mode via POSIX `tcgetattr`/`tcsetattr`; `IS_POSIX` comptime guard for Windows safety; Enter runs selected task via `cmdRun`, q quits, r refreshes; non-TTY fallback prints guidance; 3 new tests; 235/235 tests passing
+- [x] Cache built-in plugin hooks — `BuiltinHandle.onInit` initializes `CacheStore`, reads `max_age_seconds`/`clear_on_start` config; `onBeforeTask` evicts stale entries via `evictStaleEntries()` (mtime check); `BuiltinState` union holds kind-specific runtime state; `deinit` properly cleans up CacheStore; 4 new tests; 239/239 tests passing
 
-> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete (including interactive TUI) + Phase 4 in progress. 235/235 tests passing. Next: WASM runtime sandbox, plugin registry index, or plugin SDK documentation.
+> **Status**: Phase 1 complete + Phase 2 complete + Phase 3 complete (including interactive TUI) + Phase 4 in progress. 239/239 tests passing. Next: WASM runtime sandbox, plugin registry index, or plugin SDK documentation.
 
 ## Architecture (High-Level)
 
