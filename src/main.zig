@@ -1,6 +1,7 @@
 const std = @import("std");
 const loader = @import("config/loader.zig");
 const expr = @import("config/expr.zig");
+const matrix = @import("config/matrix.zig");
 const dag_mod = @import("graph/dag.zig");
 const topo_sort = @import("graph/topo_sort.zig");
 const cycle_detect = @import("graph/cycle_detect.zig");
@@ -19,6 +20,7 @@ const types = @import("config/types.zig");
 comptime {
     _ = loader;
     _ = expr;
+    _ = matrix;
     _ = dag_mod;
     _ = topo_sort;
     _ = cycle_detect;
