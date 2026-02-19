@@ -5,7 +5,7 @@ pub const BASH_COMPLETION =
     \\_zr_completion() {
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    \\    local commands="run watch workflow list graph history workspace init completion"
+    \\    local commands="run watch workflow list graph history workspace plugin interactive init completion"
     \\    local options="--help --profile --dry-run --jobs --no-color --quiet --verbose --config --format -h -p -n -j -q -v -f"
     \\
     \\    case "$prev" in
@@ -23,6 +23,9 @@ pub const BASH_COMPLETION =
     \\            return ;;
     \\        workspace)
     \\            COMPREPLY=($(compgen -W "list run" -- "$cur"))
+    \\            return ;;
+    \\        plugin)
+    \\            COMPREPLY=($(compgen -W "list search install remove update info builtins create" -- "$cur"))
     \\            return ;;
     \\        completion)
     \\            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
@@ -66,6 +69,8 @@ pub const ZSH_COMPLETION =
     \\        'init:Scaffold a new zr.toml'
     \\        'completion:Print shell completion script'
     \\        'workspace:Manage workspace members (list|run)'
+    \\        'plugin:Manage plugins (list|search|install|remove|update|info|builtins|create)'
+    \\        'interactive:Launch interactive TUI task picker'
     \\    )
     \\    options=(
     \\        '--help[Show help]'
@@ -106,6 +111,8 @@ pub const ZSH_COMPLETION =
     \\                    _values 'shell' bash zsh fish ;;
     \\                workspace)
     \\                    _values 'subcommand' list run ;;
+    \\                plugin)
+    \\                    _values 'subcommand' list search install remove update info builtins create ;;
     \\            esac ;;
     \\    esac
     \\}
@@ -134,8 +141,11 @@ pub const FISH_COMPLETION =
     \\complete -c zr -f -n '__fish_use_subcommand' -a history    -d 'Show run history'
     \\complete -c zr -f -n '__fish_use_subcommand' -a init       -d 'Scaffold zr.toml'
     \\complete -c zr -f -n '__fish_use_subcommand' -a completion -d 'Print completion script'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a workspace  -d 'Workspace commands (list|run)'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a workspace    -d 'Workspace commands (list|run)'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a plugin       -d 'Plugin commands (list|install|...)'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a interactive  -d 'Interactive TUI task picker'
     \\complete -c zr -f -n '__fish_seen_subcommand_from workspace' -a 'list run'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from plugin' -a 'list search install remove update info builtins create'
     \\
     \\# Task name completions for run/watch
     \\complete -c zr -f -n '__fish_seen_subcommand_from run watch' -a '(__zr_tasks)'

@@ -384,15 +384,277 @@ pub fn cmdPlugin(
             try color.printDim(w, use_color, "    Config keys: {s}\n\n", .{e[2]});
         }
         return 0;
+    } else if (std.mem.eql(u8, sub, "create")) {
+        // zr plugin create <name> [--output-dir <dir>]
+        // args: [zr, plugin, create, <name>, [--output-dir, <dir>]]
+        if (args.len < 4) {
+            try color.printError(ew, use_color,
+                "plugin create: missing <name>\n\n  Hint: zr plugin create my-plugin [--output-dir ./plugins]\n", .{});
+            return 1;
+        }
+        const plugin_name = args[3];
+
+        // Validate name: alphanumeric, hyphens, underscores only.
+        for (plugin_name) |c| {
+            if (!std.ascii.isAlphanumeric(c) and c != '-' and c != '_') {
+                try color.printError(ew, use_color,
+                    "plugin create: invalid plugin name '{s}'\n\n  Hint: Use only letters, digits, hyphens, and underscores\n", .{plugin_name});
+                return 1;
+            }
+        }
+
+        // Parse optional --output-dir flag.
+        var output_dir_path: []const u8 = ".";
+        var i: usize = 4;
+        while (i < args.len) : (i += 1) {
+            if (std.mem.eql(u8, args[i], "--output-dir") or std.mem.eql(u8, args[i], "-o")) {
+                if (i + 1 >= args.len) {
+                    try color.printError(ew, use_color,
+                        "plugin create: --output-dir requires a path argument\n", .{});
+                    return 1;
+                }
+                output_dir_path = args[i + 1];
+                i += 1;
+            }
+        }
+
+        const code = try cmdPluginCreate(allocator, plugin_name, output_dir_path, w, ew, use_color);
+        return code;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
-            "plugin: missing subcommand\n\n  Hint: zr plugin list | search | install | remove | update | info | builtins\n", .{});
+            "plugin: missing subcommand\n\n  Hint: zr plugin list | search | install | remove | update | info | builtins | create\n", .{});
         return 1;
     } else {
         try color.printError(ew, use_color,
-            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | search | install | remove | update | info | builtins\n", .{sub});
+            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | search | install | remove | update | info | builtins | create\n", .{sub});
         return 1;
     }
+}
+
+/// Create a plugin scaffold directory with template files.
+fn cmdPluginCreate(
+    allocator: std.mem.Allocator,
+    plugin_name: []const u8,
+    output_dir_path: []const u8,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    // Resolve output_dir to absolute path.
+    const abs_output = if (std.fs.path.isAbsolute(output_dir_path))
+        try allocator.dupe(u8, output_dir_path)
+    else blk: {
+        const cwd = std.fs.cwd().realpathAlloc(allocator, output_dir_path) catch {
+            try color.printError(ew, use_color,
+                "plugin create: output directory not found: {s}\n", .{output_dir_path});
+            return 1;
+        };
+        break :blk cwd;
+    };
+    defer allocator.free(abs_output);
+
+    const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ abs_output, plugin_name });
+    defer allocator.free(plugin_dir);
+
+    // Refuse to overwrite existing directory.
+    const dir_exists: bool = blk: {
+        std.fs.accessAbsolute(plugin_dir, .{}) catch |err| {
+            if (err == error.FileNotFound) break :blk false;
+            break :blk true;
+        };
+        break :blk true;
+    };
+    if (dir_exists) {
+        try color.printError(ew, use_color,
+            "plugin create: directory already exists: {s}\n\n  Hint: Choose a different name or remove the existing directory\n", .{plugin_dir});
+        return 1;
+    }
+
+    // Create the plugin directory.
+    std.fs.makeDirAbsolute(plugin_dir) catch |err| {
+        try color.printError(ew, use_color,
+            "plugin create: failed to create directory '{s}': {s}\n", .{ plugin_dir, @errorName(err) });
+        return 1;
+    };
+
+    var dest_dir = std.fs.openDirAbsolute(plugin_dir, .{}) catch |err| {
+        try color.printError(ew, use_color,
+            "plugin create: failed to open directory '{s}': {s}\n", .{ plugin_dir, @errorName(err) });
+        return 1;
+    };
+    defer dest_dir.close();
+
+    // Write plugin.toml
+    const toml_content = try std.fmt.allocPrint(allocator,
+        \\name = "{s}"
+        \\version = "0.1.0"
+        \\description = "A zr plugin"
+        \\author = ""
+        \\
+    , .{plugin_name});
+    defer allocator.free(toml_content);
+    dest_dir.writeFile(.{ .sub_path = "plugin.toml", .data = toml_content }) catch |err| {
+        try color.printError(ew, use_color, "plugin create: failed to write plugin.toml: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+
+    // Write plugin.h — the C ABI interface header
+    const header_content =
+        \\/**
+        \\ * zr Plugin C ABI Interface
+        \\ *
+        \\ * Compile this plugin as a shared library:
+        \\ *   macOS: cc -shared -fPIC plugin_impl.c -o plugin.dylib
+        \\ *   Linux: cc -shared -fPIC plugin_impl.c -o plugin.so
+        \\ *
+        \\ * Then declare in zr.toml:
+        \\ *   [plugins.myplugin]
+        \\ *   source = "./plugin.dylib"   # or "plugin.so" on Linux
+        \\ *   config = { key = "value" }
+        \\ */
+        \\#pragma once
+        \\
+        \\#ifdef __cplusplus
+        \\extern "C" {
+        \\#endif
+        \\
+        \\/**
+        \\ * Called once when zr loads the plugin.
+        \\ * Use this to initialize state, read config, etc.
+        \\ */
+        \\void zr_on_init(void);
+        \\
+        \\/**
+        \\ * Called before each task runs.
+        \\ * @param task_name  null-terminated task name string
+        \\ */
+        \\void zr_on_before_task(const char *task_name);
+        \\
+        \\/**
+        \\ * Called after each task completes.
+        \\ * @param task_name   null-terminated task name string
+        \\ * @param exit_code   the task's exit code (0 = success)
+        \\ */
+        \\void zr_on_after_task(const char *task_name, int exit_code);
+        \\
+        \\#ifdef __cplusplus
+        \\}
+        \\#endif
+        \\
+    ;
+    dest_dir.writeFile(.{ .sub_path = "plugin.h", .data = header_content }) catch |err| {
+        try color.printError(ew, use_color, "plugin create: failed to write plugin.h: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+
+    // Write plugin_impl.c — starter implementation
+    const impl_content = try std.fmt.allocPrint(allocator,
+        \\#include "plugin.h"
+        \\#include <stdio.h>
+        \\
+        \\/* Called once when zr loads this plugin */
+        \\void zr_on_init(void) {{
+        \\    /* TODO: initialize your plugin here */
+        \\    fprintf(stderr, "[{s}] plugin initialized\n");
+        \\}}
+        \\
+        \\/* Called before each task */
+        \\void zr_on_before_task(const char *task_name) {{
+        \\    fprintf(stderr, "[{s}] before task: %s\n", task_name);
+        \\}}
+        \\
+        \\/* Called after each task */
+        \\void zr_on_after_task(const char *task_name, int exit_code) {{
+        \\    fprintf(stderr, "[{s}] after task: %s (exit %d)\n", task_name, exit_code);
+        \\}}
+        \\
+    , .{ plugin_name, plugin_name, plugin_name });
+    defer allocator.free(impl_content);
+    dest_dir.writeFile(.{ .sub_path = "plugin_impl.c", .data = impl_content }) catch |err| {
+        try color.printError(ew, use_color, "plugin create: failed to write plugin_impl.c: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+
+    // Write Makefile — use \t for tab (required by make; not allowed in Zig multiline literals).
+    const makefile_content = try std.fmt.allocPrint(allocator,
+        ".PHONY: all clean\n\n" ++
+        "# Detect OS for shared library extension\n" ++
+        "UNAME := $(shell uname)\n" ++
+        "ifeq ($(UNAME), Darwin)\n" ++
+        "    LIB = {s}.dylib\n" ++
+        "    LDFLAGS = -dynamiclib\n" ++
+        "else\n" ++
+        "    LIB = {s}.so\n" ++
+        "    LDFLAGS = -shared\n" ++
+        "endif\n\n" ++
+        "all: $(LIB)\n\n" ++
+        "$(LIB): plugin_impl.c plugin.h\n" ++
+        "\t$(CC) $(LDFLAGS) -fPIC -o $@ plugin_impl.c\n\n" ++
+        "clean:\n" ++
+        "\trm -f *.dylib *.so\n\n" ++
+        "install: all\n" ++
+        "\tzr plugin install . {s}\n",
+        .{ plugin_name, plugin_name, plugin_name });
+    defer allocator.free(makefile_content);
+    dest_dir.writeFile(.{ .sub_path = "Makefile", .data = makefile_content }) catch |err| {
+        try color.printError(ew, use_color, "plugin create: failed to write Makefile: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+
+    // Write README.md
+    const readme_content = try std.fmt.allocPrint(allocator,
+        \\# {s}
+        \\
+        \\A [zr](https://github.com/yourorg/zr) plugin.
+        \\
+        \\## Building
+        \\
+        \\```sh
+        \\make
+        \\```
+        \\
+        \\## Installing
+        \\
+        \\```sh
+        \\make install
+        \\# or manually:
+        \\zr plugin install . {s}
+        \\```
+        \\
+        \\## Usage
+        \\
+        \\Add to your `zr.toml`:
+        \\
+        \\```toml
+        \\[plugins.{s}]
+        \\source = "{s}.dylib"  # or "{s}.so" on Linux
+        \\```
+        \\
+        \\## Hooks
+        \\
+        \\- `zr_on_init` — called once at startup
+        \\- `zr_on_before_task(task_name)` — called before each task
+        \\- `zr_on_after_task(task_name, exit_code)` — called after each task
+        \\
+    , .{ plugin_name, plugin_name, plugin_name, plugin_name, plugin_name });
+    defer allocator.free(readme_content);
+    dest_dir.writeFile(.{ .sub_path = "README.md", .data = readme_content }) catch |err| {
+        try color.printError(ew, use_color, "plugin create: failed to write README.md: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+
+    try color.printSuccess(w, use_color, "Created plugin scaffold: {s}/\n", .{plugin_dir});
+    try w.print("\n", .{});
+    try color.printDim(w, use_color, "  Files created:\n", .{});
+    try w.print("    {s}/plugin.toml      — plugin metadata\n", .{plugin_name});
+    try w.print("    {s}/plugin.h         — C ABI interface header\n", .{plugin_name});
+    try w.print("    {s}/plugin_impl.c    — starter implementation\n", .{plugin_name});
+    try w.print("    {s}/Makefile         — build script\n", .{plugin_name});
+    try w.print("    {s}/README.md        — documentation\n", .{plugin_name});
+    try w.print("\n", .{});
+    try color.printDim(w, use_color, "  Next steps:\n", .{});
+    try w.print("    cd {s} && make && zr plugin install . {s}\n", .{ plugin_dir, plugin_name });
+    return 0;
 }
 
 test "plugin update: missing name returns error" {
@@ -581,4 +843,113 @@ test "plugin builtins: builtin source kind loads from PluginRegistry" {
 
     try registry.loadAll(&configs, &w.interface);
     try std.testing.expectEqual(@as(usize, 2), registry.count());
+}
+
+test "plugin create: missing name returns error" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "create" };
+    const code = try cmdPlugin(allocator, "create", &args, "zr.toml", false, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+    const err_out = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, err_out, "missing") != null);
+}
+
+test "plugin create: invalid name returns error" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "create", "my plugin!" };
+    const code = try cmdPlugin(allocator, "create", &args, "zr.toml", false, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+    const err_out = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, err_out, "invalid") != null);
+}
+
+test "plugin create: creates scaffold files in temp dir" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [512]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const code = try cmdPluginCreate(allocator, "my-plugin", tmp_path, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    // Verify all scaffold files were created.
+    tmp.dir.access("my-plugin/plugin.toml", .{}) catch unreachable;
+    tmp.dir.access("my-plugin/plugin.h", .{}) catch unreachable;
+    tmp.dir.access("my-plugin/plugin_impl.c", .{}) catch unreachable;
+    tmp.dir.access("my-plugin/Makefile", .{}) catch unreachable;
+    tmp.dir.access("my-plugin/README.md", .{}) catch unreachable;
+
+    // Verify plugin.toml contains the name.
+    const toml = try tmp.dir.readFileAlloc(allocator, "my-plugin/plugin.toml", 4096);
+    defer allocator.free(toml);
+    try std.testing.expect(std.mem.indexOf(u8, toml, "my-plugin") != null);
+
+    // Verify plugin.h contains hook declarations.
+    const header = try tmp.dir.readFileAlloc(allocator, "my-plugin/plugin.h", 4096);
+    defer allocator.free(header);
+    try std.testing.expect(std.mem.indexOf(u8, header, "zr_on_init") != null);
+    try std.testing.expect(std.mem.indexOf(u8, header, "zr_on_before_task") != null);
+    try std.testing.expect(std.mem.indexOf(u8, header, "zr_on_after_task") != null);
+
+    // Verify output message mentions success.
+    const out = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, out, "my-plugin") != null);
+}
+
+test "plugin create: refuses to overwrite existing directory" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Pre-create the plugin directory.
+    try tmp.dir.makePath("existing-plugin");
+
+    var out_buf: [512]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [512]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const code = try cmdPluginCreate(allocator, "existing-plugin", tmp_path, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+    const err_out = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, err_out, "already exists") != null);
+}
+
+test "plugin create: --output-dir flag parsed correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [512]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "create", "flagged-plugin", "--output-dir", tmp_path };
+    const code = try cmdPlugin(allocator, "create", &args, "zr.toml", false, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+    tmp.dir.access("flagged-plugin/plugin.toml", .{}) catch unreachable;
 }

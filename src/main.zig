@@ -323,6 +323,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
     try w.print("  plugin update <n> [p]  Update a plugin (git pull, or from new path)\n", .{});
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
+    try w.print("  plugin create <name>   Scaffold a new plugin template directory\n", .{});
     try w.print("  interactive, i         Launch interactive TUI task picker\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
