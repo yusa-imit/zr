@@ -279,6 +279,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
+    try w.print("  plugin search [query]  Search installed plugins by name/description\n", .{});
     try w.print("  plugin install <path|url>  Install a plugin (local path or git URL)\n", .{});
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
     try w.print("  plugin update <n> [p]  Update a plugin (git pull, or from new path)\n", .{});
@@ -1967,13 +1968,66 @@ fn cmdPlugin(
         defer allocator.free(dest);
         try color.printSuccess(w, use_color, "Updated plugin '{s}' → {s}\n", .{ plugin_name, dest });
         return 0;
+    } else if (std.mem.eql(u8, sub, "search")) {
+        // zr plugin search [<query>]
+        // Searches installed plugins by name/description (case-insensitive substring).
+        const query: []const u8 = if (args.len >= 4) args[3] else "";
+
+        const results = try plugin_loader.searchInstalledPlugins(allocator, query);
+        defer {
+            for (results) |*r| {
+                var rc = r.*;
+                rc.deinit();
+            }
+            allocator.free(results);
+        }
+
+        if (json_output) {
+            try w.print("[", .{});
+            for (results, 0..) |r, i| {
+                if (i > 0) try w.print(",", .{});
+                try w.print("{{\"name\":", .{});
+                try writeJsonString(w, r.name);
+                try w.print(",\"version\":", .{});
+                try writeJsonString(w, r.version);
+                try w.print(",\"description\":", .{});
+                try writeJsonString(w, r.description);
+                try w.print(",\"author\":", .{});
+                try writeJsonString(w, r.author);
+                try w.print("}}", .{});
+            }
+            try w.print("]\n", .{});
+        } else {
+            if (results.len == 0) {
+                if (query.len > 0) {
+                    try color.printDim(w, use_color, "No installed plugins matching '{s}'\n\n  Hint: Run 'zr plugin list' to see all installed plugins\n", .{query});
+                } else {
+                    try color.printDim(w, use_color, "No plugins installed\n\n  Hint: Install plugins with 'zr plugin install <path|url>'\n", .{});
+                }
+                return 0;
+            }
+            if (query.len > 0) {
+                try color.printBold(w, use_color, "Search results for '{s}' ({d})\n", .{ query, results.len });
+            } else {
+                try color.printBold(w, use_color, "Installed plugins ({d})\n", .{results.len});
+            }
+            for (results) |r| {
+                try w.print("  ", .{});
+                try color.printBold(w, use_color, "{s}", .{r.name});
+                if (r.version.len > 0) try w.print(" v{s}", .{r.version});
+                if (r.description.len > 0) try color.printDim(w, use_color, " — {s}", .{r.description});
+                try w.print("\n", .{});
+                if (r.author.len > 0) try color.printDim(w, use_color, "    Author: {s}\n", .{r.author});
+            }
+        }
+        return 0;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
-            "plugin: missing subcommand\n\n  Hint: zr plugin list | install | remove | update | info\n", .{});
+            "plugin: missing subcommand\n\n  Hint: zr plugin list | search | install | remove | update | info\n", .{});
         return 1;
     } else {
         try color.printError(ew, use_color,
-            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | install | remove | update | info\n", .{sub});
+            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | search | install | remove | update | info\n", .{sub});
         return 1;
     }
 }
@@ -2342,4 +2396,89 @@ test "plugin update: local plugin without git_url returns NotAGitPlugin error" {
     const args = [_][]const u8{ "zr", "plugin", "update", plugin_name };
     const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "plugin search: no query returns all installed or empty message" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "search" };
+    // Should succeed (0 or 0) regardless of whether plugins are installed.
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "plugin search: query with no matches returns empty message" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "search", "zr-test-unlikely-query-xyzxyz12345" };
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "plugin search: installed plugin appears in results" {
+    const allocator = std.testing.allocator;
+    const plugin_name = "zr-test-search-99991";
+
+    // Create a test plugin directory.
+    var tmp_src = std.testing.tmpDir(.{});
+    defer tmp_src.cleanup();
+    try tmp_src.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"searchable\"\nversion = \"1.0.0\"\ndescription = \"A searchable plugin\"\nauthor = \"tester\"\n",
+    });
+    try tmp_src.dir.writeFile(.{ .sub_path = "plugin.dylib", .data = "dummy" });
+    const src = try tmp_src.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(src);
+
+    plugin_loader.removePlugin(allocator, plugin_name) catch {};
+    const dest = try plugin_loader.installLocalPlugin(allocator, src, plugin_name);
+    allocator.free(dest);
+    defer plugin_loader.removePlugin(allocator, plugin_name) catch {};
+
+    // Search for something that matches the description.
+    const results = try plugin_loader.searchInstalledPlugins(allocator, "searchable");
+    defer {
+        for (results) |*r| {
+            var rc = r.*;
+            rc.deinit();
+        }
+        allocator.free(results);
+    }
+
+    // At least one result should match.
+    var found = false;
+    for (results) |r| {
+        if (std.mem.eql(u8, r.name, "searchable")) {
+            found = true;
+            try std.testing.expectEqualStrings("1.0.0", r.version);
+            break;
+        }
+    }
+    try std.testing.expect(found);
+}
+
+test "plugin search: json output flag" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = [_][]const u8{ "zr", "--format", "json", "plugin", "search", "zr-test-unlikely-xyzxyz99999" };
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
 }
