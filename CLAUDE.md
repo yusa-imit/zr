@@ -178,7 +178,7 @@ Leader (orchestrator)
 
 ### File Organization
 
-- One module per file, matching directory structure in PRD Section 7.2
+- One module per file. PRD Section 7.2의 구조는 초기 참고안이며, 실제 구현에 따라 변경 가능. 소스 코드가 기준
 - Keep files under 500 lines; split into submodules if exceeded
 - Public API at top of file, private helpers at bottom
 - Tests at the bottom of each file within `test` block
@@ -312,7 +312,7 @@ rm -rf zig-out .zig-cache
 3. **Incremental commits** — 기능 단위로 작은 커밋
 4. **Memory updates** — 중요한 발견/결정은 즉시 메모리에 기록
 5. **No over-engineering** — 현재 phase에 필요한 것만 구현
-6. **PRD is source of truth** — 요구사항은 `docs/PRD.md` 참조
+6. **PRD is source of truth for requirements** — 기능 요구사항은 `docs/PRD.md` 참조. 단, 파일/폴더 구조(Section 7.2)는 참고안이며 실제 소스 코드가 기준
 7. **Team cleanup** — 팀 작업 완료 후 반드시 해산
 8. **Error messages matter** — 사용자 경험은 에러 메시지 품질로 결정됨
 9. **Stop if stuck** — 동일 에러가 3회 시도 후에도 지속되면 `.claude/memory/debugging.md`에 기록하고 다음 작업으로 이동
