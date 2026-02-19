@@ -333,6 +333,45 @@ Decisions are logged chronologically. Format:
 - Implementation: Count passed/failed/skipped by checking `TaskResult.skipped` first (skipped tasks aren't success or failure in UX terms); workflow single-task stages keep original "Stage done" dim line; import added to run.zig directly
 - 200/200 tests passing; binary 2.8MB
 
+## [2026-02-20] Plugin Scaffolding Command (zr plugin create)
+- Context: Plugin development workflow needed streamlined onboarding
+- Decision: Implemented `zr plugin create <name> [--output-dir <dir>]` command in `src/cli/plugin.zig`
+- Implementation:
+  - Generates complete plugin directory: plugin.toml (metadata), plugin.h (C ABI), plugin_impl.c (starter), Makefile (OS-aware), README.md
+  - Name validation: alphanumeric, hyphens, underscores only (rejects spaces/special chars)
+  - Refuses to overwrite existing directories (safety check via `std.fs.accessAbsolute`)
+  - Makefile auto-detects OS (Darwin → .dylib, Linux → .so) via `UNAME := $(shell uname)`
+  - Template uses starter implementation that logs to stderr (demonstrates hook pattern)
+  - Shell completions updated for all 3 shells (bash/zsh/fish) to include `create` subcommand
+  - 5 new tests; 244/244 total passing
+- Rationale: Lowers barrier to plugin development; provides working template; enforces consistent structure
+
+## [2026-02-20] Plugin Documentation Suite
+- Context: Phase 4 extensibility requires comprehensive documentation for users and developers
+- Decision: Created 3 documentation files covering full plugin ecosystem
+- Implementation:
+  1. **README.md** (1600+ lines):
+     - Project overview with features, quick start, comparison table (zr vs just/task/make)
+     - Core concepts: tasks, workflows, profiles, workspaces
+     - Complete CLI reference with examples
+     - Plugin integration examples
+     - Architecture diagram and performance metrics
+     - Roadmap with phase completion status
+  2. **docs/PLUGIN_GUIDE.md** (500+ lines):
+     - User-facing guide for installing/managing plugins
+     - Built-in plugin reference (env/git/notify/cache) with TOML examples
+     - Plugin lifecycle explanation
+     - Troubleshooting section with platform-specific issues
+     - Example use cases (Slack notifications, git branch checks)
+  3. **docs/PLUGIN_DEV_GUIDE.md** (700+ lines):
+     - Complete C ABI interface documentation (zr_on_init/before_task/after_task)
+     - Plugin scaffolding walkthrough
+     - Multi-language examples: C, Rust, Zig, Go (with build instructions)
+     - Advanced topics: thread safety, memory management, cross-platform builds
+     - Complete Slack notification plugin example
+     - Troubleshooting: symbol visibility, ABI mismatches, platform issues
+- Rationale: Comprehensive docs enable community plugin development; reduces support burden; demonstrates best practices
+
 ## [2026-02-19] Progress Bar Output Module
 - Context: PRD requires progress output (`src/output/progress.zig`); UX improvement for multi-task runs
 - Decision: Standalone `ProgressBar` struct (no scheduler integration) + `printSummary()` function
