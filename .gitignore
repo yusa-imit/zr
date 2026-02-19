@@ -10,6 +10,9 @@ zig-out
 .claude/tasks/
 .claude/projects/
 
+# zr runtime files
+.zr_history
+
 # OS
 .DS_Store
 Thumbs.db

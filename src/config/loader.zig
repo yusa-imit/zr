@@ -1053,8 +1053,11 @@ fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             } else if (current_plugin_name != null and current_task == null and current_workflow == null and current_profile == null and !in_workspace) {
                 // Inside [plugins.X] — parse source and config fields
                 if (std.mem.eql(u8, key, "source")) {
-                    // Detect source kind from prefix: "registry:", "git:", else local
-                    if (std.mem.startsWith(u8, value, "registry:")) {
+                    // Detect source kind from prefix: "builtin:", "registry:", "git:", else local
+                    if (std.mem.startsWith(u8, value, "builtin:")) {
+                        plugin_kind = .builtin;
+                        plugin_source = value["builtin:".len..];
+                    } else if (std.mem.startsWith(u8, value, "registry:")) {
                         plugin_kind = .registry;
                         plugin_source = value["registry:".len..];
                     } else if (std.mem.startsWith(u8, value, "git:")) {
@@ -2453,4 +2456,39 @@ test "plugin without source is ignored" {
     defer config.deinit();
     // Plugin with no source should be ignored (source is required).
     try std.testing.expectEqual(@as(usize, 0), config.plugins.len);
+}
+
+test "parse builtin plugin from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.env]
+        \\source = "builtin:env"
+        \\config = { env_file = ".env" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    const p = config.plugins[0];
+    try std.testing.expectEqualStrings("env", p.name);
+    try std.testing.expectEqual(PluginSourceKind.builtin, p.kind);
+    try std.testing.expectEqualStrings("env", p.source);
+    try std.testing.expectEqual(@as(usize, 1), p.config.len);
+    try std.testing.expectEqualStrings("env_file", p.config[0][0]);
+    try std.testing.expectEqualStrings(".env", p.config[0][1]);
+}
+
+test "parse builtin notify plugin from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[plugins.notify]
+        \\source = "builtin:notify"
+        \\config = { webhook_url = "https://hooks.slack.com/abc", on_failure_only = "true" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    const p = config.plugins[0];
+    try std.testing.expectEqual(PluginSourceKind.builtin, p.kind);
+    try std.testing.expectEqualStrings("notify", p.source);
+    try std.testing.expectEqual(@as(usize, 2), p.config.len);
 }

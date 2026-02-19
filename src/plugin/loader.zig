@@ -1,7 +1,8 @@
 const std = @import("std");
+const builtin_mod = @import("builtin.zig");
 
 /// Plugin source type as parsed from TOML.
-pub const SourceKind = enum { local, registry, git };
+pub const SourceKind = enum { local, registry, git, builtin };
 
 /// Plugin configuration entry from [plugins.NAME] in zr.toml.
 pub const PluginConfig = struct {
@@ -312,11 +313,13 @@ pub fn loadNative(allocator: std.mem.Allocator, cfg: *const PluginConfig) !Plugi
 /// Registry of loaded plugins for a session.
 pub const PluginRegistry = struct {
     plugins: std.ArrayListUnmanaged(Plugin),
+    builtins: std.ArrayListUnmanaged(builtin_mod.BuiltinHandle),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) PluginRegistry {
         return .{
             .plugins = .empty,
+            .builtins = .empty,
             .allocator = allocator,
         };
     }
@@ -324,9 +327,12 @@ pub const PluginRegistry = struct {
     pub fn deinit(self: *PluginRegistry) void {
         for (self.plugins.items) |*p| p.deinit(self.allocator);
         self.plugins.deinit(self.allocator);
+        for (self.builtins.items) |*b| b.deinit();
+        self.builtins.deinit(self.allocator);
     }
 
     /// Load all plugins from the provided config list.
+    /// - builtin: loaded from the built-in plugin registry.
     /// - local: loaded directly from the source path.
     /// - git: loaded from ~/.zr/plugins/<name> if installed; warning if not.
     /// - registry: loaded from ~/.zr/plugins/<name> if installed; warning if not.
@@ -337,6 +343,19 @@ pub const PluginRegistry = struct {
     ) !void {
         for (configs) |*cfg| {
             switch (cfg.kind) {
+                .builtin => {
+                    const handle = builtin_mod.loadBuiltin(self.allocator, cfg.source, cfg.config) catch |err| {
+                        try w.print("[plugin] warning: failed to load builtin '{s}': {s}\n", .{
+                            cfg.name, @errorName(err),
+                        });
+                        continue;
+                    };
+                    if (handle) |h| {
+                        try self.builtins.append(self.allocator, h);
+                    } else {
+                        try w.print("[plugin] warning: unknown built-in plugin '{s}'\n  Hint: available built-ins: env, git, notify, cache, docker\n", .{cfg.source});
+                    }
+                },
                 .local => {
                     const plugin = loadNative(self.allocator, cfg) catch |err| {
                         try w.print("[plugin] warning: failed to load '{s}': {s}\n", .{
@@ -386,30 +405,33 @@ pub const PluginRegistry = struct {
         }
     }
 
-    /// Call on_init for all loaded plugins.
+    /// Call on_init for all loaded plugins (native + built-in).
     pub fn callInit(self: *PluginRegistry) void {
         for (self.plugins.items) |*p| {
             if (p.on_init) |f| f();
         }
+        for (self.builtins.items) |*b| b.onInit();
     }
 
-    /// Call on_before_task for all loaded plugins.
+    /// Call on_before_task for all loaded plugins (native + built-in).
     pub fn callBeforeTask(self: *PluginRegistry, task_name: []const u8) void {
         for (self.plugins.items) |*p| {
             if (p.on_before_task) |f| f(task_name.ptr, task_name.len);
         }
+        for (self.builtins.items) |*b| b.onBeforeTask(task_name);
     }
 
-    /// Call on_after_task for all loaded plugins.
+    /// Call on_after_task for all loaded plugins (native + built-in).
     pub fn callAfterTask(self: *PluginRegistry, task_name: []const u8, exit_code: c_int) void {
         for (self.plugins.items) |*p| {
             if (p.on_after_task) |f| f(task_name.ptr, task_name.len, exit_code);
         }
+        for (self.builtins.items) |*b| b.onAfterTask(task_name, @intCast(exit_code));
     }
 
-    /// Number of successfully loaded plugins.
+    /// Number of successfully loaded plugins (native + built-in).
     pub fn count(self: *const PluginRegistry) usize {
-        return self.plugins.items.len;
+        return self.plugins.items.len + self.builtins.items.len;
     }
 };
 

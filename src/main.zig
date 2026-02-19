@@ -11,6 +11,7 @@ const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
 const plugin_loader = @import("plugin/loader.zig");
+const plugin_builtin = @import("plugin/builtin.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -26,6 +27,7 @@ comptime {
     _ = watcher;
     _ = cache_store;
     _ = plugin_loader;
+    _ = plugin_builtin;
 }
 
 const CONFIG_FILE = "zr.toml";
@@ -279,6 +281,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
+    try w.print("  plugin builtins        List available built-in plugins\n", .{});
     try w.print("  plugin search [query]  Search installed plugins by name/description\n", .{});
     try w.print("  plugin install <path|url>  Install a plugin (local path or git URL)\n", .{});
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
@@ -2021,13 +2024,30 @@ fn cmdPlugin(
             }
         }
         return 0;
+    } else if (std.mem.eql(u8, sub, "builtins")) {
+        // zr plugin builtins — list all available built-in plugins
+        try color.printBold(w, use_color, "Built-in plugins\n", .{});
+        try w.print("  Use source = \"builtin:<name>\" in your zr.toml [plugins.X] section.\n\n", .{});
+        const entries = [_][3][]const u8{
+            .{ "env",    "Environment variable management; loads .env files automatically." ,       "env_file, overwrite" },
+            .{ "git",    "Git integration: branch info, changed files, commit message access.",    "n/a" },
+            .{ "notify", "Webhook notifications (Slack, Discord, Teams) after task completion.",   "webhook_url, message, username, on_failure_only" },
+            .{ "cache",  "Task output caching on local filesystem (built-in cache store).",        "n/a" },
+            .{ "docker", "Docker integration: build/push helpers, layer cache optimization.",      "n/a" },
+        };
+        for (entries) |e| {
+            try color.printBold(w, use_color, "  {s}\n", .{e[0]});
+            try color.printDim(w, use_color, "    {s}\n", .{e[1]});
+            try color.printDim(w, use_color, "    Config keys: {s}\n\n", .{e[2]});
+        }
+        return 0;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
-            "plugin: missing subcommand\n\n  Hint: zr plugin list | search | install | remove | update | info\n", .{});
+            "plugin: missing subcommand\n\n  Hint: zr plugin list | search | install | remove | update | info | builtins\n", .{});
         return 1;
     } else {
         try color.printError(ew, use_color,
-            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | search | install | remove | update | info\n", .{sub});
+            "plugin: unknown subcommand '{s}'\n\n  Hint: zr plugin list | search | install | remove | update | info | builtins\n", .{sub});
         return 1;
     }
 }
@@ -2481,4 +2501,49 @@ test "plugin search: json output flag" {
     const args = [_][]const u8{ "zr", "--format", "json", "plugin", "search", "zr-test-unlikely-xyzxyz99999" };
     const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "plugin builtins: lists all built-in plugins" {
+    const allocator = std.testing.allocator;
+    var out: [4096]u8 = undefined;
+    var err: [512]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    const stderr_file = std.fs.File.stderr();
+    var out_w = stdout.writer(&out);
+    var err_w = stderr_file.writer(&err);
+
+    const args = [_][]const u8{ "zr", "plugin", "builtins" };
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "plugin builtins: builtin source kind loads from PluginRegistry" {
+    const allocator = std.testing.allocator;
+    const plugin_loader_mod = @import("plugin/loader.zig");
+
+    const configs = [_]plugin_loader_mod.PluginConfig{
+        .{
+            .name = "env",
+            .kind = .builtin,
+            .source = "env",
+            .config = &.{},
+        },
+        .{
+            .name = "notify",
+            .kind = .builtin,
+            .source = "notify",
+            .config = &.{},
+        },
+    };
+
+    var registry = plugin_loader_mod.PluginRegistry.init(allocator);
+    defer registry.deinit();
+
+    var buf: [512]u8 = undefined;
+    const devnull = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer devnull.close();
+    var w = devnull.writer(&buf);
+
+    try registry.loadAll(&configs, &w.interface);
+    try std.testing.expectEqual(@as(usize, 2), registry.count());
 }
