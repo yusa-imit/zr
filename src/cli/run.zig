@@ -4,6 +4,7 @@ const common = @import("common.zig");
 const scheduler = @import("../exec/scheduler.zig");
 const history = @import("../history/store.zig");
 const watcher = @import("../watch/watcher.zig");
+const progress = @import("../output/progress.zig");
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,
@@ -81,18 +82,29 @@ pub fn cmdRun(
     } else {
         // Failures go to err_writer so they are visible even under --quiet
         // (which redirects w to /dev/null).
+        var passed: usize = 0;
+        var failed: usize = 0;
+        var skipped: usize = 0;
         for (sched_result.results.items) |task_result| {
-            if (task_result.success) {
+            if (task_result.skipped) {
+                skipped += 1;
+            } else if (task_result.success) {
+                passed += 1;
                 try color.printSuccess(w, use_color,
                     "{s} ", .{task_result.task_name});
                 try color.printDim(w, use_color,
                     "({d}ms)\n", .{task_result.duration_ms});
             } else {
+                failed += 1;
                 try color.printError(err_writer, use_color,
                     "{s} ", .{task_result.task_name});
                 try color.printDim(err_writer, use_color,
                     "(exit: {d})\n", .{task_result.exit_code});
             }
+        }
+        // Print summary line when more than one task ran.
+        if (sched_result.results.items.len > 1) {
+            try progress.printSummary(w, use_color, passed, failed, skipped, elapsed_ms);
         }
     }
 
@@ -300,18 +312,31 @@ pub fn cmdWorkflow(
         const stage_elapsed_ms: u64 = @intCast(@divTrunc(
             std.time.nanoTimestamp() - stage_start_ns, std.time.ns_per_ms));
 
+        var stage_passed: usize = 0;
+        var stage_failed: usize = 0;
+        var stage_skipped: usize = 0;
         for (sched_result.results.items) |task_result| {
-            if (task_result.success) {
+            if (task_result.skipped) {
+                stage_skipped += 1;
+            } else if (task_result.success) {
+                stage_passed += 1;
                 try color.printSuccess(w, use_color, "  {s} ", .{task_result.task_name});
                 try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
             } else {
+                stage_failed += 1;
                 try color.printError(w, use_color, "  {s} ", .{task_result.task_name});
                 try color.printDim(w, use_color, "(exit: {d})\n", .{task_result.exit_code});
             }
         }
 
-        try color.printDim(w, use_color, "  Stage '{s}' done ({d}ms)\n",
-            .{ stage.name, stage_elapsed_ms });
+        // Print stage summary when more than one task ran in this stage.
+        if (sched_result.results.items.len > 1) {
+            try w.writeAll("  ");
+            try progress.printSummary(w, use_color, stage_passed, stage_failed, stage_skipped, stage_elapsed_ms);
+        } else {
+            try color.printDim(w, use_color, "  Stage '{s}' done ({d}ms)\n",
+                .{ stage.name, stage_elapsed_ms });
+        }
 
         if (!sched_result.total_success) {
             any_failed = true;
