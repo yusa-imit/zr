@@ -24,6 +24,9 @@ jobs:
       - name: Test
         run: zig build test
 
+      - name: Integration Test
+        run: zig build integration-test
+
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
     runs-on: ubuntu-latest

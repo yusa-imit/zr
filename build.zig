@@ -36,4 +36,24 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_tests.step);
+
+    // --- Integration Tests ---
+    // Build options: inject binary path for integration tests
+    const opts = b.addOptions();
+    opts.addOption([]const u8, "zr_bin_path", "zig-out/bin/zr");
+
+    const int_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    int_tests.root_module.addOptions("build_options", opts);
+
+    const run_int_tests = b.addRunArtifact(int_tests);
+    run_int_tests.step.dependOn(b.getInstallStep()); // ensures zr binary is built first
+
+    const integration_step = b.step("integration-test", "Run integration tests");
+    integration_step.dependOn(&run_int_tests.step);
 }

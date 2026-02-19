@@ -34,6 +34,8 @@ zr/
 ├── .github/workflows/           # CI/CD pipelines
 │   ├── ci.yml                   #   Build, test, cross-compile
 │   └── release.yml              #   Release pipeline
+├── tests/                       # Integration tests
+│   └── integration.zig          #   Black-box CLI integration tests
 └── src/                         # Source code (Phase 1 구현 대상)
     ├── main.zig                 #   엔트리포인트
     ├── cli/                     #   CLI interface
@@ -111,7 +113,7 @@ Leader (orchestrator)
 
 작업을 작은 단위로 분할하고, 각 단위마다 다음을 반복한다:
 1. 코드 작성 (하나의 모듈/파일 단위)
-2. 테스트 작성 및 `zig build test` 통과 확인
+2. 테스트 작성 및 `zig build test && zig build integration-test` 통과 확인
 3. 즉시 커밋 + `git push` — 다음 단위로 넘어가기 전에 반드시 수행
 - 미커밋 변경사항을 여러 파일에 걸쳐 누적하지 않는다
 - 한 사이클 내에 완료할 수 없는 작업은 동작하는 중간 상태로 커밋+푸시한다
@@ -292,6 +294,9 @@ zig build
 
 # Test
 zig build test
+
+# Integration Test (builds zr binary, then runs black-box CLI tests)
+zig build integration-test
 
 # Run (after build)
 ./zig-out/bin/zr
