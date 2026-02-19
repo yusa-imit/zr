@@ -1,5 +1,6 @@
 const std = @import("std");
 const loader = @import("config/loader.zig");
+const parser = @import("config/parser.zig");
 const expr = @import("config/expr.zig");
 const matrix = @import("config/matrix.zig");
 const dag_mod = @import("graph/dag.zig");
@@ -19,6 +20,7 @@ const types = @import("config/types.zig");
 // Ensure tests in all imported modules are included in test binary
 comptime {
     _ = loader;
+    _ = parser;
     _ = expr;
     _ = matrix;
     _ = dag_mod;
