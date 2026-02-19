@@ -1,5 +1,6 @@
 const std = @import("std");
 const platform = @import("../util/platform.zig");
+const cache_store = @import("../cache/store.zig");
 
 /// Built-in plugin names recognized by zr.
 pub const BUILTIN_NAMES = [_][]const u8{ "env", "git", "notify", "cache", "docker" };
@@ -120,11 +121,23 @@ pub const NotifyPlugin = struct {
 // BuiltinHandle — unified interface for built-in plugin hooks
 // ---------------------------------------------------------------------------
 
+/// Kind-specific runtime state for built-in plugins.
+const BuiltinState = union(enum) {
+    none: void,
+    cache: struct {
+        store: cache_store.CacheStore,
+        /// Maximum age in seconds before a cache entry is considered stale (0 = no expiry).
+        max_age_seconds: u64,
+    },
+};
+
 /// A loaded built-in plugin that implements the same hook interface as native plugins.
 pub const BuiltinHandle = struct {
     name: []const u8,
     kind: BuiltinKind,
     allocator: std.mem.Allocator,
+    /// Kind-specific runtime state (initialized in onInit).
+    state: BuiltinState = .none,
 
     /// Optional config pairs passed from the [plugins.NAME] config block.
     config: [][2][]const u8,
@@ -132,6 +145,11 @@ pub const BuiltinHandle = struct {
     pub const BuiltinKind = enum { env, git, notify, cache, docker };
 
     pub fn deinit(self: *BuiltinHandle) void {
+        // Clean up kind-specific state.
+        switch (self.state) {
+            .cache => |*s| s.store.deinit(),
+            .none => {},
+        }
         self.allocator.free(self.name);
         for (self.config) |pair| {
             self.allocator.free(pair[0]);
@@ -142,6 +160,7 @@ pub const BuiltinHandle = struct {
 
     /// Called when the plugin is initialized (after config is loaded).
     /// The env plugin auto-loads .env files specified in config.
+    /// The cache plugin initializes the cache store and optionally clears stale entries.
     pub fn onInit(self: *BuiltinHandle) void {
         switch (self.kind) {
             .env => {
@@ -155,16 +174,41 @@ pub const BuiltinHandle = struct {
                     }
                 }
             },
+            .cache => {
+                // Initialize the CacheStore.
+                // Config keys:
+                //   dir            — custom cache directory path (optional)
+                //   max_age_seconds — evict entries older than this (0 = no eviction)
+                //   clear_on_start  — if "true", wipe all cache entries on init
+                var store = cache_store.CacheStore.init(self.allocator) catch return;
+
+                const clear_on_start = self.configBool("clear_on_start", false);
+                if (clear_on_start) {
+                    _ = store.clearAll() catch {};
+                }
+
+                const max_age: u64 = blk: {
+                    const val = self.configValue("max_age_seconds") orelse break :blk 0;
+                    break :blk std.fmt.parseInt(u64, val, 10) catch 0;
+                };
+
+                self.state = .{ .cache = .{ .store = store, .max_age_seconds = max_age } };
+            },
             else => {},
         }
     }
 
     /// Called before a task runs.
+    /// The cache plugin evicts stale entries if max_age_seconds is configured.
     pub fn onBeforeTask(self: *BuiltinHandle, task_name: []const u8) void {
+        _ = task_name;
         switch (self.kind) {
-            .git => {
-                // Log branch info to stdout if verbose config is set.
-                _ = task_name;
+            .cache => {
+                // Evict expired cache entries if max_age_seconds > 0.
+                if (self.state != .cache) return;
+                const cs = &self.state.cache;
+                if (cs.max_age_seconds == 0) return;
+                evictStaleEntries(&cs.store, self.allocator, cs.max_age_seconds) catch {};
             },
             else => {},
         }
@@ -211,6 +255,39 @@ pub const BuiltinHandle = struct {
         return std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "yes");
     }
 };
+
+/// Evict cache entries older than max_age_seconds by checking file modification time.
+fn evictStaleEntries(store: *cache_store.CacheStore, allocator: std.mem.Allocator, max_age_seconds: u64) !void {
+    var dir = std.fs.cwd().openDir(store.dir_path, .{ .iterate = true }) catch return;
+    defer dir.close();
+
+    // Collect stale file names first to avoid iterator invalidation.
+    var stale = std.ArrayList([]u8){};
+    defer {
+        for (stale.items) |n| allocator.free(n);
+        stale.deinit(allocator);
+    }
+
+    const now_ns: i128 = std.time.nanoTimestamp();
+    const max_age_ns: i128 = @as(i128, max_age_seconds) * std.time.ns_per_s;
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".ok")) continue;
+
+        const stat = dir.statFile(entry.name) catch continue;
+        const age_ns = now_ns - stat.mtime;
+        if (age_ns > max_age_ns) {
+            const name_copy = try allocator.dupe(u8, entry.name);
+            try stale.append(allocator, name_copy);
+        }
+    }
+
+    for (stale.items) |name| {
+        dir.deleteFile(name) catch {};
+    }
+}
 
 /// Create a BuiltinHandle for the given name and config.
 /// Returns null if the name is not a known built-in.
@@ -382,4 +459,81 @@ test "BuiltinHandle.onInit: env plugin loads .env file" {
     const val = platform.getenv("ZR_TEST_BUILTIN_ENV_VAR");
     try std.testing.expect(val != null);
     try std.testing.expectEqualStrings("hello_builtin", val.?);
+}
+
+test "cache plugin: onInit initializes CacheStore" {
+    const allocator = std.testing.allocator;
+    const config: [][2][]const u8 = &.{};
+
+    var handle = (try loadBuiltin(allocator, "cache", config)) orelse return error.TestExpectedHandle;
+    defer handle.deinit();
+
+    try std.testing.expectEqual(BuiltinHandle.BuiltinKind.cache, handle.kind);
+    // Before onInit, state should be .none
+    try std.testing.expect(handle.state == .none);
+
+    handle.onInit();
+
+    // After onInit, state should be .cache with a valid store
+    try std.testing.expect(handle.state == .cache);
+    try std.testing.expectEqual(@as(u64, 0), handle.state.cache.max_age_seconds);
+}
+
+test "cache plugin: onInit with max_age_seconds config" {
+    const allocator = std.testing.allocator;
+    var config_arr = [_][2][]const u8{
+        .{ "max_age_seconds", "3600" },
+    };
+    const config: [][2][]const u8 = &config_arr;
+
+    var handle = (try loadBuiltin(allocator, "cache", config)) orelse return error.TestExpectedHandle;
+    defer handle.deinit();
+
+    handle.onInit();
+
+    try std.testing.expect(handle.state == .cache);
+    try std.testing.expectEqual(@as(u64, 3600), handle.state.cache.max_age_seconds);
+}
+
+test "cache plugin: onInit with clear_on_start removes entries" {
+    const allocator = std.testing.allocator;
+
+    // First, create a cache entry to be cleared.
+    {
+        var store = try cache_store.CacheStore.init(allocator);
+        defer store.deinit();
+        const key = try cache_store.CacheStore.computeKey(allocator, "zr-cache-plugin-clear-test", null);
+        defer allocator.free(key);
+        try store.recordHit(key);
+        try std.testing.expect(store.hasHit(key));
+    }
+
+    var config_arr = [_][2][]const u8{
+        .{ "clear_on_start", "true" },
+    };
+    const config: [][2][]const u8 = &config_arr;
+
+    var handle = (try loadBuiltin(allocator, "cache", config)) orelse return error.TestExpectedHandle;
+    defer handle.deinit();
+
+    handle.onInit();
+
+    // After clear_on_start, the previously recorded entry should be gone.
+    try std.testing.expect(handle.state == .cache);
+    const store = &handle.state.cache.store;
+    const key = try cache_store.CacheStore.computeKey(allocator, "zr-cache-plugin-clear-test", null);
+    defer allocator.free(key);
+    try std.testing.expect(!store.hasHit(key));
+}
+
+test "cache plugin: onBeforeTask with no max_age is a no-op" {
+    const allocator = std.testing.allocator;
+    const config: [][2][]const u8 = &.{};
+
+    var handle = (try loadBuiltin(allocator, "cache", config)) orelse return error.TestExpectedHandle;
+    defer handle.deinit();
+
+    handle.onInit();
+    // Should not panic or error — max_age_seconds == 0 means no eviction.
+    handle.onBeforeTask("my-task");
 }
