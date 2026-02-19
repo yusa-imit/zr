@@ -16,6 +16,7 @@ const cache_store = @import("cache/store.zig");
 const plugin_loader = @import("plugin/loader.zig");
 const plugin_builtin = @import("plugin/builtin.zig");
 const types = @import("config/types.zig");
+const common = @import("cli/common.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -36,9 +37,8 @@ comptime {
     _ = plugin_loader;
     _ = plugin_builtin;
     _ = types;
+    _ = common;
 }
-
-const CONFIG_FILE = "zr.toml";
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -93,7 +93,7 @@ fn run(
     var quiet: bool = false;
     var verbose: bool = false;
     var json_output: bool = false;
-    var config_path: []const u8 = CONFIG_FILE;
+    var config_path: []const u8 = common.CONFIG_FILE;
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
     {
@@ -311,82 +311,6 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }
 
-fn loadConfig(
-    allocator: std.mem.Allocator,
-    config_path: []const u8,
-    profile_name_opt: ?[]const u8,
-    err_writer: *std.Io.Writer,
-    use_color: bool,
-) !?loader.Config {
-    var config = loader.loadFromFile(allocator, config_path) catch |err| {
-        switch (err) {
-            error.FileNotFound => {
-                try color.printError(err_writer, use_color,
-                    "Config: {s} not found\n\n  Hint: Create a zr.toml file in the current directory\n",
-                    .{config_path},
-                );
-            },
-            else => {
-                try color.printError(err_writer, use_color,
-                    "Config: Failed to load {s}: {s}\n",
-                    .{ config_path, @errorName(err) },
-                );
-            },
-        }
-        return null;
-    };
-
-    // Resolve effective profile: --profile flag, then ZR_PROFILE env var.
-    var effective_profile: ?[]const u8 = profile_name_opt;
-    var env_profile_buf: [256]u8 = undefined;
-    if (effective_profile == null) {
-        if (std.process.getEnvVarOwned(allocator, "ZR_PROFILE")) |pname| {
-            defer allocator.free(pname);
-            if (pname.len > 0 and pname.len <= env_profile_buf.len) {
-                @memcpy(env_profile_buf[0..pname.len], pname);
-                effective_profile = env_profile_buf[0..pname.len];
-            }
-        } else |_| {}
-    }
-
-    if (effective_profile) |pname| {
-        config.applyProfile(pname) catch |err| switch (err) {
-            error.ProfileNotFound => {
-                try color.printError(err_writer, use_color,
-                    "profile: '{s}' not found in {s}\n\n  Hint: Add [profiles.{s}] to your zr.toml\n",
-                    .{ pname, config_path, pname },
-                );
-                config.deinit();
-                return null;
-            },
-            else => {
-                try color.printError(err_writer, use_color,
-                    "profile: Failed to apply '{s}': {s}\n", .{ pname, @errorName(err) });
-                config.deinit();
-                return null;
-            },
-        };
-    }
-
-    return config;
-}
-
-fn buildDag(allocator: std.mem.Allocator, config: *const loader.Config) !dag_mod.DAG {
-    var dag = dag_mod.DAG.init(allocator);
-    errdefer dag.deinit();
-
-    var it = config.tasks.iterator();
-    while (it.next()) |entry| {
-        const task = entry.value_ptr;
-        try dag.addNode(task.name);
-        for (task.deps) |dep| {
-            try dag.addEdge(task.name, dep);
-        }
-    }
-
-    return dag;
-}
-
 fn cmdRun(
     allocator: std.mem.Allocator,
     task_name: []const u8,
@@ -399,7 +323,7 @@ fn cmdRun(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
+    var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     if (config.tasks.get(task_name) == null) {
@@ -500,7 +424,7 @@ fn printRunResultJson(
     for (results, 0..) |r, i| {
         if (i > 0) try w.writeAll(",");
         try w.print("{{\"name\":", .{});
-        try writeJsonString(w, r.task_name);
+        try common.writeJsonString(w, r.task_name);
         try w.print(",\"success\":{s},\"exit_code\":{d},\"duration_ms\":{d},\"skipped\":{s}}}", .{
             if (r.success) "true" else "false",
             r.exit_code,
@@ -509,23 +433,6 @@ fn printRunResultJson(
         });
     }
     try w.writeAll("]}\n");
-}
-
-/// Write a JSON-encoded string (with surrounding quotes and escape sequences).
-fn writeJsonString(w: *std.Io.Writer, s: []const u8) !void {
-    try w.writeAll("\"");
-    for (s) |c| {
-        switch (c) {
-            '"' => try w.writeAll("\\\""),
-            '\\' => try w.writeAll("\\\\"),
-            '\n' => try w.writeAll("\\n"),
-            '\r' => try w.writeAll("\\r"),
-            '\t' => try w.writeAll("\\t"),
-            0x00...0x08, 0x0b, 0x0c, 0x0e...0x1f => try w.print("\\u{x:0>4}", .{c}),
-            else => try w.writeByte(c),
-        }
-    }
-    try w.writeAll("\"");
 }
 
 /// Print a formatted dry-run plan showing execution levels and task names.
@@ -565,7 +472,7 @@ fn cmdWatch(
 ) !u8 {
     // Verify task exists before starting the watch loop.
     {
-        var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
+        var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
         defer config.deinit();
         if (config.tasks.get(task_name) == null) {
             try color.printError(err_writer, use_color,
@@ -604,7 +511,7 @@ fn cmdWatch(
         first_run = false;
 
         // Reload config in case zr.toml changed.
-        var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse {
+        var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse {
             try color.printError(err_writer, use_color,
                 "watch: Config error — waiting for next change...\n", .{});
             continue;
@@ -664,7 +571,7 @@ fn cmdWorkflow(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
+    var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     const wf = config.workflows.get(wf_name) orelse {
@@ -835,7 +742,7 @@ fn cmdHistory(
         for (records.items, 0..) |rec, i| {
             if (i > 0) try w.writeAll(",");
             try w.print("{{\"task\":", .{});
-            try writeJsonString(w, rec.task_name);
+            try common.writeJsonString(w,rec.task_name);
             try w.print(",\"success\":{s},\"duration_ms\":{d},\"task_count\":{d},\"timestamp\":{d}}}", .{
                 if (rec.success) "true" else "false",
                 rec.duration_ms,
@@ -881,7 +788,7 @@ fn cmdList(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
+    var config = (try common.loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
     // Collect task names for sorted output
@@ -919,12 +826,12 @@ fn cmdList(
             const task = config.tasks.get(name).?;
             if (i > 0) try w.writeAll(",");
             try w.print("{{\"name\":", .{});
-            try writeJsonString(w, name);
+            try common.writeJsonString(w,name);
             try w.print(",\"cmd\":", .{});
-            try writeJsonString(w, task.cmd);
+            try common.writeJsonString(w,task.cmd);
             if (task.description) |desc| {
                 try w.print(",\"description\":", .{});
-                try writeJsonString(w, desc);
+                try common.writeJsonString(w,desc);
             } else {
                 try w.writeAll(",\"description\":null");
             }
@@ -935,10 +842,10 @@ fn cmdList(
             const wf = config.workflows.get(name).?;
             if (i > 0) try w.writeAll(",");
             try w.print("{{\"name\":", .{});
-            try writeJsonString(w, name);
+            try common.writeJsonString(w,name);
             if (wf.description) |desc| {
                 try w.print(",\"description\":", .{});
-                try writeJsonString(w, desc);
+                try common.writeJsonString(w,desc);
             } else {
                 try w.writeAll(",\"description\":null");
             }
@@ -1000,10 +907,10 @@ fn cmdGraph(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
+    var config = (try common.loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
-    var dag = try buildDag(allocator, &config);
+    var dag = try common.buildDag(allocator, &config);
     defer dag.deinit();
 
     // Check for cycles first
@@ -1045,11 +952,11 @@ fn cmdGraph(
                 const task = config.tasks.get(name) orelse continue;
                 if (ti > 0) try w.writeAll(",");
                 try w.print("{{\"name\":", .{});
-                try writeJsonString(w, name);
+                try common.writeJsonString(w,name);
                 try w.writeAll(",\"deps\":[");
                 for (task.deps, 0..) |dep, di| {
                     if (di > 0) try w.writeAll(",");
-                    try writeJsonString(w, dep);
+                    try common.writeJsonString(w,dep);
                 }
                 try w.writeAll("]}");
             }
@@ -1173,7 +1080,7 @@ fn cmdWorkspaceList(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var config = (try loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
+    var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
     defer config.deinit();
 
     const ws = config.workspace orelse {
@@ -1183,7 +1090,7 @@ fn cmdWorkspaceList(
         return 1;
     };
 
-    const members = try resolveWorkspaceMembers(allocator, ws, CONFIG_FILE);
+    const members = try resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
     defer {
         for (members) |m| allocator.free(m);
         allocator.free(members);
@@ -1194,7 +1101,7 @@ fn cmdWorkspaceList(
         for (members, 0..) |m, i| {
             if (i > 0) try w.writeAll(",");
             try w.writeAll("{\"path\":");
-            try writeJsonString(w, m);
+            try common.writeJsonString(w,m);
             try w.writeAll("}");
         }
         try w.writeAll("]}\n");
@@ -1224,7 +1131,7 @@ fn cmdWorkspaceRun(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var root_config = (try loadConfig(allocator, config_path, profile_name, ew, use_color)) orelse return 1;
+    var root_config = (try common.loadConfig(allocator, config_path, profile_name, ew, use_color)) orelse return 1;
     defer root_config.deinit();
 
     const ws = root_config.workspace orelse {
@@ -1234,7 +1141,7 @@ fn cmdWorkspaceRun(
         return 1;
     };
 
-    const members = try resolveWorkspaceMembers(allocator, ws, CONFIG_FILE);
+    const members = try resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
     defer {
         for (members) |m| allocator.free(m);
         allocator.free(members);
@@ -1259,13 +1166,13 @@ fn cmdWorkspaceRun(
 
     if (effective_json) {
         try w.writeAll("{\"task\":");
-        try writeJsonString(w, task_name);
+        try common.writeJsonString(w,task_name);
         try w.writeAll(",\"members\":[");
     }
 
     for (members) |member_path| {
         // Build path to member config
-        const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, CONFIG_FILE });
+        const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, common.CONFIG_FILE });
         defer allocator.free(member_cfg);
 
         var member_config = loader.loadFromFile(allocator, member_cfg) catch |err| {
@@ -1318,7 +1225,7 @@ fn cmdWorkspaceRun(
             overall_success = false;
             if (effective_json) {
                 try w.writeAll("{\"path\":");
-                try writeJsonString(w, member_path);
+                try common.writeJsonString(w,member_path);
                 try w.writeAll(",\"success\":false}");
                 json_emitted += 1;
             }
@@ -1330,7 +1237,7 @@ fn cmdWorkspaceRun(
 
         if (effective_json) {
             try w.writeAll("{\"path\":");
-            try writeJsonString(w, member_path);
+            try common.writeJsonString(w,member_path);
             try w.print(",\"success\":{s}", .{if (result.total_success) "true" else "false"});
             try w.writeAll("}");
             json_emitted += 1;
@@ -1595,7 +1502,7 @@ fn cmdInit(
 ) !u8 {
     // Check whether the config already exists.
     const exists: bool = blk: {
-        dir.access(CONFIG_FILE, .{}) catch |err| {
+        dir.access(common.CONFIG_FILE, .{}) catch |err| {
             if (err == error.FileNotFound) break :blk false;
             try color.printError(err_writer, use_color,
                 "init: Cannot check for existing config: {s}\n", .{@errorName(err)});
@@ -1607,28 +1514,28 @@ fn cmdInit(
     if (exists) {
         try color.printError(err_writer, use_color,
             "init: {s} already exists\n\n  Hint: Remove it first or edit it directly\n",
-            .{CONFIG_FILE});
+            .{common.CONFIG_FILE});
         return 1;
     }
 
     // Create the config file exclusively (won't overwrite).
-    const file = dir.createFile(CONFIG_FILE, .{ .exclusive = true }) catch |cerr| {
+    const file = dir.createFile(common.CONFIG_FILE, .{ .exclusive = true }) catch |cerr| {
         try color.printError(err_writer, use_color,
-            "init: Failed to create {s}: {s}\n", .{ CONFIG_FILE, @errorName(cerr) });
+            "init: Failed to create {s}: {s}\n", .{ common.CONFIG_FILE, @errorName(cerr) });
         return 1;
     };
 
     // Write template. On failure, delete the partial file so the user can retry.
     file.writeAll(INIT_TEMPLATE) catch |werr| {
         file.close();
-        dir.deleteFile(CONFIG_FILE) catch {};
+        dir.deleteFile(common.CONFIG_FILE) catch {};
         try color.printError(err_writer, use_color,
-            "init: Failed to write {s}: {s}\n", .{ CONFIG_FILE, @errorName(werr) });
+            "init: Failed to write {s}: {s}\n", .{ common.CONFIG_FILE, @errorName(werr) });
         return 1;
     };
     file.close();
 
-    try color.printSuccess(w, use_color, "Created {s}\n", .{CONFIG_FILE});
+    try color.printSuccess(w, use_color, "Created {s}\n", .{common.CONFIG_FILE});
     try color.printDim(w, use_color,
         "\nNext steps:\n  zr list          # see available tasks\n  zr run hello     # run the example task\n",
         .{});
@@ -1680,7 +1587,7 @@ fn cmdPlugin(
     use_color: bool,
 ) !u8 {
     if (std.mem.eql(u8, sub, "list")) {
-        var config = (try loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
+        var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
         defer config.deinit();
 
         if (json_output) {
@@ -1688,9 +1595,9 @@ fn cmdPlugin(
             for (config.plugins, 0..) |p, i| {
                 if (i > 0) try w.print(",", .{});
                 try w.print("{{\"name\":", .{});
-                try writeJsonString(w, p.name);
+                try common.writeJsonString(w,p.name);
                 try w.print(",\"source\":", .{});
-                try writeJsonString(w, p.source);
+                try common.writeJsonString(w,p.source);
                 try w.print(",\"kind\":\"{s}\"}}", .{@tagName(p.kind)});
             }
             try w.print("]\n", .{});
@@ -1877,15 +1784,15 @@ fn cmdPlugin(
             defer meta.deinit();
             if (json_output) {
                 try w.print("{{\"name\":", .{});
-                try writeJsonString(w, meta.name);
+                try common.writeJsonString(w,meta.name);
                 try w.print(",\"version\":", .{});
-                try writeJsonString(w, meta.version);
+                try common.writeJsonString(w,meta.version);
                 try w.print(",\"description\":", .{});
-                try writeJsonString(w, meta.description);
+                try common.writeJsonString(w,meta.description);
                 try w.print(",\"author\":", .{});
-                try writeJsonString(w, meta.author);
+                try common.writeJsonString(w,meta.author);
                 try w.print(",\"path\":", .{});
-                try writeJsonString(w, plugin_dir);
+                try common.writeJsonString(w,plugin_dir);
                 try w.print("}}\n", .{});
             } else {
                 try color.printBold(w, use_color, "{s}", .{if (meta.name.len > 0) meta.name else plugin_name});
@@ -1899,9 +1806,9 @@ fn cmdPlugin(
             // No plugin.toml — show basic info.
             if (json_output) {
                 try w.print("{{\"name\":", .{});
-                try writeJsonString(w, plugin_name);
+                try common.writeJsonString(w,plugin_name);
                 try w.print(",\"path\":", .{});
-                try writeJsonString(w, plugin_dir);
+                try common.writeJsonString(w,plugin_dir);
                 try w.print("}}\n", .{});
             } else {
                 try color.printBold(w, use_color, "{s}\n", .{plugin_name});
@@ -1998,13 +1905,13 @@ fn cmdPlugin(
             for (results, 0..) |r, i| {
                 if (i > 0) try w.print(",", .{});
                 try w.print("{{\"name\":", .{});
-                try writeJsonString(w, r.name);
+                try common.writeJsonString(w,r.name);
                 try w.print(",\"version\":", .{});
-                try writeJsonString(w, r.version);
+                try common.writeJsonString(w,r.version);
                 try w.print(",\"description\":", .{});
-                try writeJsonString(w, r.description);
+                try common.writeJsonString(w,r.description);
                 try w.print(",\"author\":", .{});
-                try writeJsonString(w, r.author);
+                try common.writeJsonString(w,r.author);
                 try w.print("}}", .{});
             }
             try w.print("]\n", .{});
@@ -2080,7 +1987,7 @@ test "cmdInit creates zr.toml in empty directory" {
     try std.testing.expectEqual(@as(u8, 0), code1);
 
     // Verify file exists and contains expected content.
-    const content = try tmp.dir.readFileAlloc(std.testing.allocator, CONFIG_FILE, 4096);
+    const content = try tmp.dir.readFileAlloc(std.testing.allocator, common.CONFIG_FILE, 4096);
     defer std.testing.allocator.free(content);
     try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "hello") != null);
@@ -2268,10 +2175,10 @@ test "writeJsonString escapes special characters" {
     var w = stdout.writer(&buf);
 
     // Just test that it runs without error on common characters.
-    try writeJsonString(&w.interface, "hello world");
-    try writeJsonString(&w.interface, "with \"quotes\"");
-    try writeJsonString(&w.interface, "with\nnewline");
-    try writeJsonString(&w.interface, "with\\backslash");
+    try common.writeJsonString(&w.interface, "hello world");
+    try common.writeJsonString(&w.interface, "with \"quotes\"");
+    try common.writeJsonString(&w.interface, "with\nnewline");
+    try common.writeJsonString(&w.interface, "with\\backslash");
 }
 
 test "printRunResultJson emits valid JSON structure" {
