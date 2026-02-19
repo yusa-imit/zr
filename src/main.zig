@@ -17,6 +17,7 @@ const plugin_loader = @import("plugin/loader.zig");
 const plugin_install = @import("plugin/install.zig");
 const plugin_builtin = @import("plugin/builtin.zig");
 const builtin_env = @import("plugin/builtin_env.zig");
+const builtin_git = @import("plugin/builtin_git.zig");
 const plugin_registry = @import("plugin/registry.zig");
 const plugin_search = @import("plugin/search.zig");
 const types = @import("config/types.zig");
@@ -48,6 +49,7 @@ comptime {
     _ = plugin_install;
     _ = plugin_builtin;
     _ = builtin_env;
+    _ = builtin_git;
     _ = plugin_registry;
     _ = plugin_search;
     _ = types;
