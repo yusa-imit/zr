@@ -16,6 +16,7 @@ const cache_store = @import("cache/store.zig");
 const plugin_loader = @import("plugin/loader.zig");
 const plugin_install = @import("plugin/install.zig");
 const plugin_builtin = @import("plugin/builtin.zig");
+const plugin_registry = @import("plugin/registry.zig");
 const types = @import("config/types.zig");
 const common = @import("cli/common.zig");
 const completion = @import("cli/completion.zig");
@@ -44,6 +45,7 @@ comptime {
     _ = plugin_loader;
     _ = plugin_install;
     _ = plugin_builtin;
+    _ = plugin_registry;
     _ = types;
     _ = common;
     _ = completion;
