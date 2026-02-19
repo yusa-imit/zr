@@ -28,6 +28,7 @@ const workspace = @import("cli/workspace.zig");
 const plugin_cli = @import("cli/plugin.zig");
 const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
+const tui = @import("cli/tui.zig");
 const platform = @import("util/platform.zig");
 
 // Ensure tests in all imported modules are included in test binary
@@ -61,6 +62,7 @@ comptime {
     _ = plugin_cli;
     _ = run_cmd;
     _ = list_cmd;
+    _ = tui;
     _ = platform;
 }
 
@@ -290,6 +292,8 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "plugin")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return plugin_cli.cmdPlugin(allocator, sub, effective_args, config_path, json_output, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "interactive") or std.mem.eql(u8, cmd, "i")) {
+        return tui.cmdInteractive(allocator, config_path, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -319,6 +323,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
     try w.print("  plugin update <n> [p]  Update a plugin (git pull, or from new path)\n", .{});
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
+    try w.print("  interactive, i         Launch interactive TUI task picker\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
