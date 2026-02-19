@@ -279,7 +279,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
-    try w.print("  plugin install <path>  Install a local plugin to ~/.zr/plugins/\n", .{});
+    try w.print("  plugin install <path|url>  Install a plugin (local path or git URL)\n", .{});
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
     try w.print("  plugin update <n> <p>  Update an installed plugin from a new path\n", .{});
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
@@ -1701,21 +1701,59 @@ fn cmdPlugin(
         }
         return 0;
     } else if (std.mem.eql(u8, sub, "install")) {
-        // zr plugin install <path> [<name>]
-        // args: [zr, plugin, install, <path>, [<name>]]
+        // zr plugin install <path|git-url> [<name>]
+        // args: [zr, plugin, install, <source>, [<name>]]
         if (args.len < 4) {
             try color.printError(ew, use_color,
-                "plugin install: missing <path>\n\n  Hint: zr plugin install ./my-plugin [name]\n", .{});
+                "plugin install: missing <path|url>\n\n  Hint: zr plugin install ./my-plugin [name]\n        zr plugin install https://github.com/user/plugin [name]\n", .{});
             return 1;
         }
         const src_path = args[3];
-        // Derive name from last path component if not provided.
+
+        // Detect git URLs: https://, http://, git://, git@
+        const is_git_url = std.mem.startsWith(u8, src_path, "https://") or
+            std.mem.startsWith(u8, src_path, "http://") or
+            std.mem.startsWith(u8, src_path, "git://") or
+            std.mem.startsWith(u8, src_path, "git@");
+
+        // Derive name from last path component (strip trailing .git) if not provided.
         const plugin_name: []const u8 = if (args.len >= 5)
             args[4]
         else blk: {
             const last = std.mem.lastIndexOfScalar(u8, src_path, '/');
-            break :blk if (last) |idx| src_path[idx + 1 ..] else src_path;
+            var raw = if (last) |idx| src_path[idx + 1 ..] else src_path;
+            // Strip .git suffix for git URLs.
+            if (std.mem.endsWith(u8, raw, ".git")) raw = raw[0 .. raw.len - 4];
+            break :blk raw;
         };
+
+        if (is_git_url) {
+            // Git install path.
+            const dest = plugin_loader.installGitPlugin(allocator, src_path, plugin_name) catch |err| switch (err) {
+                plugin_loader.GitInstallError.AlreadyInstalled => {
+                    try color.printError(ew, use_color,
+                        "plugin install: '{s}' is already installed\n\n  Hint: Run 'zr plugin remove {s}' first\n",
+                        .{ plugin_name, plugin_name });
+                    return 1;
+                },
+                plugin_loader.GitInstallError.GitNotFound => {
+                    try color.printError(ew, use_color,
+                        "plugin install: 'git' not found in PATH\n\n  Hint: Install git to use git URL installs\n", .{});
+                    return 1;
+                },
+                plugin_loader.GitInstallError.CloneFailed => {
+                    try color.printError(ew, use_color,
+                        "plugin install: git clone failed for '{s}'\n\n  Hint: Check the URL and your network connection\n", .{src_path});
+                    return 1;
+                },
+                else => return err,
+            };
+            defer allocator.free(dest);
+            try color.printSuccess(w, use_color, "Installed plugin '{s}' → {s}\n", .{ plugin_name, dest });
+            return 0;
+        }
+
+        // Local install path.
 
         // Resolve src_path to absolute if needed.
         const abs_src = if (std.fs.path.isAbsolute(src_path))

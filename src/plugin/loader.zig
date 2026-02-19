@@ -368,6 +368,55 @@ pub fn updateLocalPlugin(
     return installLocalPlugin(allocator, src_path, plugin_name);
 }
 
+pub const GitInstallError = error{
+    GitNotFound,
+    CloneFailed,
+    AlreadyInstalled,
+};
+
+/// Install a plugin from a git URL into ~/.zr/plugins/<name>/.
+/// Runs `git clone <url> <dest>` as a subprocess.
+/// Returns the destination path (caller frees).
+pub fn installGitPlugin(
+    allocator: std.mem.Allocator,
+    git_url: []const u8,
+    plugin_name: []const u8,
+) ![]const u8 {
+    const home = std.posix.getenv("HOME") orelse ".";
+    const dest_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
+    errdefer allocator.free(dest_dir);
+
+    // Check if already installed.
+    const already = blk: {
+        std.fs.accessAbsolute(dest_dir, .{}) catch { break :blk false; };
+        break :blk true;
+    };
+    if (already) return GitInstallError.AlreadyInstalled;
+
+    // Ensure ~/.zr/plugins/ parent exists.
+    const parent = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins", .{home});
+    defer allocator.free(parent);
+    std.fs.makeDirAbsolute(parent) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+
+    // Run: git clone <url> <dest_dir>
+    const argv = [_][]const u8{ "git", "clone", "--depth=1", git_url, dest_dir };
+    var child = std.process.Child.init(&argv, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+
+    child.spawn() catch return GitInstallError.GitNotFound;
+    const term = try child.wait();
+    switch (term) {
+        .Exited => |code| if (code != 0) return GitInstallError.CloneFailed,
+        else => return GitInstallError.CloneFailed,
+    }
+
+    return dest_dir;
+}
+
 /// List all installed plugins from ~/.zr/plugins/.
 /// Returns a slice of plugin directory names (caller frees slice and each name).
 pub fn listInstalledPlugins(allocator: std.mem.Allocator) ![][]const u8 {
@@ -603,6 +652,49 @@ test "updateLocalPlugin: source not found returns SourceNotFound" {
     // Either PluginNotFound (not installed) or SourceNotFound (installed but bad path).
     const err = result catch |e| e;
     try std.testing.expect(err == error.PluginNotFound or err == InstallError.SourceNotFound);
+}
+
+test "installGitPlugin: already installed returns AlreadyInstalled" {
+    const allocator = std.testing.allocator;
+
+    // Create a fake "installed" plugin dir in a temp location.
+    // We can't easily intercept HOME, so simulate by testing the logic path.
+    // Instead, test that an actual existing dir triggers the error.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // We'll test via a second install attempt after a successful one, using the real HOME.
+    // First clean up any leftover.
+    removePlugin(allocator, "zr-test-git-dup-99999") catch {};
+
+    // Create a fake dir manually to simulate "already installed".
+    const home = std.posix.getenv("HOME") orelse ".";
+    const fake_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/zr-test-git-dup-99999", .{home});
+    defer allocator.free(fake_dir);
+
+    // Ensure parent exists.
+    const parent = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins", .{home});
+    defer allocator.free(parent);
+    std.fs.makeDirAbsolute(parent) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+    std.fs.makeDirAbsolute(fake_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+    defer removePlugin(allocator, "zr-test-git-dup-99999") catch {};
+
+    // Now try to install — should return AlreadyInstalled.
+    const result = installGitPlugin(allocator, "https://example.com/plugin.git", "zr-test-git-dup-99999");
+    try std.testing.expectError(GitInstallError.AlreadyInstalled, result);
+}
+
+test "installGitPlugin: function compiles and is callable" {
+    // Verify the function signature compiles correctly.
+    // We cannot test git execution without network; just ensure type-checking passes.
+    const fn_ptr: *const fn (std.mem.Allocator, []const u8, []const u8) anyerror![]const u8 = &installGitPlugin;
+    _ = fn_ptr;
 }
 
 test "updateLocalPlugin: round-trip install + update" {
