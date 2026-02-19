@@ -1,0 +1,294 @@
+const std = @import("std");
+const color = @import("../output/color.zig");
+const common = @import("common.zig");
+const loader = @import("../config/loader.zig");
+const scheduler = @import("../exec/scheduler.zig");
+
+/// Resolve workspace member directories from glob patterns.
+/// Only handles "dir/*" (list all direct subdirectories of `dir`).
+/// Returns a caller-owned slice of owned paths (absolute or relative to cwd).
+pub fn resolveWorkspaceMembers(
+    allocator: std.mem.Allocator,
+    ws: loader.Workspace,
+    config_filename: []const u8,
+) ![][]const u8 {
+    var members = std.ArrayList([]const u8){};
+    errdefer {
+        for (members.items) |m| allocator.free(m);
+        members.deinit(allocator);
+    }
+
+    for (ws.members) |pattern| {
+        // Check if pattern ends with "/*" — list all subdirs of parent.
+        if (std.mem.endsWith(u8, pattern, "/*")) {
+            const parent_dir = pattern[0 .. pattern.len - 2];
+            var dir = std.fs.cwd().openDir(parent_dir, .{ .iterate = true }) catch continue;
+            defer dir.close();
+
+            var it = dir.iterate();
+            while (try it.next()) |entry| {
+                if (entry.kind != .directory) continue;
+                // Skip hidden directories
+                if (entry.name[0] == '.') continue;
+                // Build path: parent_dir/entry.name
+                const member_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ parent_dir, entry.name });
+                errdefer allocator.free(member_path);
+                // Only include if it has a config file
+                const cfg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, config_filename });
+                defer allocator.free(cfg_path);
+                const has_config: bool = blk: {
+                    std.fs.cwd().access(cfg_path, .{}) catch break :blk false;
+                    break :blk true;
+                };
+                if (!has_config) {
+                    allocator.free(member_path);
+                    continue;
+                }
+                try members.append(allocator, member_path);
+            }
+        } else {
+            // Treat as a literal directory path
+            const cfg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ pattern, config_filename });
+            defer allocator.free(cfg_path);
+            const has_config: bool = blk: {
+                std.fs.cwd().access(cfg_path, .{}) catch break :blk false;
+                break :blk true;
+            };
+            if (!has_config) continue;
+            const member_path = try allocator.dupe(u8, pattern);
+            try members.append(allocator, member_path);
+        }
+    }
+
+    // Sort for deterministic output
+    std.mem.sort([]const u8, members.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+
+    return members.toOwnedSlice(allocator);
+}
+
+pub fn cmdWorkspaceList(
+    allocator: std.mem.Allocator,
+    config_path: []const u8,
+    json_output: bool,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
+    defer config.deinit();
+
+    const ws = config.workspace orelse {
+        try color.printError(ew, use_color,
+            "workspace: no [workspace] section in {s}\n\n  Hint: Add [workspace] members = [\"packages/*\"] to your zr.toml\n",
+            .{config_path});
+        return 1;
+    };
+
+    const members = try resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
+    defer {
+        for (members) |m| allocator.free(m);
+        allocator.free(members);
+    }
+
+    if (json_output) {
+        try w.writeAll("{\"members\":[");
+        for (members, 0..) |m, i| {
+            if (i > 0) try w.writeAll(",");
+            try w.writeAll("{\"path\":");
+            try common.writeJsonString(w, m);
+            try w.writeAll("}");
+        }
+        try w.writeAll("]}\n");
+    } else {
+        try color.printBold(w, use_color, "Workspace Members ({d}):\n", .{members.len});
+        if (members.len == 0) {
+            try color.printDim(w, use_color, "  (no members found — check your glob patterns)\n", .{});
+        } else {
+            for (members) |m| {
+                try w.print("  {s}\n", .{m});
+            }
+        }
+    }
+
+    return 0;
+}
+
+pub fn cmdWorkspaceRun(
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    profile_name: ?[]const u8,
+    dry_run: bool,
+    max_jobs: u32,
+    config_path: []const u8,
+    json_output: bool,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    var root_config = (try common.loadConfig(allocator, config_path, profile_name, ew, use_color)) orelse return 1;
+    defer root_config.deinit();
+
+    const ws = root_config.workspace orelse {
+        try color.printError(ew, use_color,
+            "workspace: no [workspace] section in {s}\n\n  Hint: Add [workspace] members = [\"packages/*\"] to your zr.toml\n",
+            .{config_path});
+        return 1;
+    };
+
+    const members = try resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
+    defer {
+        for (members) |m| allocator.free(m);
+        allocator.free(members);
+    }
+
+    if (members.len == 0) {
+        try color.printError(ew, use_color,
+            "workspace: no member directories found\n\n  Hint: Check your [workspace] members patterns\n", .{});
+        return 1;
+    }
+
+    var overall_success: bool = true;
+    var ran_count: usize = 0;
+    var skip_count: usize = 0;
+    // json_emitted tracks how many members have been emitted to the JSON array
+    // (separate from ran_count which also counts dry-run members)
+    var json_emitted: usize = 0;
+
+    // For dry-run mode, always use text output regardless of json_output flag
+    // (dry-run produces plan text that can't be nested inside JSON)
+    const effective_json = json_output and !dry_run;
+
+    if (effective_json) {
+        try w.writeAll("{\"task\":");
+        try common.writeJsonString(w, task_name);
+        try w.writeAll(",\"members\":[");
+    }
+
+    for (members) |member_path| {
+        // Build path to member config
+        const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, common.CONFIG_FILE });
+        defer allocator.free(member_cfg);
+
+        var member_config = loader.loadFromFile(allocator, member_cfg) catch |err| {
+            if (err == error.FileNotFound) continue;
+            try color.printError(ew, use_color,
+                "workspace: failed to load {s}: {s}\n", .{ member_cfg, @errorName(err) });
+            overall_success = false;
+            continue;
+        };
+        defer member_config.deinit();
+
+        // Skip members that don't define this task
+        if (member_config.tasks.get(task_name) == null) {
+            skip_count += 1;
+            continue;
+        }
+
+        ran_count += 1;
+
+        if (dry_run) {
+            try color.printBold(w, use_color, "\n── {s} (dry-run) ──\n", .{member_path});
+            var plan = try scheduler.planDryRun(allocator, &member_config, &[_][]const u8{task_name});
+            defer plan.deinit();
+            for (plan.levels, 0..) |level, li| {
+                try w.print("  Level {d}: ", .{li});
+                for (level.tasks, 0..) |t, ti| {
+                    if (ti > 0) try w.writeAll(", ");
+                    try w.writeAll(t);
+                }
+                try w.writeAll("\n");
+            }
+            continue;
+        }
+
+        if (effective_json) {
+            if (json_emitted > 0) try w.writeAll(",");
+        } else {
+            try color.printBold(w, use_color, "\n── {s} ──\n", .{member_path});
+        }
+
+        const sched_cfg = scheduler.SchedulerConfig{
+            .max_jobs = max_jobs,
+            .inherit_stdio = true,
+            .dry_run = false,
+        };
+        const task_names = [_][]const u8{task_name};
+        var result = scheduler.run(allocator, &member_config, &task_names, sched_cfg) catch |err| {
+            try color.printError(ew, use_color,
+                "workspace: {s}: failed: {s}\n", .{ member_path, @errorName(err) });
+            overall_success = false;
+            if (effective_json) {
+                try w.writeAll("{\"path\":");
+                try common.writeJsonString(w, member_path);
+                try w.writeAll(",\"success\":false}");
+                json_emitted += 1;
+            }
+            continue;
+        };
+        defer result.deinit(allocator);
+
+        if (!result.total_success) overall_success = false;
+
+        if (effective_json) {
+            try w.writeAll("{\"path\":");
+            try common.writeJsonString(w, member_path);
+            try w.print(",\"success\":{s}", .{if (result.total_success) "true" else "false"});
+            try w.writeAll("}");
+            json_emitted += 1;
+        } else {
+            if (result.total_success) {
+                try color.printSuccess(w, use_color, "  ✓ {s}\n", .{member_path});
+            } else {
+                try color.printError(ew, use_color, "  ✗ {s}: task failed\n", .{member_path});
+            }
+        }
+    }
+
+    // Check if no member ran the task (consistent behavior for both text and JSON)
+    if (ran_count == 0 and !dry_run) {
+        if (effective_json) {
+            try w.print("],\"ran\":0,\"skipped\":{d},\"success\":false}}\n", .{skip_count});
+        } else {
+            try color.printError(ew, use_color,
+                "workspace: no members define task '{s}'\n", .{task_name});
+        }
+        return 1;
+    }
+
+    if (effective_json) {
+        try w.print("],\"ran\":{d},\"skipped\":{d},\"success\":{s}}}\n",
+            .{ ran_count, skip_count, if (overall_success) "true" else "false" });
+    } else {
+        try w.print("\n", .{});
+        if (skip_count > 0) {
+            try color.printDim(w, use_color, "  ({d} member(s) skipped — task '{s}' not defined)\n",
+                .{ skip_count, task_name });
+        }
+        if (overall_success) {
+            try color.printSuccess(w, use_color, "All {d} member(s) succeeded\n", .{ran_count});
+        } else {
+            try color.printError(ew, use_color,
+                "workspace: one or more members failed\n", .{});
+            return 1;
+        }
+    }
+
+    return if (overall_success) 0 else 1;
+}
+
+test "workspace: Workspace struct deinit is safe" {
+    const allocator = std.testing.allocator;
+    // Build a Workspace manually and deinit it
+    const members = try allocator.alloc([]const u8, 2);
+    members[0] = try allocator.dupe(u8, "packages/*");
+    members[1] = try allocator.dupe(u8, "apps/*");
+    const ignore = try allocator.alloc([]const u8, 1);
+    ignore[0] = try allocator.dupe(u8, "**/node_modules");
+    var ws = loader.Workspace{ .members = members, .ignore = ignore };
+    ws.deinit(allocator);
+    // If we get here without crash/leak, the test passes
+}
