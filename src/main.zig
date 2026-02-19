@@ -14,6 +14,7 @@ const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
 const plugin_loader = @import("plugin/loader.zig");
+const plugin_install = @import("plugin/install.zig");
 const plugin_builtin = @import("plugin/builtin.zig");
 const types = @import("config/types.zig");
 const common = @import("cli/common.zig");
@@ -41,6 +42,7 @@ comptime {
     _ = watcher;
     _ = cache_store;
     _ = plugin_loader;
+    _ = plugin_install;
     _ = plugin_builtin;
     _ = types;
     _ = common;
