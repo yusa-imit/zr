@@ -374,6 +374,13 @@ pub const GitInstallError = error{
     AlreadyInstalled,
 };
 
+pub const GitUpdateError = error{
+    PluginNotFound,
+    NotAGitPlugin,
+    GitNotFound,
+    PullFailed,
+};
+
 /// Install a plugin from a git URL into ~/.zr/plugins/<name>/.
 /// Runs `git clone <url> <dest>` as a subprocess.
 /// Returns the destination path (caller frees).
@@ -414,7 +421,101 @@ pub fn installGitPlugin(
         else => return GitInstallError.CloneFailed,
     }
 
+    // Record the git URL in plugin.toml for future updates.
+    writeGitUrlToMeta(allocator, dest_dir, git_url) catch {};
+
     return dest_dir;
+}
+
+/// Write (or append) a git_url key to a plugin's plugin.toml.
+/// Creates the file if it doesn't exist; appends the key otherwise.
+fn writeGitUrlToMeta(allocator: std.mem.Allocator, plugin_dir: []const u8, git_url: []const u8) !void {
+    const meta_path = try std.fmt.allocPrint(allocator, "{s}/plugin.toml", .{plugin_dir});
+    defer allocator.free(meta_path);
+
+    // Read existing content if any.
+    var existing_buf: [8192]u8 = undefined;
+    var existing: []const u8 = "";
+    if (std.fs.openFileAbsolute(meta_path, .{})) |f| {
+        defer f.close();
+        const n = try f.readAll(&existing_buf);
+        existing = existing_buf[0..n];
+    } else |_| {}
+
+    // Check if git_url already present.
+    if (std.mem.indexOf(u8, existing, "git_url") != null) return;
+
+    // Append git_url line.
+    const line = try std.fmt.allocPrint(allocator, "git_url = \"{s}\"\n", .{git_url});
+    defer allocator.free(line);
+
+    const new_content = try std.fmt.allocPrint(allocator, "{s}{s}", .{ existing, line });
+    defer allocator.free(new_content);
+
+    const file = try std.fs.createFileAbsolute(meta_path, .{});
+    defer file.close();
+    try file.writeAll(new_content);
+}
+
+/// Read the git_url field from a plugin's plugin.toml.
+/// Returns null if the field is missing or the file doesn't exist.
+fn readGitUrl(allocator: std.mem.Allocator, plugin_dir: []const u8) !?[]const u8 {
+    const meta_path = try std.fmt.allocPrint(allocator, "{s}/plugin.toml", .{plugin_dir});
+    defer allocator.free(meta_path);
+
+    const file = std.fs.openFileAbsolute(meta_path, .{}) catch return null;
+    defer file.close();
+
+    var buf: [8192]u8 = undefined;
+    const n = try file.readAll(&buf);
+    const content = buf[0..n];
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (!std.mem.startsWith(u8, trimmed, "git_url")) continue;
+        const eq = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
+        const raw = std.mem.trim(u8, trimmed[eq + 1 ..], " \t");
+        const val = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
+            raw[1 .. raw.len - 1]
+        else
+            raw;
+        return try allocator.dupe(u8, val);
+    }
+    return null;
+}
+
+/// Update a git-installed plugin by running `git pull` inside its directory.
+/// Reads the git_url from plugin.toml to verify it is a git plugin.
+/// Returns GitUpdateError.NotAGitPlugin if no git_url is stored.
+pub fn updateGitPlugin(allocator: std.mem.Allocator, plugin_name: []const u8) !void {
+    const home = std.posix.getenv("HOME") orelse ".";
+    const plugin_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/plugins/{s}", .{ home, plugin_name });
+    defer allocator.free(plugin_dir);
+
+    // Verify plugin is installed.
+    std.fs.accessAbsolute(plugin_dir, .{}) catch return GitUpdateError.PluginNotFound;
+
+    // Check if it is a git plugin.
+    const git_url = try readGitUrl(allocator, plugin_dir);
+    if (git_url) |url| {
+        allocator.free(url);
+    } else {
+        return GitUpdateError.NotAGitPlugin;
+    }
+
+    // Run: git -C <plugin_dir> pull
+    const argv = [_][]const u8{ "git", "-C", plugin_dir, "pull" };
+    var child = std.process.Child.init(&argv, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+
+    child.spawn() catch return GitUpdateError.GitNotFound;
+    const term = try child.wait();
+    switch (term) {
+        .Exited => |code| if (code != 0) return GitUpdateError.PullFailed,
+        else => return GitUpdateError.PullFailed,
+    }
 }
 
 /// List all installed plugins from ~/.zr/plugins/.
@@ -695,6 +796,113 @@ test "installGitPlugin: function compiles and is callable" {
     // We cannot test git execution without network; just ensure type-checking passes.
     const fn_ptr: *const fn (std.mem.Allocator, []const u8, []const u8) anyerror![]const u8 = &installGitPlugin;
     _ = fn_ptr;
+}
+
+test "writeGitUrlToMeta and readGitUrl round-trip" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Write initial plugin.toml without git_url.
+    try tmp.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"myplugin\"\nversion = \"1.0.0\"\n",
+    });
+
+    // Write git_url.
+    try writeGitUrlToMeta(allocator, tmp_path, "https://github.com/user/myplugin.git");
+
+    // Read it back.
+    const url = try readGitUrl(allocator, tmp_path);
+    defer if (url) |u| allocator.free(u);
+
+    try std.testing.expect(url != null);
+    try std.testing.expectEqualStrings("https://github.com/user/myplugin.git", url.?);
+}
+
+test "writeGitUrlToMeta: idempotent (does not duplicate)" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.writeFile(.{ .sub_path = "plugin.toml", .data = "" });
+
+    // Write twice.
+    try writeGitUrlToMeta(allocator, tmp_path, "https://github.com/user/plugin.git");
+    try writeGitUrlToMeta(allocator, tmp_path, "https://github.com/user/plugin.git");
+
+    // Read file and count occurrences.
+    const content = try tmp.dir.readFileAlloc(allocator, "plugin.toml", 4096);
+    defer allocator.free(content);
+
+    var count: usize = 0;
+    var it = std.mem.splitSequence(u8, content, "git_url");
+    _ = it.next(); // before first occurrence
+    while (it.next()) |_| count += 1;
+    try std.testing.expectEqual(@as(usize, 1), count);
+}
+
+test "readGitUrl: returns null when no plugin.toml" {
+    const allocator = std.testing.allocator;
+    const result = try readGitUrl(allocator, "/nonexistent/plugin/path");
+    try std.testing.expectEqual(@as(?[]const u8, null), result);
+}
+
+test "readGitUrl: returns null when git_url key missing" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"nope\"\nversion = \"0.1.0\"\n",
+    });
+
+    const result = try readGitUrl(allocator, tmp_path);
+    try std.testing.expectEqual(@as(?[]const u8, null), result);
+}
+
+test "updateGitPlugin: not installed returns PluginNotFound" {
+    const allocator = std.testing.allocator;
+    const result = updateGitPlugin(allocator, "zr-test-gitupdate-notfound-99999");
+    try std.testing.expectError(GitUpdateError.PluginNotFound, result);
+}
+
+test "updateGitPlugin: local plugin returns NotAGitPlugin" {
+    const allocator = std.testing.allocator;
+    const plugin_name = "zr-test-gitupdate-local-54321";
+
+    // Create a local plugin (no git_url in plugin.toml).
+    var tmp_src = std.testing.tmpDir(.{});
+    defer tmp_src.cleanup();
+    try tmp_src.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"local\"\nversion = \"1.0.0\"\n",
+    });
+    try tmp_src.dir.writeFile(.{ .sub_path = "plugin.dylib", .data = "dummy" });
+    const src = try tmp_src.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(src);
+
+    // Clean up any leftover.
+    removePlugin(allocator, plugin_name) catch {};
+
+    // Install it locally.
+    const dest = try installLocalPlugin(allocator, src, plugin_name);
+    allocator.free(dest);
+    defer removePlugin(allocator, plugin_name) catch {};
+
+    // Attempt git update — should fail with NotAGitPlugin.
+    const result = updateGitPlugin(allocator, plugin_name);
+    try std.testing.expectError(GitUpdateError.NotAGitPlugin, result);
 }
 
 test "updateLocalPlugin: round-trip install + update" {

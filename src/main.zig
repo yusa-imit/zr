@@ -281,7 +281,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin install <path|url>  Install a plugin (local path or git URL)\n", .{});
     try w.print("  plugin remove <name>   Remove an installed plugin\n", .{});
-    try w.print("  plugin update <n> <p>  Update an installed plugin from a new path\n", .{});
+    try w.print("  plugin update <n> [p]  Update a plugin (git pull, or from new path)\n", .{});
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
@@ -1860,14 +1860,47 @@ fn cmdPlugin(
         }
         return 0;
     } else if (std.mem.eql(u8, sub, "update")) {
-        // zr plugin update <name> <path>
-        // args: [zr, plugin, update, <name>, <path>]
-        if (args.len < 5) {
+        // zr plugin update <name> [<path>]
+        // args: [zr, plugin, update, <name>, [<path>]]
+        // If no path given, try git pull (git-installed plugins).
+        if (args.len < 4) {
             try color.printError(ew, use_color,
-                "plugin update: usage: zr plugin update <name> <path>\n", .{});
+                "plugin update: usage: zr plugin update <name> [<path>]\n", .{});
             return 1;
         }
         const plugin_name = args[3];
+
+        if (args.len < 5) {
+            // No source path — attempt git pull for git-installed plugins.
+            plugin_loader.updateGitPlugin(allocator, plugin_name) catch |err| switch (err) {
+                plugin_loader.GitUpdateError.PluginNotFound => {
+                    try color.printError(ew, use_color,
+                        "plugin update: plugin '{s}' is not installed\n\n  Hint: Install it first with 'zr plugin install <url> {s}'\n",
+                        .{ plugin_name, plugin_name });
+                    return 1;
+                },
+                plugin_loader.GitUpdateError.NotAGitPlugin => {
+                    try color.printError(ew, use_color,
+                        "plugin update: '{s}' was not installed from a git URL\n\n  Hint: Provide a source path: zr plugin update {s} <path>\n",
+                        .{ plugin_name, plugin_name });
+                    return 1;
+                },
+                plugin_loader.GitUpdateError.GitNotFound => {
+                    try color.printError(ew, use_color,
+                        "plugin update: 'git' not found in PATH\n\n  Hint: Install git to update git plugins\n", .{});
+                    return 1;
+                },
+                plugin_loader.GitUpdateError.PullFailed => {
+                    try color.printError(ew, use_color,
+                        "plugin update: git pull failed for '{s}'\n\n  Hint: Check your network connection\n", .{plugin_name});
+                    return 1;
+                },
+                else => return err,
+            };
+            try color.printSuccess(w, use_color, "Updated plugin '{s}' (git pull)\n", .{plugin_name});
+            return 0;
+        }
+
         const src_path = args[4];
 
         // Resolve to absolute path.
@@ -2210,4 +2243,64 @@ test "workspace: Workspace struct deinit is safe" {
     var ws = loader.Workspace{ .members = members, .ignore = ignore };
     ws.deinit(allocator);
     // If we get here without crash/leak, the test passes
+}
+
+test "plugin update: missing name returns error" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "update" };
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "plugin update: not-installed plugin returns error (no-path form)" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "update", "zr-test-noexist-gitupdate-12345" };
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "plugin update: local plugin without git_url returns NotAGitPlugin error" {
+    const allocator = std.testing.allocator;
+    const plugin_name = "zr-test-main-gitupdate-local-77777";
+
+    // Create and install a local plugin (no git_url).
+    var tmp_src = std.testing.tmpDir(.{});
+    defer tmp_src.cleanup();
+    try tmp_src.dir.writeFile(.{
+        .sub_path = "plugin.toml",
+        .data = "name = \"local\"\nversion = \"1.0.0\"\n",
+    });
+    try tmp_src.dir.writeFile(.{ .sub_path = "plugin.dylib", .data = "dummy" });
+    const src = try tmp_src.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(src);
+
+    plugin_loader.removePlugin(allocator, plugin_name) catch {};
+    const dest = try plugin_loader.installLocalPlugin(allocator, src, plugin_name);
+    allocator.free(dest);
+    defer plugin_loader.removePlugin(allocator, plugin_name) catch {};
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = [_][]const u8{ "zr", "plugin", "update", plugin_name };
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
 }
