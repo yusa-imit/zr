@@ -7,6 +7,7 @@ const cycle_detect = @import("graph/cycle_detect.zig");
 const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const color = @import("output/color.zig");
+const progress = @import("output/progress.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
@@ -23,6 +24,7 @@ comptime {
     _ = scheduler;
     _ = process;
     _ = color;
+    _ = progress;
     _ = history;
     _ = watcher;
     _ = cache_store;
