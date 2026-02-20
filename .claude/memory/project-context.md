@@ -27,16 +27,18 @@
 - [x] Watch mode — **polling-based (500ms)**, NOT native inotify/kqueue as PRD specifies
 - [x] Matrix task execution (Cartesian product, `${matrix.KEY}` interpolation)
 - [x] Task output caching (Wyhash64 fingerprint, `~/.zr/cache/`)
-- [x] **Expression engine** — ~40% of PRD §5.6 implemented
+- [x] **Expression engine** — ~70% of PRD §5.6 implemented
   - [x] Logical operators: `&&`, `||` with short-circuit evaluation
   - [x] Platform checks: `platform == "linux" | "darwin" | "windows"`
   - [x] Architecture checks: `arch == "x86_64" | "aarch64"`
   - [x] `file.exists(path)` — filesystem check via fs.access
   - [x] `file.changed(glob)` — git diff-based change detection
+  - [x] `file.newer(target, source)` — mtime comparison (dirs walk full tree)
+  - [x] `file.hash(path)` — Wyhash content fingerprint
+  - [x] `shell(cmd)` — command execution success check
+  - [x] `semver.gte(v1, v2)` — semantic version comparison
   - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
-  - [ ] Missing: `file.newer()`, `file.hash()`
-  - [ ] Missing: `shell(cmd)`, `semver.gte()`
-  - [ ] Missing: `stages['name'].success`, `tasks['name'].duration`
+  - [ ] Missing: `stages['name'].success`, `tasks['name'].duration` — requires runtime state refs
 
 ### Phase 3 - UX & Resources — **PARTIAL (~70%)**
 - [x] `--dry-run` / `-n` flag (execution plan without running)
@@ -113,7 +115,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 
 ## Priority Backlog (by impact)
 
-1. **Expression engine (remaining)** — `file.newer()`, `file.hash()`, `shell()`, `semver.gte()`, stage/task refs
+1. **Expression engine (runtime refs)** — `stages['name'].success`, `tasks['name'].duration` (requires exec state access)
 2. **Resource limits** — `max_cpu`, `max_memory`, cgroups v2 (production workload isolation)
 3. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
 4. **TUI enhancements** — live log streaming, cancel/retry
