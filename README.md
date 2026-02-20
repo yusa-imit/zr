@@ -2,7 +2,7 @@
 
 **zr** (zig-runner) is a fast, language-agnostic task runner and workflow manager built with Zig. It combines the simplicity of `make` with modern features like dependency graphs, parallel execution, caching, and an extensible plugin system.
 
-[![CI](https://github.com/yourorg/zr/workflows/CI/badge.svg)](https://github.com/yourorg/zr/actions)
+[![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -37,7 +37,7 @@ curl -fsSL https://zr.dev/install.sh | sh
 **From source** (requires Zig 0.15.2):
 
 ```bash
-git clone https://github.com/yourorg/zr.git
+git clone https://github.com/yusa-imit/zr.git
 cd zr
 zig build -Doptimize=ReleaseSafe
 # Binary at ./zig-out/bin/zr
@@ -45,7 +45,7 @@ zig build -Doptimize=ReleaseSafe
 
 **Windows**:
 
-Download from [Releases](https://github.com/yourorg/zr/releases) and add to PATH.
+Download from [Releases](https://github.com/yusa-imit/zr/releases) and add to PATH.
 
 ### Your First Task
 
@@ -376,7 +376,7 @@ zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 ### Testing
 
 ```bash
-# Unit tests (239 tests across 33 files)
+# Unit tests (244 tests across 33 files)
 zig build test
 
 # Integration tests (black-box CLI tests)
@@ -460,9 +460,8 @@ Inspired by:
 
 ## Contact
 
-- **GitHub Issues**: https://github.com/yourorg/zr/issues
-- **Discussions**: https://github.com/yourorg/zr/discussions
-- **X (Twitter)**: [@zr_cli](https://twitter.com/zr_cli)
+- **GitHub Issues**: https://github.com/yusa-imit/zr/issues
+- **Discussions**: https://github.com/yusa-imit/zr/discussions
 
 ---
 
