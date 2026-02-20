@@ -372,6 +372,15 @@ Decisions are logged chronologically. Format:
      - Troubleshooting: symbol visibility, ABI mismatches, platform issues
 - Rationale: Comprehensive docs enable community plugin development; reduces support burden; demonstrates best practices
 
+## [2026-02-20] 100% Test Coverage Achievement
+- Context: Only `platform.zig` lacked tests (32/33 files covered)
+- Decision: Added 3 comprehensive tests for platform wrappers
+  - `getHome()` validation for both POSIX and Windows
+  - `killProcess()` callability verification
+  - `getenv()` behavior testing on both platforms
+- Result: 247/247 tests passing; 33/33 files with tests (100% coverage)
+- Rationale: Complete test coverage ensures cross-platform reliability; validates comptime platform guards work correctly
+
 ## [2026-02-19] Progress Bar Output Module
 - Context: PRD requires progress output (`src/output/progress.zig`); UX improvement for multi-task runs
 - Decision: Standalone `ProgressBar` struct (no scheduler integration) + `printSummary()` function
