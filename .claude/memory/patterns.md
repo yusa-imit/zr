@@ -373,6 +373,7 @@ fail_fast = true
 ### Expression Evaluator Pattern (config/expr.zig)
 ```zig
 // evalCondition is fail-open: unknown expressions return true (task runs).
+// Recursive descent parser: evalOr -> evalAnd -> evalPrimary
 // Lookup order: task_env pairs first, then process env, then "" (not found).
 // getEnvVarOwned returns owned slice — free it; use defer for safety.
 
@@ -380,10 +381,19 @@ const env_value = try lookupEnv(allocator, var_name, task_env);
 defer if (env_value) |v| allocator.free(v);
 const value_str = if (env_value) |v| v else "";
 ```
-- Supported: `true`/`false`, `env.VAR`, `env.VAR == "val"`, `env.VAR != 'val'`
-- EvalError = error{OutOfMemory} — only OOM is returned; parse errors are fail-open
+- Supported operators: `&&`, `||` (short-circuit evaluation)
+- Supported literals: `true`, `false`
+- Environment variables: `env.VAR`, `env.VAR == "val"`, `env.VAR != 'val'`
+- Platform checks: `platform == "linux" | "darwin" | "windows"` (via builtin.os.tag)
+- Architecture checks: `arch == "x86_64" | "aarch64"` (via builtin.cpu.arch)
+- File functions:
+  - `file.exists("path")` — uses `std.fs.cwd().access()`
+  - `file.changed("glob")` — runs `git diff --name-only HEAD -- <glob>` via Child.run
+- EvalError = error{OutOfMemory, InvalidExpression} — InvalidExpression caught and returns true (fail-open)
 - Tests use task_env pairs to avoid process env pollution (no setEnvVar in tests)
 - `getEnvVarOwned` errors other than OutOfMemory (e.g. InvalidWtf8) treated as not-found
+- `std.process.Child.run(.{ .allocator, .argv })` pattern used for git subprocess (auto-captures stdout)
+- Always defer-free both result.stdout and result.stderr
 
 ### HashMap Key == Value.name Double-Free Pattern
 ```zig

@@ -21,17 +21,22 @@
 - [x] Execution history module + `zr history` CLI command
 - [x] Task fields: timeout, allow_failure, deps_serial, env, retry, condition, cache, max_concurrent, matrix
 
-### Phase 2 - Workflows & Expressions — **MOSTLY COMPLETE (~85%)**
+### Phase 2 - Workflows & Expressions — **MOSTLY COMPLETE (~90%)**
 - [x] Workflow system (`[workflows.X]` + `[[workflows.X.stages]]`, fail_fast)
 - [x] Profile system (`--profile`, `ZR_PROFILE`, per-task overrides)
 - [x] Watch mode — **polling-based (500ms)**, NOT native inotify/kqueue as PRD specifies
 - [x] Matrix task execution (Cartesian product, `${matrix.KEY}` interpolation)
 - [x] Task output caching (Wyhash64 fingerprint, `~/.zr/cache/`)
-- [ ] **Expression engine** — only `env.VAR == "val"` supported (PRD §5.6 의 ~10% 구현)
-  - Missing: `file.exists()`, `file.changed()`, `file.hash()`, `file.newer()`
-  - Missing: `shell(cmd)`, `semver.gte()`, `platform == "linux"`
-  - Missing: logical operators (`&&`, `||`)
-  - Missing: `stages['name'].success`, `tasks['name'].duration`
+- [x] **Expression engine** — ~40% of PRD §5.6 implemented
+  - [x] Logical operators: `&&`, `||` with short-circuit evaluation
+  - [x] Platform checks: `platform == "linux" | "darwin" | "windows"`
+  - [x] Architecture checks: `arch == "x86_64" | "aarch64"`
+  - [x] `file.exists(path)` — filesystem check via fs.access
+  - [x] `file.changed(glob)` — git diff-based change detection
+  - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
+  - [ ] Missing: `file.newer()`, `file.hash()`
+  - [ ] Missing: `shell(cmd)`, `semver.gte()`
+  - [ ] Missing: `stages['name'].success`, `tasks['name'].duration`
 
 ### Phase 3 - UX & Resources — **PARTIAL (~70%)**
 - [x] `--dry-run` / `-n` flag (execution plan without running)
@@ -108,7 +113,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 
 ## Priority Backlog (by impact)
 
-1. **Expression engine** — `file.exists()`, `file.changed()`, `shell()`, `&&`/`||` (CI/CD use cases blocked)
+1. **Expression engine (remaining)** — `file.newer()`, `file.hash()`, `shell()`, `semver.gte()`, stage/task refs
 2. **Resource limits** — `max_cpu`, `max_memory`, cgroups v2 (production workload isolation)
 3. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
 4. **TUI enhancements** — live log streaming, cancel/retry
