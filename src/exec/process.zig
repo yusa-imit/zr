@@ -137,7 +137,23 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         child.env_map = &maybe_env_map.?;
     }
 
+    // Create hard resource limits BEFORE spawning (Linux: cgroup, Windows: job object)
+    var hard_limits = resource.createHardLimits(allocator, .{
+        .max_memory_bytes = config.max_memory_bytes,
+        .max_cpu_cores = config.max_cpu_cores,
+    }) catch {
+        // Fall back to soft limits if hard limit creation fails
+        resource.HardLimitHandle{};
+    };
+    defer hard_limits.deinit();
+
     child.spawn() catch return error.SpawnFailed;
+
+    // Apply hard limits to the spawned process
+    resource.applyHardLimits(&hard_limits, child.id) catch {
+        // If hard limit application fails, continue with soft limits
+        // (The process is already running, so we don't fail the entire task)
+    };
 
     // Optionally start a timeout watcher thread
     var timed_out = std.atomic.Value(bool).init(false);
