@@ -40,7 +40,7 @@
   - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
   - [x] **Runtime state refs**: `stages['name'].success`, `tasks['name'].duration` with all comparison operators
 
-### Phase 3 - UX & Resources — **PARTIAL (~75%)**
+### Phase 3 - UX & Resources — **PARTIAL (~80%)**
 - [x] `--dry-run` / `-n` flag (execution plan without running)
 - [x] `zr init` command (scaffold starter zr.toml)
 - [x] Shell completion (bash/zsh/fish)
@@ -52,14 +52,14 @@
   - Missing: real-time log streaming (PRD §5.3.3)
   - Missing: task cancel/retry (PRD §5.3.3)
   - Missing: dependency graph ASCII visualization (PRD §5.3.3)
-- [~] **Resource limits (CPU/Memory)** — **PARTIAL (~50%)** (PRD §5.4)
+- [~] **Resource limits (CPU/Memory)** — **PARTIAL (~75%)** (PRD §5.4)
   - [x] `max_cpu`, `max_memory` config fields + TOML parsing (e276a26)
   - [x] `GlobalResourceConfig` (max_total_memory, max_cpu_percent) (e276a26)
-  - [x] `src/exec/resource.zig` — ResourceMonitor with Linux /proc implementation (f1f7cd3)
+  - [x] `src/exec/resource.zig` — ResourceMonitor with cross-platform implementation
   - [x] getProcessUsage() Linux implementation (/proc/[pid]/status, /proc/[pid]/stat) (f1f7cd3)
+  - [x] getProcessUsage() macOS implementation (proc_pidinfo) (3560668)
+  - [x] getProcessUsage() Windows implementation (GetProcessMemoryInfo, GetProcessTimes) (21df9dc)
   - [x] Integration with process spawning (resource watcher thread, memory limit kill) (f1f7cd3)
-  - [ ] getProcessUsage() macOS implementation (getrusage)
-  - [ ] getProcessUsage() Windows implementation (GetProcessMemoryInfo, GetProcessTimes)
   - [ ] cgroups v2 / Job Objects hard limit enforcement (PRD §5.4.3)
   - [ ] `--monitor` CLI flag for live resource display
 
@@ -82,9 +82,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (expression engine fully implemented). Phase 3 ~75% (resource limits config done, enforcement stub). Phase 4 ~60% (no WASM, docker stub). **Strong MVP, expression engine feature-complete.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (expression engine fully implemented). Phase 3 ~80% (resource monitoring Linux/macOS/Windows complete, enforcement stub remains). Phase 4 ~60% (no WASM, docker stub). **Strong MVP, expression engine feature-complete.**
 
-- **Tests**: 253 passing across 34 files (parseMemoryBytes, ResourceMonitor init)
+- **Tests**: 267 passing (5 skipped platform-specific) — resource monitoring cross-platform
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -121,9 +121,10 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ## Priority Backlog (by impact)
 
 1. ~~**Expression engine (runtime refs)**~~ — **COMPLETE** ✓ (c1db626)
-2. **Resource limits** — **IN PROGRESS (~50%)** — Linux done (f1f7cd3), need macOS/Windows
-3. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
-4. **TUI enhancements** — live log streaming, cancel/retry
-5. **WASM plugin sandbox** — sandboxed third-party plugins
-6. **Docker built-in plugin** — implement or remove from enum
-7. **Remote cache** — shared cache for CI pipelines
+2. ~~**Resource monitoring (Linux/macOS/Windows)**~~ — **COMPLETE** ✓ (21df9dc)
+3. **Resource limit enforcement** — cgroups v2 / Job Objects hard limits
+4. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
+5. **TUI enhancements** — live log streaming, cancel/retry
+6. **WASM plugin sandbox** — sandboxed third-party plugins
+7. **Docker built-in plugin** — implement or remove from enum
+8. **Remote cache** — shared cache for CI pipelines
