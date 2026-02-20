@@ -29,6 +29,7 @@ const plugin_cli = @import("cli/plugin.zig");
 const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
 const tui = @import("cli/tui.zig");
+const live_cmd = @import("cli/live.zig");
 const platform = @import("util/platform.zig");
 const resource = @import("exec/resource.zig");
 
@@ -296,6 +297,13 @@ fn run(
         return plugin_cli.cmdPlugin(allocator, sub, effective_args, config_path, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "interactive") or std.mem.eql(u8, cmd, "i")) {
         return tui.cmdInteractive(allocator, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "live")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "live: missing task name\n\n  Hint: zr live <task-name>\n", .{});
+            return 1;
+        }
+        const task_name = effective_args[2];
+        return live_cmd.cmdLive(allocator, task_name, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -327,6 +335,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
     try w.print("  plugin create <name>   Scaffold a new plugin template directory\n", .{});
     try w.print("  interactive, i         Launch interactive TUI task picker\n", .{});
+    try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});

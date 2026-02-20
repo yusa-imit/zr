@@ -16,6 +16,9 @@ pub const ProcessResult = struct {
     success: bool,
 };
 
+/// Callback for streaming output lines.
+pub const OutputCallback = *const fn (line: []const u8, is_stderr: bool, ctx: ?*anyopaque) void;
+
 pub const ProcessConfig = struct {
     cmd: []const u8,
     cwd: ?[]const u8,
@@ -32,6 +35,10 @@ pub const ProcessConfig = struct {
     max_memory_bytes: ?u64 = null,
     /// Optional maximum CPU cores. Currently informational only.
     max_cpu_cores: ?u32 = null,
+    /// Optional callback for streaming output lines (when inherit_stdio = false).
+    output_callback: ?OutputCallback = null,
+    /// Optional context passed to output_callback.
+    output_ctx: ?*anyopaque = null,
 };
 
 /// Context shared between the main thread and the timeout watcher thread.
@@ -184,7 +191,75 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         maybe_resource_thread = std.Thread.spawn(.{}, resourceWatcher, .{ctx}) catch null;
     }
 
+    // If output callback is provided and stdio is piped, spawn reader threads
+    const StreamReaderCtx = struct {
+        file: std.fs.File,
+        is_stderr: bool,
+        callback: OutputCallback,
+        callback_ctx: ?*anyopaque,
+        allocator: std.mem.Allocator,
+    };
+
+    const streamReader = struct {
+        fn run(ctx: StreamReaderCtx) void {
+            var buf: [1024]u8 = undefined;
+            var line_buf: std.ArrayListUnmanaged(u8) = .empty;
+            defer line_buf.deinit(ctx.allocator);
+
+            while (true) {
+                const n = ctx.file.read(&buf) catch break;
+                if (n == 0) break; // EOF
+
+                for (buf[0..n]) |byte| {
+                    if (byte == '\n') {
+                        ctx.callback(line_buf.items, ctx.is_stderr, ctx.callback_ctx);
+                        line_buf.clearRetainingCapacity();
+                    } else {
+                        line_buf.append(ctx.allocator, byte) catch {};
+                    }
+                }
+            }
+
+            // Emit remaining partial line
+            if (line_buf.items.len > 0) {
+                ctx.callback(line_buf.items, ctx.is_stderr, ctx.callback_ctx);
+            }
+        }
+    }.run;
+
+    var maybe_stdout_thread: ?std.Thread = null;
+    var maybe_stderr_thread: ?std.Thread = null;
+
+    if (config.output_callback) |callback| {
+        if (!config.inherit_stdio) {
+            if (child.stdout) |stdout| {
+                const ctx = StreamReaderCtx{
+                    .file = stdout,
+                    .is_stderr = false,
+                    .callback = callback,
+                    .callback_ctx = config.output_ctx,
+                    .allocator = allocator,
+                };
+                maybe_stdout_thread = std.Thread.spawn(.{}, streamReader, .{ctx}) catch null;
+            }
+            if (child.stderr) |stderr| {
+                const ctx = StreamReaderCtx{
+                    .file = stderr,
+                    .is_stderr = true,
+                    .callback = callback,
+                    .callback_ctx = config.output_ctx,
+                    .allocator = allocator,
+                };
+                maybe_stderr_thread = std.Thread.spawn(.{}, streamReader, .{ctx}) catch null;
+            }
+        }
+    }
+
     const term = child.wait() catch return error.WaitFailed;
+
+    // Wait for output reader threads to finish
+    if (maybe_stdout_thread) |t| t.join();
+    if (maybe_stderr_thread) |t| t.join();
 
     // Signal watchers that child is done
     child_done.store(true, .release);

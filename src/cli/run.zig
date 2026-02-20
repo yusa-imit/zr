@@ -5,6 +5,7 @@ const scheduler = @import("../exec/scheduler.zig");
 const history = @import("../history/store.zig");
 const watcher = @import("../watch/watcher.zig");
 const progress = @import("../output/progress.zig");
+const tui_runner = @import("tui_runner.zig");
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,

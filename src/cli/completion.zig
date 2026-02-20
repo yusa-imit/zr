@@ -5,11 +5,11 @@ pub const BASH_COMPLETION =
     \\_zr_completion() {
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    \\    local commands="run watch workflow list graph history workspace plugin interactive init completion"
+    \\    local commands="run watch workflow list graph history workspace plugin interactive live init completion"
     \\    local options="--help --profile --dry-run --jobs --no-color --quiet --verbose --config --format -h -p -n -j -q -v -f"
     \\
     \\    case "$prev" in
-    \\        run|watch)
+    \\        run|watch|live)
     \\            # Complete task names from zr.toml
     \\            local tasks
     \\            tasks=$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')
@@ -71,6 +71,7 @@ pub const ZSH_COMPLETION =
     \\        'workspace:Manage workspace members (list|run)'
     \\        'plugin:Manage plugins (list|search|install|remove|update|info|builtins|create)'
     \\        'interactive:Launch interactive TUI task picker'
+    \\        'live:Run task with live TUI log streaming'
     \\    )
     \\    options=(
     \\        '--help[Show help]'
@@ -99,7 +100,7 @@ pub const ZSH_COMPLETION =
     \\            _describe 'command' commands ;;
     \\        args)
     \\            case $words[2] in
-    \\                run|watch)
+    \\                run|watch|live)
     \\                    local -a tasks
     \\                    tasks=(${(f)"$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')"})
     \\                    _describe 'task' tasks ;;
@@ -144,11 +145,12 @@ pub const FISH_COMPLETION =
     \\complete -c zr -f -n '__fish_use_subcommand' -a workspace    -d 'Workspace commands (list|run)'
     \\complete -c zr -f -n '__fish_use_subcommand' -a plugin       -d 'Plugin commands (list|install|...)'
     \\complete -c zr -f -n '__fish_use_subcommand' -a interactive  -d 'Interactive TUI task picker'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a live         -d 'Live TUI log streaming'
     \\complete -c zr -f -n '__fish_seen_subcommand_from workspace' -a 'list run'
     \\complete -c zr -f -n '__fish_seen_subcommand_from plugin' -a 'list search install remove update info builtins create'
     \\
-    \\# Task name completions for run/watch
-    \\complete -c zr -f -n '__fish_seen_subcommand_from run watch' -a '(__zr_tasks)'
+    \\# Task name completions for run/watch/live
+    \\complete -c zr -f -n '__fish_seen_subcommand_from run watch live' -a '(__zr_tasks)'
     \\
     \\# Workflow name completions for workflow
     \\complete -c zr -f -n '__fish_seen_subcommand_from workflow' -a '(__zr_workflows)'
