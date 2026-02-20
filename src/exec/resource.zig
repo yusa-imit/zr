@@ -1,6 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// C getpid() function
+const getpid = @extern(*const fn () callconv(.c) c_int, .{ .name = "getpid" });
+
 /// Cross-platform resource monitoring and limiting for task execution.
 ///
 /// Platform-specific implementations:
@@ -40,6 +43,7 @@ pub const ResourceUsage = struct {
 pub fn getProcessUsage(pid: std.posix.pid_t) ?ResourceUsage {
     switch (comptime builtin.os.tag) {
         .linux => return getProcessUsageLinux(pid),
+        .macos => return getProcessUsageMacOS(pid),
         else => return null,
     }
 }
@@ -128,6 +132,62 @@ fn getProcessUsageLinux(pid: std.posix.pid_t) ?ResourceUsage {
     return usage;
 }
 
+/// macOS-specific resource usage via proc_pidinfo
+fn getProcessUsageMacOS(pid: std.posix.pid_t) ?ResourceUsage {
+    // Use libproc's proc_pidinfo for task_info
+    // We need to call proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, sizeof(info))
+    const PROC_PIDTASKINFO: c_int = 4;
+
+    const proc_taskinfo = extern struct {
+        pti_virtual_size: u64,
+        pti_resident_size: u64,
+        pti_total_user: u64,
+        pti_total_system: u64,
+        pti_threads_user: u64,
+        pti_threads_system: u64,
+        pti_policy: i32,
+        pti_faults: i32,
+        pti_pageins: i32,
+        pti_cow_faults: i32,
+        pti_messages_sent: i32,
+        pti_messages_received: i32,
+        pti_syscalls_mach: i32,
+        pti_syscalls_unix: i32,
+        pti_csw: i32,
+        pti_threadnum: i32,
+        pti_numrunning: i32,
+        pti_priority: i32,
+    };
+
+    const proc_pidinfo = @extern(*const fn (c_int, c_int, u64, ?*anyopaque, c_int) callconv(.c) c_int, .{
+        .name = "proc_pidinfo",
+    });
+
+    var info: proc_taskinfo = undefined;
+    const result = proc_pidinfo(
+        @intCast(pid),
+        PROC_PIDTASKINFO,
+        0,
+        &info,
+        @sizeOf(proc_taskinfo),
+    );
+
+    if (result != @sizeOf(proc_taskinfo)) {
+        return null;
+    }
+
+    var usage = ResourceUsage{};
+    usage.rss_bytes = info.pti_resident_size;
+
+    // Convert total_user + total_system from microseconds to nanoseconds
+    usage.cpu_time_ns = (info.pti_total_user + info.pti_total_system) * 1000;
+
+    // CPU percent requires delta tracking, leave at 0
+    usage.cpu_percent = 0.0;
+
+    return usage;
+}
+
 /// Monitor resource usage of a child process (non-blocking).
 /// This is a stub for Phase 3 implementation.
 pub const ResourceMonitor = struct {
@@ -193,7 +253,7 @@ test "ResourceMonitor: basic init" {
 test "getProcessUsage: self process (Linux)" {
     if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
 
-    const self_pid = std.posix.getpid();
+    const self_pid: std.posix.pid_t = @intCast(getpid());
     const usage = getProcessUsage(self_pid);
 
     // Should be able to read our own process stats
@@ -209,6 +269,31 @@ test "getProcessUsage: self process (Linux)" {
 
 test "getProcessUsage: invalid PID returns null" {
     if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
+
+    // PID 999999 is unlikely to exist
+    const usage = getProcessUsage(999999);
+    try std.testing.expectEqual(@as(?ResourceUsage, null), usage);
+}
+
+test "getProcessUsage: self process (macOS)" {
+    if (comptime builtin.os.tag != .macos) return error.SkipZigTest;
+
+    const self_pid: std.posix.pid_t = @intCast(getpid());
+    const usage = getProcessUsage(self_pid);
+
+    // Should be able to read our own process stats
+    try std.testing.expect(usage != null);
+
+    if (usage) |u| {
+        // Our process should have some memory
+        try std.testing.expect(u.rss_bytes > 0);
+        // CPU time should be non-negative (may be 0 for quick test)
+        try std.testing.expect(u.cpu_time_ns >= 0);
+    }
+}
+
+test "getProcessUsage: invalid PID returns null (macOS)" {
+    if (comptime builtin.os.tag != .macos) return error.SkipZigTest;
 
     // PID 999999 is unlikely to exist
     const usage = getProcessUsage(999999);
