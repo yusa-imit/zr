@@ -18,6 +18,16 @@ pub const Workspace = struct {
     }
 };
 
+/// Global resource limits for task execution.
+pub const GlobalResourceConfig = struct {
+    /// Maximum number of concurrent worker threads (null = CPU count).
+    max_workers: ?u32 = null,
+    /// Maximum total memory usage across all tasks in bytes (null = unlimited).
+    max_total_memory: ?u64 = null,
+    /// Maximum CPU usage percent (0-100, null = unlimited).
+    max_cpu_percent: ?u8 = null,
+};
+
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
@@ -26,6 +36,8 @@ pub const Config = struct {
     workspace: ?Workspace = null,
     /// Plugin configs from [plugins.NAME] sections (owned).
     plugins: []PluginConfig = &.{},
+    /// Global resource limits from [global.resources] section.
+    global_resources: GlobalResourceConfig = .{},
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -157,7 +169,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false, null, null);
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -171,7 +183,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, 0, false, null, null);
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -184,7 +196,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false, null, null);
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -197,7 +209,7 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false, null, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, env, null, false, 0, 0, false, null, 0, false, null, null);
     }
 
     /// Add a task with retry settings (for tests or programmatic use).
@@ -212,7 +224,7 @@ pub const Config = struct {
         retry_delay_ms: u64,
         retry_backoff: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, 0, false, null, null);
     }
 
     /// Add a task with a condition expression (for tests or programmatic use).
@@ -222,7 +234,7 @@ pub const Config = struct {
         cmd: []const u8,
         condition: ?[]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, 0, false);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, 0, false, null, null);
     }
 
     /// Add a workflow (for tests or programmatic use).
@@ -309,6 +321,10 @@ pub const Task = struct {
     max_concurrent: u32 = 0,
     /// If true, cache successful runs and skip on subsequent runs with same cmd+env.
     cache: bool = false,
+    /// Maximum CPU cores this task can use (null = unlimited).
+    max_cpu: ?u32 = null,
+    /// Maximum memory this task can use in bytes (null = unlimited).
+    max_memory: ?u64 = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -436,6 +452,32 @@ pub fn parseDurationMs(s: []const u8) ?u64 {
         return n * 1_000;
     }
     return null;
+}
+
+/// Parse a memory size string like "2GB", "512MB", "1024KB" into bytes.
+/// Returns null if the format is unrecognized.
+pub fn parseMemoryBytes(s: []const u8) ?u64 {
+    if (s.len == 0) return null;
+    // Case-insensitive suffix matching
+    if (s.len >= 2) {
+        const last2 = s[s.len - 2 ..];
+        if (std.ascii.eqlIgnoreCase(last2, "GB")) {
+            const n = std.fmt.parseInt(u64, s[0 .. s.len - 2], 10) catch return null;
+            return n * 1_073_741_824; // 1024^3
+        } else if (std.ascii.eqlIgnoreCase(last2, "MB")) {
+            const n = std.fmt.parseInt(u64, s[0 .. s.len - 2], 10) catch return null;
+            return n * 1_048_576; // 1024^2
+        } else if (std.ascii.eqlIgnoreCase(last2, "KB")) {
+            const n = std.fmt.parseInt(u64, s[0 .. s.len - 2], 10) catch return null;
+            return n * 1024;
+        }
+    }
+    if (s.len >= 1 and (s[s.len - 1] == 'B' or s[s.len - 1] == 'b')) {
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 1], 10) catch return null;
+        return n;
+    }
+    // Try parsing as plain bytes
+    return std.fmt.parseInt(u64, s, 10) catch null;
 }
 
 test "applyProfile: unknown profile returns ProfileNotFound" {
@@ -593,6 +635,20 @@ test "applyProfile: task-level env override merges with global" {
     try std.testing.expect(found_b);
 }
 
+test "parseMemoryBytes: various formats" {
+    try std.testing.expectEqual(@as(?u64, 2 * 1_073_741_824), parseMemoryBytes("2GB"));
+    try std.testing.expectEqual(@as(?u64, 2 * 1_073_741_824), parseMemoryBytes("2gb"));
+    try std.testing.expectEqual(@as(?u64, 512 * 1_048_576), parseMemoryBytes("512MB"));
+    try std.testing.expectEqual(@as(?u64, 512 * 1_048_576), parseMemoryBytes("512mb"));
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024), parseMemoryBytes("1024KB"));
+    try std.testing.expectEqual(@as(?u64, 1024 * 1024), parseMemoryBytes("1024kb"));
+    try std.testing.expectEqual(@as(?u64, 100), parseMemoryBytes("100B"));
+    try std.testing.expectEqual(@as(?u64, 100), parseMemoryBytes("100b"));
+    try std.testing.expectEqual(@as(?u64, 1234), parseMemoryBytes("1234"));
+    try std.testing.expectEqual(@as(?u64, null), parseMemoryBytes(""));
+    try std.testing.expectEqual(@as(?u64, null), parseMemoryBytes("invalid"));
+}
+
 pub fn addTaskImpl(
     config: *Config,
     allocator: std.mem.Allocator,
@@ -611,6 +667,8 @@ pub fn addTaskImpl(
     condition: ?[]const u8,
     max_concurrent: u32,
     cache: bool,
+    max_cpu: ?u32,
+    max_memory: ?u64,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -683,6 +741,8 @@ pub fn addTaskImpl(
         .condition = task_condition,
         .max_concurrent = max_concurrent,
         .cache = cache,
+        .max_cpu = max_cpu,
+        .max_memory = max_memory,
     };
 
     try config.tasks.put(task_name, task);

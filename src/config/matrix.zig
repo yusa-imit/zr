@@ -110,6 +110,8 @@ pub fn addMatrixTask(
     condition: ?[]const u8,
     max_concurrent: u32,
     cache: bool,
+    max_cpu: ?u32,
+    max_memory: ?u64,
     matrix_raw: []const u8,
 ) !void {
     // Parse the matrix inline table into dims
@@ -122,7 +124,7 @@ pub fn addMatrixTask(
 
     if (dims.items.len == 0) {
         // No matrix dims parsed; fall back to plain task
-        return addTaskImpl(config, allocator, name, cmd, cwd, description, deps, deps_serial, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent, cache);
+        return addTaskImpl(config, allocator, name, cmd, cwd, description, deps, deps_serial, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent, cache, max_cpu, max_memory);
     }
 
     // Build sorted key list for deterministic variant name ordering
@@ -197,7 +199,7 @@ pub fn addMatrixTask(
         }
 
         // Add the variant task (addTaskImpl dupes everything, so our locals can be freed)
-        try addTaskImpl(config, allocator, vname, v_cmd, v_cwd, v_desc, deps, deps_serial, v_env_list.items, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent, cache);
+        try addTaskImpl(config, allocator, vname, v_cmd, v_cwd, v_desc, deps, deps_serial, v_env_list.items, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, max_concurrent, cache, max_cpu, max_memory);
 
         // Free our allocations (addTaskImpl duped them)
         allocator.free(v_cmd);
@@ -228,7 +230,7 @@ pub fn addMatrixTask(
     const meta_cmd = try std.fmt.allocPrint(allocator, "echo \"Matrix task: {s}\"", .{name});
     defer allocator.free(meta_cmd);
 
-    try addTaskImpl(config, allocator, name, meta_cmd, null, description, variant_names.items, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false);
+    try addTaskImpl(config, allocator, name, meta_cmd, null, description, variant_names.items, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false, null, null);
 }
 
 test "matrix: simple expansion single dimension" {
