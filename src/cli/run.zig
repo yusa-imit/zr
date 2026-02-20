@@ -139,12 +139,20 @@ pub fn cmdWatch(
         }
     }
 
-    var watch = watcher.Watcher.init(allocator, watch_paths, 500) catch |err| {
+    // Use native file watching (inotify/kqueue/ReadDirectoryChangesW) with 500ms polling fallback
+    var watch = watcher.Watcher.init(allocator, watch_paths, .native, 500) catch |err| {
         try color.printError(err_writer, use_color,
             "watch: Failed to initialize watcher: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer watch.deinit();
+
+    // Log which mode we're using
+    const mode_str = switch (watch.mode) {
+        .native => "native",
+        .polling => "polling",
+    };
+    try color.printDim(w, use_color, "  (using {s} mode)\n", .{mode_str});
 
     try color.printInfo(w, use_color, "Watching", .{});
     try w.print(" for changes (Ctrl+C to stop)...\n", .{});

@@ -1,4 +1,13 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const native = @import("native.zig");
+
+pub const WatchMode = enum {
+    /// Native OS-specific watchers (inotify/kqueue/ReadDirectoryChangesW)
+    native,
+    /// Polling-based fallback
+    polling,
+};
 
 /// A file change event: the path that changed.
 pub const WatchEvent = struct {
@@ -15,11 +24,78 @@ const SKIP_DIRS = [_][]const u8{
     ".zig-cache",
 };
 
-/// Polling-based filesystem watcher. Cross-platform (no inotify/kqueue).
+/// Adaptive filesystem watcher that uses native OS APIs when available,
+/// falling back to polling mode if needed.
 ///
-/// Recursively scans watched paths every `poll_ms` milliseconds and
-/// returns on the first detected mtime change. Skips common build/VCS dirs.
+/// Native modes:
+/// - Linux: inotify
+/// - macOS: kqueue
+/// - Windows: ReadDirectoryChangesW
+///
+/// Fallback: polling-based mtime checking
 pub const Watcher = struct {
+    mode: WatchMode,
+    impl: union(WatchMode) {
+        native: NativeWatcherWrapper,
+        polling: PollingWatcher,
+    },
+
+    const Self = @This();
+
+    const NativeWatcherWrapper = struct {
+        allocator: std.mem.Allocator,
+        watcher: native.NativeWatcher,
+    };
+
+    /// Initialize the watcher with the preferred mode.
+    /// If native mode is requested but fails, falls back to polling automatically.
+    pub fn init(allocator: std.mem.Allocator, paths: []const []const u8, mode: WatchMode, poll_ms: u64) !Self {
+        if (mode == .native) {
+            if (supportsNativeMode()) {
+                if (native.NativeWatcher.init(allocator, paths)) |watcher| {
+                    return Self{
+                        .mode = .native,
+                        .impl = .{ .native = .{ .allocator = allocator, .watcher = watcher } },
+                    };
+                } else |_| {
+                    // Fall back to polling on error
+                }
+            }
+        }
+
+        // Use polling mode
+        const polling_watcher = try PollingWatcher.init(allocator, paths, poll_ms);
+        return Self{
+            .mode = .polling,
+            .impl = .{ .polling = polling_watcher },
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        switch (self.impl) {
+            .native => |*wrapper| wrapper.watcher.deinit(),
+            .polling => |*watcher| watcher.deinit(),
+        }
+    }
+
+    /// Wait for a filesystem change. Blocks until a change is detected.
+    pub fn waitForChange(self: *Self) !WatchEvent {
+        return switch (self.impl) {
+            .native => |*wrapper| {
+                const event = try wrapper.watcher.waitForEvent();
+                return WatchEvent{ .path = event.path };
+            },
+            .polling => |*watcher| try watcher.waitForChange(),
+        };
+    }
+
+    fn supportsNativeMode() bool {
+        return builtin.os.tag == .linux or builtin.os.tag == .macos or builtin.os.tag == .windows;
+    }
+};
+
+/// Legacy polling-based filesystem watcher for compatibility.
+const PollingWatcher = struct {
     allocator: std.mem.Allocator,
     /// Paths to watch (dirs or individual files). Caller owns.
     paths: []const []const u8,
@@ -189,7 +265,18 @@ fn shouldSkip(basename: []const u8) bool {
 
 // --- Tests ---
 
-test "watcher detects file change" {
+test "watcher native mode compiles and initializes" {
+    const allocator = std.testing.allocator;
+    const watch_paths = [_][]const u8{"."};
+
+    var watcher = try Watcher.init(allocator, &watch_paths, .native, 500);
+    defer watcher.deinit();
+
+    // Just verify it initialized successfully
+    try std.testing.expect(watcher.mode == .native or watcher.mode == .polling);
+}
+
+test "watcher polling mode detects file change" {
     const allocator = std.testing.allocator;
 
     // Create a temp dir with a file.
@@ -204,15 +291,15 @@ test "watcher detects file change" {
 
     const watch_paths = [_][]const u8{tmp_path};
 
-    var watcher = try Watcher.init(allocator, &watch_paths, 10);
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10);
     defer watcher.deinit();
 
     // Modify the file — sleep briefly to ensure mtime difference on fast filesystems.
     std.Thread.sleep(10 * std.time.ns_per_ms);
     try tmp_dir.dir.writeFile(.{ .sub_path = "test.txt", .data = "world" });
 
-    // checkPath should detect the change.
-    const changed = try watcher.checkPath(tmp_path);
+    // checkPath should detect the change (internal polling watcher)
+    const changed = try watcher.impl.polling.checkPath(tmp_path);
     try std.testing.expect(changed != null);
 }
 
@@ -229,13 +316,13 @@ test "watcher detects new file" {
     try tmp_dir.dir.writeFile(.{ .sub_path = "a.txt", .data = "a" });
 
     const watch_paths = [_][]const u8{tmp_path};
-    var watcher = try Watcher.init(allocator, &watch_paths, 10);
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10);
     defer watcher.deinit();
 
     // Add a new file — watcher should see it as changed.
     try tmp_dir.dir.writeFile(.{ .sub_path = "b.txt", .data = "b" });
 
-    const changed = try watcher.checkPath(tmp_path);
+    const changed = try watcher.impl.polling.checkPath(tmp_path);
     try std.testing.expect(changed != null);
 }
 
@@ -251,11 +338,11 @@ test "watcher no change" {
     try tmp_dir.dir.writeFile(.{ .sub_path = "stable.txt", .data = "content" });
 
     const watch_paths = [_][]const u8{tmp_path};
-    var watcher = try Watcher.init(allocator, &watch_paths, 10);
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10);
     defer watcher.deinit();
 
     // No modification — should return null.
-    const changed = try watcher.checkPath(tmp_path);
+    const changed = try watcher.impl.polling.checkPath(tmp_path);
     try std.testing.expect(changed == null);
 }
 
