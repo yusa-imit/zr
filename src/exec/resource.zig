@@ -1,8 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// C getpid() function
-const getpid = @extern(*const fn () callconv(.c) c_int, .{ .name = "getpid" });
+/// C getpid() function (POSIX only)
+const getpid = if (builtin.os.tag != .windows)
+    @extern(*const fn () callconv(.c) c_int, .{ .name = "getpid" })
+else
+    undefined;
 
 /// Cross-platform resource monitoring and limiting for task execution.
 ///
@@ -40,10 +43,11 @@ pub const ResourceUsage = struct {
 
 /// Get current resource usage for a process.
 /// Returns null if monitoring is not supported on this platform or PID not found.
-pub fn getProcessUsage(pid: std.posix.pid_t) ?ResourceUsage {
+pub fn getProcessUsage(pid: if (builtin.os.tag == .windows) std.os.windows.HANDLE else std.posix.pid_t) ?ResourceUsage {
     switch (comptime builtin.os.tag) {
         .linux => return getProcessUsageLinux(pid),
         .macos => return getProcessUsageMacOS(pid),
+        .windows => return getProcessUsageWindows(pid),
         else => return null,
     }
 }
@@ -188,17 +192,84 @@ fn getProcessUsageMacOS(pid: std.posix.pid_t) ?ResourceUsage {
     return usage;
 }
 
+/// Windows-specific resource usage via GetProcessMemoryInfo and GetProcessTimes
+fn getProcessUsageWindows(handle: std.os.windows.HANDLE) ?ResourceUsage {
+    const windows = std.os.windows;
+    const PROCESS_MEMORY_COUNTERS = extern struct {
+        cb: windows.DWORD,
+        PageFaultCount: windows.DWORD,
+        PeakWorkingSetSize: windows.SIZE_T,
+        WorkingSetSize: windows.SIZE_T,
+        QuotaPeakPagedPoolUsage: windows.SIZE_T,
+        QuotaPagedPoolUsage: windows.SIZE_T,
+        QuotaPeakNonPagedPoolUsage: windows.SIZE_T,
+        QuotaNonPagedPoolUsage: windows.SIZE_T,
+        PagefileUsage: windows.SIZE_T,
+        PeakPagefileUsage: windows.SIZE_T,
+    };
+
+    const FILETIME = extern struct {
+        dwLowDateTime: windows.DWORD,
+        dwHighDateTime: windows.DWORD,
+    };
+
+    const GetProcessMemoryInfo = @extern(*const fn (
+        windows.HANDLE,
+        *PROCESS_MEMORY_COUNTERS,
+        windows.DWORD,
+    ) callconv(.c) windows.BOOL, .{ .name = "GetProcessMemoryInfo" });
+
+    const GetProcessTimes = @extern(*const fn (
+        windows.HANDLE,
+        *FILETIME,
+        *FILETIME,
+        *FILETIME,
+        *FILETIME,
+    ) callconv(.c) windows.BOOL, .{ .name = "GetProcessTimes" });
+
+    var mem_counters: PROCESS_MEMORY_COUNTERS = undefined;
+    mem_counters.cb = @sizeOf(PROCESS_MEMORY_COUNTERS);
+
+    // Get memory info
+    if (GetProcessMemoryInfo(handle, &mem_counters, @sizeOf(PROCESS_MEMORY_COUNTERS)) == 0) {
+        return null;
+    }
+
+    // Get CPU times
+    var creation_time: FILETIME = undefined;
+    var exit_time: FILETIME = undefined;
+    var kernel_time: FILETIME = undefined;
+    var user_time: FILETIME = undefined;
+
+    if (GetProcessTimes(handle, &creation_time, &exit_time, &kernel_time, &user_time) == 0) {
+        return null;
+    }
+
+    var usage = ResourceUsage{};
+    usage.rss_bytes = mem_counters.WorkingSetSize;
+
+    // Convert FILETIME (100ns intervals since 1601) to nanoseconds
+    const user_ns = (@as(u64, user_time.dwHighDateTime) << 32 | user_time.dwLowDateTime) * 100;
+    const kernel_ns = (@as(u64, kernel_time.dwHighDateTime) << 32 | kernel_time.dwLowDateTime) * 100;
+    usage.cpu_time_ns = user_ns + kernel_ns;
+
+    // CPU percent requires delta tracking, leave at 0
+    usage.cpu_percent = 0.0;
+
+    return usage;
+}
+
 /// Monitor resource usage of a child process (non-blocking).
 /// This is a stub for Phase 3 implementation.
 pub const ResourceMonitor = struct {
-    pid: std.posix.pid_t,
+    pid: if (builtin.os.tag == .windows) std.os.windows.HANDLE else std.posix.pid_t,
     max_cpu_cores: ?u32,
     max_memory_bytes: ?u64,
     allocator: std.mem.Allocator,
 
     pub fn init(
         allocator: std.mem.Allocator,
-        pid: std.posix.pid_t,
+        pid: if (builtin.os.tag == .windows) std.os.windows.HANDLE else std.posix.pid_t,
         max_cpu_cores: ?u32,
         max_memory_bytes: ?u64,
     ) ResourceMonitor {
@@ -297,5 +368,35 @@ test "getProcessUsage: invalid PID returns null (macOS)" {
 
     // PID 999999 is unlikely to exist
     const usage = getProcessUsage(999999);
+    try std.testing.expectEqual(@as(?ResourceUsage, null), usage);
+}
+
+test "getProcessUsage: self process (Windows)" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const windows = std.os.windows;
+    const GetCurrentProcess = @extern(*const fn () callconv(.c) windows.HANDLE, .{ .name = "GetCurrentProcess" });
+
+    const self_handle = GetCurrentProcess();
+    const usage = getProcessUsage(self_handle);
+
+    // Should be able to read our own process stats
+    try std.testing.expect(usage != null);
+
+    if (usage) |u| {
+        // Our process should have some memory
+        try std.testing.expect(u.rss_bytes > 0);
+        // CPU time should be non-negative (may be 0 for quick test)
+        try std.testing.expect(u.cpu_time_ns >= 0);
+    }
+}
+
+test "getProcessUsage: invalid handle returns null (Windows)" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const windows = std.os.windows;
+    // Invalid handle (NULL)
+    const invalid_handle: windows.HANDLE = @ptrFromInt(0);
+    const usage = getProcessUsage(invalid_handle);
     try std.testing.expectEqual(@as(?ResourceUsage, null), usage);
 }
