@@ -30,8 +30,10 @@ const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
 const tui = @import("cli/tui.zig");
 const live_cmd = @import("cli/live.zig");
+const interactive_run = @import("cli/interactive_run.zig");
 const platform = @import("util/platform.zig");
 const resource = @import("exec/resource.zig");
+const control = @import("exec/control.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -65,8 +67,11 @@ comptime {
     _ = run_cmd;
     _ = list_cmd;
     _ = tui;
+    _ = live_cmd;
+    _ = interactive_run;
     _ = platform;
     _ = resource;
+    _ = control;
 }
 
 pub fn main() !void {
@@ -304,6 +309,13 @@ fn run(
         }
         const task_name = effective_args[2];
         return live_cmd.cmdLive(allocator, task_name, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "interactive-run") or std.mem.eql(u8, cmd, "irun")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "interactive-run: missing task name\n\n  Hint: zr interactive-run <task-name>\n", .{});
+            return 1;
+        }
+        const task_name = effective_args[2];
+        return interactive_run.cmdInteractiveRun(allocator, task_name, config_path, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -336,6 +348,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin create <name>   Scaffold a new plugin template directory\n", .{});
     try w.print("  interactive, i         Launch interactive TUI task picker\n", .{});
     try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
+    try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});

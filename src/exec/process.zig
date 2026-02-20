@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const platform = @import("../util/platform.zig");
 const resource = @import("resource.zig");
+const control = @import("control.zig");
 
 pub const ProcessError = error{
     SpawnFailed,
@@ -39,6 +40,8 @@ pub const ProcessConfig = struct {
     output_callback: ?OutputCallback = null,
     /// Optional context passed to output_callback.
     output_ctx: ?*anyopaque = null,
+    /// Optional task control handle for cancel/pause/resume operations.
+    task_control: ?*control.TaskControl = null,
 };
 
 /// Context shared between the main thread and the timeout watcher thread.
@@ -102,6 +105,51 @@ fn resourceWatcher(ctx: ResourceCtx) void {
     }
 }
 
+/// Context for task control monitoring thread.
+const ControlWatcherCtx = struct {
+    pid: std.process.Child.Id,
+    ctrl: *control.TaskControl,
+    /// Written to true by watcher if it cancels the process.
+    cancelled: *std.atomic.Value(bool),
+    /// Written to true by main thread when child exits normally.
+    done: *std.atomic.Value(bool),
+};
+
+fn controlWatcher(ctx: ControlWatcherCtx) void {
+    // Check control signals every 50ms
+    const check_interval_ms: u64 = 50;
+    var paused = false;
+
+    while (!ctx.done.load(.acquire)) {
+        std.Thread.sleep(check_interval_ms * std.time.ns_per_ms);
+        if (ctx.done.load(.acquire)) return;
+
+        if (ctx.ctrl.isCancelRequested()) {
+            platform.killProcess(ctx.pid);
+            ctx.cancelled.store(true, .release);
+            ctx.ctrl.clearSignal();
+            return;
+        }
+
+        if (ctx.ctrl.isPauseRequested()) {
+            platform.pauseProcess(ctx.pid);
+            paused = true;
+            ctx.ctrl.clearSignal();
+        }
+
+        if (ctx.ctrl.isResumeRequested()) {
+            platform.resumeProcess(ctx.pid);
+            paused = false;
+            ctx.ctrl.clearSignal();
+        }
+    }
+
+    // If we exit normally while paused, resume the process
+    if (paused) {
+        platform.resumeProcess(ctx.pid);
+    }
+}
+
 /// Run a shell command and wait for it to complete.
 /// Inherits stdin/stdout/stderr from parent (user sees output in real-time).
 /// Uses `sh -c <cmd>` to support pipes, redirects, and shell builtins.
@@ -156,6 +204,11 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
 
     child.spawn() catch return error.SpawnFailed;
 
+    // Register PID with task control (if provided)
+    if (config.task_control) |ctrl| {
+        ctrl.setPid(child.id);
+    }
+
     // Apply hard limits to the spawned process
     resource.applyHardLimits(&hard_limits, child.id) catch {
         // If hard limit application fails, continue with soft limits
@@ -165,9 +218,11 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
     // Optionally start a timeout watcher thread
     var timed_out = std.atomic.Value(bool).init(false);
     var limit_exceeded = std.atomic.Value(bool).init(false);
+    var cancelled = std.atomic.Value(bool).init(false);
     var child_done = std.atomic.Value(bool).init(false);
     var maybe_timeout_thread: ?std.Thread = null;
     var maybe_resource_thread: ?std.Thread = null;
+    var maybe_control_thread: ?std.Thread = null;
 
     if (config.timeout_ms) |timeout_ms| {
         const ctx = TimeoutCtx{
@@ -189,6 +244,17 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
             .done = &child_done,
         };
         maybe_resource_thread = std.Thread.spawn(.{}, resourceWatcher, .{ctx}) catch null;
+    }
+
+    // Optionally start task control monitoring thread
+    if (config.task_control) |ctrl| {
+        const ctx = ControlWatcherCtx{
+            .pid = child.id,
+            .ctrl = ctrl,
+            .cancelled = &cancelled,
+            .done = &child_done,
+        };
+        maybe_control_thread = std.Thread.spawn(.{}, controlWatcher, .{ctx}) catch null;
     }
 
     // If output callback is provided and stdio is piped, spawn reader threads
@@ -265,12 +331,13 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
     child_done.store(true, .release);
     if (maybe_timeout_thread) |t| t.join();
     if (maybe_resource_thread) |t| t.join();
+    if (maybe_control_thread) |t| t.join();
 
     const end_ms = std.time.milliTimestamp();
     const duration_ms: u64 = @intCast(@max(0, end_ms - start_ms));
 
-    // If killed by timeout or resource limit, report failure with exit_code = 1
-    if (timed_out.load(.acquire) or limit_exceeded.load(.acquire)) {
+    // If killed by timeout, resource limit, or cancellation, report failure
+    if (timed_out.load(.acquire) or limit_exceeded.load(.acquire) or cancelled.load(.acquire)) {
         return ProcessResult{
             .exit_code = 1,
             .duration_ms = duration_ms,

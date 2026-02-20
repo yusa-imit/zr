@@ -16,6 +16,20 @@ pub fn killProcess(pid: std.process.Child.Id) void {
     std.posix.kill(pid, std.posix.SIG.KILL) catch {};
 }
 
+/// Cross-platform process pause.
+/// Sends SIGSTOP on POSIX; no-op on Windows.
+pub fn pauseProcess(pid: std.process.Child.Id) void {
+    if (comptime native_os == .windows) return;
+    std.posix.kill(pid, std.posix.SIG.STOP) catch {};
+}
+
+/// Cross-platform process resume.
+/// Sends SIGCONT on POSIX; no-op on Windows.
+pub fn resumeProcess(pid: std.process.Child.Id) void {
+    if (comptime native_os == .windows) return;
+    std.posix.kill(pid, std.posix.SIG.CONT) catch {};
+}
+
 /// Cross-platform getenv wrapper.
 /// Returns null on Windows (where POSIX getenv is unavailable).
 pub fn getenv(key: []const u8) ?[:0]const u8 {
