@@ -40,7 +40,7 @@
   - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
   - [x] **Runtime state refs**: `stages['name'].success`, `tasks['name'].duration` with all comparison operators
 
-### Phase 3 - UX & Resources — **PARTIAL (~70%)**
+### Phase 3 - UX & Resources — **PARTIAL (~75%)**
 - [x] `--dry-run` / `-n` flag (execution plan without running)
 - [x] `zr init` command (scaffold starter zr.toml)
 - [x] Shell completion (bash/zsh/fish)
@@ -52,11 +52,14 @@
   - Missing: real-time log streaming (PRD §5.3.3)
   - Missing: task cancel/retry (PRD §5.3.3)
   - Missing: dependency graph ASCII visualization (PRD §5.3.3)
-- [ ] **Resource limits (CPU/Memory)** — NOT implemented (PRD §5.4)
-  - Missing: `max_cpu`, `max_memory` per-task (PRD §5.4.1)
-  - Missing: `max_total_memory`, `max_cpu_percent` global (PRD §5.4.2)
-  - Missing: cgroups v2 / Job Objects integration (PRD §5.4.3)
-  - Missing: `--monitor` resource monitoring flag
+- [~] **Resource limits (CPU/Memory)** — **PARTIAL** (PRD §5.4)
+  - [x] `max_cpu`, `max_memory` config fields + TOML parsing (e276a26)
+  - [x] `GlobalResourceConfig` (max_total_memory, max_cpu_percent) (e276a26)
+  - [x] `src/exec/resource.zig` — ResourceMonitor stub (a148658)
+  - [ ] getProcessUsage() platform implementations (Linux /proc, macOS getrusage, Windows APIs)
+  - [ ] Integration with task execution (scheduler + process spawning)
+  - [ ] cgroups v2 / Job Objects hard limit enforcement (PRD §5.4.3)
+  - [ ] `--monitor` CLI flag for live resource display
 
 ### Phase 4 - Extensibility — **PARTIAL (~60%)**
 - [x] Native plugin system (.so/.dylib via DynLib, C-ABI hooks)
@@ -77,9 +80,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (expression engine fully implemented). Phase 3 ~70% (no resource limits). Phase 4 ~60% (no WASM, docker stub). **Strong MVP, expression engine feature-complete.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (expression engine fully implemented). Phase 3 ~75% (resource limits config done, enforcement stub). Phase 4 ~60% (no WASM, docker stub). **Strong MVP, expression engine feature-complete.**
 
-- **Tests**: 252 passing across 33 files (6 new runtime state tests)
+- **Tests**: 253 passing across 34 files (parseMemoryBytes, ResourceMonitor init)
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -116,7 +119,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ## Priority Backlog (by impact)
 
 1. ~~**Expression engine (runtime refs)**~~ — **COMPLETE** ✓ (c1db626)
-2. **Resource limits** — `max_cpu`, `max_memory`, cgroups v2 (production workload isolation)
+2. **Resource limits** — **IN PROGRESS** (config done, need platform impl + integration) (e276a26, a148658)
 3. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
 4. **TUI enhancements** — live log streaming, cancel/retry
 5. **WASM plugin sandbox** — sandboxed third-party plugins
