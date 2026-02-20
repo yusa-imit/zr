@@ -41,6 +41,13 @@ pub const builtin_git = @import("builtin_git.zig");
 pub const GitPlugin = builtin_git.GitPlugin;
 
 // ---------------------------------------------------------------------------
+// docker plugin — Docker build/push operations with layer cache optimization
+// ---------------------------------------------------------------------------
+
+pub const builtin_docker = @import("builtin_docker.zig");
+pub const DockerPlugin = builtin_docker.DockerPlugin;
+
+// ---------------------------------------------------------------------------
 // notify plugin — webhook notifications (Slack, Discord, generic)
 // ---------------------------------------------------------------------------
 
@@ -193,6 +200,13 @@ pub const BuiltinHandle = struct {
                 };
 
                 self.state = .{ .cache = .{ .store = store, .max_age_seconds = max_age } };
+            },
+            .docker => {
+                // Verify Docker daemon is available
+                const available = DockerPlugin.onInit(self.allocator, null) catch false;
+                if (!available) {
+                    // Docker not available - silently continue (user will get error when trying to run docker commands)
+                }
             },
             else => {},
         }
