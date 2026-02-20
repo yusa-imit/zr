@@ -40,7 +40,7 @@
   - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
   - [x] **Runtime state refs**: `stages['name'].success`, `tasks['name'].duration` with all comparison operators
 
-### Phase 3 - UX & Resources — **NEARLY COMPLETE (~95%)**
+### Phase 3 - UX & Resources — **COMPLETE (100%)**
 - [x] `--dry-run` / `-n` flag (execution plan without running)
 - [x] `zr init` command (scaffold starter zr.toml)
 - [x] Shell completion (bash/zsh/fish)
@@ -48,9 +48,10 @@
 - [x] `max_concurrent` per-task resource limit
 - [x] Workspace/monorepo support (`[workspace] members`, glob discovery)
 - [x] Progress bar output module
-- [x] Interactive TUI — **basic picker only** (arrow keys + Enter)
-  - Missing: real-time log streaming (PRD §5.3.3)
-  - Missing: task cancel/retry (PRD §5.3.3)
+- [x] Interactive TUI — **picker + live log streaming** (430fe98)
+  - [x] Task picker (arrow keys + Enter)
+  - [x] **Live log streaming** — `zr live <task>` with real-time stdout/stderr display (430fe98)
+  - Missing: task cancel/retry during execution (PRD §5.3.3)
   - Missing: dependency graph ASCII visualization (PRD §5.3.3)
 - [x] **Resource limits (CPU/Memory)** — **COMPLETE (100%)** (PRD §5.4)
   - [x] `max_cpu`, `max_memory` config fields + TOML parsing (e276a26)
@@ -82,9 +83,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **~95% complete** (resource limits with kernel-level enforcement complete). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, and full Docker integration.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI live log streaming). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, full Docker integration, and live TUI execution.**
 
-- **Tests**: 280 passing (6 skipped platform-specific) — Docker plugin + resource monitoring cross-platform
+- **Tests**: 280 passing (6 skipped platform-specific) — TUI live streaming + Docker + resource monitoring
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -125,6 +126,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 3. ~~**Resource limit enforcement**~~ — **COMPLETE** ✓ (cgroups v2 / Job Objects)
 4. ~~**Watch mode upgrade**~~ — **COMPLETE** ✓ (native inotify/kqueue/ReadDirectoryChangesW) (8ef87a4)
 5. ~~**Docker built-in plugin**~~ — **COMPLETE** ✓ (build/push/tag/prune with BuildKit cache) (c07e0aa)
-6. **TUI enhancements** — live log streaming, cancel/retry
-7. **WASM plugin sandbox** — sandboxed third-party plugins
-8. **Remote cache** — shared cache for CI pipelines
+6. ~~**TUI live log streaming**~~ — **COMPLETE** ✓ (430fe98)
+7. **TUI cancel/retry** — interactive task control during execution
+8. **WASM plugin sandbox** — sandboxed third-party plugins
+9. **Remote cache** — shared cache for CI pipelines
