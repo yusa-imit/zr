@@ -3,13 +3,45 @@ const builtin = @import("builtin");
 
 pub const EvalError = error{ OutOfMemory, InvalidExpression };
 
+/// Runtime execution state for tasks and stages.
+/// Used to evaluate expressions like stages['name'].success or tasks['name'].duration.
+pub const RuntimeState = struct {
+    /// Results from completed tasks (task_name -> TaskState).
+    tasks: std.StringHashMap(TaskState),
+    /// Results from completed workflow stages (stage_name -> StageState).
+    stages: std.StringHashMap(StageState),
+
+    pub const TaskState = struct {
+        success: bool,
+        duration_ms: u64,
+    };
+
+    pub const StageState = struct {
+        success: bool,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) RuntimeState {
+        return .{
+            .tasks = std.StringHashMap(TaskState).init(allocator),
+            .stages = std.StringHashMap(StageState).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *RuntimeState) void {
+        self.tasks.deinit();
+        self.stages.deinit();
+    }
+};
+
 const ExprContext = struct {
     allocator: std.mem.Allocator,
     task_env: ?[]const [2][]const u8,
+    runtime_state: ?*const RuntimeState,
 };
 
 /// Evaluate a condition expression string.
 /// `task_env` contains per-task env overrides (checked first before process env).
+/// `runtime_state` contains task/stage execution results for runtime references.
 /// Returns true if the condition passes (task should run), false if skipped.
 /// On parse error or unknown expression, returns true (fail-open: run the task).
 pub fn evalCondition(
@@ -17,9 +49,20 @@ pub fn evalCondition(
     expr: []const u8,
     task_env: ?[]const [2][]const u8,
 ) EvalError!bool {
+    return evalConditionWithState(allocator, expr, task_env, null);
+}
+
+/// Evaluate a condition with optional runtime state.
+pub fn evalConditionWithState(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    runtime_state: ?*const RuntimeState,
+) EvalError!bool {
     const ctx = ExprContext{
         .allocator = allocator,
         .task_env = task_env,
+        .runtime_state = runtime_state,
     };
     return evalOr(&ctx, expr) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -104,6 +147,16 @@ fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
     // Environment variable check
     if (std.mem.startsWith(u8, trimmed, "env.")) {
         return evalEnvCheck(ctx, trimmed);
+    }
+
+    // Runtime state references: stages['name'].success
+    if (std.mem.startsWith(u8, trimmed, "stages[")) {
+        return evalStageRef(ctx, trimmed);
+    }
+
+    // Runtime state references: tasks['name'].duration
+    if (std.mem.startsWith(u8, trimmed, "tasks[")) {
+        return evalTaskRef(ctx, trimmed);
     }
 
     // Unknown expression: fail-open
@@ -404,6 +457,107 @@ fn compareSemver(v1: SemVer, v2: SemVer) i32 {
         return if (v1.patch > v2.patch) @as(i32, 1) else -1;
     }
     return 0;
+}
+
+/// Evaluate stages['name'].success
+/// Returns true if the named stage exists in runtime state and succeeded.
+/// If runtime_state is null or stage not found, returns true (fail-open).
+fn evalStageRef(ctx: *const ExprContext, expr: []const u8) !bool {
+    // Parse: stages['name'].success
+    const start_bracket = std.mem.indexOf(u8, expr, "[") orelse return error.InvalidExpression;
+    const end_bracket = std.mem.indexOf(u8, expr[start_bracket..], "]") orelse return error.InvalidExpression;
+    const bracket_end = start_bracket + end_bracket;
+
+    // Extract stage name from brackets
+    const name_raw = expr[start_bracket + 1 .. bracket_end];
+    const stage_name = stripQuotes(std.mem.trim(u8, name_raw, " \t"));
+
+    // Parse the property after the brackets
+    const after_bracket = std.mem.trim(u8, expr[bracket_end + 1 ..], " \t");
+    if (!std.mem.startsWith(u8, after_bracket, ".success")) {
+        return error.InvalidExpression;
+    }
+
+    // Look up stage in runtime state
+    const runtime_state = ctx.runtime_state orelse return true; // No state available, fail-open
+    const stage_state = runtime_state.stages.get(stage_name) orelse return true; // Stage not found, fail-open
+
+    return stage_state.success;
+}
+
+/// Evaluate tasks['name'].duration [operator value]
+/// Examples:
+///   tasks['test'].duration < 60  -> true if test task duration < 60 seconds
+///   tasks['build'].duration      -> true if task duration > 0 (truthy check)
+/// If runtime_state is null or task not found, returns true (fail-open).
+fn evalTaskRef(ctx: *const ExprContext, expr: []const u8) !bool {
+    // Parse: tasks['name'].duration [< > <= >= == !=] [value]
+    const start_bracket = std.mem.indexOf(u8, expr, "[") orelse return error.InvalidExpression;
+    const end_bracket = std.mem.indexOf(u8, expr[start_bracket..], "]") orelse return error.InvalidExpression;
+    const bracket_end = start_bracket + end_bracket;
+
+    // Extract task name from brackets
+    const name_raw = expr[start_bracket + 1 .. bracket_end];
+    const task_name = stripQuotes(std.mem.trim(u8, name_raw, " \t"));
+
+    // Parse the property after the brackets
+    const after_bracket = std.mem.trim(u8, expr[bracket_end + 1 ..], " \t");
+    if (!std.mem.startsWith(u8, after_bracket, ".duration")) {
+        return error.InvalidExpression;
+    }
+
+    // Look up task in runtime state
+    const runtime_state = ctx.runtime_state orelse return true; // No state available, fail-open
+    const task_state = runtime_state.tasks.get(task_name) orelse return true; // Task not found, fail-open
+
+    const duration_sec = task_state.duration_ms / 1000;
+
+    // Check if there's a comparison operator after .duration
+    const after_duration = std.mem.trim(u8, after_bracket[".duration".len..], " \t");
+
+    if (after_duration.len == 0) {
+        // Truthy check: duration > 0
+        return duration_sec > 0;
+    }
+
+    // Parse comparison operator
+    if (std.mem.startsWith(u8, after_duration, "<=")) {
+        const rhs_str = std.mem.trim(u8, after_duration["<=".len..], " \t");
+        const rhs = std.fmt.parseInt(u64, rhs_str, 10) catch return error.InvalidExpression;
+        return duration_sec <= rhs;
+    }
+
+    if (std.mem.startsWith(u8, after_duration, ">=")) {
+        const rhs_str = std.mem.trim(u8, after_duration[">=".len..], " \t");
+        const rhs = std.fmt.parseInt(u64, rhs_str, 10) catch return error.InvalidExpression;
+        return duration_sec >= rhs;
+    }
+
+    if (std.mem.startsWith(u8, after_duration, "<")) {
+        const rhs_str = std.mem.trim(u8, after_duration["<".len..], " \t");
+        const rhs = std.fmt.parseInt(u64, rhs_str, 10) catch return error.InvalidExpression;
+        return duration_sec < rhs;
+    }
+
+    if (std.mem.startsWith(u8, after_duration, ">")) {
+        const rhs_str = std.mem.trim(u8, after_duration[">".len..], " \t");
+        const rhs = std.fmt.parseInt(u64, rhs_str, 10) catch return error.InvalidExpression;
+        return duration_sec > rhs;
+    }
+
+    if (std.mem.startsWith(u8, after_duration, "==")) {
+        const rhs_str = std.mem.trim(u8, after_duration["==".len..], " \t");
+        const rhs = std.fmt.parseInt(u64, rhs_str, 10) catch return error.InvalidExpression;
+        return duration_sec == rhs;
+    }
+
+    if (std.mem.startsWith(u8, after_duration, "!=")) {
+        const rhs_str = std.mem.trim(u8, after_duration["!=".len..], " \t");
+        const rhs = std.fmt.parseInt(u64, rhs_str, 10) catch return error.InvalidExpression;
+        return duration_sec != rhs;
+    }
+
+    return error.InvalidExpression;
 }
 
 // --- Private helpers ---
@@ -885,4 +1039,253 @@ test "compareSemver: comparison logic" {
     // Major comparison
     try std.testing.expectEqual(@as(i32, -1), compareSemver(v1_2_3, v2_0_0));
     try std.testing.expectEqual(@as(i32, 1), compareSemver(v2_0_0, v1_2_3));
+}
+
+test "RuntimeState: basic usage" {
+    const allocator = std.testing.allocator;
+
+    var state = RuntimeState.init(allocator);
+    defer state.deinit();
+
+    // Add task state
+    try state.tasks.put("test", .{ .success = true, .duration_ms = 5000 });
+    try state.tasks.put("build", .{ .success = false, .duration_ms = 120000 });
+
+    // Add stage state
+    try state.stages.put("prepare", .{ .success = true });
+    try state.stages.put("deploy", .{ .success = false });
+
+    // Verify
+    const test_state = state.tasks.get("test").?;
+    try std.testing.expect(test_state.success);
+    try std.testing.expectEqual(@as(u64, 5000), test_state.duration_ms);
+
+    const deploy_state = state.stages.get("deploy").?;
+    try std.testing.expect(!deploy_state.success);
+}
+
+test "evalConditionWithState: stages['name'].success" {
+    const allocator = std.testing.allocator;
+
+    var state = RuntimeState.init(allocator);
+    defer state.deinit();
+
+    try state.stages.put("build", .{ .success = true });
+    try state.stages.put("test", .{ .success = false });
+
+    // Successful stage
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "stages['build'].success",
+        null,
+        &state,
+    ));
+
+    // Failed stage
+    try std.testing.expect(!try evalConditionWithState(
+        allocator,
+        "stages['test'].success",
+        null,
+        &state,
+    ));
+
+    // Double quotes
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "stages[\"build\"].success",
+        null,
+        &state,
+    ));
+
+    // Stage not found: fail-open returns true
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "stages['nonexistent'].success",
+        null,
+        &state,
+    ));
+
+    // No runtime state: fail-open returns true
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "stages['build'].success",
+        null,
+        null,
+    ));
+}
+
+test "evalConditionWithState: tasks['name'].duration comparisons" {
+    const allocator = std.testing.allocator;
+
+    var state = RuntimeState.init(allocator);
+    defer state.deinit();
+
+    // 5 seconds = 5000ms
+    try state.tasks.put("fast", .{ .success = true, .duration_ms = 5000 });
+    // 120 seconds = 120000ms
+    try state.tasks.put("slow", .{ .success = true, .duration_ms = 120000 });
+    // 0 seconds
+    try state.tasks.put("instant", .{ .success = true, .duration_ms = 0 });
+
+    // Less than
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration < 10",
+        null,
+        &state,
+    ));
+    try std.testing.expect(!try evalConditionWithState(
+        allocator,
+        "tasks['slow'].duration < 10",
+        null,
+        &state,
+    ));
+
+    // Greater than
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['slow'].duration > 60",
+        null,
+        &state,
+    ));
+    try std.testing.expect(!try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration > 60",
+        null,
+        &state,
+    ));
+
+    // Less than or equal
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration <= 5",
+        null,
+        &state,
+    ));
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration <= 10",
+        null,
+        &state,
+    ));
+
+    // Greater than or equal
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['slow'].duration >= 120",
+        null,
+        &state,
+    ));
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['slow'].duration >= 100",
+        null,
+        &state,
+    ));
+
+    // Equality
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration == 5",
+        null,
+        &state,
+    ));
+    try std.testing.expect(!try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration == 10",
+        null,
+        &state,
+    ));
+
+    // Inequality
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration != 10",
+        null,
+        &state,
+    ));
+    try std.testing.expect(!try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration != 5",
+        null,
+        &state,
+    ));
+
+    // Truthy check (duration > 0)
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration",
+        null,
+        &state,
+    ));
+    try std.testing.expect(!try evalConditionWithState(
+        allocator,
+        "tasks['instant'].duration",
+        null,
+        &state,
+    ));
+
+    // Task not found: fail-open returns true
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['nonexistent'].duration < 10",
+        null,
+        &state,
+    ));
+
+    // No runtime state: fail-open returns true
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "tasks['fast'].duration < 10",
+        null,
+        null,
+    ));
+}
+
+test "evalConditionWithState: combined with logical operators" {
+    const allocator = std.testing.allocator;
+
+    var state = RuntimeState.init(allocator);
+    defer state.deinit();
+
+    try state.stages.put("build", .{ .success = true });
+    try state.tasks.put("test", .{ .success = true, .duration_ms = 30000 }); // 30 sec
+
+    const env = [_][2][]const u8{.{ "CI", "true" }};
+
+    // AND: stage success AND task duration
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "stages['build'].success && tasks['test'].duration < 60",
+        &env,
+        &state,
+    ));
+
+    // OR: stage success OR env check
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        "stages['build'].success || env.CI == \"false\"",
+        &env,
+        &state,
+    ));
+
+    // Complex: platform + stage + task
+    const current_os = switch (builtin.os.tag) {
+        .linux => "linux",
+        .macos => "darwin",
+        .windows => "windows",
+        else => "unknown",
+    };
+    const complex = try std.fmt.allocPrint(
+        allocator,
+        "platform == \"{s}\" && stages['build'].success && tasks['test'].duration < 60",
+        .{current_os},
+    );
+    defer allocator.free(complex);
+    try std.testing.expect(try evalConditionWithState(
+        allocator,
+        complex,
+        null,
+        &state,
+    ));
 }
