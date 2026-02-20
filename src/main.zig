@@ -34,6 +34,7 @@ const interactive_run = @import("cli/interactive_run.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
+const glob = @import("util/glob.zig");
 const resource = @import("exec/resource.zig");
 const control = @import("exec/control.zig");
 
@@ -74,6 +75,7 @@ comptime {
     _ = platform;
     _ = semver;
     _ = hash_util;
+    _ = glob;
     _ = resource;
     _ = control;
 }
