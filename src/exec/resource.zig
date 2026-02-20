@@ -38,23 +38,94 @@ pub const ResourceUsage = struct {
 /// Get current resource usage for a process.
 /// Returns null if monitoring is not supported on this platform or PID not found.
 pub fn getProcessUsage(pid: std.posix.pid_t) ?ResourceUsage {
-    _ = pid;
-
-    if (comptime builtin.os.tag == .linux) {
-        // TODO: Read /proc/[pid]/status and /proc/[pid]/stat
-        // For now, return placeholder
-        return null;
-    } else if (comptime builtin.os.tag == .macos or builtin.os.tag == .ios) {
-        // TODO: Use getrusage(RUSAGE_CHILDREN) after wait
-        // For now, return placeholder
-        return null;
-    } else if (comptime builtin.os.tag == .windows) {
-        // TODO: Use GetProcessMemoryInfo and GetProcessTimes
-        // For now, return placeholder
-        return null;
-    } else {
-        return null;
+    switch (comptime builtin.os.tag) {
+        .linux => return getProcessUsageLinux(pid),
+        else => return null,
     }
+}
+
+/// Linux-specific resource usage via /proc filesystem
+fn getProcessUsageLinux(pid: std.posix.pid_t) ?ResourceUsage {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var usage = ResourceUsage{};
+
+    // Read /proc/[pid]/status for VmRSS (resident set size)
+    const status_path = std.fmt.allocPrint(allocator, "/proc/{d}/status", .{pid}) catch return null;
+    const status_file = std.fs.openFileAbsolute(status_path, .{}) catch return null;
+    defer status_file.close();
+
+    const status_content = status_file.readToEndAlloc(allocator, 1024 * 1024) catch return null;
+
+    // Parse VmRSS from status file (format: "VmRSS:     12345 kB")
+    var lines = std.mem.splitScalar(u8, status_content, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "VmRSS:")) {
+            const trimmed = std.mem.trim(u8, line[6..], " \t");
+            // Extract numeric part before " kB"
+            const kb_pos = std.mem.indexOf(u8, trimmed, " kB") orelse continue;
+            const kb_str = std.mem.trim(u8, trimmed[0..kb_pos], " \t");
+            const kb = std.fmt.parseInt(u64, kb_str, 10) catch continue;
+            usage.rss_bytes = kb * 1024;
+            break;
+        }
+    }
+
+    // Read /proc/[pid]/stat for CPU time
+    const stat_path = std.fmt.allocPrint(allocator, "/proc/{d}/stat", .{pid}) catch return null;
+    const stat_file = std.fs.openFileAbsolute(stat_path, .{}) catch return null;
+    defer stat_file.close();
+
+    const stat_content = stat_file.readToEndAlloc(allocator, 4096) catch return null;
+
+    // Parse stat file: pid (comm) state ppid ... utime stime ...
+    // We need fields 14 (utime) and 15 (stime) in clock ticks
+    var fields = std.mem.splitScalar(u8, stat_content, ' ');
+    var field_idx: usize = 0;
+    var utime: u64 = 0;
+    var stime: u64 = 0;
+
+    // Skip first field (PID)
+    _ = fields.next();
+    field_idx += 1;
+
+    // Skip comm field (enclosed in parentheses, may contain spaces)
+    // Find the last ')' to handle comm with spaces
+    const comm_start = std.mem.indexOf(u8, stat_content, "(") orelse return null;
+    const comm_end = std.mem.lastIndexOf(u8, stat_content, ")") orelse return null;
+    if (comm_end <= comm_start) return null;
+
+    // Split remaining fields after comm
+    const after_comm = std.mem.trim(u8, stat_content[comm_end + 1 ..], " ");
+    var remaining_fields = std.mem.splitScalar(u8, after_comm, ' ');
+
+    // Field 3 = state (skip), then we need to reach field 14 and 15 (utime, stime)
+    // After comm: state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime
+    // Position: 1    2    3    4       5      6     7     8      9       10     11      12    13
+    field_idx = 0;
+    while (remaining_fields.next()) |field| {
+        field_idx += 1;
+        if (field_idx == 12) { // utime
+            utime = std.fmt.parseInt(u64, field, 10) catch 0;
+        } else if (field_idx == 13) { // stime
+            stime = std.fmt.parseInt(u64, field, 10) catch 0;
+            break;
+        }
+    }
+
+    // Convert clock ticks to nanoseconds
+    // clock ticks = 100 per second on most Linux systems (USER_HZ=100)
+    const ticks_per_sec: u64 = 100;
+    const total_ticks = utime + stime;
+    usage.cpu_time_ns = (total_ticks * std.time.ns_per_s) / ticks_per_sec;
+
+    // CPU percent would require tracking time delta, so leave at 0 for now
+    // (accurate CPU% requires: (delta_cpu_time / delta_wall_time) * 100)
+    usage.cpu_percent = 0.0;
+
+    return usage;
 }
 
 /// Monitor resource usage of a child process (non-blocking).
@@ -117,4 +188,29 @@ test "ResourceMonitor: basic init" {
     try std.testing.expectEqual(@as(std.posix.pid_t, 1234), monitor.pid);
     try std.testing.expectEqual(@as(?u32, 4), monitor.max_cpu_cores);
     try std.testing.expectEqual(@as(?u64, 2 * 1024 * 1024 * 1024), monitor.max_memory_bytes);
+}
+
+test "getProcessUsage: self process (Linux)" {
+    if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
+
+    const self_pid = std.posix.getpid();
+    const usage = getProcessUsage(self_pid);
+
+    // Should be able to read our own process stats
+    try std.testing.expect(usage != null);
+
+    if (usage) |u| {
+        // Our process should have some memory
+        try std.testing.expect(u.rss_bytes > 0);
+        // CPU time should be non-negative (may be 0 for quick test)
+        try std.testing.expect(u.cpu_time_ns >= 0);
+    }
+}
+
+test "getProcessUsage: invalid PID returns null" {
+    if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
+
+    // PID 999999 is unlikely to exist
+    const usage = getProcessUsage(999999);
+    try std.testing.expectEqual(@as(?ResourceUsage, null), usage);
 }

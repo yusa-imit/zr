@@ -1,5 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const platform = @import("../util/platform.zig");
+const resource = @import("resource.zig");
 
 pub const ProcessError = error{
     SpawnFailed,
@@ -26,6 +28,10 @@ pub const ProcessConfig = struct {
     /// Optional timeout in milliseconds. If the child does not exit within
     /// this time, it is killed (SIGKILL) and the run returns exit_code=1.
     timeout_ms: ?u64 = null,
+    /// Optional maximum memory in bytes. If exceeded, process is killed.
+    max_memory_bytes: ?u64 = null,
+    /// Optional maximum CPU cores. Currently informational only.
+    max_cpu_cores: ?u32 = null,
 };
 
 /// Context shared between the main thread and the timeout watcher thread.
@@ -51,6 +57,42 @@ fn timeoutWatcher(ctx: TimeoutCtx) void {
     // Kill the child process
     platform.killProcess(ctx.pid);
     ctx.timed_out.store(true, .release);
+}
+
+/// Context for resource limit monitoring thread.
+const ResourceCtx = struct {
+    pid: std.process.Child.Id,
+    max_memory_bytes: ?u64,
+    max_cpu_cores: ?u32,
+    /// Written to true by watcher if it kills the process due to resource violation.
+    limit_exceeded: *std.atomic.Value(bool),
+    /// Written to true by main thread when child exits normally.
+    done: *std.atomic.Value(bool),
+};
+
+fn resourceWatcher(ctx: ResourceCtx) void {
+    // Check resources every 100ms
+    const check_interval_ms: u64 = 100;
+    while (!ctx.done.load(.acquire)) {
+        std.Thread.sleep(check_interval_ms * std.time.ns_per_ms);
+        if (ctx.done.load(.acquire)) return;
+
+        // Get current resource usage
+        const usage = resource.getProcessUsage(ctx.pid) orelse continue;
+
+        // Check memory limit
+        if (ctx.max_memory_bytes) |limit| {
+            if (usage.rss_bytes > limit) {
+                platform.killProcess(ctx.pid);
+                ctx.limit_exceeded.store(true, .release);
+                return;
+            }
+        }
+
+        // CPU limit is informational only for now
+        // (Hard CPU throttling requires cgroups/Job Objects)
+        _ = ctx.max_cpu_cores;
+    }
 }
 
 /// Run a shell command and wait for it to complete.
@@ -99,8 +141,10 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
 
     // Optionally start a timeout watcher thread
     var timed_out = std.atomic.Value(bool).init(false);
+    var limit_exceeded = std.atomic.Value(bool).init(false);
     var child_done = std.atomic.Value(bool).init(false);
     var maybe_timeout_thread: ?std.Thread = null;
+    var maybe_resource_thread: ?std.Thread = null;
 
     if (config.timeout_ms) |timeout_ms| {
         const ctx = TimeoutCtx{
@@ -112,17 +156,30 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         maybe_timeout_thread = std.Thread.spawn(.{}, timeoutWatcher, .{ctx}) catch null;
     }
 
+    // Optionally start resource monitoring thread
+    if (config.max_memory_bytes != null or config.max_cpu_cores != null) {
+        const ctx = ResourceCtx{
+            .pid = child.id,
+            .max_memory_bytes = config.max_memory_bytes,
+            .max_cpu_cores = config.max_cpu_cores,
+            .limit_exceeded = &limit_exceeded,
+            .done = &child_done,
+        };
+        maybe_resource_thread = std.Thread.spawn(.{}, resourceWatcher, .{ctx}) catch null;
+    }
+
     const term = child.wait() catch return error.WaitFailed;
 
-    // Signal timeout watcher that child is done
+    // Signal watchers that child is done
     child_done.store(true, .release);
     if (maybe_timeout_thread) |t| t.join();
+    if (maybe_resource_thread) |t| t.join();
 
     const end_ms = std.time.milliTimestamp();
     const duration_ms: u64 = @intCast(@max(0, end_ms - start_ms));
 
-    // If killed by timeout, report failure with exit_code = 1
-    if (timed_out.load(.acquire)) {
+    // If killed by timeout or resource limit, report failure with exit_code = 1
+    if (timed_out.load(.acquire) or limit_exceeded.load(.acquire)) {
         return ProcessResult{
             .exit_code = 1,
             .duration_ms = duration_ms,
@@ -245,4 +302,24 @@ test "run: env vars are passed to child process" {
     });
 
     try std.testing.expect(result.success);
+}
+
+test "run: memory limit enforcement (Linux only)" {
+    if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+
+    // Try to allocate 100MB, but limit to 10MB
+    // This should trigger resource limit kill
+    const result = try run(allocator, .{
+        .cmd = "python3 -c 'import time; x = bytearray(100 * 1024 * 1024); time.sleep(1)'",
+        .cwd = null,
+        .env = null,
+        .inherit_stdio = false,
+        .max_memory_bytes = 10 * 1024 * 1024, // 10MB limit
+    });
+
+    // Process should be killed due to memory limit
+    try std.testing.expect(!result.success);
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
 }
