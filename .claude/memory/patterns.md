@@ -999,3 +999,46 @@ pub const HardLimitHandle = switch (builtin.os.tag) {
 - Test with no limits → no-op handle (cgroup_path/job_handle = null)
 - Test with limits → verify cgroup dir exists (Linux) or job_handle != null (Windows)
 - Graceful degradation: tests should not fail due to permission errors (return SkipZigTest or check for null handle)
+
+### Native Filesystem Watchers (src/watch/native.zig)
+Cross-platform event-driven file watching using OS-specific APIs (8ef87a4).
+
+**Pattern**: Backend struct per platform with comptime conditional compilation
+```zig
+const Backend = if (builtin.os.tag == .linux)
+    LinuxBackend
+else if (builtin.os.tag == .macos)
+    MacOSBackend
+else if (builtin.os.tag == .windows)
+    WindowsBackend
+else
+    @compileError("Unsupported platform");
+```
+
+**Linux (inotify)**:
+- Use `std.posix.inotify_init1` with `IN.CLOEXEC` flag
+- Map watch descriptors (wd) to paths: `AutoHashMap(i32, []const u8)`
+- Recursive watching: manually add each subdirectory with `inotify_add_watch`
+- Event parsing: 4096-byte buffer, parse `inotify_event` structs with variable-length names
+- Auto-watch new directories created in watched paths
+
+**macOS (kqueue)**:
+- Use `std.posix.kqueue()` to create queue
+- Open each file/dir with O_RDONLY to get fd
+- Register fd with `EVFILT_VNODE` filter + `NOTE_WRITE|DELETE|EXTEND|ATTRIB` flags
+- Constants not in std.c: define manually (EVFILT_VNODE=-4, EV_ADD=0x0001, etc.)
+- kevent() signature: takes slices `[]const Kevent`, not pointers + lengths
+- Must track all fds to close on deinit
+
+**Windows (ReadDirectoryChangesW)**:
+- Open directory with `CreateFileW` + `FILE_FLAG_BACKUP_SEMANTICS`
+- Call `ReadDirectoryChangesW` with filter flags (FILE_NOTIFY_CHANGE_*)
+- Parse `FILE_NOTIFY_INFORMATION` linked list (NextEntryOffset chains entries)
+- UTF-16 LE filename conversion: `std.unicode.utf16LeToUtf8Alloc`
+- Path separator: backslash `\` not forward slash
+
+**Common gotchas**:
+- ArrayList unmanaged API: `.append(allocator, item)`, `.deinit(allocator)`
+- Platform-specific constants: define in backend struct if not in std
+- Skip common dirs: `.git`, `node_modules`, `zig-out`, `.zig-cache`
+- Always dupe paths for owned storage in maps

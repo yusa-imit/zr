@@ -24,7 +24,7 @@
 ### Phase 2 - Workflows & Expressions — **COMPLETE (100%)**
 - [x] Workflow system (`[workflows.X]` + `[[workflows.X.stages]]`, fail_fast)
 - [x] Profile system (`--profile`, `ZR_PROFILE`, per-task overrides)
-- [x] Watch mode — **polling-based (500ms)**, NOT native inotify/kqueue as PRD specifies
+- [x] **Watch mode** — **NATIVE (inotify/kqueue/ReadDirectoryChangesW)** with polling fallback (8ef87a4)
 - [x] Matrix task execution (Cartesian product, `${matrix.KEY}` interpolation)
 - [x] Task output caching (Wyhash64 fingerprint, `~/.zr/cache/`)
 - [x] **Expression engine** — **100% of PRD §5.6 implemented**
@@ -82,7 +82,7 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (expression engine fully implemented). Phase 3 **~95% complete** (resource limits with kernel-level enforcement complete on Linux/Windows). Phase 4 ~60% (no WASM, docker stub). **Strong MVP with production-ready resource management.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **~95% complete** (resource limits with kernel-level enforcement complete). Phase 4 ~60% (no WASM, docker stub). **Strong MVP with event-driven watch mode and production-ready resource management.**
 
 - **Tests**: 267 passing (5 skipped platform-specific) — resource monitoring cross-platform
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
@@ -123,7 +123,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 1. ~~**Expression engine (runtime refs)**~~ — **COMPLETE** ✓ (c1db626)
 2. ~~**Resource monitoring (Linux/macOS/Windows)**~~ — **COMPLETE** ✓ (21df9dc)
 3. ~~**Resource limit enforcement**~~ — **COMPLETE** ✓ (cgroups v2 / Job Objects)
-4. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
+4. ~~**Watch mode upgrade**~~ — **COMPLETE** ✓ (native inotify/kqueue/ReadDirectoryChangesW) (8ef87a4)
 5. **TUI enhancements** — live log streaming, cancel/retry
 6. **WASM plugin sandbox** — sandboxed third-party plugins
 7. **Docker built-in plugin** — implement or remove from enum
