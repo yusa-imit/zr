@@ -65,14 +65,14 @@
   - [x] cgroups v2 / Job Objects hard limit enforcement (Linux/Windows kernel-level limits)
   - [ ] `--monitor` CLI flag for live resource display (future enhancement)
 
-### Phase 4 - Extensibility — **PARTIAL (~70%)**
+### Phase 4 - Extensibility — **PARTIAL (~80%)**
 - [x] Native plugin system (.so/.dylib via DynLib, C-ABI hooks)
 - [x] Plugin management CLI (install/remove/update/info/search from local/git/registry)
 - [x] Plugin scaffolding (`zr plugin create`)
 - [x] Built-in plugins: env (.env loading), git (branch/changes), notify (webhooks), cache (lifecycle hooks)
 - [x] Plugin documentation (README, PLUGIN_GUIDE, PLUGIN_DEV_GUIDE)
 - [x] **Docker built-in plugin** — COMPLETE with build/push/tag/prune, BuildKit cache, multi-platform support (c07e0aa)
-- [ ] **WASM plugin sandbox** — NOT implemented (zero code; PRD §5.5.1 core component)
+- [x] **WASM plugin sandbox** — **MVP COMPLETE** (2b0c89a) — interpreter-based runtime with memory isolation, host function callbacks, lifecycle hooks; full WASM module parser TODO
 - [ ] **Plugin registry index server** — NOT implemented (uses GitHub as backend only)
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
@@ -84,9 +84,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, full Docker integration, and interactive TUI execution with task controls.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 ~80% (Docker complete, WASM runtime MVP complete). **Strong MVP with event-driven watch mode, production-ready resource management, full Docker integration, WASM plugin sandboxing, and interactive TUI execution with task controls.**
 
-- **Tests**: 315 passing (8 skipped platform-specific) — TUI controls + live streaming + Docker + resource monitoring + utility modules
+- **Tests**: 328 passing (8 skipped platform-specific) — TUI + Docker + WASM runtime + resource monitoring + utility modules
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -102,9 +102,10 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 - `config/` - TOML loader, schema validation, expression engine, profiles
 - `graph/` - DAG, topological sort, cycle detection, visualization
 - `exec/` - Scheduler, worker pool, process management, task control (atomic signals)
-- `plugin/` - Dynamic loading (.so/.dylib), git/registry install, built-ins (Docker, env, git, cache)
+- `plugin/` - Dynamic loading (.so/.dylib), git/registry install, built-ins (Docker, env, git, cache), **WASM runtime**
 - `watch/` - Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
 - `output/` - Terminal rendering, color, progress bars
+- `util/` - glob, semver, hash, platform wrappers
 
 ## Config File
 
@@ -129,5 +130,6 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 5. ~~**Docker built-in plugin**~~ — **COMPLETE** ✓ (build/push/tag/prune with BuildKit cache) (c07e0aa)
 6. ~~**TUI live log streaming**~~ — **COMPLETE** ✓ (430fe98)
 7. ~~**TUI cancel/retry/pause**~~ — **COMPLETE** ✓ (interactive controls with atomic signals) (58a59ac)
-8. **WASM plugin sandbox** — sandboxed third-party plugins (core Phase 4 gap)
-9. **Remote cache** — shared cache for CI pipelines (enhancement)
+8. ~~**WASM plugin sandbox (MVP)**~~ — **COMPLETE** ✓ (interpreter runtime, memory isolation, host callbacks) (2b0c89a)
+9. **WASM module parser** — full WASM MVP spec bytecode loading (enhancement)
+10. **Remote cache** — shared cache for CI pipelines (enhancement)
