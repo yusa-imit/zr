@@ -144,3 +144,13 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - **Problem**: `std.fmt.allocPrint(allocator, runtime_string, .{args...})` → compile error: argument to comptime parameter must be comptime-known
 - **Solution**: Use a fixed comptime format string; embed the configurable part as a runtime argument, not as the format itself
 - **Example**: `std.fmt.allocPrint(allocator, "{s}: task '{s}' finished (exit {d})", .{prefix, task, code})` where prefix is runtime
+
+## Hard Resource Limits: Create-Before-Spawn + Apply-After Pattern
+- **Problem**: Chicken-and-egg for resource limits — Linux cgroups need PID after spawn, Windows Job Objects need to be created before spawn and assigned after
+- **Solution**: Two-phase lifecycle:
+  1. `createHardLimits()` BEFORE `child.spawn()` — Linux creates cgroup dir and writes limits to control files; Windows creates Job Object with limits configured
+  2. `child.spawn()` — process starts
+  3. `applyHardLimits(&handle, child.id)` AFTER spawn — Linux writes PID to cgroup.procs; Windows calls AssignProcessToJobObject
+- **Graceful fallback**: If any step fails (permissions, unsupported kernel), return no-op handle (cgroup_path=null or job_handle=null) and rely on soft limits via polling thread
+- **Platform type difference**: `child.id` is `std.posix.pid_t` on Linux/macOS, but `std.os.windows.HANDLE` on Windows — use conditional `if (builtin.os.tag == .windows)` for type signature
+- **Cleanup**: `defer handle.deinit()` after creation — Linux deletes cgroup dir; Windows closes job handle; macOS no-op

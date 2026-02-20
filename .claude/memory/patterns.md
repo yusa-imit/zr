@@ -930,3 +930,72 @@ fn getProcessUsageWindows(handle: std.os.windows.HANDLE) ?ResourceUsage {
 - **Test current process**: macOS uses `getpid()` cast to pid_t; Windows uses `GetCurrentProcess()` extern; Linux uses `getpid()`
 - **libc linkage**: Automatically handled by `build.zig` `.link_libc = if (target.result.os.tag != .windows) true else null` — covers libproc on macOS and libc on Linux
 - Return `?ResourceUsage` (null on error) instead of error union — simpler for monitoring that can gracefully degrade
+
+### Hard Resource Limit Enforcement Pattern (exec/resource.zig)
+**Platform-specific kernel-level limits:**
+- **Linux**: cgroups v2 (`/sys/fs/cgroup/zr/<timestamp>-<random>/`)
+- **Windows**: Job Objects (Win32 API)
+- **macOS**: Soft limits only (no kernel hard limits available)
+
+**Lifecycle**: Create → Apply → Deinit
+```zig
+// 1. Create BEFORE spawn (sets up cgroup dir or job object):
+var hard_limits = resource.createHardLimits(allocator, .{
+    .max_memory_bytes = config.max_memory_bytes,
+    .max_cpu_cores = config.max_cpu_cores,
+}) catch resource.HardLimitHandle{};  // fallback to no-op on failure
+defer hard_limits.deinit();
+
+// 2. Spawn the child process:
+child.spawn() catch return error.SpawnFailed;
+
+// 3. Apply AFTER spawn (assigns PID to cgroup or job):
+resource.applyHardLimits(&hard_limits, child.id) catch {};
+// If application fails, soft limits via polling still work
+```
+
+**Linux cgroups v2**:
+- Base dir: `/sys/fs/cgroup/zr/` (created once, may already exist)
+- Per-task cgroup: `{base}/{timestamp}-{random}/`
+- Memory limit: write to `{cgroup}/memory.max`
+- CPU limit: write to `{cgroup}/cpu.max` (format: `"{quota} {period}\n"` where quota = cores * period)
+- Assign process: write PID to `{cgroup}/cgroup.procs`
+- Cleanup: `deinit()` calls `std.fs.deleteTreeAbsolute(cgroup_path)`
+- Graceful fallback: If cgroup creation or limit setting fails (e.g. `AccessDenied`), return `HardLimitHandle{ .cgroup_path = null }` → soft limits only
+
+**Windows Job Objects**:
+- Create job: `CreateJobObjectW(null, null)`
+- Set memory limit: `SetInformationJobObject` with `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` struct
+  - `LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY` (0x00000100)
+  - `ProcessMemoryLimit = max_memory_bytes`
+- Assign process: `AssignProcessToJobObject(job_handle, process_handle)`
+- Cleanup: `deinit()` calls `CloseHandle(job_handle)`
+- CPU limit: More complex on Windows, currently deferred to soft limits
+
+**macOS (no hard limits)**:
+- `createHardLimits` returns empty struct (no-op)
+- `applyHardLimits` is a no-op
+- `deinit()` is a no-op
+- Soft limits via polling in `resourceWatcher` thread remain active
+
+**Platform-specific handle type** (switch on `builtin.os.tag`):
+```zig
+pub const HardLimitHandle = switch (builtin.os.tag) {
+    .linux => struct { cgroup_path: ?[]const u8, allocator: std.mem.Allocator, ... },
+    .windows => struct { job_handle: ?std.os.windows.HANDLE, ... },
+    else => struct { pub fn deinit(self: *@This()) void { _ = self; } },
+};
+```
+- No `comptime` keyword in file-scope `switch` (Zig 0.15 error: "redundant comptime in already comptime scope")
+
+**Error handling strategy**:
+- Always gracefully fall back to soft limits on failure (permissions, unsupported kernel, etc.)
+- `createHardLimits` catches errors and returns no-op handle
+- `applyHardLimits` catches errors silently (process already running, don't abort task)
+- Soft limits via `resourceWatcher` thread provide baseline enforcement across all platforms
+
+**Testing**:
+- Platform-guarded tests: `if (comptime builtin.os.tag != .linux) return error.SkipZigTest;`
+- Test with no limits → no-op handle (cgroup_path/job_handle = null)
+- Test with limits → verify cgroup dir exists (Linux) or job_handle != null (Windows)
+- Graceful degradation: tests should not fail due to permission errors (return SkipZigTest or check for null handle)
