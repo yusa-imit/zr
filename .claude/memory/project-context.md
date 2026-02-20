@@ -63,13 +63,13 @@
   - [x] cgroups v2 / Job Objects hard limit enforcement (Linux/Windows kernel-level limits)
   - [ ] `--monitor` CLI flag for live resource display (future enhancement)
 
-### Phase 4 - Extensibility — **PARTIAL (~60%)**
+### Phase 4 - Extensibility — **PARTIAL (~70%)**
 - [x] Native plugin system (.so/.dylib via DynLib, C-ABI hooks)
 - [x] Plugin management CLI (install/remove/update/info/search from local/git/registry)
 - [x] Plugin scaffolding (`zr plugin create`)
 - [x] Built-in plugins: env (.env loading), git (branch/changes), notify (webhooks), cache (lifecycle hooks)
 - [x] Plugin documentation (README, PLUGIN_GUIDE, PLUGIN_DEV_GUIDE)
-- [ ] **Docker built-in plugin** — enum placeholder only, zero implementation
+- [x] **Docker built-in plugin** — COMPLETE with build/push/tag/prune, BuildKit cache, multi-platform support (c07e0aa)
 - [ ] **WASM plugin sandbox** — NOT implemented (zero code; PRD §5.5.1 core component)
 - [ ] **Plugin registry index server** — NOT implemented (uses GitHub as backend only)
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
@@ -82,9 +82,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **~95% complete** (resource limits with kernel-level enforcement complete). Phase 4 ~60% (no WASM, docker stub). **Strong MVP with event-driven watch mode and production-ready resource management.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **~95% complete** (resource limits with kernel-level enforcement complete). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, and full Docker integration.**
 
-- **Tests**: 267 passing (5 skipped platform-specific) — resource monitoring cross-platform
+- **Tests**: 280 passing (6 skipped platform-specific) — Docker plugin + resource monitoring cross-platform
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -124,7 +124,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 2. ~~**Resource monitoring (Linux/macOS/Windows)**~~ — **COMPLETE** ✓ (21df9dc)
 3. ~~**Resource limit enforcement**~~ — **COMPLETE** ✓ (cgroups v2 / Job Objects)
 4. ~~**Watch mode upgrade**~~ — **COMPLETE** ✓ (native inotify/kqueue/ReadDirectoryChangesW) (8ef87a4)
-5. **TUI enhancements** — live log streaming, cancel/retry
-6. **WASM plugin sandbox** — sandboxed third-party plugins
-7. **Docker built-in plugin** — implement or remove from enum
+5. ~~**Docker built-in plugin**~~ — **COMPLETE** ✓ (build/push/tag/prune with BuildKit cache) (c07e0aa)
+6. **TUI enhancements** — live log streaming, cancel/retry
+7. **WASM plugin sandbox** — sandboxed third-party plugins
 8. **Remote cache** — shared cache for CI pipelines
