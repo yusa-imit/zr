@@ -880,3 +880,53 @@ When extracting command functions from main.zig into a dedicated cli/ command fi
 5. Tests that call `run()` from main.zig (not the extracted function directly) STAY in main.zig — they test dispatch, not the function itself
 6. Imports that were only used by the extracted functions stay in main.zig's comptime block for test inclusion (e.g. `_ = topo_sort`, `_ = cycle_detect`, `_ = cache_store`)
 7. No `_ = list_cmd;` needed in the sub-module itself — main.zig's comptime reference is sufficient
+
+### Cross-Platform Resource Monitoring Pattern (exec/resource.zig)
+When implementing OS-specific resource monitoring with different PID types across platforms:
+```zig
+// PID type is platform-dependent:
+pid: if (builtin.os.tag == .windows) std.os.windows.HANDLE else std.posix.pid_t,
+
+// Dispatcher switches on comptime tag:
+pub fn getProcessUsage(pid: if (builtin.os.tag == .windows) std.os.windows.HANDLE else std.posix.pid_t) ?ResourceUsage {
+    switch (comptime builtin.os.tag) {
+        .linux => return getProcessUsageLinux(pid),
+        .macos => return getProcessUsageMacOS(pid),
+        .windows => return getProcessUsageWindows(pid),
+        else => return null,
+    }
+}
+
+// Linux: /proc filesystem
+fn getProcessUsageLinux(pid: std.posix.pid_t) ?ResourceUsage {
+    // Read /proc/[pid]/status for VmRSS (kB → bytes)
+    // Read /proc/[pid]/stat for utime+stime (clock ticks → ns)
+}
+
+// macOS: libproc's proc_pidinfo
+fn getProcessUsageMacOS(pid: std.posix.pid_t) ?ResourceUsage {
+    const PROC_PIDTASKINFO: c_int = 4;
+    const proc_taskinfo = extern struct { ... };  // pti_resident_size, pti_total_user/system
+    const proc_pidinfo = @extern(*const fn (c_int, c_int, u64, ?*anyopaque, c_int) callconv(.c) c_int, .{ .name = "proc_pidinfo" });
+    // Call proc_pidinfo, check result == @sizeOf(proc_taskinfo)
+    // usage.rss_bytes = info.pti_resident_size
+    // usage.cpu_time_ns = (info.pti_total_user + info.pti_total_system) * 1000 (us → ns)
+}
+
+// Windows: Win32 GetProcessMemoryInfo + GetProcessTimes
+fn getProcessUsageWindows(handle: std.os.windows.HANDLE) ?ResourceUsage {
+    const PROCESS_MEMORY_COUNTERS = extern struct { ... };  // WorkingSetSize
+    const FILETIME = extern struct { dwLowDateTime, dwHighDateTime };
+    const GetProcessMemoryInfo = @extern(...);
+    const GetProcessTimes = @extern(...);
+    // usage.rss_bytes = mem_counters.WorkingSetSize
+    // usage.cpu_time_ns = ((user_time.high << 32 | low) * 100) + ((kernel_time.high << 32 | low) * 100) (FILETIME is 100ns intervals)
+}
+```
+- **Extern declarations**: Use `@extern(*const fn (...) callconv(.c) ReturnType, .{ .name = "symbol" })` for C functions
+- **Calling convention**: `.c` (lowercase) in Zig 0.15, NOT `.C`
+- **getpid**: Not in std.posix — use `@extern(*const fn () callconv(.c) c_int, .{ .name = "getpid" })` on POSIX, guard with `if (builtin.os.tag != .windows)`
+- **Platform-specific tests**: Use `if (comptime builtin.os.tag != .X) return error.SkipZigTest;` to skip tests on non-matching platforms
+- **Test current process**: macOS uses `getpid()` cast to pid_t; Windows uses `GetCurrentProcess()` extern; Linux uses `getpid()`
+- **libc linkage**: Automatically handled by `build.zig` `.link_libc = if (target.result.os.tag != .windows) true else null` — covers libproc on macOS and libc on Linux
+- Return `?ResourceUsage` (null on error) instead of error union — simpler for monitoring that can gracefully degrade
