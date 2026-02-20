@@ -32,6 +32,7 @@ const tui = @import("cli/tui.zig");
 const live_cmd = @import("cli/live.zig");
 const interactive_run = @import("cli/interactive_run.zig");
 const platform = @import("util/platform.zig");
+const semver = @import("util/semver.zig");
 const resource = @import("exec/resource.zig");
 const control = @import("exec/control.zig");
 
@@ -70,6 +71,7 @@ comptime {
     _ = live_cmd;
     _ = interactive_run;
     _ = platform;
+    _ = semver;
     _ = resource;
     _ = control;
 }

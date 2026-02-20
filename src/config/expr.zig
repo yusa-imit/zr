@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const semver_util = @import("../util/semver.zig");
 
 pub const EvalError = error{ OutOfMemory, InvalidExpression };
 
@@ -415,48 +416,12 @@ fn evalSemverGte(ctx: *const ExprContext, expr: []const u8) !bool {
     const v1_str = stripQuotes(v1_raw);
     const v2_str = stripQuotes(v2_raw);
 
-    const v1 = parseSemver(v1_str) catch return false;
-    const v2 = parseSemver(v2_str) catch return false;
+    const v1 = semver_util.Version.parse(v1_str) catch return false;
+    const v2 = semver_util.Version.parse(v2_str) catch return false;
 
     _ = ctx; // unused but required by signature
 
-    return compareSemver(v1, v2) >= 0;
-}
-
-const SemVer = struct {
-    major: u32,
-    minor: u32,
-    patch: u32,
-};
-
-/// Parse a semantic version string (e.g., "1.2.3")
-fn parseSemver(s: []const u8) !SemVer {
-    var iter = std.mem.splitScalar(u8, s, '.');
-
-    const major_str = iter.next() orelse return error.InvalidExpression;
-    const minor_str = iter.next() orelse return error.InvalidExpression;
-    const patch_str = iter.next() orelse return error.InvalidExpression;
-
-    const major = std.fmt.parseInt(u32, major_str, 10) catch return error.InvalidExpression;
-    const minor = std.fmt.parseInt(u32, minor_str, 10) catch return error.InvalidExpression;
-    const patch = std.fmt.parseInt(u32, patch_str, 10) catch return error.InvalidExpression;
-
-    return SemVer{ .major = major, .minor = minor, .patch = patch };
-}
-
-/// Compare two semantic versions
-/// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
-fn compareSemver(v1: SemVer, v2: SemVer) i32 {
-    if (v1.major != v2.major) {
-        return if (v1.major > v2.major) @as(i32, 1) else -1;
-    }
-    if (v1.minor != v2.minor) {
-        return if (v1.minor > v2.minor) @as(i32, 1) else -1;
-    }
-    if (v1.patch != v2.patch) {
-        return if (v1.patch > v2.patch) @as(i32, 1) else -1;
-    }
-    return 0;
+    return v1.gte(v2);
 }
 
 /// Evaluate stages['name'].success
@@ -1005,40 +970,6 @@ test "evalCondition: semver.gte" {
 
     // With single quotes
     try std.testing.expect(try evalCondition(allocator, "semver.gte('2.0.0', '1.0.0')", null));
-}
-
-test "parseSemver: valid versions" {
-    try std.testing.expectEqual(SemVer{ .major = 1, .minor = 2, .patch = 3 }, try parseSemver("1.2.3"));
-    try std.testing.expectEqual(SemVer{ .major = 0, .minor = 0, .patch = 1 }, try parseSemver("0.0.1"));
-    try std.testing.expectEqual(SemVer{ .major = 10, .minor = 20, .patch = 30 }, try parseSemver("10.20.30"));
-}
-
-test "parseSemver: invalid versions" {
-    try std.testing.expectError(error.InvalidExpression, parseSemver("1.2"));
-    try std.testing.expectError(error.InvalidExpression, parseSemver("1.2.x"));
-    try std.testing.expectError(error.InvalidExpression, parseSemver("invalid"));
-}
-
-test "compareSemver: comparison logic" {
-    const v1_2_3 = SemVer{ .major = 1, .minor = 2, .patch = 3 };
-    const v1_2_4 = SemVer{ .major = 1, .minor = 2, .patch = 4 };
-    const v1_3_0 = SemVer{ .major = 1, .minor = 3, .patch = 0 };
-    const v2_0_0 = SemVer{ .major = 2, .minor = 0, .patch = 0 };
-
-    // Equal
-    try std.testing.expectEqual(@as(i32, 0), compareSemver(v1_2_3, v1_2_3));
-
-    // Patch comparison
-    try std.testing.expectEqual(@as(i32, -1), compareSemver(v1_2_3, v1_2_4));
-    try std.testing.expectEqual(@as(i32, 1), compareSemver(v1_2_4, v1_2_3));
-
-    // Minor comparison
-    try std.testing.expectEqual(@as(i32, -1), compareSemver(v1_2_3, v1_3_0));
-    try std.testing.expectEqual(@as(i32, 1), compareSemver(v1_3_0, v1_2_3));
-
-    // Major comparison
-    try std.testing.expectEqual(@as(i32, -1), compareSemver(v1_2_3, v2_0_0));
-    try std.testing.expectEqual(@as(i32, 1), compareSemver(v2_0_0, v1_2_3));
 }
 
 test "RuntimeState: basic usage" {
