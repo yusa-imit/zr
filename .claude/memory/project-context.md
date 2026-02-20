@@ -52,12 +52,14 @@
   - Missing: real-time log streaming (PRD §5.3.3)
   - Missing: task cancel/retry (PRD §5.3.3)
   - Missing: dependency graph ASCII visualization (PRD §5.3.3)
-- [~] **Resource limits (CPU/Memory)** — **PARTIAL** (PRD §5.4)
+- [~] **Resource limits (CPU/Memory)** — **PARTIAL (~50%)** (PRD §5.4)
   - [x] `max_cpu`, `max_memory` config fields + TOML parsing (e276a26)
   - [x] `GlobalResourceConfig` (max_total_memory, max_cpu_percent) (e276a26)
-  - [x] `src/exec/resource.zig` — ResourceMonitor stub (a148658)
-  - [ ] getProcessUsage() platform implementations (Linux /proc, macOS getrusage, Windows APIs)
-  - [ ] Integration with task execution (scheduler + process spawning)
+  - [x] `src/exec/resource.zig` — ResourceMonitor with Linux /proc implementation (f1f7cd3)
+  - [x] getProcessUsage() Linux implementation (/proc/[pid]/status, /proc/[pid]/stat) (f1f7cd3)
+  - [x] Integration with process spawning (resource watcher thread, memory limit kill) (f1f7cd3)
+  - [ ] getProcessUsage() macOS implementation (getrusage)
+  - [ ] getProcessUsage() Windows implementation (GetProcessMemoryInfo, GetProcessTimes)
   - [ ] cgroups v2 / Job Objects hard limit enforcement (PRD §5.4.3)
   - [ ] `--monitor` CLI flag for live resource display
 
@@ -119,7 +121,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ## Priority Backlog (by impact)
 
 1. ~~**Expression engine (runtime refs)**~~ — **COMPLETE** ✓ (c1db626)
-2. **Resource limits** — **IN PROGRESS** (config done, need platform impl + integration) (e276a26, a148658)
+2. **Resource limits** — **IN PROGRESS (~50%)** — Linux done (f1f7cd3), need macOS/Windows
 3. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
 4. **TUI enhancements** — live log streaming, cancel/retry
 5. **WASM plugin sandbox** — sandboxed third-party plugins
