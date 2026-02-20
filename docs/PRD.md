@@ -1,23 +1,49 @@
 # zr — Product Requirements Document
 
-> **zr (zig-runner) — 범용 태스크 러너 & 워크플로우 매니저 CLI**
-> 
-> Version: 1.0 Draft
+> **zr (zig-runner) — 개발자 플랫폼: 태스크 러닝 + 툴체인 관리 + 모노/멀티레포 인텔리전스**
+>
+> Version: 2.0 Draft
 > Author: Yusa × Claude
-> Date: 2026-02-16
+> Date: 2026-02-20
+
+### Version History
+
+| 버전 | 날짜 | 범위 | 요약 |
+|------|------|------|------|
+| **v1.0** | 2026-02-16 | Phase 1–4 | 태스크 러너 & 워크플로우 매니저 (MVP → 플러그인) |
+| **v2.0** | 2026-02-20 | Phase 5–8 | 개발자 플랫폼 확장 (모노레포·툴체인·멀티레포·엔터프라이즈) |
+
+**v2.0에서 추가/변경된 항목**:
+- Section 1: Executive Summary 확장 (Run/Manage/Scale 3축, 점진적 확장 포지셔닝)
+- Section 2: 2.2 도구 분산 문제, 2.3 멀티레포 사각지대, 2.5 추가 도구 비교 `v2.0`
+- Section 3: Persona D·E·F `v2.0`
+- Section 5: 5.7 모노레포 인텔리전스, 5.8 툴체인 관리, 5.9 멀티레포 오케스트레이션, 5.10 엔터프라이즈 `v2.0`
+- Section 9: Phase 5–8 `v2.0`
+- Section 10: 10.2 Phase 5–8 성공 지표 `v2.0`
+- Section 12: 포지셔닝 맵·비교표·차별점 전면 개편 `v2.0`
 
 ---
 
 ## 1. Executive Summary
 
-**zr**은 Zig로 작성된 범용 커맨드라인 태스크 러너이자 워크플로우 매니저이다. 레포지토리 구조(모노레포, 멀티레포, 단일 프로젝트)에 구애받지 않고, 어떤 언어·빌드 시스템·스크립트 환경에서든 태스크를 정의하고 의존성 그래프 기반으로 병렬·순차 실행할 수 있는 도구를 목표로 한다. 이름 자체가 2글자로, 타이핑 최소화를 통한 빠른 CLI 사용을 지향한다.
+**zr**은 Zig로 작성된 **개발자 플랫폼(Developer Platform)** 이다. nvm/pyenv/asdf 같은 툴체인 매니저, make/just/task 같은 태스크 러너, Nx/Turborepo 같은 모노레포 도구를 **단일 바이너리** 하나로 대체한다.
+
+세 개의 핵심 축으로 구성된다:
+
+- **Run** — 태스크 정의, 의존성 그래프 기반 병렬 실행, 워크플로우 파이프라인
+- **Manage** — 프로젝트별 툴체인 버전 관리, 환경 변수 레이어링, 원커맨드 프로젝트 셋업
+- **Scale** — 모노레포 affected 감지, 콘텐츠 해시 캐싱, 멀티레포 오케스트레이션, 아키텍처 거버넌스
+
+레포지토리 구조(모노레포, 멀티레포, 단일 프로젝트)에 구애받지 않고, 어떤 언어·빌드 시스템·스크립트 환경에서든 동작하며, 개인 프로젝트의 간단한 태스크 러너에서 엔터프라이즈 모노레포의 빌드 시스템까지 **점진적으로 확장(progressive unlock)** 되는 도구를 지향한다. 이름 자체가 2글자로, 타이핑 최소화를 통한 빠른 CLI 사용을 지향한다.
 
 ### 1.1 핵심 가치
 
 - **언어·생태계 무관**: JS, Python, Go, Rust, Docker, shell script 등 어떤 명령이든 태스크로 등록 가능
-- **단일 바이너리**: Zig의 크로스 컴파일로 macOS, Linux, Windows를 하나의 릴리스 파이프라인으로 커버
-- **극한 성능**: C급 속도의 태스크 스케줄링, 그래프 해석, 프로세스 관리
+- **단일 바이너리**: Zig의 크로스 컴파일로 macOS, Linux, Windows를 하나의 릴리스 파이프라인으로 커버. nvm + make + nx를 하나의 ~3MB 바이너리로 대체
+- **극한 성능**: C급 속도의 태스크 스케줄링, 그래프 해석, 프로세스 관리. ~0ms 콜드 스타트
 - **유저 친화적 CLI**: 컬러풀한 출력, 프로그레스 표시, 인터랙티브 모드, 에러 메시지의 가독성
+- **점진적 확장**: 개인 프로젝트에서 `zr run build` 한 줄로 시작 → 팀이 커지면 캐싱·affected·툴체인 관리를 하나씩 활성화. 설정 복잡도가 프로젝트 규모에 비례
+- **벤더 락인 없음**: 자체 호스팅 원격 캐시(S3/GCS/HTTP), 오픈 설정 포맷(TOML), 플러그인 확장
 
 ---
 
@@ -34,13 +60,49 @@
 | **Task (go-task)** | YAML 기반으로 복잡한 워크플로우 정의 시 가독성 저하, 플러그인 시스템 부재 |
 | **moon** | Rust 기반으로 빠르지만 특정 생태계(JS/TS) 편향, 범용성 부족 |
 
-### 2.2 zr이 해결하는 핵심 문제
+### 2.2 도구 분산 문제 (Tool Sprawl) `v2.0`
+
+현대 개발 환경에서 하나의 프로젝트를 셋업하기 위해 필요한 도구:
+
+| 영역 | 일반적인 도구 | 문제 |
+|------|-------------|------|
+| 언어 버전 관리 | nvm, pyenv, rbenv, asdf, mise | 도구마다 다른 설정 파일 (`.nvmrc`, `.python-version`, `.tool-versions`) |
+| 태스크 실행 | make, just, task, npm scripts | 프로젝트마다 다른 러너, 통일된 인터페이스 부재 |
+| 모노레포 관리 | Nx, Turborepo, Lerna, Rush | JS/TS 생태계 종속, Node.js 런타임 필수 |
+| 환경 설정 | direnv, dotenv, docker-compose | 환경 변수 관리가 여러 곳에 분산 |
+| CI/CD 로컬 실행 | act, dagger, earthly | CI와 로컬의 괴리 |
+
+**결과**: 새 팀원이 프로젝트에 합류하면 README의 "Prerequisites" 섹션만 10줄이 넘고, 셋업에 수 시간이 소요된다.
+
+### 2.3 멀티레포의 사각지대 `v2.0`
+
+마이크로서비스·멀티레포 환경에서는 추가적인 문제가 발생한다:
+
+- **크로스레포 의존성 파악 불가**: repo A가 repo B의 API에 의존하지만, 이를 추적하는 도구가 없음
+- **중복 빌드**: 동일한 공유 라이브러리를 각 레포에서 개별 빌드
+- **통합 뷰 부재**: 전체 시스템의 의존성 그래프를 보여주는 도구가 없음
+- **캐시 낭비**: 팀이 같은 결과물을 반복 빌드 (공유 캐시 없음)
+
+### 2.4 zr이 해결하는 핵심 문제
 
 1. **런타임 의존성 제거**: Node.js, Python, Go 등 별도 런타임 설치 없이 단일 바이너리로 동작
 2. **범용성**: 프로젝트 언어·구조와 무관하게 어디서든 사용 가능
 3. **복잡한 워크플로우**: 단순 명령 실행을 넘어 의존성 그래프, 조건 분기, 파이프라인 체이닝, 에러 핸들링을 하나의 정의 파일에서 관리
 4. **자원 관리**: CPU/메모리 제한, 동시 실행 수 제어, 타임아웃 등 프로덕션급 자원 관리
 5. **확장성**: 플러그인으로 새로운 기능을 추가할 수 있는 아키텍처
+6. **도구 통합**: 5개 이상의 개발 도구를 단일 바이너리로 대체 — 툴체인 매니저 + 태스크 러너 + 빌드 시스템 + 모노레포 도구
+7. **원커맨드 온보딩**: `git clone → zr setup → done` — 새 팀원이 2분 이내에 개발 환경 구축 완료
+8. **멀티레포 인텔리전스**: 분리된 레포를 논리적 워크스페이스로 통합, 크로스레포 의존성 추적 및 태스크 실행
+
+### 2.5 기존 도구와의 추가 비교 `v2.0`
+
+| 도구 | 카테고리 | zr 대비 한계 |
+|------|---------|-------------|
+| **mise** | 툴체인 매니저 | 태스크 러닝 기능이 기본적, 모노레포 미지원, 의존성 그래프 없음 |
+| **Moon** | 빌드 시스템 | Rust 기반으로 빠르지만 툴체인 관리 기능 없음, 멀티레포 미지원 |
+| **Bazel/Buck2** | 빌드 시스템 | 강력하지만 학습 곡선 극도로 높음, 설정 복잡도 비례하지 않음 |
+| **Pants** | 빌드 시스템 | Python 생태계 편향, 런타임 의존성(Python) 필수 |
+| **Earthly** | CI 러너 | Docker 의존, 로컬 개발 워크플로우로는 무거움 |
 
 ---
 
@@ -68,6 +130,27 @@
 - 반복적인 운영 작업(DB 마이그레이션, 로그 분석, 배포)을 자동화
 - 여러 스크립트를 특정 순서로 실행하며, 실패 시 롤백 로직이 필요
 - 원하는 것: 워크플로우 체이닝, 에러 핸들링, dry-run, 실행 이력
+
+**Persona D — "Monorepo Architect"** `v2.0`
+- 50개 이상의 패키지가 있는 모노레포를 관리하는 시니어 엔지니어
+- PR마다 전체 빌드가 돌아가면 CI가 30분 이상 걸림 → affected 감지 필요
+- 패키지 간 의존성 규칙(A는 B에 의존하면 안 됨) 강제 필요
+- 현재 Nx를 쓰지만 Node.js 런타임 의존과 JS 생태계 락인에 불만
+- 원하는 것: 폴리글랏 모노레포에서 affected 감지, 콘텐츠 해시 캐싱, 아키텍처 거버넌스, CODEOWNERS 자동 생성
+
+**Persona E — "Multi-repo Orchestrator"** `v2.0`
+- 10개 이상의 마이크로서비스 레포를 관리하는 플랫폼 팀
+- 서비스 간 API 의존성이 있지만 이를 추적할 통합 도구가 없음
+- 공유 라이브러리 변경 시 영향받는 모든 서비스를 수동으로 파악
+- 현재 커스텀 쉘 스크립트 + Jenkins로 크로스레포 빌드 오케스트레이션
+- 원하는 것: 크로스레포 의존성 그래프, 통합 태스크 실행, 공유 원격 캐시
+
+**Persona F — "Team Lead / Onboarding Manager"** `v2.0`
+- 분기마다 2-3명의 신규 입사자를 온보딩하는 팀 리더
+- 신규 멤버 셋업에 평균 반나절 소요 (Node 버전, Python 버전, 환경 변수, DB 마이그레이션...)
+- README의 "Getting Started"가 항상 outdated
+- 현재 mise/asdf + make + .env.example 조합으로 관리
+- 원하는 것: `git clone && zr setup` 한 줄로 전체 개발 환경 구축, 버전 불일치 자동 감지
 
 ---
 
@@ -372,13 +455,34 @@ Commands:
   run <task...>         하나 이상의 태스크 실행
   workflow <name>       워크플로우 실행
   list                  등록된 태스크/워크플로우 목록
-  graph <task>          의존성 그래프 시각화
+  graph [task]          의존성 그래프 시각화
   watch <task...>       파일 변경 감지 → 자동 재실행
   init                  설정 파일 초기화
   validate              설정 파일 검증
   history               실행 이력 조회
   plugin                플러그인 관리
   completion            셸 자동완성 설치
+
+  # Phase 5+
+  affected <task>       변경된 패키지 + 의존자에만 태스크 실행
+  cache                 캐시 관리 (status, clean)
+  lint                  아키텍처 제약 조건 검증
+  codeowners            CODEOWNERS 파일 관리
+
+  # Phase 6
+  setup                 프로젝트 원커맨드 셋업
+  doctor                환경 진단 (도구, 설정, 연결)
+  tools                 툴체인 관리 (list, install, outdated)
+  env                   환경 변수 표시 및 디버그
+
+  # Phase 7
+  repo                  멀티레포 관리 (sync, status, run)
+
+  # Phase 8
+  analytics             빌드 분석 리포트
+  version               버전 범프 (인터랙티브)
+  publish               패키지 퍼블리싱
+  context               AI 친화적 프로젝트 메타데이터 출력
 
 Global Options:
   -j, --jobs <N>        최대 병렬 수 (기본: CPU 코어 수)
@@ -591,6 +695,432 @@ condition = "matrix.os != 'macos' || matrix.arch != 'arm64'"
 | `shell(cmd)` | 셸 명령 결과 | `shell('git rev-parse HEAD')` |
 | `semver.gte(a, b)` | 버전 비교 | `semver.gte(env.NODE_VERSION, '18.0.0')` |
 
+### 5.7 모노레포 인텔리전스 `v2.0`
+
+#### 5.7.1 Affected 감지
+
+Git 기반 변경 감지와 의존성 그래프 순회를 결합하여, 변경된 패키지와 그 의존자(dependents)만 식별하여 태스크를 실행한다.
+
+```bash
+# 변경된 패키지 + 의존자에만 빌드 실행
+zr affected build
+
+# main 브랜치 대비 변경 감지
+zr affected build --base=main
+
+# 의존자만 포함 (변경된 패키지 자체는 제외)
+zr affected build --include-dependents --exclude-self
+
+# 의존성(upstream)도 포함
+zr affected build --include-dependencies
+
+# 변경된 패키지 목록만 출력 (태스크 실행 없이)
+zr affected --list
+```
+
+**감지 알고리즘**:
+
+1. `git diff --name-only <base>..HEAD`로 변경된 파일 목록 획득
+2. 변경된 파일 → 소속 패키지 매핑 (워크스페이스 멤버 경로 기반)
+3. 프로젝트 의존성 그래프에서 해당 패키지의 의존자(dependents) 탐색
+4. 결과 패키지 집합에 대해서만 태스크 실행
+
+**해시 기반**: 타임스탬프가 아닌 소스 파일의 콘텐츠 해시를 사용하여 결정론적(deterministic) 결과를 보장한다.
+
+#### 5.7.2 콘텐츠 해시 캐싱 (강화)
+
+기존 Phase 4의 단순 태스크명 해시 캐싱을 **진정한 콘텐츠 기반 캐싱**으로 업그레이드한다.
+
+**캐시 키 구성**:
+
+```
+cache_key = hash(
+    source_files_content,     # 입력 파일의 콘텐츠 해시
+    command,                  # 실행 명령어
+    env_vars,                 # 관련 환경 변수
+    deps_output_hashes,       # 의존 태스크들의 출력 해시
+    tool_versions,            # 사용된 툴체인 버전
+)
+```
+
+**캐시 설정**:
+
+```toml
+[tasks.build]
+cmd = "npm run build"
+cache = true                                    # 캐싱 활성화
+inputs = ["src/**/*.ts", "package.json"]        # 입력 파일 glob
+outputs = ["dist/**"]                           # 출력 디렉토리
+env_inputs = ["NODE_ENV"]                       # 캐시 키에 포함할 환경 변수
+```
+
+**캐시 관리**:
+
+```bash
+zr cache status                # 캐시 히트율, 크기, 항목 수 표시
+zr cache clean                 # 로컬 캐시 전체 삭제
+zr cache clean --older=7d      # 7일 이상 된 캐시만 삭제
+```
+
+#### 5.7.3 원격 캐시 (Remote Cache)
+
+팀 전체가 빌드 결과물을 공유할 수 있는 원격 캐시. **벤더 락인 없이 자체 호스팅** 가능.
+
+```toml
+[cache]
+enabled = true
+local_dir = ".zr-cache"          # 로컬 캐시 경로
+
+[cache.remote]
+type = "s3"                      # s3 | gcs | azure | http
+bucket = "my-team-zr-cache"
+region = "ap-northeast-2"
+prefix = "zr/"                   # 버킷 내 경로 프리픽스
+# credentials: 환경 변수에서 자동 읽기 (AWS_ACCESS_KEY_ID 등)
+
+# 또는 자체 HTTP 서버
+# [cache.remote]
+# type = "http"
+# url = "https://cache.internal.company.com/zr"
+# auth = "bearer:$CACHE_TOKEN"
+```
+
+**동작 방식**:
+
+1. 태스크 실행 전 — 캐시 키로 원격 캐시 조회 (pull)
+2. 캐시 히트 → 원격에서 결과물 다운로드, 로컬에도 저장
+3. 캐시 미스 → 태스크 실행 후 결과물을 로컬 + 원격에 저장 (push)
+4. 암호화 at-rest 지원, 팀/워크스페이스 스코프 접근 제어
+
+**호환 스토리지**:
+- AWS S3 / S3-호환 (MinIO, R2 등)
+- Google Cloud Storage
+- Azure Blob Storage
+- 임의 HTTP 서버 (GET/PUT 인터페이스)
+
+#### 5.7.4 프로젝트 그래프 & 시각화
+
+프로젝트 간 의존성을 다양한 포맷으로 시각화한다.
+
+```bash
+zr graph                         # 전체 프로젝트 의존성 그래프 (기본: ASCII)
+zr graph --format=dot            # Graphviz DOT 포맷
+zr graph --format=json           # 프로그래밍용 JSON
+zr graph --format=html           # 인터랙티브 HTML (브라우저에서 열림)
+zr graph --affected              # 변경된 프로젝트 하이라이트
+zr graph --focus=packages/core   # 특정 패키지 중심으로 필터
+```
+
+**HTML 시각화**: Nx의 프로젝트 그래프와 유사한 인터랙티브 웹 뷰. 노드 클릭으로 패키지 상세 확인, 의존성 경로 하이라이팅, 검색·필터.
+
+#### 5.7.5 CODEOWNERS 생성
+
+패키지별 소유자 정보를 기반으로 GitHub/GitLab CODEOWNERS 파일을 자동 생성한다.
+
+```toml
+# packages/core/zr.toml
+[ownership]
+owners = ["@team-core", "@user-alice"]
+reviewers = ["@team-platform"]
+```
+
+```bash
+zr codeowners generate              # CODEOWNERS 파일 생성/갱신
+zr codeowners check                 # 모든 경로에 소유자가 지정되었는지 확인
+```
+
+프로젝트 구조가 변경될 때마다 CODEOWNERS를 최신 상태로 유지할 수 있다.
+
+#### 5.7.6 아키텍처 거버넌스 / Conformance
+
+모듈 간 의존성 규칙을 선언적으로 정의하고 자동으로 검증한다.
+
+```toml
+# zr.toml (워크스페이스 루트)
+[[constraints]]
+rule = "no-circular"                              # 순환 의존성 금지
+scope = "all"
+
+[[constraints]]
+rule = "tag-based"
+from = { tag = "app" }
+to = { tag = "lib" }                              # app → lib 의존만 허용
+allow = true
+
+[[constraints]]
+rule = "banned-dependency"
+from = "packages/frontend"
+to = "packages/internal-api"                      # frontend → internal-api 의존 금지
+allow = false
+message = "Frontend must use public API only"
+
+[[constraints]]
+rule = "tag-based"
+from = { tag = "feature" }
+to = { tag = "feature" }                          # feature → feature 직접 의존 금지
+allow = false
+```
+
+```bash
+zr lint                           # 모든 아키텍처 제약 조건 검증
+zr lint --fix                     # 자동 수정 가능한 위반 수정
+```
+
+### 5.8 툴체인 관리 `v2.0`
+
+#### 5.8.1 언어 버전 관리
+
+`[tools]` 섹션으로 프로젝트에 필요한 도구와 버전을 선언한다. 최초 실행 시 자동으로 다운로드·설치된다.
+
+```toml
+[tools]
+node = "20.11"          # Node.js 20.11.x (패치 버전은 최신)
+python = "3.12"         # Python 3.12.x
+zig = "0.15.2"          # Zig 0.15.2 (정확한 버전)
+go = "1.22"             # Go 1.22.x
+rust = "1.78"           # Rust 1.78.x
+deno = "1.41"           # Deno 1.41.x
+bun = "1.0"             # Bun 1.0.x
+```
+
+**동작 방식**:
+
+1. `zr run <task>` 또는 `zr setup` 실행 시, `[tools]`에 선언된 버전이 설치되어 있는지 확인
+2. 미설치 → 자동 다운로드 & 설치 (`~/.zr/toolchains/<tool>/<version>/`)
+3. 실행 시 PATH 앞에 해당 버전 경로를 삽입하여 올바른 버전이 사용되도록 보장
+4. 워크스페이스 레벨 `[tools]`와 패키지 레벨 `[tools]`가 있으면 패키지 레벨이 우선
+
+**지원 범위**:
+- 코어 지원: Node.js, Python, Go, Rust, Zig, Deno, Bun, Java (JDK)
+- 플러그인 확장: 커뮤니티 플러그인으로 추가 도구 지원 가능
+
+```bash
+zr tools list                    # 현재 프로젝트의 도구 버전 목록
+zr tools install                 # 선언된 도구 전부 설치
+zr tools outdated                # 새 버전 확인
+```
+
+#### 5.8.2 환경 레이어링
+
+환경 변수가 워크스페이스 → 프로젝트 → 태스크 순서로 계층적으로 적용된다.
+
+```
+Workspace .env        (base)
+  ↓ merge
+Project .env          (override)
+  ↓ merge
+Task-level env = {}   (override)
+  ↓ merge
+System env            (lowest priority, fallback)
+```
+
+```toml
+# 워크스페이스 zr.toml
+[env]
+COMPANY = "acme"
+LOG_LEVEL = "info"
+
+# packages/api/zr.toml
+[env]
+SERVICE_NAME = "api"
+LOG_LEVEL = "debug"          # 워크스페이스 값 오버라이드
+
+# 태스크 레벨
+[tasks.test]
+env = { LOG_LEVEL = "warn" }  # 태스크에서 최종 오버라이드
+```
+
+```bash
+zr env                          # 현재 컨텍스트의 최종 환경 변수 표시
+zr env --resolve SERVICE_NAME   # 특정 변수의 해석 과정 추적
+```
+
+**시크릿 마스킹**: `*_SECRET`, `*_TOKEN`, `*_KEY`, `*_PASSWORD` 패턴에 매칭되는 환경 변수 값은 로그 출력에서 `****`로 마스킹된다.
+
+#### 5.8.3 프로젝트 셋업 자동화
+
+`zr setup`으로 원커맨드 프로젝트 온보딩을 실현한다.
+
+```toml
+[setup]
+steps = [
+    "tools",              # [tools]에 선언된 도구 설치
+    "deps",               # 패키지 매니저 의존성 설치
+    "env",                # .env.example → .env 복사 (없는 경우)
+    "migrate",            # DB 마이그레이션
+    "validate",           # 설정 검증
+]
+
+[setup.deps]
+"packages/frontend" = "npm ci"
+"packages/backend" = "pip install -r requirements.txt"
+"packages/api" = "go mod download"
+
+[setup.migrate]
+cmd = "zr run db-migrate"
+optional = true                 # 실패해도 셋업 계속 진행
+```
+
+```bash
+zr setup                        # 전체 프로젝트 셋업 (1회성)
+zr doctor                       # 환경 진단: 도구 버전, 설정 검증, 연결 상태
+```
+
+**`zr doctor` 출력 예시**:
+
+```
+ zr doctor
+
+ ✓ Node.js       20.11.1   (required: 20.11)
+ ✓ Python        3.12.2    (required: 3.12)
+ ✗ Go            not found (required: 1.22)
+ ✓ Docker        24.0.7    (running)
+ ✓ PostgreSQL    connected (localhost:5432)
+ ✗ Redis         not found
+
+ 2 issues found. Run 'zr setup' to fix.
+```
+
+### 5.9 멀티레포 오케스트레이션 `v2.0`
+
+#### 5.9.1 레포 레지스트리
+
+관련 레포지토리를 `zr-repos.toml`에 등록하여 통합 관리한다.
+
+```toml
+# zr-repos.toml (멀티레포 루트 또는 임의 디렉토리)
+
+[workspace]
+name = "acme-platform"
+
+[repos.api]
+url = "git@github.com:acme/api.git"
+path = "../api"                          # 로컬 체크아웃 경로 (상대)
+branch = "main"
+tags = ["backend", "core"]
+
+[repos.frontend]
+url = "git@github.com:acme/frontend.git"
+path = "../frontend"
+branch = "main"
+tags = ["frontend"]
+
+[repos.shared-lib]
+url = "git@github.com:acme/shared-lib.git"
+path = "../shared-lib"
+branch = "main"
+tags = ["lib", "core"]
+
+# 크로스레포 의존성 선언
+[deps]
+api = ["shared-lib"]                     # api는 shared-lib에 의존
+frontend = ["shared-lib", "api"]         # frontend는 shared-lib과 api에 의존
+```
+
+```bash
+zr repo sync                    # 모든 레포 clone/pull
+zr repo sync --clone-missing    # 미클론 레포만 클론
+zr repo status                  # 모든 레포의 git 상태 표시
+```
+
+#### 5.9.2 크로스레포 의존성 그래프
+
+멀티레포 환경에서도 모노레포와 동일한 수준의 의존성 그래프를 제공한다.
+
+- `zr-repos.toml`의 `[deps]`에 선언된 의존성으로 레포 간 그래프 구성
+- 각 레포 내부의 패키지 그래프와 결합하여 전체 시스템 그래프 생성
+- `zr affected`가 레포 경계를 넘어 동작
+
+```bash
+zr graph --all-repos             # 크로스레포 의존성 그래프
+zr affected build --all-repos    # 변경된 레포 + 의존 레포에서 빌드
+```
+
+#### 5.9.3 크로스레포 태스크 실행
+
+```bash
+zr repo run build                # 모든 레포에서 build 태스크 실행
+zr repo run test --affected      # 변경된 레포에서만 test 실행
+zr repo run lint --repos=api,frontend  # 특정 레포만 대상
+zr repo run deploy --tags=backend     # 태그 기반 필터
+```
+
+크로스레포 의존성 순서를 존중하여 실행한다. `shared-lib` → `api` → `frontend` 순서가 보장된다.
+
+#### 5.9.4 합성 워크스페이스 (Synthetic Workspace)
+
+멀티레포 환경을 마치 모노레포인 것처럼 다룰 수 있다.
+
+```bash
+zr workspace sync                # 합성 워크스페이스 구성
+zr graph                         # 모든 레포의 프로젝트를 하나의 그래프로 표시
+zr affected build                # 레포 경계 없이 affected 감지
+```
+
+**동작 원리**: `zr-repos.toml`에 등록된 모든 레포의 `zr.toml`을 읽어 하나의 통합 프로젝트 그래프를 구성한다. 각 레포는 워크스페이스의 최상위 패키지로 취급된다.
+
+### 5.10 엔터프라이즈 기능 (Progressive Unlock) `v2.0`
+
+프로젝트 규모가 커짐에 따라 점진적으로 활성화되는 고급 기능.
+
+#### 5.10.1 빌드 분석 (Analytics)
+
+```bash
+zr analytics                     # 로컬 HTML 리포트 생성 후 브라우저에서 열기
+zr analytics --json              # JSON 원본 데이터 출력
+```
+
+**리포트 내용**:
+- 태스크별 실행 시간 추이 (시간 경과에 따른 변화)
+- 캐시 히트율 (전체, 태스크별)
+- 실패 패턴 분석 (어떤 태스크가 가장 자주 실패하는지)
+- 크리티컬 패스 분석 (전체 빌드 시간의 병목이 되는 경로)
+- 병렬화 효율 (실제 vs 이론적 최대 병렬화)
+
+데이터는 로컬 실행 이력 DB에 저장되며, 외부 서비스 의존 없음.
+
+#### 5.10.2 퍼블리싱 & 버저닝
+
+모노레포 패키지의 버전 관리와 레지스트리 퍼블리싱을 자동화한다.
+
+```toml
+[versioning]
+mode = "independent"             # independent | fixed
+convention = "conventional"      # conventional commits 기반 자동 버전 결정
+```
+
+```bash
+zr version                       # 인터랙티브 버전 범프
+zr version --bump=minor          # 전체 마이너 버전 업
+zr publish                       # 변경된 패키지 빌드 → 버전 범프 → 체인지로그 → 퍼블리시
+zr publish --dry-run             # 퍼블리시 대상 미리보기
+```
+
+**버저닝 모드**:
+- `fixed`: 모든 패키지가 동일 버전 (예: Angular 스타일)
+- `independent`: 패키지별 독립 버전 (예: Babel 스타일)
+
+**체인지로그**: Conventional Commits 메시지를 파싱하여 `CHANGELOG.md` 자동 생성.
+
+#### 5.10.3 AI 친화적 메타데이터
+
+AI 코딩 에이전트(Claude Code, Cursor, GitHub Copilot Workspace 등)가 프로젝트 구조를 이해할 수 있도록 구조화된 메타데이터를 생성한다.
+
+```bash
+zr context                       # 프로젝트 맵 출력 (기본: JSON)
+zr context --format=yaml         # YAML 포맷
+zr context --scope=packages/api  # 특정 패키지 스코프
+```
+
+**출력 내용**:
+- 프로젝트 그래프 (패키지 목록, 의존성)
+- 태스크 카탈로그 (패키지별 사용 가능한 태스크)
+- 파일 소유권 매핑 (CODEOWNERS 기반)
+- 최근 변경 요약 (최근 N개 커밋의 변경 패키지)
+- 툴체인 정보 (사용 중인 도구 및 버전)
+
+AI 에이전트가 이 출력을 컨텍스트로 소비하여, 프로젝트 구조를 파악하고 적절한 파일을 수정할 수 있다.
+
 ---
 
 ## 6. 설정 파일 전체 스키마
@@ -651,6 +1181,41 @@ resources = { max_workers = 4 }
 [profiles.dev]
 env = { NODE_ENV = "development" }
 watch = true
+
+# ─── 툴체인 (Phase 6) ───
+[tools]
+node = "20.11"
+python = "3.12"
+
+# ─── 캐시 (Phase 5, 7) ───
+[cache]
+enabled = true
+local_dir = ".zr-cache"
+
+[cache.remote]
+type = "s3"                      # s3 | gcs | azure | http
+bucket = "team-cache"
+region = "ap-northeast-2"
+
+# ─── 아키텍처 제약 (Phase 5) ───
+[[constraints]]
+rule = "tag-based"
+from = { tag = "app" }
+to = { tag = "lib" }
+allow = true
+
+# ─── 소유권 (Phase 8) ───
+[ownership]
+owners = ["@team-core"]
+
+# ─── 프로젝트 셋업 (Phase 6) ───
+[setup]
+steps = ["tools", "deps", "env", "validate"]
+
+# ─── 버저닝 (Phase 8) ───
+[versioning]
+mode = "independent"
+convention = "conventional"
 ```
 
 ---
@@ -842,9 +1407,47 @@ src/
 - 플러그인 개발 SDK & 문서
 - Remote cache (선택적)
 
+### Phase 5 — Monorepo Intelligence `v2.0`
+**목표: 대규모 모노레포에서 효율적인 빌드·테스트**
+
+- Affected 감지 (git diff + 의존성 그래프 순회)
+- 콘텐츠 해시 캐싱 (소스 파일·명령어·환경 해시 기반)
+- 프로젝트 그래프 시각화 (ASCII, DOT, JSON, HTML)
+- 아키텍처 제약 조건 (`[constraints]`, `zr lint`)
+- 모듈 경계 규칙 (태그 기반 의존성 제어)
+
+### Phase 6 — Developer Environment `v2.0`
+**목표: 원커맨드 프로젝트 온보딩**
+
+- 툴체인 관리 (`[tools]` 섹션 — 도구 버전 자동 설치·전환)
+- 환경 레이어링 (워크스페이스 → 프로젝트 → 태스크)
+- `zr setup` — 전체 프로젝트 셋업 자동화
+- `zr doctor` — 환경 진단 (도구 버전·연결 상태·설정 검증)
+- 시크릿 마스킹 (`*_SECRET`, `*_TOKEN`, `*_KEY` 패턴)
+
+### Phase 7 — Multi-repo & Remote Cache `v2.0`
+**목표: 분리된 레포를 통합된 하나의 시스템으로**
+
+- 레포 레지스트리 (`zr-repos.toml`)
+- `zr repo sync` / `zr repo status` — 멀티레포 관리 명령
+- 크로스레포 태스크 실행 & 의존성 그래프
+- 합성 워크스페이스 모드 (멀티레포 → 논리적 모노레포)
+- 원격 캐시 (S3/GCS/Azure/HTTP 호환, 자체 호스팅)
+
+### Phase 8 — Enterprise & Community `v2.0`
+**목표: 엔터프라이즈 환경에서의 거버넌스와 자동화**
+
+- CODEOWNERS 자동 생성 (`zr codeowners generate`)
+- 퍼블리싱 & 버저닝 자동화 (`zr publish`, `zr version`)
+- 빌드 분석 리포트 (로컬 HTML — 실행 시간 추이, 캐시 히트율, 크리티컬 패스)
+- AI 친화적 메타데이터 생성 (`zr context`)
+- Conformance 규칙 엔진 (고급 아키텍처 거버넌스)
+
 ---
 
 ## 10. Success Metrics
+
+### 10.1 Phase 1–4 (Task Runner)
 
 | 지표 | Phase 1 | Phase 2 | Phase 4 |
 |------|---------|---------|---------|
@@ -854,6 +1457,19 @@ src/
 | 빌트인 플러그인 | 0 | 0 | 5+ |
 | 문서 페이지 | Quick Start | Full Guide | Plugin Dev Guide |
 | 벤치마크 vs Just/Task | 동등 | 1.5x 빠름 | 2x+ 빠름 |
+
+### 10.2 Phase 5–8 (Developer Platform) `v2.0`
+
+| 지표 | Phase 5 | Phase 6 | Phase 7 | Phase 8 |
+|------|---------|---------|---------|---------|
+| CI 시간 단축 (affected) | 50%+ 감소 | — | 크로스레포도 50%+ | — |
+| 캐시 히트율 (성숙 프로젝트) | 로컬 70%+ | — | 원격 포함 80%+ | — |
+| 셋업 시간 (git clone → 개발 가능) | — | < 2분 | — | — |
+| 지원 툴체인 수 | — | 코어 8+, 플러그인 확장 | — | — |
+| 멀티레포 관리 가능 수 | — | — | 20+ 레포 | — |
+| CODEOWNERS 자동화 | — | — | — | 100% 커버리지 |
+| AI 에이전트 연동 | — | — | — | Claude Code, Cursor |
+| GitHub Stars | 3000+ | 5000+ | 7000+ | 10000+ |
 
 ---
 
@@ -866,28 +1482,69 @@ src/
 | 크로스 플랫폼 자원 제한 API 차이 | OS별 코드 분기 증가 | 추상화 레이어 설계, Linux 우선 개발 → macOS/Windows 순차 지원 |
 | 표현식 엔진 복잡도 | 버그 증가, 유지보수 부담 | 문법 최소화, 단계적 확장, 퍼징 테스트 |
 | 기존 도구 대비 낮은 인지도 | 채택 어려움 | 킬러 UX (에러 메시지, TUI)로 차별화, 벤치마크 공개 |
+| 범위 확장에 의한 복잡도 증가 | 코드 품질 저하, 릴리스 지연 | Phase별 명확한 경계, 각 Phase가 독립적으로 가치를 제공하도록 설계 |
+| 툴체인 관리의 OS별 차이 | macOS/Linux/Windows 각각 다른 설치 경로·바이너리 포맷 | mise의 검증된 패턴 참고, 코어 툴체인 먼저 안정화 후 확장 |
+| 원격 캐시 보안·신뢰성 | 캐시 오염(poisoning), 네트워크 장애 시 빌드 실패 | 캐시 무결성 검증(해시 비교), 원격 캐시 실패 시 로컬 폴백 |
+| 멀티레포 환경의 복잡도 | 레포 간 버전 동기화, 인증 관리 등 예상 못한 엣지 케이스 | 점진적 기능 공개, 모노레포 먼저 안정화 후 멀티레포 지원 |
 
 ---
 
 ## 12. Competitive Positioning
 
+### 12.1 포지셔닝 맵
+
 ```
-                    범용성
-                     ▲
-                     │
-          zr ● │
-                     │          ● moon
-          Task ●     │
-                     │     ● Nx
-          Just ●     │
-                     │          ● Turborepo
-     ─────────────────┼──────────────────► 기능 풍부
-          Make ●      │
+                 워크스페이스 관리
+                      ▲
                       │
+           Nx ●       │        ● Bazel/Buck2
                       │
+      Turborepo ●     │   ● Moon
+                      │
+              zr ◆────┼───────────────────
+                      │   Developer Platform
+           Rush ●     │   (태스크 러닝 + 툴체인
+                      │    + 모노/멀티레포)
+     ──────────────────┼──────────────────► 빌드 시스템
+          Just ●       │
+          Task ●       │       ● Pants
+          Make ●       │       ● Earthly
+                       │
+          mise ●       │
+         (툴체인만)     │
+                단일 프로젝트
 ```
 
-zr의 포지셔닝은 **"Make의 범용성 + Turborepo의 실행 엔진 + Just의 사용 편의성"** 을 하나의 바이너리에 담는 것이다.
+zr의 포지셔닝은 **"폴리글랏 개발자 플랫폼 — 벤더 락인 없이"** 이다. 기존 도구들이 하나의 축(태스크 러닝 OR 빌드 시스템 OR 툴체인 관리)에 특화된 반면, zr은 세 축을 하나의 바이너리에 통합한다.
+
+### 12.2 기능 비교표
+
+| 기능 | zr | Nx | Turborepo | Moon | mise | Bazel |
+|------|:---:|:---:|:---------:|:----:|:----:|:-----:|
+| **태스크 러너** | ✓ | ✓ | ✓ | ✓ | △ | ✓ |
+| **의존성 그래프** | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| **Affected 감지** | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| **콘텐츠 해시 캐싱** | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| **원격 캐시** | ✓ (자체호스팅) | ✓ (Nx Cloud) | ✓ (Vercel) | ✓ | ✗ | ✓ |
+| **툴체인 관리** | ✓ | ✗ | ✗ | △ | ✓ | ✗ |
+| **환경 관리** | ✓ | ✗ | ✗ | △ | △ | ✗ |
+| **멀티레포 지원** | ✓ | ✗ | ✗ | ✗ | ✗ | △ |
+| **CODEOWNERS 생성** | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| **아키텍처 거버넌스** | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ |
+| **런타임 의존성** | 없음 | Node.js | Node.js | 없음 | 없음 | JVM |
+| **폴리글랏** | ✓ | △ | △ | △ | ✓ | ✓ |
+| **바이너리 크기** | ~3MB | ~200MB+ | ~50MB+ | ~15MB | ~20MB | ~100MB+ |
+| **벤더 락인** | 없음 | Nx Cloud | Vercel | 없음 | 없음 | 없음 |
+
+✓ = 완전 지원, △ = 부분 지원, ✗ = 미지원
+
+### 12.3 zr의 차별점
+
+1. **도구 통합**: 5개 이상의 도구(nvm + make + nx + direnv + ...)를 ~3MB 바이너리 하나로 대체
+2. **모노 + 멀티 동일 지원**: 모노레포와 멀티레포를 동일한 수준의 1급 시민으로 다룸
+3. **벤더 락인 없음**: 원격 캐시를 자체 S3/GCS/HTTP에 호스팅 — SaaS 종속 없음
+4. **점진적 채택**: `zr init`으로 시작 → 필요할 때 캐싱·affected·툴체인 하나씩 활성화
+5. **제로 런타임**: Node.js, Python, JVM 없이 단일 바이너리로 동작
 
 ---
 
@@ -1049,4 +1706,62 @@ zr validate                          # 설정 파일 검증
 zr completion bash >> ~/.bashrc      # 자동완성 설치
 zr plugin list                       # 설치된 플러그인
 zr plugin install docker             # 플러그인 설치
+
+# ─── Phase 5+: 모노레포 인텔리전스 ───
+
+# Affected 감지
+zr affected build                    # 변경된 패키지 + 의존자만 빌드
+zr affected test --base=main         # main 대비 변경 감지
+zr affected --list                   # 변경된 패키지 목록만 출력
+
+# 캐시 관리
+zr cache status                      # 캐시 히트율, 크기 표시
+zr cache clean --older=7d            # 오래된 캐시 삭제
+
+# 프로젝트 그래프
+zr graph --format=html               # 인터랙티브 HTML 그래프
+zr graph --affected                  # 변경된 프로젝트 하이라이트
+
+# 아키텍처 거버넌스
+zr lint                              # 아키텍처 제약 조건 검증
+zr codeowners generate               # CODEOWNERS 자동 생성
+
+# ─── Phase 6: 개발 환경 ───
+
+# 툴체인 관리
+zr tools list                        # 현재 프로젝트 도구 버전
+zr tools install                     # 선언된 도구 전부 설치
+zr tools outdated                    # 새 버전 확인
+
+# 프로젝트 셋업
+zr setup                             # 원커맨드 프로젝트 온보딩
+zr doctor                            # 환경 진단
+
+# 환경 변수
+zr env                               # 최종 환경 변수 표시
+zr env --resolve SERVICE_NAME        # 변수 해석 과정 추적
+
+# ─── Phase 7: 멀티레포 ───
+
+# 레포 관리
+zr repo sync                         # 모든 레포 clone/pull
+zr repo status                       # 크로스레포 상태
+
+# 크로스레포 실행
+zr repo run build                    # 모든 레포에서 빌드
+zr repo run test --affected          # 변경된 레포에서만 테스트
+zr repo run lint --tags=backend      # 태그 기반 필터
+
+# ─── Phase 8: 엔터프라이즈 ───
+
+# 분석
+zr analytics                         # 빌드 분석 HTML 리포트
+
+# 퍼블리싱
+zr version                           # 인터랙티브 버전 범프
+zr publish --dry-run                 # 퍼블리시 대상 미리보기
+
+# AI 메타데이터
+zr context                           # 프로젝트 맵 JSON 출력
+zr context --format=yaml             # YAML 포맷
 ```
