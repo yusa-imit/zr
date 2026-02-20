@@ -48,11 +48,12 @@
 - [x] `max_concurrent` per-task resource limit
 - [x] Workspace/monorepo support (`[workspace] members`, glob discovery)
 - [x] Progress bar output module
-- [x] Interactive TUI — **picker + live log streaming** (430fe98)
+- [x] Interactive TUI — **COMPLETE with cancel/retry** (58a59ac)
   - [x] Task picker (arrow keys + Enter)
   - [x] **Live log streaming** — `zr live <task>` with real-time stdout/stderr display (430fe98)
-  - Missing: task cancel/retry during execution (PRD §5.3.3)
-  - Missing: dependency graph ASCII visualization (PRD §5.3.3)
+  - [x] **Cancel/pause/resume controls** — `zr interactive-run <task>` with keyboard controls (58a59ac)
+  - [x] Automatic retry prompt on task failure
+  - Missing: dependency graph ASCII visualization (PRD §5.3.3) — low priority
 - [x] **Resource limits (CPU/Memory)** — **COMPLETE (100%)** (PRD §5.4)
   - [x] `max_cpu`, `max_memory` config fields + TOML parsing (e276a26)
   - [x] `GlobalResourceConfig` (max_total_memory, max_cpu_percent) (e276a26)
@@ -83,9 +84,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI live log streaming). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, full Docker integration, and live TUI execution.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, full Docker integration, and interactive TUI execution with task controls.**
 
-- **Tests**: 280 passing (6 skipped platform-specific) — TUI live streaming + Docker + resource monitoring
+- **Tests**: 286 passing (6 skipped platform-specific) — TUI controls + live streaming + Docker + resource monitoring
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -96,13 +97,13 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ```
 
 ### Key Modules (src/)
-- `main.zig` - Entry point + CLI commands (run, list, graph) + color output
-- `cli/` - Argument parsing, help, completion, TUI (basic)
-- `config/` - TOML loader, schema validation, expression engine (limited), profiles
+- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run) + color output
+- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls)
+- `config/` - TOML loader, schema validation, expression engine, profiles
 - `graph/` - DAG, topological sort, cycle detection, visualization
-- `exec/` - Scheduler, worker pool, process management, max_concurrent only
-- `plugin/` - Dynamic loading (.so/.dylib), git/registry install, built-ins (4/5)
-- `watch/` - Polling-based filesystem watcher (NOT native inotify/kqueue)
+- `exec/` - Scheduler, worker pool, process management, task control (atomic signals)
+- `plugin/` - Dynamic loading (.so/.dylib), git/registry install, built-ins (Docker, env, git, cache)
+- `watch/` - Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
 - `output/` - Terminal rendering, color, progress bars
 
 ## Config File
@@ -127,6 +128,6 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 4. ~~**Watch mode upgrade**~~ — **COMPLETE** ✓ (native inotify/kqueue/ReadDirectoryChangesW) (8ef87a4)
 5. ~~**Docker built-in plugin**~~ — **COMPLETE** ✓ (build/push/tag/prune with BuildKit cache) (c07e0aa)
 6. ~~**TUI live log streaming**~~ — **COMPLETE** ✓ (430fe98)
-7. **TUI cancel/retry** — interactive task control during execution
-8. **WASM plugin sandbox** — sandboxed third-party plugins
-9. **Remote cache** — shared cache for CI pipelines
+7. ~~**TUI cancel/retry/pause**~~ — **COMPLETE** ✓ (interactive controls with atomic signals) (58a59ac)
+8. **WASM plugin sandbox** — sandboxed third-party plugins (core Phase 4 gap)
+9. **Remote cache** — shared cache for CI pipelines (enhancement)
