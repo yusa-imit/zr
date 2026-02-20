@@ -334,6 +334,75 @@ pub const Memory = struct {
 /// Host function callback
 pub const HostFunction = *const fn (args: []const Value, allocator: std.mem.Allocator) WasmError!Value;
 
+/// Execution stack for WASM interpreter
+pub const Stack = struct {
+    values: std.ArrayList(Value),
+
+    pub fn init(_: std.mem.Allocator) Stack {
+        return .{ .values = .{} };
+    }
+
+    pub fn deinit(self: *Stack, allocator: std.mem.Allocator) void {
+        self.values.deinit(allocator);
+    }
+
+    pub fn push(self: *Stack, allocator: std.mem.Allocator, value: Value) !void {
+        try self.values.append(allocator, value);
+    }
+
+    pub fn pop(self: *Stack) WasmError!Value {
+        if (self.values.items.len == 0) return error.StackOverflow;
+        const last_idx = self.values.items.len - 1;
+        const value = self.values.items[last_idx];
+        self.values.items.len = last_idx;
+        return value;
+    }
+
+    pub fn peek(self: *const Stack) WasmError!Value {
+        if (self.values.items.len == 0) return error.StackOverflow;
+        return self.values.items[self.values.items.len - 1];
+    }
+
+    pub fn depth(self: *const Stack) usize {
+        return self.values.items.len;
+    }
+};
+
+/// Execution frame for function calls
+pub const Frame = struct {
+    locals: []Value,
+    return_arity: usize,
+
+    pub fn init(allocator: std.mem.Allocator, params: []const Value, local_types: []const ValueType) !Frame {
+        const total_locals = params.len + local_types.len;
+        const locals = try allocator.alloc(Value, total_locals);
+
+        // Initialize parameters
+        for (params, 0..) |param, i| {
+            locals[i] = param;
+        }
+
+        // Initialize local variables to zero
+        for (local_types, params.len..) |local_type, i| {
+            locals[i] = switch (local_type) {
+                .i32 => Value{ .i32 = 0 },
+                .i64 => Value{ .i64 = 0 },
+                .f32 => Value{ .f32 = 0.0 },
+                .f64 => Value{ .f64 = 0.0 },
+            };
+        }
+
+        return .{
+            .locals = locals,
+            .return_arity = 1, // MVP: single return value
+        };
+    }
+
+    pub fn deinit(self: *Frame, allocator: std.mem.Allocator) void {
+        allocator.free(self.locals);
+    }
+};
+
 /// WASM module instance
 pub const Instance = struct {
     allocator: std.mem.Allocator,
@@ -411,9 +480,224 @@ pub const Instance = struct {
             return try host_func(args, self.allocator);
         }
 
-        // For WASM functions, we'd need to load and interpret bytecode
-        // This is a placeholder for the full interpreter implementation
-        return error.FunctionNotFound;
+        // Look up exported function
+        const func_idx = self.exports.get(func_name) orelse return error.FunctionNotFound;
+
+        // Execute WASM function
+        return try self.executeFunction(func_idx, args);
+    }
+
+    /// Execute a WASM function by index
+    fn executeFunction(self: *Instance, func_idx: u32, args: []const Value) !Value {
+        if (func_idx >= self.function_codes.items.len) return error.FunctionNotFound;
+
+        const code = &self.function_codes.items[func_idx];
+        const func_type = &self.types.items[func_idx];
+
+        // Validate argument count
+        if (args.len != func_type.params.len) return error.TypeMismatch;
+
+        // Create execution frame
+        var frame = try Frame.init(self.allocator, args, code.locals);
+        defer frame.deinit(self.allocator);
+
+        // Initialize execution stack
+        var stack = Stack.init(self.allocator);
+        defer stack.deinit(self.allocator);
+
+        // Execute bytecode
+        try self.interpret(code.body, &frame, &stack);
+
+        // Return result (MVP: single return value)
+        if (func_type.results.len == 1) {
+            return try stack.pop();
+        } else if (func_type.results.len == 0) {
+            return Value{ .i32 = 0 }; // Void function
+        } else {
+            return error.TypeMismatch; // MVP doesn't support multiple returns
+        }
+    }
+
+    /// Interpret WASM bytecode
+    fn interpret(self: *Instance, bytecode: []const u8, frame: *Frame, stack: *Stack) !void {
+        var pc: usize = 0; // Program counter
+
+        while (pc < bytecode.len) {
+            const opcode_byte = bytecode[pc];
+            pc += 1;
+
+            const opcode = std.meta.intToEnum(Opcode, opcode_byte) catch return error.UnsupportedInstruction;
+
+            switch (opcode) {
+                .nop => {}, // No operation
+
+                .@"unreachable" => return error.ExecutionFailed,
+
+                .end => break, // End of function
+
+                // Constants
+                .i32_const => {
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    const value = try reader.readVarI32();
+                    pc += reader.pos;
+                    try stack.push(self.allocator, Value{ .i32 = value });
+                },
+                .i64_const => {
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    const value = try reader.readVarI64();
+                    pc += reader.pos;
+                    try stack.push(self.allocator, Value{ .i64 = value });
+                },
+
+                // Local variable access
+                .local_get => {
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    const local_idx = try reader.readVarU32();
+                    pc += reader.pos;
+                    if (local_idx >= frame.locals.len) return error.InvalidMemoryAccess;
+                    try stack.push(self.allocator, frame.locals[local_idx]);
+                },
+                .local_set => {
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    const local_idx = try reader.readVarU32();
+                    pc += reader.pos;
+                    if (local_idx >= frame.locals.len) return error.InvalidMemoryAccess;
+                    frame.locals[local_idx] = try stack.pop();
+                },
+                .local_tee => {
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    const local_idx = try reader.readVarU32();
+                    pc += reader.pos;
+                    if (local_idx >= frame.locals.len) return error.InvalidMemoryAccess;
+                    const value = try stack.peek();
+                    frame.locals[local_idx] = value;
+                },
+
+                // i32 arithmetic operations
+                .i32_add => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = a +% b });
+                },
+                .i32_sub => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = a -% b });
+                },
+                .i32_mul => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = a *% b });
+                },
+                .i32_div_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    if (b == 0) return error.ExecutionFailed;
+                    try stack.push(self.allocator, Value{ .i32 = @divTrunc(a, b) });
+                },
+                .i32_rem_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    if (b == 0) return error.ExecutionFailed;
+                    try stack.push(self.allocator, Value{ .i32 = @rem(a, b) });
+                },
+
+                // i32 bitwise operations
+                .i32_and => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = a & b });
+                },
+                .i32_or => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = a | b });
+                },
+                .i32_xor => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = a ^ b });
+                },
+                .i32_shl => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    const shift: u5 = @intCast(@mod(b, 32));
+                    try stack.push(self.allocator, Value{ .i32 = a << shift });
+                },
+                .i32_shr_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    const shift: u5 = @intCast(@mod(b, 32));
+                    try stack.push(self.allocator, Value{ .i32 = a >> shift });
+                },
+
+                // i32 comparison operations
+                .i32_eq => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = if (a == b) 1 else 0 });
+                },
+                .i32_ne => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = if (a != b) 1 else 0 });
+                },
+                .i32_lt_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = if (a < b) 1 else 0 });
+                },
+                .i32_gt_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = if (a > b) 1 else 0 });
+                },
+                .i32_le_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = if (a <= b) 1 else 0 });
+                },
+                .i32_ge_s => {
+                    const b = try (try stack.pop()).asI32();
+                    const a = try (try stack.pop()).asI32();
+                    try stack.push(self.allocator, Value{ .i32 = if (a >= b) 1 else 0 });
+                },
+
+                // Memory operations
+                .i32_load => {
+                    if (self.memory == null) return error.InvalidMemoryAccess;
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    _ = try reader.readVarU32(); // alignment (ignored for now)
+                    const offset_imm = try reader.readVarU32();
+                    pc += reader.pos;
+
+                    const addr = try (try stack.pop()).asI32();
+                    const offset: u32 = @intCast(addr);
+                    const value = try self.memory.?.readI32(offset + offset_imm);
+                    try stack.push(self.allocator, Value{ .i32 = value });
+                },
+                .i32_store => {
+                    if (self.memory == null) return error.InvalidMemoryAccess;
+                    var reader = BinaryReader.init(bytecode[pc..]);
+                    _ = try reader.readVarU32(); // alignment (ignored for now)
+                    const offset_imm = try reader.readVarU32();
+                    pc += reader.pos;
+
+                    const value = try (try stack.pop()).asI32();
+                    const addr = try (try stack.pop()).asI32();
+                    const offset: u32 = @intCast(addr);
+                    try self.memory.?.writeI32(offset + offset_imm, value);
+                },
+
+                .drop => {
+                    _ = try stack.pop();
+                },
+
+                .@"return" => break,
+
+                else => return error.UnsupportedInstruction,
+            }
+        }
     }
 
     /// Load a WASM module from bytes
@@ -979,4 +1263,248 @@ test "Instance: loadModule - complete module" {
     const code = instance.function_codes.items[0];
     try std.testing.expectEqual(@as(usize, 0), code.locals.len);
     try std.testing.expect(code.body.len > 0);
+}
+
+test "Stack: push and pop" {
+    const allocator = std.testing.allocator;
+    var stack = Stack.init(allocator);
+    defer stack.deinit(allocator);
+
+    try stack.push(allocator, Value{ .i32 = 42 });
+    try stack.push(allocator, Value{ .i32 = 100 });
+
+    try std.testing.expectEqual(@as(usize, 2), stack.depth());
+
+    const v1 = try stack.pop();
+    try std.testing.expectEqual(@as(i32, 100), try v1.asI32());
+
+    const v2 = try stack.pop();
+    try std.testing.expectEqual(@as(i32, 42), try v2.asI32());
+
+    try std.testing.expectEqual(@as(usize, 0), stack.depth());
+}
+
+test "Stack: underflow" {
+    const allocator = std.testing.allocator;
+    var stack = Stack.init(allocator);
+    defer stack.deinit(allocator);
+
+    const result = stack.pop();
+    try std.testing.expectError(error.StackOverflow, result);
+}
+
+test "Frame: initialization" {
+    const allocator = std.testing.allocator;
+    const params = [_]Value{ Value{ .i32 = 10 }, Value{ .i32 = 20 } };
+    const local_types = [_]ValueType{ .i32, .i64 };
+
+    var frame = try Frame.init(allocator, &params, &local_types);
+    defer frame.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 4), frame.locals.len);
+    try std.testing.expectEqual(@as(i32, 10), try frame.locals[0].asI32());
+    try std.testing.expectEqual(@as(i32, 20), try frame.locals[1].asI32());
+    try std.testing.expectEqual(@as(i32, 0), try frame.locals[2].asI32());
+    try std.testing.expectEqual(@as(i64, 0), try frame.locals[3].asI64());
+}
+
+test "Interpreter: i32.const and i32.add" {
+    const allocator = std.testing.allocator;
+    var instance = Instance.init(allocator);
+    defer instance.deinit();
+
+    // WASM: function add(x: i32): i32 { return x + 5; }
+    const module = [_]u8{
+        0x00, 0x61, 0x73, 0x6D, // magic
+        0x01, 0x00, 0x00, 0x00, // version
+
+        // Type section: (i32) -> i32
+        0x01, 0x07, 0x01, 0x60, 0x01, 0x7F, 0x01, 0x7F,
+
+        // Function section: 1 function of type 0
+        0x03, 0x02, 0x01, 0x00,
+
+        // Export section: export function 0 as "add"
+        0x07, 0x07, 0x01, 0x03, 'a', 'd', 'd', 0x00, 0x00,
+
+        // Code section
+        0x0A, 0x09, 0x01, // 1 function
+        0x07, // code size
+        0x00, // 0 locals
+        0x20, 0x00, // local.get 0 (param)
+        0x41, 0x05, // i32.const 5
+        0x6A, // i32.add
+        0x0B, // end
+    };
+
+    try instance.loadModule(&module);
+
+    const args = [_]Value{Value{ .i32 = 10 }};
+    const result = try instance.call("add", &args);
+    try std.testing.expectEqual(@as(i32, 15), try result.asI32());
+}
+
+test "Interpreter: i32 arithmetic operations" {
+    const allocator = std.testing.allocator;
+    var instance = Instance.init(allocator);
+    defer instance.deinit();
+
+    // WASM: function calc(a: i32, b: i32): i32 { return (a + b) * 2; }
+    const module = [_]u8{
+        0x00, 0x61, 0x73, 0x6D, // magic
+        0x01, 0x00, 0x00, 0x00, // version
+
+        // Type section: (i32, i32) -> i32
+        0x01, 0x08, 0x01, 0x60, 0x02, 0x7F, 0x7F, 0x01, 0x7F,
+
+        // Function section
+        0x03, 0x02, 0x01, 0x00,
+
+        // Export section
+        0x07, 0x08, 0x01, 0x04, 'c', 'a', 'l', 'c', 0x00, 0x00,
+
+        // Code section
+        0x0A, 0x0C, 0x01, // 1 function
+        0x0A, // code size
+        0x00, // 0 locals
+        0x20, 0x00, // local.get 0
+        0x20, 0x01, // local.get 1
+        0x6A, // i32.add
+        0x41, 0x02, // i32.const 2
+        0x6C, // i32.mul
+        0x0B, // end
+    };
+
+    try instance.loadModule(&module);
+
+    const args = [_]Value{ Value{ .i32 = 5 }, Value{ .i32 = 3 } };
+    const result = try instance.call("calc", &args);
+    try std.testing.expectEqual(@as(i32, 16), try result.asI32()); // (5 + 3) * 2 = 16
+}
+
+test "Interpreter: local variables" {
+    const allocator = std.testing.allocator;
+    var instance = Instance.init(allocator);
+    defer instance.deinit();
+
+    // WASM: function swap(a: i32): i32 {
+    //   let tmp = a;
+    //   tmp = tmp + 10;
+    //   return tmp;
+    // }
+    const module = [_]u8{
+        0x00, 0x61, 0x73, 0x6D, // magic
+        0x01, 0x00, 0x00, 0x00, // version
+
+        // Type section: (i32) -> i32
+        0x01, 0x07, 0x01, 0x60, 0x01, 0x7F, 0x01, 0x7F,
+
+        // Function section
+        0x03, 0x02, 0x01, 0x00,
+
+        // Export section
+        0x07, 0x08, 0x01, 0x04, 't', 'e', 's', 't', 0x00, 0x00,
+
+        // Code section
+        0x0A, 0x11, 0x01, // section size=17, 1 function
+        0x0F, // code size = 15 bytes (locals + body)
+        0x01, 0x01, 0x7F, // 1 local of type i32 (3 bytes)
+        0x20, 0x00, // local.get 0 (param)
+        0x21, 0x01, // local.set 1 (tmp)
+        0x20, 0x01, // local.get 1
+        0x41, 0x0A, // i32.const 10
+        0x6A, // i32.add
+        0x22, 0x01, // local.tee 1 (set and keep on stack)
+        0x0B, // end
+    };
+
+    try instance.loadModule(&module);
+
+    const args = [_]Value{Value{ .i32 = 5 }};
+    const result = try instance.call("test", &args);
+    try std.testing.expectEqual(@as(i32, 15), try result.asI32());
+}
+
+test "Interpreter: comparison operations" {
+    const allocator = std.testing.allocator;
+    var instance = Instance.init(allocator);
+    defer instance.deinit();
+
+    // WASM: function gt(a: i32, b: i32): i32 { return a > b; }
+    const module = [_]u8{
+        0x00, 0x61, 0x73, 0x6D, // magic
+        0x01, 0x00, 0x00, 0x00, // version
+
+        // Type section: (i32, i32) -> i32
+        0x01, 0x08, 0x01, 0x60, 0x02, 0x7F, 0x7F, 0x01, 0x7F,
+
+        // Function section
+        0x03, 0x02, 0x01, 0x00,
+
+        // Export section
+        0x07, 0x06, 0x01, 0x02, 'g', 't', 0x00, 0x00,
+
+        // Code section
+        0x0A, 0x09, 0x01, // 1 function
+        0x07, // code size
+        0x00, // 0 locals
+        0x20, 0x00, // local.get 0
+        0x20, 0x01, // local.get 1
+        0x4A, // i32.gt_s
+        0x0B, // end
+    };
+
+    try instance.loadModule(&module);
+
+    const args1 = [_]Value{ Value{ .i32 = 10 }, Value{ .i32 = 5 } };
+    const result1 = try instance.call("gt", &args1);
+    try std.testing.expectEqual(@as(i32, 1), try result1.asI32()); // true
+
+    const args2 = [_]Value{ Value{ .i32 = 3 }, Value{ .i32 = 5 } };
+    const result2 = try instance.call("gt", &args2);
+    try std.testing.expectEqual(@as(i32, 0), try result2.asI32()); // false
+}
+
+test "Interpreter: memory operations" {
+    const allocator = std.testing.allocator;
+    var instance = Instance.init(allocator);
+    defer instance.deinit();
+
+    // WASM: function store_and_load(): i32 {
+    //   i32.store(0, 42);
+    //   return i32.load(0);
+    // }
+    const module = [_]u8{
+        0x00, 0x61, 0x73, 0x6D, // magic
+        0x01, 0x00, 0x00, 0x00, // version
+
+        // Type section: () -> i32
+        0x01, 0x06, 0x01, 0x60, 0x00, 0x01, 0x7F,
+
+        // Function section
+        0x03, 0x02, 0x01, 0x00,
+
+        // Memory section: 1 page
+        0x05, 0x03, 0x01, 0x00, 0x01,
+
+        // Export section
+        0x07, 0x08, 0x01, 0x04, 't', 'e', 's', 't', 0x00, 0x00,
+
+        // Code section
+        0x0A, 0x10, 0x01, // 1 function
+        0x0E, // code size (14 bytes)
+        0x00, // 0 locals
+        0x41, 0x00, // i32.const 0 (address)
+        0x41, 0x2A, // i32.const 42 (value)
+        0x36, 0x02, 0x00, // i32.store align=2 offset=0
+        0x41, 0x00, // i32.const 0 (address)
+        0x28, 0x02, 0x00, // i32.load align=2 offset=0
+        0x0B, // end
+    };
+
+    try instance.loadModule(&module);
+
+    const args = [_]Value{};
+    const result = try instance.call("test", &args);
+    try std.testing.expectEqual(@as(i32, 42), try result.asI32());
 }
