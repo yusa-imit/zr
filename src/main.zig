@@ -20,6 +20,7 @@ const builtin_env = @import("plugin/builtin_env.zig");
 const builtin_git = @import("plugin/builtin_git.zig");
 const plugin_registry = @import("plugin/registry.zig");
 const plugin_search = @import("plugin/search.zig");
+const wasm_runtime = @import("plugin/wasm_runtime.zig");
 const types = @import("config/types.zig");
 const common = @import("cli/common.zig");
 const completion = @import("cli/completion.zig");
@@ -61,6 +62,7 @@ comptime {
     _ = builtin_git;
     _ = plugin_registry;
     _ = plugin_search;
+    _ = wasm_runtime;
     _ = types;
     _ = common;
     _ = completion;
