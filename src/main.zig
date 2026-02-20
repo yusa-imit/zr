@@ -30,6 +30,7 @@ const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
 const tui = @import("cli/tui.zig");
 const platform = @import("util/platform.zig");
+const resource = @import("exec/resource.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -64,6 +65,7 @@ comptime {
     _ = list_cmd;
     _ = tui;
     _ = platform;
+    _ = resource;
 }
 
 pub fn main() !void {
