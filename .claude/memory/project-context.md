@@ -21,13 +21,13 @@
 - [x] Execution history module + `zr history` CLI command
 - [x] Task fields: timeout, allow_failure, deps_serial, env, retry, condition, cache, max_concurrent, matrix
 
-### Phase 2 - Workflows & Expressions — **MOSTLY COMPLETE (~90%)**
+### Phase 2 - Workflows & Expressions — **COMPLETE (100%)**
 - [x] Workflow system (`[workflows.X]` + `[[workflows.X.stages]]`, fail_fast)
 - [x] Profile system (`--profile`, `ZR_PROFILE`, per-task overrides)
 - [x] Watch mode — **polling-based (500ms)**, NOT native inotify/kqueue as PRD specifies
 - [x] Matrix task execution (Cartesian product, `${matrix.KEY}` interpolation)
 - [x] Task output caching (Wyhash64 fingerprint, `~/.zr/cache/`)
-- [x] **Expression engine** — ~70% of PRD §5.6 implemented
+- [x] **Expression engine** — **100% of PRD §5.6 implemented**
   - [x] Logical operators: `&&`, `||` with short-circuit evaluation
   - [x] Platform checks: `platform == "linux" | "darwin" | "windows"`
   - [x] Architecture checks: `arch == "x86_64" | "aarch64"`
@@ -38,7 +38,7 @@
   - [x] `shell(cmd)` — command execution success check
   - [x] `semver.gte(v1, v2)` — semantic version comparison
   - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
-  - [ ] Missing: `stages['name'].success`, `tasks['name'].duration` — requires runtime state refs
+  - [x] **Runtime state refs**: `stages['name'].success`, `tasks['name'].duration` with all comparison operators
 
 ### Phase 3 - UX & Resources — **PARTIAL (~70%)**
 - [x] `--dry-run` / `-n` flag (execution plan without running)
@@ -77,9 +77,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 ~85% (expression engine stub). Phase 3 ~70% (no resource limits). Phase 4 ~60% (no WASM, docker stub). **Strong MVP, not feature-complete.**
+> **Reality**: Phase 1 complete. Phase 2 **100% complete** (expression engine fully implemented). Phase 3 ~70% (no resource limits). Phase 4 ~60% (no WASM, docker stub). **Strong MVP, expression engine feature-complete.**
 
-- **Tests**: 246 passing across 33 files
+- **Tests**: 252 passing across 33 files (6 new runtime state tests)
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -115,7 +115,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 
 ## Priority Backlog (by impact)
 
-1. **Expression engine (runtime refs)** — `stages['name'].success`, `tasks['name'].duration` (requires exec state access)
+1. ~~**Expression engine (runtime refs)**~~ — **COMPLETE** ✓ (c1db626)
 2. **Resource limits** — `max_cpu`, `max_memory`, cgroups v2 (production workload isolation)
 3. **Watch mode upgrade** — inotify/kqueue native (performance, scalability)
 4. **TUI enhancements** — live log streaming, cancel/retry
