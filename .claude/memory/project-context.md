@@ -77,16 +77,16 @@
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
 ### Missing Utility Modules (PRD §7.2)
-- [ ] `util/glob.zig` — no general glob API (workspace uses ad-hoc `dir/*` resolution)
-- [ ] `util/semver.zig` — no semver comparison
-- [ ] `util/hash.zig` — no general file hashing (cache uses Wyhash on task name only)
+- [x] `util/glob.zig` — glob pattern matching and file finding (*/? wildcards, subdirectory support)
+- [x] `util/semver.zig` — semantic version parsing and comparison (gte/gt/lt/lte/eql)
+- [x] `util/hash.zig` — file and string hashing with Wyhash (hashFile/hashString/hashStrings)
 - [x] `util/platform.zig` — cross-platform POSIX wrappers
 
 ## Status Summary
 
 > **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 ~70% (Docker complete, no WASM). **Strong MVP with event-driven watch mode, production-ready resource management, full Docker integration, and interactive TUI execution with task controls.**
 
-- **Tests**: 286 passing (6 skipped platform-specific) — TUI controls + live streaming + Docker + resource monitoring
+- **Tests**: 315 passing (8 skipped platform-specific) — TUI controls + live streaming + Docker + resource monitoring + utility modules
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
