@@ -88,7 +88,7 @@
 - [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
 - [x] **Auto-install on task run** (1db7ecb) — Per-task toolchain requirements ([tasks.X.toolchain]), auto-detection and installation before execution, "tool@version" parsing, ensureToolchainsInstalled() in scheduler
 
-### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **IN PROGRESS (~60%)**
+### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **IN PROGRESS (~70%)**
 - [x] **Affected detection** (9bccfef) — Git diff-based change detection for workspace members
   - `util/affected.zig` — detectAffected(), getChangedFiles(), findProjectForFile()
   - `--affected <ref>` CLI flag — Filter workspace members based on git changes
@@ -106,8 +106,13 @@
   - JSON: Programmatic access to dependency structure
   - HTML: Interactive D3.js force-directed graph
   - `--affected <ref>` integration for highlighting changed projects
-- [ ] **Architecture constraints** — `[constraints]` section, `zr lint` command (PRD §5.7.6)
-- [ ] **Module boundary rules** — Tag-based dependency control
+- [x] **Architecture constraints** (6e5f826) — `[[constraints]]` section, `zr lint` command (PRD §5.7.6)
+  - `config/constraints.zig` — Constraint validation engine
+  - `cli/lint.zig` — `zr lint` command with verbose mode
+  - 3 constraint types: no-circular, tag-based, banned-dependency
+  - Tag-based dependency control (app→lib, feature→feature rules)
+  - 4 unit tests for validation logic
+- [ ] **Module boundary rules** — Extended tag-based constraints with module metadata
 
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
@@ -120,7 +125,7 @@
 
 > **Reality**: Phase 1-5 complete, Phase 6 ~60% (MVP → Plugins → Toolchains → Monorepo). **Production-ready with full toolchain management + monorepo intelligence** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 415 total (415 passing, 0 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests
+- **Tests**: 425 total (421 passing, 8 skipped, 4 constraint validation tests) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -175,5 +180,6 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 15. ~~**Affected detection**~~ — **COMPLETE** ✓ (git diff-based change detection, --affected flag) (9bccfef)
 16. ~~**Dependency graph expansion**~~ — **COMPLETE** ✓ (expandWithDependents() for transitive affected projects) (d503d7b)
 17. ~~**Project graph visualization**~~ — **COMPLETE** ✓ (ASCII/DOT/JSON/HTML formats, `zr graph` command) (d8f4316)
-18. **Architecture constraints** — `[constraints]` + `zr lint` (PRD §5.7.6)
-19. **Remote cache** — shared cache for CI pipelines (future enhancement)
+18. ~~**Architecture constraints**~~ — **COMPLETE** ✓ (`[[constraints]]` + `zr lint` with 3 rule types) (6e5f826)
+19. **Module boundary rules** — Tag metadata + extended constraint validation
+20. **Remote cache** — shared cache for CI pipelines (future enhancement)
