@@ -88,7 +88,7 @@
 - [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
 - [x] **Auto-install on task run** (1db7ecb) — Per-task toolchain requirements ([tasks.X.toolchain]), auto-detection and installation before execution, "tool@version" parsing, ensureToolchainsInstalled() in scheduler
 
-### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **IN PROGRESS (~70%)**
+### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **COMPLETE (100%)**
 - [x] **Affected detection** (9bccfef) — Git diff-based change detection for workspace members
   - `util/affected.zig` — detectAffected(), getChangedFiles(), findProjectForFile()
   - `--affected <ref>` CLI flag — Filter workspace members based on git changes
@@ -112,7 +112,13 @@
   - 3 constraint types: no-circular, tag-based, banned-dependency
   - Tag-based dependency control (app→lib, feature→feature rules)
   - 4 unit tests for validation logic
-- [ ] **Module boundary rules** — Extended tag-based constraints with module metadata
+- [x] **Module boundary rules** (a5e05b7) — Extended tag-based constraints with module metadata **COMPLETE**
+  - `types.Metadata` struct with tags and dependencies fields
+  - `[metadata]` TOML section parsing (tags, dependencies arrays)
+  - `discoverWorkspaceMembers()` — glob-based member discovery with zr.toml detection
+  - `loadProjectMetadata()` — extract tags/deps from member configs for validation
+  - Full integration with constraint validation system
+  - 3 new tests (metadata parsing + extraction)
 
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
@@ -123,9 +129,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1-5 complete, Phase 6 ~60% (MVP → Plugins → Toolchains → Monorepo). **Production-ready with full toolchain management + monorepo intelligence** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: **Phase 1-6 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 425 total (421 passing, 8 skipped, 4 constraint validation tests) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests
+- **Tests**: 431 total (429 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -181,5 +187,5 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 16. ~~**Dependency graph expansion**~~ — **COMPLETE** ✓ (expandWithDependents() for transitive affected projects) (d503d7b)
 17. ~~**Project graph visualization**~~ — **COMPLETE** ✓ (ASCII/DOT/JSON/HTML formats, `zr graph` command) (d8f4316)
 18. ~~**Architecture constraints**~~ — **COMPLETE** ✓ (`[[constraints]]` + `zr lint` with 3 rule types) (6e5f826)
-19. **Module boundary rules** — Tag metadata + extended constraint validation
-20. **Remote cache** — shared cache for CI pipelines (future enhancement)
+19. ~~**Module boundary rules**~~ — **COMPLETE** ✓ (tag metadata + member discovery + full validation) (a5e05b7)
+20. **Remote cache** — shared cache for CI pipelines (future enhancement, out of scope for MVP)
