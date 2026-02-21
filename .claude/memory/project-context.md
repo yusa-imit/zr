@@ -51,7 +51,8 @@
 - [x] Progress bar output module
 - [x] Interactive TUI — **COMPLETE with cancel/retry** (58a59ac)
   - [x] Task picker (arrow keys + Enter)
-  - [x] **Live log streaming** — `zr live <task>` with real-time stdout/stderr display (430fe98)
+  - [x] **Live log streaming** — `zr live <task> [task...]` with real-time stdout/stderr display (430fe98)
+  - [x] **Multi-task live mode** — `zr live` now accepts multiple tasks, runs sequentially with TUI (9fd6cf9)
   - [x] **Cancel/pause/resume controls** — `zr interactive-run <task>` with keyboard controls (58a59ac)
   - [x] Automatic retry prompt on task failure
   - Missing: dependency graph ASCII visualization (PRD §5.3.3) — low priority
