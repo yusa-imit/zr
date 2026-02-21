@@ -80,7 +80,7 @@
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
 ### Missing Utility Modules (PRD §7.2)
-- [x] `util/glob.zig` — glob pattern matching and file finding (*/? wildcards, subdirectory support)
+- [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
 - [x] `util/semver.zig` — semantic version parsing and comparison (gte/gt/lt/lte/eql)
 - [x] `util/hash.zig` — file and string hashing with Wyhash (hashFile/hashString/hashStrings)
 - [x] `util/platform.zig` — cross-platform POSIX wrappers
@@ -89,7 +89,7 @@
 
 > **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 **~90% complete** (Docker complete, **WASM runtime fully functional**). **Production-ready MVP** with event-driven watch mode, kernel-level resource limits, full Docker integration, **complete WASM plugin execution** (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 369 passing (8 skipped platform-specific) — TUI + Docker + WASM runtime + bytecode interpreter + resource monitoring + validate command + utility modules
+- **Tests**: 376 passing (8 skipped platform-specific) — TUI + Docker + WASM runtime + bytecode interpreter + resource monitoring + validate command + utility modules + recursive glob patterns
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
