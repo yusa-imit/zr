@@ -96,7 +96,7 @@ pub fn validateConstraints(
 
     const owned_violations = try allocator.alloc(Violation, violations.items.len);
     @memcpy(owned_violations, violations.items);
-    violations.clearRetainingCapacity();
+    violations.deinit(allocator);
 
     return ValidationResult{
         .passed = owned_violations.len == 0,
