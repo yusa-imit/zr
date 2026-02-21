@@ -79,14 +79,14 @@
 - [ ] **Plugin registry index server** — NOT implemented (uses GitHub as backend only)
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
-### Phase 5 - Toolchain Management (PRD v2.0) — **IN PROGRESS (80%)**
+### Phase 5 - Toolchain Management (PRD v2.0) — **COMPLETE (100%)** ✓
 - [x] **Toolchain types & config** (85a7a0e) — ToolKind enum (node/python/zig/go/rust/deno/bun/java), ToolVersion parser (major.minor.patch with optional patch), ToolSpec
 - [x] **Config [tools] section** (85a7a0e) — TOML parser integration, toolchains field in Config struct
 - [x] **Installer infrastructure** (85a7a0e) — getToolDir, isInstalled, listInstalled, install/uninstall stubs (directory creation only)
 - [x] **Actual downloaders** (6298ae1) — Download tarballs from official sources (Node.js, Python, Zig, Go, Rust, Deno, Bun, Java), curl-based HTTP download, archive extraction (tar/unzip/PowerShell)
 - [x] **PATH manipulation** (8c52f7c, e0030b4) — Inject toolchain bin paths into task execution environment, JAVA_HOME/GOROOT env vars, integrated with scheduler
 - [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
-- [ ] **Auto-install on task run** — Detect missing toolchains and install on-demand
+- [x] **Auto-install on task run** (1db7ecb) — Per-task toolchain requirements ([tasks.X.toolchain]), auto-detection and installation before execution, "tool@version" parsing, ensureToolchainsInstalled() in scheduler
 
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
@@ -96,9 +96,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1-4 complete (MVP → Plugins). **Phase 5 (Toolchain Management) 80% complete** — downloader infrastructure, URL resolution for all 8 toolchains, PATH injection integrated into scheduler, and full CLI implementation (`zr tools list/install/outdated`). Next: auto-install on task run. Production-ready MVP with event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: Phase 1-5 complete (MVP → Plugins → Toolchains). **Production-ready with full toolchain management** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run with per-task requirements, PATH injection, CLI tools (`zr tools list/install`), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 403 total (394 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 toolchain tests + 7 new CLI tests
+- **Tests**: 404 total (395 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -148,6 +148,6 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 10. ~~**Toolchain foundation**~~ — **COMPLETE** ✓ (types, config parsing, installer stubs) (85a7a0e)
 11. ~~**Toolchain downloaders**~~ — **COMPLETE** ✓ (URL resolution, download, extraction for all 8 toolchains) (6298ae1)
 12. ~~**Toolchain PATH injection**~~ — **COMPLETE** ✓ (PATH prepending, JAVA_HOME/GOROOT, scheduler integration) (8c52f7c, e0030b4)
-13. **`zr tools` CLI** — list/install/outdated commands
-14. **Auto-install** — detect missing toolchains and install on-demand
-14. **Remote cache** — shared cache for CI pipelines (future enhancement)
+13. ~~**`zr tools` CLI**~~ — **COMPLETE** ✓ (list/install/outdated commands) (be3b994)
+14. ~~**Auto-install**~~ — **COMPLETE** ✓ (per-task toolchain field, auto-detection and installation) (1db7ecb)
+15. **Remote cache** — shared cache for CI pipelines (future enhancement)
