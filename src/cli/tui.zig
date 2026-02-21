@@ -296,6 +296,7 @@ fn cmdInteractiveInner(
                     w,
                     ew,
                     use_color,
+                    null,
                 ) catch {};
 
                 // Re-enter raw mode for the next keypress.

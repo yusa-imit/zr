@@ -5,6 +5,7 @@ const topo_sort = @import("../graph/topo_sort.zig");
 const process = @import("process.zig");
 const expr = @import("../config/expr.zig");
 const cache_store = @import("../cache/store.zig");
+const control = @import("control.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -27,6 +28,9 @@ pub const SchedulerConfig = struct {
     monitor: bool = false,
     /// Whether to use color in output.
     use_color: bool = false,
+    /// Optional task control for pause/cancel/retry operations.
+    /// If provided, allows interactive control of task execution.
+    task_control: ?*control.TaskControl = null,
 };
 
 /// A single level in the dry-run execution plan.
@@ -152,6 +156,8 @@ const WorkerCtx = struct {
     monitor: bool,
     /// Whether to use color in monitor output.
     use_color: bool,
+    /// Optional task control for pause/cancel/retry operations.
+    task_control: ?*control.TaskControl,
 };
 
 fn workerFn(ctx: WorkerCtx) void {
@@ -193,6 +199,7 @@ fn workerFn(ctx: WorkerCtx) void {
         .env = ctx.env,
         .inherit_stdio = ctx.inherit_stdio,
         .timeout_ms = ctx.timeout_ms,
+        .task_control = ctx.task_control,
         .enable_monitor = ctx.monitor,
         .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
         .monitor_use_color = ctx.use_color,
@@ -217,6 +224,7 @@ fn workerFn(ctx: WorkerCtx) void {
                 .env = ctx.env,
                 .inherit_stdio = ctx.inherit_stdio,
                 .timeout_ms = ctx.timeout_ms,
+                .task_control = ctx.task_control,
                 .enable_monitor = ctx.monitor,
                 .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
                 .monitor_use_color = ctx.use_color,
@@ -638,6 +646,7 @@ pub fn run(
                 .cache_key = cache_key,
                 .monitor = sched_config.monitor,
                 .use_color = sched_config.use_color,
+                .task_control = sched_config.task_control,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

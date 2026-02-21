@@ -19,6 +19,7 @@ pub fn cmdRun(
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
+    task_control: ?*@import("../exec/control.zig").TaskControl,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -57,6 +58,7 @@ pub fn cmdRun(
         .max_jobs = max_jobs,
         .monitor = monitor,
         .use_color = use_color,
+        .task_control = task_control,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -550,6 +552,7 @@ test "cmdRun: missing config returns error" {
         &out_w.interface,
         &err_w.interface,
         false,
+        null,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -588,6 +591,7 @@ test "cmdRun: unknown task returns error" {
         &out_w.interface,
         &err_w.interface,
         false,
+        null,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -626,6 +630,7 @@ test "cmdRun: dry run shows plan without executing" {
         &out_w.interface,
         &err_w.interface,
         false,
+        null,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -664,6 +669,7 @@ test "cmdRun: successful task returns 0" {
         &out_w.interface,
         &err_w.interface,
         false,
+        null,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -702,6 +708,7 @@ test "cmdRun: failing task returns 1" {
         &out_w.interface,
         &err_w.interface,
         false,
+        null,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

@@ -179,6 +179,7 @@ pub fn cmdInteractiveRun(
             w,
             ew,
             use_color,
+            null,
         );
     }
 
@@ -201,6 +202,7 @@ pub fn cmdInteractiveRun(
             w,
             ew,
             use_color,
+            null,
         );
     };
     defer leaveRawMode(original_termios);
@@ -218,7 +220,6 @@ pub fn cmdInteractiveRun(
     const input_thread = try std.Thread.spawn(.{}, inputHandler, .{input_ctx});
 
     // Run task (this will block until task completes or is cancelled)
-    // TODO: Integrate ctrl into run_cmd to use task_control parameter
     const result = run_cmd.cmdRun(
         allocator,
         task_name,
@@ -231,6 +232,7 @@ pub fn cmdInteractiveRun(
         w,
         ew,
         use_color,
+        ctrl,
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();
