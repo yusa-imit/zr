@@ -4,6 +4,7 @@ pub const PluginConfig = plugin_loader.PluginConfig;
 pub const PluginSourceKind = plugin_loader.SourceKind;
 const toolchain_types = @import("../toolchain/types.zig");
 pub const ToolchainConfig = toolchain_types.ToolchainConfig;
+pub const ToolSpec = toolchain_types.ToolSpec;
 
 /// Workspace (monorepo) configuration from [workspace] section.
 pub const Workspace = struct {

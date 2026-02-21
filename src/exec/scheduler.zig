@@ -6,6 +6,7 @@ const process = @import("process.zig");
 const expr = @import("../config/expr.zig");
 const cache_store = @import("../cache/store.zig");
 const control = @import("control.zig");
+const toolchain_path = @import("../toolchain/path.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -132,6 +133,8 @@ const WorkerCtx = struct {
     cwd: ?[]const u8,
     /// Optional env var overrides from the task definition.
     env: ?[]const [2][]const u8,
+    /// Toolchains from config [tools] section (pointer to config.toolchains.tools)
+    toolchains: []const loader.ToolSpec,
     inherit_stdio: bool,
     timeout_ms: ?u64,
     allow_failure: bool,
@@ -160,6 +163,52 @@ const WorkerCtx = struct {
     task_control: ?*control.TaskControl,
 };
 
+/// Build environment variables with toolchain PATH injection.
+/// Merges task env vars with toolchain bin directories in PATH.
+/// Returns null if both task_env and toolchains are empty, otherwise returns owned array.
+/// If toolchain path building fails (e.g., no HOME), falls back to task_env only.
+fn buildEnvWithToolchains(
+    allocator: std.mem.Allocator,
+    task_env: ?[]const [2][]const u8,
+    toolchains: []const loader.ToolSpec,
+) ?[][2][]u8 {
+    if (toolchains.len == 0 and task_env == null) {
+        return null; // No env override needed
+    }
+
+    // Build toolchain env (includes PATH + toolchain-specific vars)
+    const merged_env = toolchain_path.buildToolchainEnv(allocator, toolchains, task_env) catch {
+        // If toolchain env building fails, fall back to task env only
+        // This can happen if HOME is not set or other env issues
+        if (task_env) |env| {
+            // Duplicate task env
+            const dup_env = allocator.alloc([2][]u8, env.len) catch return null;
+            for (env, 0..) |pair, i| {
+                dup_env[i][0] = allocator.dupe(u8, pair[0]) catch {
+                    for (dup_env[0..i]) |p| {
+                        allocator.free(p[0]);
+                        allocator.free(p[1]);
+                    }
+                    allocator.free(dup_env);
+                    return null;
+                };
+                dup_env[i][1] = allocator.dupe(u8, pair[1]) catch {
+                    allocator.free(dup_env[i][0]);
+                    for (dup_env[0..i]) |p| {
+                        allocator.free(p[0]);
+                        allocator.free(p[1]);
+                    }
+                    allocator.free(dup_env);
+                    return null;
+                };
+            }
+            return dup_env;
+        }
+        return null;
+    };
+    return merged_env;
+}
+
 fn workerFn(ctx: WorkerCtx) void {
     defer {
         if (ctx.task_semaphore) |ts| ts.post();
@@ -167,6 +216,10 @@ fn workerFn(ctx: WorkerCtx) void {
         ctx.allocator.free(ctx.task_name);
         if (ctx.cache_key) |k| ctx.allocator.free(k);
     }
+
+    // Build environment with toolchain PATH injection
+    const merged_env = buildEnvWithToolchains(ctx.allocator, ctx.env, ctx.toolchains);
+    defer if (merged_env) |env| toolchain_path.freeToolchainEnv(ctx.allocator, env);
 
     // Check cache hit — skip execution if already succeeded with same cmd+env
     if (ctx.cache) {
@@ -192,11 +245,14 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // Cast merged_env to the const slice type expected by ProcessConfig
+    const proc_env: ?[]const [2][]const u8 = if (merged_env) |env| env else null;
+
     // Run the process with retry logic
     var proc_result = process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
         .cwd = ctx.cwd,
-        .env = ctx.env,
+        .env = proc_env,
         .inherit_stdio = ctx.inherit_stdio,
         .timeout_ms = ctx.timeout_ms,
         .task_control = ctx.task_control,
@@ -221,7 +277,7 @@ fn workerFn(ctx: WorkerCtx) void {
             proc_result = process.run(ctx.allocator, .{
                 .cmd = ctx.cmd,
                 .cwd = ctx.cwd,
-                .env = ctx.env,
+                .env = proc_env,
                 .inherit_stdio = ctx.inherit_stdio,
                 .timeout_ms = ctx.timeout_ms,
                 .task_control = ctx.task_control,
@@ -357,14 +413,21 @@ fn runTaskSync(
     allocator: std.mem.Allocator,
     task: loader.Task,
     env: ?[]const [2][]const u8,
+    toolchains: []const loader.ToolSpec,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
 ) !bool {
+    // Build environment with toolchain PATH injection
+    const merged_env = buildEnvWithToolchains(allocator, env, toolchains);
+    defer if (merged_env) |e| toolchain_path.freeToolchainEnv(allocator, e);
+
+    const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
+
     var proc_result = process.run(allocator, .{
         .cmd = task.cmd,
         .cwd = task.cwd,
-        .env = env,
+        .env = proc_env,
         .inherit_stdio = inherit_stdio,
         .timeout_ms = task.timeout_ms,
     }) catch process.ProcessResult{
@@ -384,7 +447,7 @@ fn runTaskSync(
             proc_result = process.run(allocator, .{
                 .cmd = task.cmd,
                 .cwd = task.cwd,
-                .env = env,
+                .env = proc_env,
                 .inherit_stdio = inherit_stdio,
                 .timeout_ms = task.timeout_ms,
             }) catch process.ProcessResult{
@@ -422,6 +485,7 @@ fn runSerialChain(
     allocator: std.mem.Allocator,
     config: *const loader.Config,
     serial_deps: []const []const u8,
+    toolchains: []const loader.ToolSpec,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
@@ -443,14 +507,14 @@ fn runSerialChain(
         // Recursively run this dep's own serial chain first
         if (dep_task.deps_serial.len > 0) {
             const chain_ok = try runSerialChain(
-                allocator, config, dep_task.deps_serial,
+                allocator, config, dep_task.deps_serial, toolchains,
                 inherit_stdio, results, results_mutex, completed,
             );
             if (!chain_ok) return false;
         }
 
         const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
-        const ok = try runTaskSync(allocator, dep_task, task_env, inherit_stdio, results, results_mutex);
+        const ok = try runTaskSync(allocator, dep_task, task_env, toolchains, inherit_stdio, results, results_mutex);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
@@ -571,7 +635,7 @@ pub fn run(
             // Run deps_serial chain synchronously before this task (if any)
             if (task.deps_serial.len > 0) {
                 const serial_ok = try runSerialChain(
-                    allocator, config, task.deps_serial,
+                    allocator, config, task.deps_serial, config.toolchains.tools,
                     sched_config.inherit_stdio, &results, &results_mutex, &completed,
                 );
                 if (!serial_ok) {
@@ -631,6 +695,7 @@ pub fn run(
                 .cmd = task.cmd,
                 .cwd = task.cwd,
                 .env = task_env_slice,
+                .toolchains = config.toolchains.tools,
                 .inherit_stdio = sched_config.inherit_stdio,
                 .timeout_ms = task.timeout_ms,
                 .allow_failure = task.allow_failure,
