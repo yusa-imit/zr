@@ -185,6 +185,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         constraint_list.deinit(allocator);
     }
 
+    // Metadata parsing state (Phase 6) — [metadata]
+    var in_metadata: bool = false;
+    var metadata_tags = std.ArrayList([]const u8){};
+    defer metadata_tags.deinit(allocator);
+    var metadata_deps = std.ArrayList([]const u8){};
+    defer metadata_deps.deinit(allocator);
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 

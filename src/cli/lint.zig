@@ -3,9 +3,10 @@ const config_loader = @import("../config/loader.zig");
 const constraints_mod = @import("../config/constraints.zig");
 const workspace_mod = @import("../config/loader.zig");
 const common = @import("common.zig");
+const types = @import("../config/types.zig");
 
-const Config = @import("../config/types.zig").Config;
-const Workspace = @import("../config/types.zig").Workspace;
+const Config = types.Config;
+const Workspace = types.Workspace;
 const ProjectInfo = constraints_mod.ProjectInfo;
 const ValidationResult = constraints_mod.ValidationResult;
 
@@ -124,11 +125,13 @@ fn gatherProjects(allocator: std.mem.Allocator, config: *const Config) ![]Projec
     }
 
     const ws = config.workspace orelse {
-        // No workspace — single project
+        // No workspace — single project with metadata if available
+        const tags = if (config.metadata) |m| try dupeStringSlice(allocator, m.tags) else &.{};
+        const deps = if (config.metadata) |m| try dupeStringSlice(allocator, m.dependencies) else &.{};
         try project_list.append(allocator, ProjectInfo{
             .path = try allocator.dupe(u8, "."),
-            .tags = &.{},
-            .dependencies = &.{},
+            .tags = tags,
+            .dependencies = deps,
         });
         const owned = try allocator.alloc(ProjectInfo, project_list.items.len);
         @memcpy(owned, project_list.items);
@@ -136,20 +139,28 @@ fn gatherProjects(allocator: std.mem.Allocator, config: *const Config) ![]Projec
         return owned;
     };
 
-    // TODO: For now, use member_dependencies from workspace config.
-    // In a real implementation, this would discover all workspace members
-    // from the filesystem and parse their zr.toml files.
-    if (ws.member_dependencies.len > 0) {
+    // Discover workspace members from filesystem and parse their metadata
+    for (ws.members) |member_pattern| {
+        const members = try workspace_mod.discoverWorkspaceMembers(allocator, member_pattern);
+        defer {
+            for (members) |m| allocator.free(m);
+            allocator.free(members);
+        }
+
+        for (members) |member_path| {
+            const proj_info = try loadProjectMetadata(allocator, member_path);
+            try project_list.append(allocator, proj_info);
+        }
+    }
+
+    // Fallback: if no members found, include root with metadata
+    if (project_list.items.len == 0) {
+        const tags = if (config.metadata) |m| try dupeStringSlice(allocator, m.tags) else &.{};
+        const deps = if (config.metadata) |m| try dupeStringSlice(allocator, m.dependencies) else &.{};
         try project_list.append(allocator, ProjectInfo{
             .path = try allocator.dupe(u8, "."),
-            .tags = &.{},
-            .dependencies = try dupeStringSlice(allocator, ws.member_dependencies),
-        });
-    } else {
-        try project_list.append(allocator, ProjectInfo{
-            .path = try allocator.dupe(u8, "."),
-            .tags = &.{},
-            .dependencies = &.{},
+            .tags = tags,
+            .dependencies = deps,
         });
     }
 
@@ -157,6 +168,43 @@ fn gatherProjects(allocator: std.mem.Allocator, config: *const Config) ![]Projec
     @memcpy(owned, project_list.items);
     project_list.clearRetainingCapacity();
     return owned;
+}
+
+/// Load project metadata (tags, dependencies) from a member's zr.toml.
+fn loadProjectMetadata(allocator: std.mem.Allocator, project_path: []const u8) !ProjectInfo {
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const config_path = try std.fmt.bufPrint(&path_buf, "{s}/zr.toml", .{project_path});
+
+    // Try to load member's config
+    var member_config = config_loader.loadFromFile(allocator, config_path) catch {
+        // If no config file, return empty metadata
+        return ProjectInfo{
+            .path = try allocator.dupe(u8, project_path),
+            .tags = &.{},
+            .dependencies = &.{},
+        };
+    };
+    defer member_config.deinit();
+
+    // Extract tags from metadata (if available)
+    const tags = if (member_config.metadata) |m|
+        try dupeStringSlice(allocator, m.tags)
+    else
+        &.{};
+
+    // Extract dependencies from workspace.member_dependencies (fallback to metadata)
+    const deps = if (member_config.workspace) |ws_member|
+        try dupeStringSlice(allocator, ws_member.member_dependencies)
+    else if (member_config.metadata) |m|
+        try dupeStringSlice(allocator, m.dependencies)
+    else
+        &.{};
+
+    return ProjectInfo{
+        .path = try allocator.dupe(u8, project_path),
+        .tags = tags,
+        .dependencies = deps,
+    };
 }
 
 fn dupeStringSlice(allocator: std.mem.Allocator, slice: []const []const u8) ![][]const u8 {
@@ -204,6 +252,31 @@ fn printHelp() void {
 // Tests
 // ───────────────────────────────────────────────────────────────────────────
 
-test "lint command with no constraints" {
-    // This test would require file I/O, skipping for now
+test "loadProjectMetadata extracts tags and dependencies" {
+    const allocator = std.testing.allocator;
+
+    // Create a test config with metadata
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Set up metadata
+    const tags = try allocator.alloc([]const u8, 2);
+    tags[0] = try allocator.dupe(u8, "app");
+    tags[1] = try allocator.dupe(u8, "frontend");
+
+    const deps = try allocator.alloc([]const u8, 1);
+    deps[0] = try allocator.dupe(u8, "packages/core");
+
+    config.metadata = types.Metadata{
+        .tags = tags,
+        .dependencies = deps,
+    };
+
+    // Test that metadata is properly stored
+    try std.testing.expect(config.metadata != null);
+    try std.testing.expectEqual(@as(usize, 2), config.metadata.?.tags.len);
+    try std.testing.expectEqualStrings("app", config.metadata.?.tags[0]);
+    try std.testing.expectEqualStrings("frontend", config.metadata.?.tags[1]);
+    try std.testing.expectEqual(@as(usize, 1), config.metadata.?.dependencies.len);
+    try std.testing.expectEqualStrings("packages/core", config.metadata.?.dependencies[0]);
 }

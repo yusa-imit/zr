@@ -6,6 +6,21 @@ const toolchain_types = @import("../toolchain/types.zig");
 pub const ToolchainConfig = toolchain_types.ToolchainConfig;
 pub const ToolSpec = toolchain_types.ToolSpec;
 
+/// Project metadata from [metadata] section (for constraint validation).
+pub const Metadata = struct {
+    /// Project tags for constraint matching (e.g., ["app"], ["lib"], ["feature"]).
+    tags: [][]const u8 = &.{},
+    /// Workspace member dependencies (same as workspace.member_dependencies).
+    dependencies: [][]const u8 = &.{},
+
+    pub fn deinit(self: *Metadata, allocator: std.mem.Allocator) void {
+        for (self.tags) |tag| allocator.free(tag);
+        if (self.tags.len > 0) allocator.free(self.tags);
+        for (self.dependencies) |dep| allocator.free(dep);
+        if (self.dependencies.len > 0) allocator.free(self.dependencies);
+    }
+};
+
 /// Workspace (monorepo) configuration from [workspace] section.
 pub const Workspace = struct {
     /// Glob patterns for member directories (e.g. "packages/*", "apps/*").
@@ -117,6 +132,8 @@ pub const Config = struct {
     toolchains: ToolchainConfig = .{ .tools = &.{} },
     /// Architecture constraints from [[constraints]] sections (Phase 6).
     constraints: []Constraint = &.{},
+    /// Project metadata from [metadata] section (Phase 6).
+    metadata: ?Metadata = null,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -161,6 +178,7 @@ pub const Config = struct {
             c.deinit(self.allocator);
         }
         if (self.constraints.len > 0) self.allocator.free(self.constraints);
+        if (self.metadata) |*m| m.deinit(self.allocator);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks

@@ -28,6 +28,45 @@ pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
     return try parseToml(allocator, content);
 }
 
+/// Discover workspace members from a glob pattern.
+/// Returns owned slice of discovered member paths.
+pub fn discoverWorkspaceMembers(allocator: std.mem.Allocator, pattern: []const u8) ![][]const u8 {
+    const glob_mod = @import("../util/glob.zig");
+
+    var members = std.ArrayList([]const u8){};
+    errdefer {
+        for (members.items) |m| allocator.free(m);
+        members.deinit(allocator);
+    }
+
+    // Build pattern for finding zr.toml files in member directories
+    var pattern_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const toml_pattern = try std.fmt.bufPrint(&pattern_buf, "{s}/zr.toml", .{pattern});
+
+    // Use glob to find matching zr.toml files
+    const cwd = std.fs.cwd();
+    const matches = try glob_mod.find(allocator, cwd, toml_pattern);
+    defer {
+        for (matches) |m| allocator.free(m);
+        allocator.free(matches);
+    }
+
+    // Extract directory paths from zr.toml paths
+    for (matches) |match_path| {
+        // Remove "/zr.toml" suffix to get member directory
+        if (std.mem.endsWith(u8, match_path, "/zr.toml")) {
+            const dir_path = match_path[0 .. match_path.len - "/zr.toml".len];
+            const owned_path = try allocator.dupe(u8, dir_path);
+            try members.append(allocator, owned_path);
+        }
+    }
+
+    const owned = try allocator.alloc([]const u8, members.items.len);
+    @memcpy(owned, members.items);
+    members.clearRetainingCapacity();
+    return owned;
+}
+
 test "parseDurationMs: various units" {
     try std.testing.expectEqual(@as(?u64, 500), parseDurationMs("500ms"));
     try std.testing.expectEqual(@as(?u64, 30_000), parseDurationMs("30s"));
