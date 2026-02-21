@@ -5,6 +5,7 @@ const loader = @import("../config/loader.zig");
 const scheduler = @import("../exec/scheduler.zig");
 const glob = @import("../util/glob.zig");
 const affected_mod = @import("../util/affected.zig");
+const synthetic = @import("../multirepo/synthetic.zig");
 
 /// Resolve workspace member directories from glob patterns.
 /// Supports wildcards in patterns (e.g., "packages/*", "tools/*/src", "apps/*/backend").
@@ -588,6 +589,50 @@ test "cmdWorkspaceList: no workspace section returns error" {
 
     const code = try cmdWorkspaceList(allocator, config_path, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+pub fn cmdWorkspaceSync(
+    allocator: std.mem.Allocator,
+    repo_config_path: ?[]const u8,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    // Default to zr-repos.toml in current directory
+    const config_path = repo_config_path orelse "zr-repos.toml";
+
+    // Check if file exists
+    std.fs.cwd().access(config_path, .{}) catch {
+        try color.printError(ew, use_color,
+            "workspace sync: {s} not found\n\n  Hint: Create a zr-repos.toml file with [workspace] and [[repos.X]] sections\n",
+            .{config_path});
+        return 1;
+    };
+
+    try color.printBold(w, use_color, "Building synthetic workspace from {s}...\n", .{config_path});
+
+    // Build synthetic workspace (this also syncs all repos)
+    var workspace = synthetic.buildSyntheticWorkspace(allocator, config_path) catch |err| {
+        try color.printError(ew, use_color,
+            "workspace sync: failed to build synthetic workspace: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+    defer workspace.deinit(allocator);
+
+    // Save to cache
+    synthetic.saveSyntheticWorkspace(allocator, &workspace) catch |err| {
+        try color.printError(ew, use_color,
+            "workspace sync: failed to save workspace metadata: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+
+    try color.printSuccess(w, use_color, "\n✓ Synthetic workspace '{s}' created successfully\n", .{workspace.name});
+    try w.print("  Root: {s}\n", .{workspace.root_path});
+    try w.print("  Members: {d}\n", .{workspace.members.len});
+
+    try color.printDim(w, use_color, "\nYou can now use 'zr graph', 'zr affected', etc. across all repos.\n", .{});
+
+    return 0;
 }
 
 test "cmdWorkspaceList: missing config returns error" {

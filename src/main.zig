@@ -55,6 +55,8 @@ const repos = @import("config/repos.zig");
 const multirepo_sync = @import("multirepo/sync.zig");
 const multirepo_status = @import("multirepo/status.zig");
 const multirepo_graph = @import("multirepo/graph.zig");
+const multirepo_run = @import("multirepo/run.zig");
+const multirepo_synthetic = @import("multirepo/synthetic.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -114,6 +116,8 @@ comptime {
     _ = multirepo_sync;
     _ = multirepo_status;
     _ = multirepo_graph;
+    _ = multirepo_run;
+    _ = multirepo_synthetic;
 }
 
 pub fn main() !void {
@@ -359,9 +363,12 @@ fn run(
             }
             const task_name = effective_args[3];
             return workspace.cmdWorkspaceRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, affected_base, effective_w, ew, effective_color);
+        } else if (std.mem.eql(u8, sub, "sync")) {
+            const repo_config_path: ?[]const u8 = if (effective_args.len >= 4) effective_args[3] else null;
+            return workspace.cmdWorkspaceSync(allocator, repo_config_path, effective_w, ew, effective_color);
         } else {
             try color.printError(ew, effective_color,
-                "workspace: unknown subcommand '{s}'\n\n  Hint: zr workspace list | zr workspace run <task>\n", .{sub});
+                "workspace: unknown subcommand '{s}'\n\n  Hint: zr workspace list | zr workspace run <task> | zr workspace sync\n", .{sub});
             return 1;
         }
     } else if (std.mem.eql(u8, cmd, "cache")) {
@@ -419,6 +426,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  history                Show recent run history\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
+    try w.print("  workspace sync         Build synthetic workspace from multi-repo\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin builtins        List available built-in plugins\n", .{});
