@@ -33,8 +33,8 @@ pub fn parseRepoConfig(allocator: std.mem.Allocator, content: []const u8) !RepoW
     defer repo_tags.deinit(allocator);
 
     // Accumulated repos (owned)
-    var repos_list = std.ArrayList(RepoConfig).init(allocator);
-    defer repos_list.deinit();
+    var repos_list = std.ArrayList(RepoConfig){};
+    defer repos_list.deinit(allocator);
 
     // Current deps section parsing
     var in_deps_section = false;
@@ -93,7 +93,7 @@ pub fn parseRepoConfig(allocator: std.mem.Allocator, content: []const u8) !RepoW
             } else if (std.mem.eql(u8, key, "branch")) {
                 repo_branch = stripQuotes(val);
             } else if (std.mem.eql(u8, key, "tags")) {
-                try parseTags(&repo_tags, val);
+                try parseTags(allocator, &repo_tags, val);
             }
         } else if (in_deps_section) {
             // Inside [deps]
@@ -103,13 +103,13 @@ pub fn parseRepoConfig(allocator: std.mem.Allocator, content: []const u8) !RepoW
                     try flushDep(allocator, &config.dependencies, dep_repo, &dep_list);
                     dep_list.clearRetainingCapacity();
                     current_dep_repo = key;
-                    try parseDeps(&dep_list, val);
+                    try parseDeps(allocator, &dep_list, val);
                 } else {
-                    try parseDeps(&dep_list, val);
+                    try parseDeps(allocator, &dep_list, val);
                 }
             } else {
                 current_dep_repo = key;
-                try parseDeps(&dep_list, val);
+                try parseDeps(allocator, &dep_list, val);
             }
         } else {
             // Top-level or [workspace]
@@ -133,7 +133,7 @@ pub fn parseRepoConfig(allocator: std.mem.Allocator, content: []const u8) !RepoW
         config.name = try allocator.dupe(u8, name);
     }
 
-    config.repos = try repos_list.toOwnedSlice();
+    config.repos = try repos_list.toOwnedSlice(allocator);
 
     return config;
 }
@@ -146,7 +146,7 @@ fn stripQuotes(s: []const u8) []const u8 {
     return stripped;
 }
 
-fn parseTags(tags: *std.ArrayList([]const u8), val: []const u8) !void {
+fn parseTags(allocator: std.mem.Allocator, tags: *std.ArrayList([]const u8), val: []const u8) !void {
     // Parse array: ["tag1", "tag2"]
     var trimmed = std.mem.trim(u8, val, " \t");
     if (trimmed.len < 2 or trimmed[0] != '[' or trimmed[trimmed.len - 1] != ']') return;
@@ -156,12 +156,12 @@ fn parseTags(tags: *std.ArrayList([]const u8), val: []const u8) !void {
     while (it.next()) |item| {
         const tag = stripQuotes(std.mem.trim(u8, item, " \t"));
         if (tag.len > 0) {
-            try tags.append(tag);
+            try tags.append(allocator, tag);
         }
     }
 }
 
-fn parseDeps(deps: *std.ArrayList([]const u8), val: []const u8) !void {
+fn parseDeps(allocator: std.mem.Allocator, deps: *std.ArrayList([]const u8), val: []const u8) !void {
     // Parse array: ["dep1", "dep2"]
     var trimmed = std.mem.trim(u8, val, " \t");
     if (trimmed.len < 2 or trimmed[0] != '[' or trimmed[trimmed.len - 1] != ']') return;
@@ -171,7 +171,7 @@ fn parseDeps(deps: *std.ArrayList([]const u8), val: []const u8) !void {
     while (it.next()) |item| {
         const dep = stripQuotes(std.mem.trim(u8, item, " \t"));
         if (dep.len > 0) {
-            try deps.append(dep);
+            try deps.append(allocator, dep);
         }
     }
 }
@@ -195,7 +195,7 @@ fn flushRepo(allocator: std.mem.Allocator, repos: *std.ArrayList(RepoConfig), na
         repo.tags = tags_owned;
     }
 
-    try repos.append(repo);
+    try repos.append(allocator, repo);
 }
 
 fn flushDep(allocator: std.mem.Allocator, dependencies: *std.StringHashMap([][]const u8), repo_name: []const u8, deps: *std.ArrayList([]const u8)) !void {

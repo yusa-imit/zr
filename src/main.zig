@@ -50,6 +50,9 @@ const toolchain_installer = @import("toolchain/installer.zig");
 const toolchain_downloader = @import("toolchain/downloader.zig");
 const toolchain_path = @import("toolchain/path.zig");
 const constraints_mod = @import("config/constraints.zig");
+const repos = @import("config/repos.zig");
+const multirepo_sync = @import("multirepo/sync.zig");
+const multirepo_status = @import("multirepo/status.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -104,6 +107,9 @@ comptime {
     _ = toolchain_installer;
     _ = toolchain_downloader;
     _ = toolchain_path;
+    _ = repos;
+    _ = multirepo_sync;
+    _ = multirepo_status;
 }
 
 pub fn main() !void {
