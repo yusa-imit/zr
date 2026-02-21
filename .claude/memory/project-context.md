@@ -79,12 +79,12 @@
 - [ ] **Plugin registry index server** — NOT implemented (uses GitHub as backend only)
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
-### Phase 5 - Toolchain Management (PRD v2.0) — **STARTED (20%)**
+### Phase 5 - Toolchain Management (PRD v2.0) — **IN PROGRESS (60%)**
 - [x] **Toolchain types & config** (85a7a0e) — ToolKind enum (node/python/zig/go/rust/deno/bun/java), ToolVersion parser (major.minor.patch with optional patch), ToolSpec
 - [x] **Config [tools] section** (85a7a0e) — TOML parser integration, toolchains field in Config struct
 - [x] **Installer infrastructure** (85a7a0e) — getToolDir, isInstalled, listInstalled, install/uninstall stubs (directory creation only)
-- [ ] **Actual downloaders** — Download tarballs from official sources (Node.js, Python, etc.)
-- [ ] **PATH manipulation** — Inject toolchain bin paths into task execution environment
+- [x] **Actual downloaders** (6298ae1) — Download tarballs from official sources (Node.js, Python, Zig, Go, Rust, Deno, Bun, Java), curl-based HTTP download, archive extraction (tar/unzip/PowerShell)
+- [x] **PATH manipulation** (8c52f7c, e0030b4) — Inject toolchain bin paths into task execution environment, JAVA_HOME/GOROOT env vars, integrated with scheduler
 - [ ] **CLI commands** — `zr tools list`, `zr tools install`, `zr tools outdated`
 - [ ] **Auto-install on task run** — Detect missing toolchains and install on-demand
 
@@ -96,9 +96,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1-4 complete (MVP → Plugins). **Phase 5 (Toolchain Management) started** — foundational types, config parsing, and installer infrastructure in place. Next: actual downloaders and PATH injection. Production-ready MVP with event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: Phase 1-4 complete (MVP → Plugins). **Phase 5 (Toolchain Management) 60% complete** — downloader infrastructure, URL resolution for all 8 toolchains, and PATH injection integrated into scheduler. Next: CLI commands (`zr tools`) and auto-install. Production-ready MVP with event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 386 total (377 passing, 8 skipped platform-specific, 1 unrelated) — includes 11 new toolchain tests
+- **Tests**: 396 total (387 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 new toolchain tests (URL resolution, PATH injection, env building)
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -118,7 +118,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 - `watch/` - Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
 - `output/` - Terminal rendering, color, progress bars
 - `util/` - glob, semver, hash, platform wrappers
-- `toolchain/` - **Phase 5**: types (ToolKind, ToolVersion, ToolSpec), installer (version management, directory structure)
+- `toolchain/` - **Phase 5**: types (ToolKind, ToolVersion, ToolSpec), installer (version management, directory structure), downloader (URL resolution, HTTP download, archive extraction), path (PATH injection, env var building)
 
 ## Config File
 
@@ -146,7 +146,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 8. ~~**WASM plugin sandbox (MVP)**~~ — **COMPLETE** ✓ (interpreter runtime, memory isolation, host callbacks) (2b0c89a)
 9. ~~**WASM module parser + interpreter**~~ — **COMPLETE** ✓ (full MVP spec parser + stack-based bytecode executor) (e432538, 7926633)
 10. ~~**Toolchain foundation**~~ — **COMPLETE** ✓ (types, config parsing, installer stubs) (85a7a0e)
-11. **Toolchain downloaders** — implement actual downloads for Node.js, Python, Zig, Go, Rust, Deno, Bun
-12. **Toolchain PATH injection** — modify task execution to use toolchain bins
+11. ~~**Toolchain downloaders**~~ — **COMPLETE** ✓ (URL resolution, download, extraction for all 8 toolchains) (6298ae1)
+12. ~~**Toolchain PATH injection**~~ — **COMPLETE** ✓ (PATH prepending, JAVA_HOME/GOROOT, scheduler integration) (8c52f7c, e0030b4)
 13. **`zr tools` CLI** — list/install/outdated commands
+14. **Auto-install** — detect missing toolchains and install on-demand
 14. **Remote cache** — shared cache for CI pipelines (future enhancement)
