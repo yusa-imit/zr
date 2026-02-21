@@ -10,6 +10,13 @@ Patterns confirmed to work well in this project. Update as patterns evolve.
 - Pass allocator as first parameter to init functions
 - Always provide `deinit()` for structs with owned memory
 
+### File Writing (Zig 0.15)
+- `file.writer()` requires a buffer argument in Zig 0.15
+- For JSON/text generation: use `std.ArrayList(u8){}` to build string, then `file.writeAll(list.items)`
+- ArrayList pattern: `var list = std.ArrayList(u8){}; defer list.deinit(allocator);`
+- Use `list.writer(allocator).print()` for formatted appending
+- Alternative: use `std.fmt.allocPrint()` for small strings, then `file.writeAll()`
+
 ### Error Handling
 - Define specific error sets per module
 - Propagate errors with `try`
