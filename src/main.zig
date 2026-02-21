@@ -54,6 +54,7 @@ const constraints_mod = @import("config/constraints.zig");
 const repos = @import("config/repos.zig");
 const multirepo_sync = @import("multirepo/sync.zig");
 const multirepo_status = @import("multirepo/status.zig");
+const multirepo_graph = @import("multirepo/graph.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -112,6 +113,7 @@ comptime {
     _ = repos;
     _ = multirepo_sync;
     _ = multirepo_status;
+    _ = multirepo_graph;
 }
 
 pub fn main() !void {
