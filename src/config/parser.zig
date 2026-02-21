@@ -192,6 +192,18 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var metadata_deps = std.ArrayList([]const u8){};
     defer metadata_deps.deinit(allocator);
 
+    // Cache parsing state (Phase 7) — [cache] and [cache.remote]
+    var in_cache: bool = false;
+    var in_cache_remote: bool = false;
+    var cache_enabled: bool = false;
+    var cache_local_dir: ?[]const u8 = null;
+    var cache_remote_type: ?types.RemoteCacheType = null;
+    var cache_remote_bucket: ?[]const u8 = null;
+    var cache_remote_region: ?[]const u8 = null;
+    var cache_remote_prefix: ?[]const u8 = null;
+    var cache_remote_url: ?[]const u8 = null;
+    var cache_remote_auth: ?[]const u8 = null;
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
@@ -557,6 +569,22 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_tools = false;
             in_constraint = false;
             in_metadata = true;
+            in_cache = false;
+            in_cache_remote = false;
+        } else if (std.mem.eql(u8, trimmed, "[cache]")) {
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_metadata = false;
+            in_cache = true;
+            in_cache_remote = false;
+        } else if (std.mem.eql(u8, trimmed, "[cache.remote]")) {
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_metadata = false;
+            in_cache = false;
+            in_cache_remote = true;
         } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             in_tools = false;
@@ -912,6 +940,28 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (in_cache) {
+                // Inside [cache] — parse enabled and local_dir
+                if (std.mem.eql(u8, key, "enabled")) {
+                    cache_enabled = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "local_dir")) {
+                    cache_local_dir = value;
+                }
+            } else if (in_cache_remote) {
+                // Inside [cache.remote] — parse type, bucket, region, prefix, url, auth
+                if (std.mem.eql(u8, key, "type")) {
+                    cache_remote_type = types.RemoteCacheType.parse(value) catch null;
+                } else if (std.mem.eql(u8, key, "bucket")) {
+                    cache_remote_bucket = value;
+                } else if (std.mem.eql(u8, key, "region")) {
+                    cache_remote_region = value;
+                } else if (std.mem.eql(u8, key, "prefix")) {
+                    cache_remote_prefix = value;
+                } else if (std.mem.eql(u8, key, "url")) {
+                    cache_remote_url = value;
+                } else if (std.mem.eql(u8, key, "auth")) {
+                    cache_remote_auth = value;
+                }
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
@@ -1232,6 +1282,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         @memcpy(owned_constraints, constraint_list.items);
         constraint_list.clearRetainingCapacity();
         config.constraints = owned_constraints;
+    }
+
+    // Assemble cache config (Phase 7)
+    config.cache.enabled = cache_enabled;
+    config.cache.local_dir = if (cache_local_dir) |ld| try allocator.dupe(u8, ld) else null;
+    if (cache_remote_type) |crt| {
+        config.cache.remote = types.RemoteCacheConfig{
+            .type = crt,
+            .bucket = if (cache_remote_bucket) |b| try allocator.dupe(u8, b) else null,
+            .region = if (cache_remote_region) |r| try allocator.dupe(u8, r) else null,
+            .prefix = if (cache_remote_prefix) |p| try allocator.dupe(u8, p) else null,
+            .url = if (cache_remote_url) |u| try allocator.dupe(u8, u) else null,
+            .auth = if (cache_remote_auth) |a| try allocator.dupe(u8, a) else null,
+        };
     }
 
     return config;
@@ -1938,4 +2002,71 @@ test "parse builtin notify plugin from toml" {
     try std.testing.expectEqual(PluginSourceKind.builtin, p.kind);
     try std.testing.expectEqualStrings("notify", p.source);
     try std.testing.expectEqual(@as(usize, 2), p.config.len);
+}
+
+test "parse cache config with local only" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[cache]
+        \\enabled = true
+        \\local_dir = ".cache"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.cache.enabled);
+    try std.testing.expect(config.cache.local_dir != null);
+    try std.testing.expectEqualStrings(".cache", config.cache.local_dir.?);
+    try std.testing.expect(config.cache.remote == null);
+}
+
+test "parse cache config with S3 remote" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[cache]
+        \\enabled = true
+        \\local_dir = ".cache"
+        \\
+        \\[cache.remote]
+        \\type = "s3"
+        \\bucket = "my-cache-bucket"
+        \\region = "us-east-1"
+        \\prefix = "zr/"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.cache.enabled);
+    try std.testing.expect(config.cache.local_dir != null);
+    try std.testing.expectEqualStrings(".cache", config.cache.local_dir.?);
+    try std.testing.expect(config.cache.remote != null);
+    const remote = config.cache.remote.?;
+    try std.testing.expectEqual(types.RemoteCacheType.s3, remote.type);
+    try std.testing.expect(remote.bucket != null);
+    try std.testing.expectEqualStrings("my-cache-bucket", remote.bucket.?);
+    try std.testing.expect(remote.region != null);
+    try std.testing.expectEqualStrings("us-east-1", remote.region.?);
+    try std.testing.expect(remote.prefix != null);
+    try std.testing.expectEqualStrings("zr/", remote.prefix.?);
+}
+
+test "parse cache config with HTTP remote" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[cache.remote]
+        \\type = "http"
+        \\url = "https://cache.example.com"
+        \\auth = "bearer:SECRET"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.cache.enabled);
+    try std.testing.expect(config.cache.remote != null);
+    const remote = config.cache.remote.?;
+    try std.testing.expectEqual(types.RemoteCacheType.http, remote.type);
+    try std.testing.expect(remote.url != null);
+    try std.testing.expectEqualStrings("https://cache.example.com", remote.url.?);
+    try std.testing.expect(remote.auth != null);
+    try std.testing.expectEqualStrings("bearer:SECRET", remote.auth.?);
 }

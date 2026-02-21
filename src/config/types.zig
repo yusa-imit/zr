@@ -53,6 +53,64 @@ pub const GlobalResourceConfig = struct {
     max_cpu_percent: ?u8 = null,
 };
 
+/// Remote cache backend type (PRD §5.7.3 Phase 7).
+pub const RemoteCacheType = enum {
+    s3,
+    gcs,
+    azure,
+    http,
+
+    pub fn parse(s: []const u8) !RemoteCacheType {
+        if (std.mem.eql(u8, s, "s3")) return .s3;
+        if (std.mem.eql(u8, s, "gcs")) return .gcs;
+        if (std.mem.eql(u8, s, "azure")) return .azure;
+        if (std.mem.eql(u8, s, "http")) return .http;
+        return error.InvalidRemoteCacheType;
+    }
+};
+
+/// Remote cache configuration from [cache.remote] section (Phase 7).
+pub const RemoteCacheConfig = struct {
+    /// Backend type (s3, gcs, azure, http).
+    type: RemoteCacheType,
+    /// S3/GCS bucket name or Azure container (owned).
+    bucket: ?[]const u8 = null,
+    /// S3 region (owned).
+    region: ?[]const u8 = null,
+    /// Prefix path within bucket (owned).
+    prefix: ?[]const u8 = null,
+    /// HTTP base URL (owned).
+    url: ?[]const u8 = null,
+    /// HTTP auth header (e.g., "bearer:$TOKEN") (owned).
+    auth: ?[]const u8 = null,
+
+    pub fn deinit(self: *RemoteCacheConfig, allocator: std.mem.Allocator) void {
+        if (self.bucket) |b| allocator.free(b);
+        if (self.region) |r| allocator.free(r);
+        if (self.prefix) |p| allocator.free(p);
+        if (self.url) |u| allocator.free(u);
+        if (self.auth) |a| allocator.free(a);
+    }
+};
+
+/// Cache configuration from [cache] section (Phase 2 local + Phase 7 remote).
+pub const CacheConfig = struct {
+    /// Enable caching (default: false).
+    enabled: bool = false,
+    /// Local cache directory (default: "$HOME/.zr/cache", owned).
+    local_dir: ?[]const u8 = null,
+    /// Remote cache configuration (Phase 7).
+    remote: ?RemoteCacheConfig = null,
+
+    pub fn deinit(self: *CacheConfig, allocator: std.mem.Allocator) void {
+        if (self.local_dir) |ld| allocator.free(ld);
+        if (self.remote) |*r| {
+            var remote_mut = r.*;
+            remote_mut.deinit(allocator);
+        }
+    }
+};
+
 /// Constraint rule types for architecture governance (PRD §5.7.6).
 pub const ConstraintRule = enum {
     /// Prohibit circular dependencies in the workspace.
@@ -134,6 +192,8 @@ pub const Config = struct {
     constraints: []Constraint = &.{},
     /// Project metadata from [metadata] section (Phase 6).
     metadata: ?Metadata = null,
+    /// Cache configuration from [cache] section (Phase 2 local + Phase 7 remote).
+    cache: CacheConfig = .{},
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -179,6 +239,7 @@ pub const Config = struct {
         }
         if (self.constraints.len > 0) self.allocator.free(self.constraints);
         if (self.metadata) |*m| m.deinit(self.allocator);
+        self.cache.deinit(self.allocator);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks
