@@ -2,6 +2,8 @@ const std = @import("std");
 const plugin_loader = @import("../plugin/loader.zig");
 pub const PluginConfig = plugin_loader.PluginConfig;
 pub const PluginSourceKind = plugin_loader.SourceKind;
+const toolchain_types = @import("../toolchain/types.zig");
+pub const ToolchainConfig = toolchain_types.ToolchainConfig;
 
 /// Workspace (monorepo) configuration from [workspace] section.
 pub const Workspace = struct {
@@ -38,6 +40,8 @@ pub const Config = struct {
     plugins: []PluginConfig = &.{},
     /// Global resource limits from [global.resources] section.
     global_resources: GlobalResourceConfig = .{},
+    /// Toolchain config from [tools] section (Phase 5).
+    toolchains: ToolchainConfig = .{ .tools = &.{} },
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -47,6 +51,7 @@ pub const Config = struct {
             .profiles = std.StringHashMap(Profile).init(allocator),
             .workspace = null,
             .plugins = &.{},
+            .toolchains = ToolchainConfig.init(allocator),
             .allocator = allocator,
         };
     }
@@ -76,6 +81,7 @@ pub const Config = struct {
             pc.deinit(self.allocator);
         }
         if (self.plugins.len > 0) self.allocator.free(self.plugins);
+        self.toolchains.deinit(self.allocator);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks

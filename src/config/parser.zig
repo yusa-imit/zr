@@ -16,6 +16,7 @@ const parseDurationMs = types.parseDurationMs;
 const parseMemoryBytes = types.parseMemoryBytes;
 const addTaskImpl = types.addTaskImpl;
 const addMatrixTask = matrix.addMatrixTask;
+const toolchain_types = @import("../toolchain/types.zig");
 
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
@@ -117,6 +118,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer {
         for (plugin_list.items) |*pc| pc.deinit(allocator);
         plugin_list.deinit(allocator);
+    }
+
+    // Toolchain parsing state (Phase 5)
+    var in_tools: bool = false;
+    var tools_specs = std.ArrayList(toolchain_types.ToolSpec){};
+    defer {
+        for (tools_specs.items) |*ts| ts.deinit(allocator);
+        tools_specs.deinit(allocator);
     }
 
     while (lines.next()) |line| {
@@ -380,8 +389,45 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 profile_env.clearRetainingCapacity(); current_profile = null;
             }
             in_workspace = true;
+        } else if (std.mem.eql(u8, trimmed, "[tools]")) {
+            // Flush pending sections
+            if (current_task) |task_name| {
+                if (task_cmd) |cmd| {
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory);
+                    }
+                }
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity();
+                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
+            }
+            if (current_workflow) |wf_name_slice| {
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                for (workflow_stages.items) |*s| s.deinit(allocator);
+                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null;
+            }
+            if (current_profile) |pname| {
+                if (current_profile_task) |ptask| {
+                    const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+                    var ptenv_duped: usize = 0;
+                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
+                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
+                    const pto_key = try allocator.dupe(u8, ptask);
+                    errdefer allocator.free(pto_key);
+                    try profile_task_overrides.put(pto_key, pto);
+                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                }
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+                profile_env.clearRetainingCapacity(); current_profile = null;
+            }
+            in_workspace = false;
+            in_tools = true;
         } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
+            in_tools = false;
             // Flush pending task (if any)
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
@@ -625,6 +671,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     // Workflow-level description (not inside a stage)
                     workflow_desc = value;
                 }
+            } else if (in_tools) {
+                // Inside [tools] section — parse tool = "version" pairs
+                const tool_kind = toolchain_types.ToolKind.fromString(key) orelse continue;
+                const tool_version = toolchain_types.ToolVersion.parse(value) catch continue;
+                try tools_specs.append(allocator, toolchain_types.ToolSpec{
+                    .kind = tool_kind,
+                    .version = tool_version,
+                });
             } else if (current_plugin_name != null and current_task == null and current_workflow == null and current_profile == null and !in_workspace) {
                 // Inside [plugins.X] — parse source and config fields
                 if (std.mem.eql(u8, key, "source")) {
@@ -904,6 +958,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         // Clear plugin_list so defer doesn't double-free
         plugin_list.clearRetainingCapacity();
         config.plugins = owned;
+    }
+
+    // Flush toolchain specs (Phase 5)
+    if (tools_specs.items.len > 0) {
+        const owned_tools = try allocator.alloc(toolchain_types.ToolSpec, tools_specs.items.len);
+        @memcpy(owned_tools, tools_specs.items);
+        tools_specs.clearRetainingCapacity();
+        config.toolchains.tools = owned_tools;
     }
 
     return config;
