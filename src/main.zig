@@ -34,6 +34,7 @@ const tui = @import("cli/tui.zig");
 const live_cmd = @import("cli/live.zig");
 const interactive_run = @import("cli/interactive_run.zig");
 const validate_cmd = @import("cli/validate.zig");
+const tools_cmd = @import("cli/tools.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -82,6 +83,7 @@ comptime {
     _ = live_cmd;
     _ = interactive_run;
     _ = validate_cmd;
+    _ = tools_cmd;
     _ = platform;
     _ = semver;
     _ = hash_util;
@@ -354,6 +356,9 @@ fn run(
         }
         const task_name = effective_args[2];
         return interactive_run.cmdInteractiveRun(allocator, task_name, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "tools")) {
+        const sub = if (effective_args.len >= 3) effective_args[2] else "";
+        return tools_cmd.cmdTools(allocator, sub, effective_args, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -389,7 +394,10 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
-    try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
+    try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n", .{});
+    try w.print("  tools list [kind]      List installed toolchain versions\n", .{});
+    try w.print("  tools install <k>@<v>  Install a toolchain (e.g., node@20.11.1)\n", .{});
+    try w.print("  tools outdated [kind]  Check for outdated toolchains\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});

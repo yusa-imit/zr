@@ -125,9 +125,12 @@ pub fn install(allocator: std.mem.Allocator, kind: ToolKind, version: ToolVersio
         if (err != error.PathAlreadyExists) return err;
     };
 
+    const version_str = try version.toString(allocator);
+    defer allocator.free(version_str);
+
     const archive_name = try std.fmt.allocPrint(allocator, "{s}-{s}.{s}", .{
         kind.toString(),
-        try version.toString(allocator),
+        version_str,
         switch (spec.archive_type) {
             .tar_gz => "tar.gz",
             .tar_xz => "tar.xz",
@@ -139,7 +142,7 @@ pub fn install(allocator: std.mem.Allocator, kind: ToolKind, version: ToolVersio
     defer allocator.free(archive_path);
 
     // Download the archive
-    std.debug.print("Downloading {s} {s} from {s}...\n", .{ kind.toString(), try version.toString(allocator), spec.url });
+    std.debug.print("Downloading {s} {s} from {s}...\n", .{ kind.toString(), version_str, spec.url });
     try downloader.downloadFile(allocator, spec.url, archive_path);
 
     // Extract to tool directory
@@ -149,7 +152,7 @@ pub fn install(allocator: std.mem.Allocator, kind: ToolKind, version: ToolVersio
     // Clean up temporary archive
     std.fs.deleteFileAbsolute(archive_path) catch {};
 
-    std.debug.print("✓ Installed {s} {s}\n", .{ kind.toString(), try version.toString(allocator) });
+    std.debug.print("✓ Installed {s} {s}\n", .{ kind.toString(), version_str });
 }
 
 /// Uninstall a specific tool version.
