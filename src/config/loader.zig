@@ -11,6 +11,7 @@ pub const Workspace = types.Workspace;
 pub const PluginConfig = types.PluginConfig;
 pub const PluginSourceKind = types.PluginSourceKind;
 pub const ToolSpec = types.ToolSpec;
+pub const RemoteCacheConfig = types.RemoteCacheConfig;
 pub const parseDurationMs = types.parseDurationMs;
 pub const addTaskImpl = types.addTaskImpl;
 const matrix_mod = @import("matrix.zig");

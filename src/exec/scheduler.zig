@@ -5,6 +5,7 @@ const topo_sort = @import("../graph/topo_sort.zig");
 const process = @import("process.zig");
 const expr = @import("../config/expr.zig");
 const cache_store = @import("../cache/store.zig");
+const cache_remote = @import("../cache/remote.zig");
 const control = @import("control.zig");
 const toolchain_path = @import("../toolchain/path.zig");
 const toolchain_types = @import("../toolchain/types.zig");
@@ -160,6 +161,8 @@ const WorkerCtx = struct {
     cache: bool,
     /// Pre-computed cache key (owned by worker, freed in defer).
     cache_key: ?[]u8,
+    /// Remote cache config from [cache.remote] section (Phase 7).
+    cache_remote_config: ?*const loader.RemoteCacheConfig,
     /// If true, display live resource monitoring.
     monitor: bool,
     /// Whether to use color in monitor output.
@@ -229,23 +232,43 @@ fn workerFn(ctx: WorkerCtx) void {
     // Check cache hit — skip execution if already succeeded with same cmd+env
     if (ctx.cache) {
         if (ctx.cache_key) |key| {
+            // First check local cache
+            var local_hit = false;
             var store = cache_store.CacheStore.init(ctx.allocator) catch null;
             if (store) |*s| {
                 defer s.deinit();
-                if (s.hasHit(key)) {
-                    // Cache hit: record a skipped success result
-                    const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
-                    ctx.results_mutex.lock();
-                    defer ctx.results_mutex.unlock();
-                    ctx.results.append(ctx.allocator, .{
-                        .task_name = owned_name,
-                        .success = true,
-                        .exit_code = 0,
-                        .duration_ms = 0,
-                        .skipped = true,
-                    }) catch ctx.allocator.free(owned_name);
-                    return;
+                local_hit = s.hasHit(key);
+            }
+
+            // If local miss, try remote cache (Phase 7)
+            if (!local_hit and ctx.cache_remote_config != null) {
+                if (ctx.cache_remote_config) |remote_cfg| {
+                    var remote = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
+                    defer remote.deinit();
+                    // Pull from remote (null = miss)
+                    if (remote.pull(key) catch null) |_data| {
+                        // Remote hit: save to local cache for next time
+                        // (data itself is just a marker, no actual artifact yet)
+                        ctx.allocator.free(_data);
+                        if (store) |*s| s.recordHit(key) catch {};
+                        local_hit = true;
+                    }
                 }
+            }
+
+            if (local_hit) {
+                // Cache hit: record a skipped success result
+                const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+                ctx.results_mutex.lock();
+                defer ctx.results_mutex.unlock();
+                ctx.results.append(ctx.allocator, .{
+                    .task_name = owned_name,
+                    .success = true,
+                    .exit_code = 0,
+                    .duration_ms = 0,
+                    .skipped = true,
+                }) catch ctx.allocator.free(owned_name);
+                return;
             }
         }
     }
@@ -329,10 +352,18 @@ fn workerFn(ctx: WorkerCtx) void {
     // Record cache entry on success
     if (proc_result.success and ctx.cache) {
         if (ctx.cache_key) |key| {
+            // Write to local cache
             var store = cache_store.CacheStore.init(ctx.allocator) catch null;
             if (store) |*s| {
                 defer s.deinit();
                 s.recordHit(key) catch {};
+            }
+            // Push to remote cache (Phase 7)
+            if (ctx.cache_remote_config) |remote_cfg| {
+                var remote = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
+                defer remote.deinit();
+                // Push marker (empty data for now, just indicates success)
+                remote.push(key, &[_]u8{}) catch {};
             }
         }
     }
@@ -759,6 +790,7 @@ pub fn run(
                 .failed = &failed,
                 .cache = task.cache,
                 .cache_key = cache_key,
+                .cache_remote_config = if (config.cache.remote) |*r| r else null,
                 .monitor = sched_config.monitor,
                 .use_color = sched_config.use_color,
                 .task_control = sched_config.task_control,

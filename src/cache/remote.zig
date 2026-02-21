@@ -46,47 +46,33 @@ pub const RemoteCache = struct {
         const url = try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ url_base, key });
         defer self.allocator.free(url);
 
-        var client = std.http.Client{ .allocator = self.allocator };
-        defer client.deinit();
+        // Use curl for HTTP GET (std.http.Client has limitations in Zig 0.15)
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s"); // silent
+        try argv.append(self.allocator, "-f"); // fail on HTTP errors (404 → exit 22)
+        if (self.config.auth) |auth| {
+            const header = try std.fmt.allocPrint(self.allocator, "Authorization: {s}", .{auth});
+            defer self.allocator.free(header);
+            try argv.append(self.allocator, "-H");
+            try argv.append(self.allocator, header);
+        }
+        try argv.append(self.allocator, url);
 
-        const uri = try std.Uri.parse(url);
-        const buf = try self.allocator.alloc(u8, 8192);
-        defer self.allocator.free(buf);
+        const result = std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        }) catch return null;
+        defer self.allocator.free(result.stderr);
 
-        var req = try client.open(.GET, uri, .{
-            .server_header_buffer = buf,
-            .extra_headers = if (self.config.auth) |auth| &.{
-                .{ .name = "Authorization", .value = auth },
-            } else &.{},
-        });
-        defer req.deinit();
-
-        try req.send();
-        try req.finish();
-        try req.wait();
-
-        if (req.response.status != .ok) {
-            // 404 = cache miss (expected)
-            if (req.response.status == .not_found) return null;
-            // Other errors are unexpected
-            return error.RemoteCacheFailed;
+        // exit 22 = HTTP 404 (cache miss)
+        if (result.term.Exited != 0) {
+            self.allocator.free(result.stdout);
+            return null;
         }
 
-        // Read response body
-        var body = std.ArrayList(u8){};
-        defer body.deinit(self.allocator);
-
-        const reader = req.reader();
-        while (true) {
-            const chunk = reader.readBoundedBytes(4096) catch |err| switch (err) {
-                error.EndOfStream => break,
-                else => return err,
-            };
-            if (chunk.len == 0) break;
-            try body.appendSlice(self.allocator, chunk.constSlice());
-        }
-
-        return try body.toOwnedSlice(self.allocator);
+        return result.stdout; // Caller owns
     }
 
     fn pushHTTP(self: *const RemoteCache, key: []const u8, data: []const u8) !void {
@@ -94,31 +80,44 @@ pub const RemoteCache = struct {
         const url = try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ url_base, key });
         defer self.allocator.free(url);
 
-        var client = std.http.Client{ .allocator = self.allocator };
-        defer client.deinit();
+        // Write data to temp file for curl upload
+        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_path);
+        const file = try std.fs.cwd().createFile(tmp_path, .{});
+        defer file.close();
+        defer std.fs.cwd().deleteFile(tmp_path) catch {};
+        try file.writeAll(data);
 
-        const uri = try std.Uri.parse(url);
-        const buf = try self.allocator.alloc(u8, 8192);
-        defer self.allocator.free(buf);
+        // Use curl for HTTP PUT
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s"); // silent
+        try argv.append(self.allocator, "-f"); // fail on HTTP errors
+        try argv.append(self.allocator, "-X");
+        try argv.append(self.allocator, "PUT");
+        if (self.config.auth) |auth| {
+            const header = try std.fmt.allocPrint(self.allocator, "Authorization: {s}", .{auth});
+            defer self.allocator.free(header);
+            try argv.append(self.allocator, "-H");
+            try argv.append(self.allocator, header);
+        }
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "Content-Type: application/octet-stream");
+        try argv.append(self.allocator, "--data-binary");
+        const data_arg = try std.fmt.allocPrint(self.allocator, "@{s}", .{tmp_path});
+        defer self.allocator.free(data_arg);
+        try argv.append(self.allocator, data_arg);
+        try argv.append(self.allocator, url);
 
-        var req = try client.open(.PUT, uri, .{
-            .server_header_buffer = buf,
-            .extra_headers = if (self.config.auth) |auth| &.{
-                .{ .name = "Authorization", .value = auth },
-                .{ .name = "Content-Type", .value = "application/octet-stream" },
-            } else &.{
-                .{ .name = "Content-Type", .value = "application/octet-stream" },
-            },
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
         });
-        defer req.deinit();
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
 
-        req.transfer_encoding = .{ .content_length = data.len };
-        try req.send();
-        try req.writeAll(data);
-        try req.finish();
-        try req.wait();
-
-        if (req.response.status != .ok and req.response.status != .created and req.response.status != .no_content) {
+        if (result.term.Exited != 0) {
             return error.RemoteCacheFailed;
         }
     }
