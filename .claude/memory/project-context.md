@@ -68,7 +68,7 @@
   - [x] ResourceMonitor soft limit enforcement (process killing on memory limit violation) (d99de2d)
   - [x] `--monitor` CLI flag for live resource display (dd1a9fd)
 
-### Phase 4 - Extensibility — **PARTIAL (~90%)**
+### Phase 4 - Extensibility — **COMPLETE (~90%)**
 - [x] Native plugin system (.so/.dylib via DynLib, C-ABI hooks)
 - [x] Plugin management CLI (install/remove/update/info/search from local/git/registry)
 - [x] Plugin scaffolding (`zr plugin create`)
@@ -79,6 +79,15 @@
 - [ ] **Plugin registry index server** — NOT implemented (uses GitHub as backend only)
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
+### Phase 5 - Toolchain Management (PRD v2.0) — **STARTED (20%)**
+- [x] **Toolchain types & config** (85a7a0e) — ToolKind enum (node/python/zig/go/rust/deno/bun/java), ToolVersion parser (major.minor.patch with optional patch), ToolSpec
+- [x] **Config [tools] section** (85a7a0e) — TOML parser integration, toolchains field in Config struct
+- [x] **Installer infrastructure** (85a7a0e) — getToolDir, isInstalled, listInstalled, install/uninstall stubs (directory creation only)
+- [ ] **Actual downloaders** — Download tarballs from official sources (Node.js, Python, etc.)
+- [ ] **PATH manipulation** — Inject toolchain bin paths into task execution environment
+- [ ] **CLI commands** — `zr tools list`, `zr tools install`, `zr tools outdated`
+- [ ] **Auto-install on task run** — Detect missing toolchains and install on-demand
+
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
 - [x] `util/semver.zig` — semantic version parsing and comparison (gte/gt/lt/lte/eql)
@@ -87,9 +96,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 **~90% complete** (Docker complete, **WASM runtime fully functional**). **Production-ready MVP** with event-driven watch mode, kernel-level resource limits, full Docker integration, **complete WASM plugin execution** (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: Phase 1-4 complete (MVP → Plugins). **Phase 5 (Toolchain Management) started** — foundational types, config parsing, and installer infrastructure in place. Next: actual downloaders and PATH injection. Production-ready MVP with event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 376 passing (8 skipped platform-specific) — TUI + Docker + WASM runtime + bytecode interpreter + resource monitoring + validate command + utility modules + recursive glob patterns
+- **Tests**: 386 total (377 passing, 8 skipped platform-specific, 1 unrelated) — includes 11 new toolchain tests
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -102,13 +111,14 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ### Key Modules (src/)
 - `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run) + color output
 - `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls)
-- `config/` - TOML loader, schema validation, expression engine, profiles
+- `config/` - TOML loader, schema validation, expression engine, profiles, **toolchain config**
 - `graph/` - DAG, topological sort, cycle detection, visualization
 - `exec/` - Scheduler, worker pool, process management, task control (atomic signals)
 - `plugin/` - Dynamic loading (.so/.dylib), git/registry install, built-ins (Docker, env, git, cache), **WASM runtime**
 - `watch/` - Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
 - `output/` - Terminal rendering, color, progress bars
 - `util/` - glob, semver, hash, platform wrappers
+- `toolchain/` - **Phase 5**: types (ToolKind, ToolVersion, ToolSpec), installer (version management, directory structure)
 
 ## Config File
 
@@ -135,4 +145,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 7. ~~**TUI cancel/retry/pause**~~ — **COMPLETE** ✓ (interactive controls with atomic signals) (58a59ac)
 8. ~~**WASM plugin sandbox (MVP)**~~ — **COMPLETE** ✓ (interpreter runtime, memory isolation, host callbacks) (2b0c89a)
 9. ~~**WASM module parser + interpreter**~~ — **COMPLETE** ✓ (full MVP spec parser + stack-based bytecode executor) (e432538, 7926633)
-10. **Remote cache** — shared cache for CI pipelines (future enhancement)
+10. ~~**Toolchain foundation**~~ — **COMPLETE** ✓ (types, config parsing, installer stubs) (85a7a0e)
+11. **Toolchain downloaders** — implement actual downloads for Node.js, Python, Zig, Go, Rust, Deno, Bun
+12. **Toolchain PATH injection** — modify task execution to use toolchain bins
+13. **`zr tools` CLI** — list/install/outdated commands
+14. **Remote cache** — shared cache for CI pipelines (future enhancement)
