@@ -35,6 +35,7 @@ const live_cmd = @import("cli/live.zig");
 const interactive_run = @import("cli/interactive_run.zig");
 const validate_cmd = @import("cli/validate.zig");
 const tools_cmd = @import("cli/tools.zig");
+const graph_cmd = @import("cli/graph.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -85,6 +86,7 @@ comptime {
     _ = interactive_run;
     _ = validate_cmd;
     _ = tools_cmd;
+    _ = graph_cmd;
     _ = platform;
     _ = semver;
     _ = hash_util;
@@ -371,6 +373,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "tools")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return tools_cmd.cmdTools(allocator, sub, effective_args, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "graph")) {
+        const graph_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return graph_cmd.graphCommand(allocator, graph_args, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -388,7 +393,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
     try w.print("  workflow <name>        Run a workflow by name\n", .{});
     try w.print("  list                   List all available tasks\n", .{});
-    try w.print("  graph                  Show dependency tree\n", .{});
+    try w.print("  graph [options]        Visualize workspace dependency graph\n", .{});
     try w.print("  history                Show recent run history\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
