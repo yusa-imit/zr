@@ -63,6 +63,7 @@
   - [x] getProcessUsage() Windows implementation (GetProcessMemoryInfo, GetProcessTimes) (21df9dc)
   - [x] Integration with process spawning (resource watcher thread, memory limit kill) (f1f7cd3)
   - [x] cgroups v2 / Job Objects hard limit enforcement (Linux/Windows kernel-level limits)
+  - [x] ResourceMonitor soft limit enforcement (process killing on memory limit violation) (d99de2d)
   - [ ] `--monitor` CLI flag for live resource display (future enhancement)
 
 ### Phase 4 - Extensibility — **PARTIAL (~90%)**

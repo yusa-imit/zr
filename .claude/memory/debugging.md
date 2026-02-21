@@ -154,3 +154,13 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - **Graceful fallback**: If any step fails (permissions, unsupported kernel), return no-op handle (cgroup_path=null or job_handle=null) and rely on soft limits via polling thread
 - **Platform type difference**: `child.id` is `std.posix.pid_t` on Linux/macOS, but `std.os.windows.HANDLE` on Windows — use conditional `if (builtin.os.tag == .windows)` for type signature
 - **Cleanup**: `defer handle.deinit()` after creation — Linux deletes cgroup dir; Windows closes job handle; macOS no-op
+
+## ResourceMonitor Soft Limit Enforcement (Complementary to Hard Limits)
+- **Problem**: Hard limits (cgroups/Job Objects) may fail due to permissions or be unavailable (macOS); need fallback enforcement
+- **Solution**: ResourceMonitor.checkLimits() actively kills processes exceeding memory limits via killProcess()
+- **Implementation**:
+  - Add killProcess() in resource.zig with platform-specific handling (SIGKILL on POSIX, TerminateProcess on Windows)
+  - checkLimits() calls killProcess(self.pid) when memory limit exceeded, returns true to signal termination
+  - PID type varies by platform: `std.posix.pid_t` on POSIX, `std.os.windows.HANDLE` on Windows
+- **Integration**: Called from resource watcher thread in process.zig when hard limits unavailable or disabled
+- **Prevention**: Always provide fallback soft limits when kernel-level enforcement may be unavailable
