@@ -106,6 +106,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer ws_members.deinit(allocator);
     var ws_ignore = std.ArrayList([]const u8){};
     defer ws_ignore.deinit(allocator);
+    var ws_member_deps = std.ArrayList([]const u8){};
+    defer ws_member_deps.deinit(allocator);
 
     // Plugin parsing state
     // current_plugin_name: non-owning slice into content (plugin key under [plugins.*])
@@ -738,6 +740,15 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             if (t.len > 0) try ws_ignore.append(allocator, t);
                         }
                     }
+                } else if (std.mem.eql(u8, key, "dependencies")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const t = std.mem.trim(u8, item, " \t\"");
+                            if (t.len > 0) try ws_member_deps.append(allocator, t);
+                        }
+                    }
                 }
             } else if (current_task != null) {
                 // Task-level key=value parsing
@@ -941,7 +952,21 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             ignore[i] = try allocator.dupe(u8, ig);
             iduped += 1;
         }
-        config.workspace = Workspace{ .members = members, .ignore = ignore };
+        const member_deps = try allocator.alloc([]const u8, ws_member_deps.items.len);
+        var mdduped: usize = 0;
+        errdefer {
+            for (member_deps[0..mdduped]) |md| allocator.free(md);
+            allocator.free(member_deps);
+        }
+        for (ws_member_deps.items, 0..) |md, i| {
+            member_deps[i] = try allocator.dupe(u8, md);
+            mdduped += 1;
+        }
+        config.workspace = Workspace{
+            .members = members,
+            .ignore = ignore,
+            .member_dependencies = member_deps,
+        };
     }
 
     // Flush final pending plugin (if any)

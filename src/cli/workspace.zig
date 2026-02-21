@@ -223,6 +223,40 @@ pub fn cmdWorkspaceRun(
             return 1;
         };
 
+        // Build dependency map from all workspace member configs
+        var dep_map = std.StringHashMap([]const []const u8).init(allocator);
+        defer {
+            var dep_it = dep_map.iterator();
+            while (dep_it.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                for (entry.value_ptr.*) |dep| allocator.free(dep);
+                allocator.free(entry.value_ptr.*);
+            }
+            dep_map.deinit();
+        }
+
+        for (members) |member_path| {
+            const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, common.CONFIG_FILE });
+            defer allocator.free(member_cfg);
+
+            var member_config = loader.loadFromFile(allocator, member_cfg) catch continue;
+            defer member_config.deinit();
+
+            if (member_config.workspace) |member_ws| {
+                if (member_ws.member_dependencies.len > 0) {
+                    const deps_copy = try allocator.alloc([]const u8, member_ws.member_dependencies.len);
+                    for (member_ws.member_dependencies, 0..) |dep, i| {
+                        deps_copy[i] = try allocator.dupe(u8, dep);
+                    }
+                    const key = try allocator.dupe(u8, member_path);
+                    try dep_map.put(key, deps_copy);
+                }
+            }
+        }
+
+        // Expand affected projects to include dependents
+        try affected_mod.expandWithDependents(allocator, &affected_result_opt.?, dep_map);
+
         // Filter members to only affected ones
         var filtered = std.ArrayList([]const u8){};
         defer filtered.deinit(allocator);
@@ -390,7 +424,11 @@ test "workspace: Workspace struct deinit is safe" {
     members[1] = try allocator.dupe(u8, "apps/*");
     const ignore = try allocator.alloc([]const u8, 1);
     ignore[0] = try allocator.dupe(u8, "**/node_modules");
-    var ws = loader.Workspace{ .members = members, .ignore = ignore };
+    var ws = loader.Workspace{
+        .members = members,
+        .ignore = ignore,
+        .member_dependencies = &.{},
+    };
     ws.deinit(allocator);
     // If we get here without crash/leak, the test passes
 }
@@ -419,7 +457,11 @@ test "resolveWorkspaceMembers: glob pattern finds dirs with config" {
     defer allocator.free(pattern);
 
     var patterns = [_][]const u8{pattern};
-    const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+    const ws = loader.Workspace{
+        .members = patterns[0..],
+        .ignore = &.{},
+        .member_dependencies = &.{},
+    };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
     defer {
@@ -457,7 +499,11 @@ test "resolveWorkspaceMembers: literal path with config" {
     defer allocator.free(pattern);
 
     var patterns = [_][]const u8{pattern};
-    const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+    const ws = loader.Workspace{
+        .members = patterns[0..],
+        .ignore = &.{},
+        .member_dependencies = &.{},
+    };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
     defer {
@@ -485,7 +531,11 @@ test "resolveWorkspaceMembers: literal path without config returns empty" {
     defer allocator.free(pattern);
 
     var patterns = [_][]const u8{pattern};
-    const ws = loader.Workspace{ .members = patterns[0..], .ignore = &.{} };
+    const ws = loader.Workspace{
+        .members = patterns[0..],
+        .ignore = &.{},
+        .member_dependencies = &.{},
+    };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
     defer {
@@ -499,7 +549,11 @@ test "resolveWorkspaceMembers: literal path without config returns empty" {
 test "resolveWorkspaceMembers: empty members list" {
     const allocator = std.testing.allocator;
 
-    const ws = loader.Workspace{ .members = &.{}, .ignore = &.{} };
+    const ws = loader.Workspace{
+        .members = &.{},
+        .ignore = &.{},
+        .member_dependencies = &.{},
+    };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
     defer {

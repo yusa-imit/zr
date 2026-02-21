@@ -9,15 +9,22 @@ pub const ToolSpec = toolchain_types.ToolSpec;
 /// Workspace (monorepo) configuration from [workspace] section.
 pub const Workspace = struct {
     /// Glob patterns for member directories (e.g. "packages/*", "apps/*").
+    /// Only present in root workspace config.
     members: [][]const u8,
     /// Patterns to ignore when discovering members.
+    /// Only present in root workspace config.
     ignore: [][]const u8,
+    /// Optional: list of workspace member paths this member depends on.
+    /// Only present in member configs (e.g., ["packages/core", "packages/utils"]).
+    member_dependencies: [][]const u8,
 
     pub fn deinit(self: *Workspace, allocator: std.mem.Allocator) void {
         for (self.members) |m| allocator.free(m);
         allocator.free(self.members);
         for (self.ignore) |ig| allocator.free(ig);
         allocator.free(self.ignore);
+        for (self.member_dependencies) |dep| allocator.free(dep);
+        allocator.free(self.member_dependencies);
     }
 };
 
