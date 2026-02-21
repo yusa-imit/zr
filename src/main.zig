@@ -334,11 +334,11 @@ fn run(
         return tui.cmdInteractive(allocator, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "live")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "live: missing task name\n\n  Hint: zr live <task-name>\n", .{});
+            try color.printError(ew, effective_color, "live: missing task name\n\n  Hint: zr live <task-name> [task-name...]\n", .{});
             return 1;
         }
-        const task_name = effective_args[2];
-        return live_cmd.cmdLive(allocator, task_name, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
+        const task_names = effective_args[2..];
+        return live_cmd.cmdLive(allocator, task_names, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "interactive-run") or std.mem.eql(u8, cmd, "irun")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "interactive-run: missing task name\n\n  Hint: zr interactive-run <task-name>\n", .{});
