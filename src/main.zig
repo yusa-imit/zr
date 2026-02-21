@@ -42,6 +42,7 @@ const resource = @import("exec/resource.zig");
 const control = @import("exec/control.zig");
 const toolchain_types = @import("toolchain/types.zig");
 const toolchain_installer = @import("toolchain/installer.zig");
+const toolchain_downloader = @import("toolchain/downloader.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -88,6 +89,7 @@ comptime {
     _ = control;
     _ = toolchain_types;
     _ = toolchain_installer;
+    _ = toolchain_downloader;
 }
 
 pub fn main() !void {

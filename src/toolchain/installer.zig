@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const downloader = @import("downloader.zig");
 const ToolKind = types.ToolKind;
 const ToolVersion = types.ToolVersion;
 const InstalledTool = types.InstalledTool;
@@ -88,10 +89,15 @@ pub fn listInstalled(allocator: std.mem.Allocator, kind: ToolKind) ![]InstalledT
 }
 
 /// Download and install a specific tool version.
-/// This is a stub implementation — real installers would download from official sources.
+/// Downloads from official sources and extracts to ~/.zr/toolchains/{kind}/{version}
 pub fn install(allocator: std.mem.Allocator, kind: ToolKind, version: ToolVersion) !void {
     const tool_dir = try getToolDir(allocator, kind, version);
     defer allocator.free(tool_dir);
+
+    // Check if already installed
+    if (try isInstalled(allocator, kind, version)) {
+        return error.AlreadyInstalled;
+    }
 
     // Ensure parent directories exist
     const base = try getToolchainsDir(allocator);
@@ -108,14 +114,42 @@ pub fn install(allocator: std.mem.Allocator, kind: ToolKind, version: ToolVersio
     // Create final version directory
     try std.fs.makeDirAbsolute(tool_dir);
 
-    // TODO: Implement actual download logic for each tool kind
-    // For now, this is a placeholder that creates the directory
-    // Real implementation would:
-    // 1. Determine download URL based on platform and version
-    // 2. Download tarball/zip based on kind
-    // 3. Extract to tool_dir
-    // 4. Create symlinks for binaries
-    // The `kind` parameter will be used when actual downloaders are implemented
+    // Resolve download URL
+    const spec = try downloader.resolveDownloadUrl(allocator, kind, version);
+    defer allocator.free(spec.url);
+
+    // Create temporary download path
+    const tmp_dir = try std.fmt.allocPrint(allocator, "{s}/tmp", .{base});
+    defer allocator.free(tmp_dir);
+    std.fs.makeDirAbsolute(tmp_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+
+    const archive_name = try std.fmt.allocPrint(allocator, "{s}-{s}.{s}", .{
+        kind.toString(),
+        try version.toString(allocator),
+        switch (spec.archive_type) {
+            .tar_gz => "tar.gz",
+            .tar_xz => "tar.xz",
+            .zip => "zip",
+        },
+    });
+    defer allocator.free(archive_name);
+    const archive_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, archive_name });
+    defer allocator.free(archive_path);
+
+    // Download the archive
+    std.debug.print("Downloading {s} {s} from {s}...\n", .{ kind.toString(), try version.toString(allocator), spec.url });
+    try downloader.downloadFile(allocator, spec.url, archive_path);
+
+    // Extract to tool directory
+    std.debug.print("Extracting to {s}...\n", .{tool_dir});
+    try downloader.extractArchive(allocator, archive_path, tool_dir, spec.archive_type);
+
+    // Clean up temporary archive
+    std.fs.deleteFileAbsolute(archive_path) catch {};
+
+    std.debug.print("✓ Installed {s} {s}\n", .{ kind.toString(), try version.toString(allocator) });
 }
 
 /// Uninstall a specific tool version.
@@ -186,14 +220,32 @@ test "isInstalled returns false for non-existent tool" {
 }
 
 test "install and uninstall creates/removes directory" {
+    // Skipping actual install test since it requires network access
+    // The install function is tested via integration tests with actual downloads
+    // Here we just verify the directory creation logic via uninstall
     const allocator = std.testing.allocator;
     const version = try ToolVersion.parse("99.99.99");
 
-    // Ensure clean state
-    uninstall(allocator, .zig, version) catch {};
+    // Manually create a test installation directory
+    const tool_dir = try getToolDir(allocator, .zig, version);
+    defer allocator.free(tool_dir);
 
-    // Install
-    try install(allocator, .zig, version);
+    // Ensure parent directories exist
+    const base = try getToolchainsDir(allocator);
+    defer allocator.free(base);
+    std.fs.makeDirAbsolute(base) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    const tool_kind_dir = try std.fmt.allocPrint(allocator, "{s}/zig", .{base});
+    defer allocator.free(tool_kind_dir);
+    std.fs.makeDirAbsolute(tool_kind_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+
+    // Create test directory
+    std.fs.makeDirAbsolute(tool_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
 
     // Verify installed
     const installed = try isInstalled(allocator, .zig, version);
