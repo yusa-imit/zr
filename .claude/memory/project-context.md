@@ -126,7 +126,7 @@
   - Full integration with constraint validation system
   - 3 new tests (metadata parsing + extraction)
 
-### Phase 7 - Multi-repo & Remote Cache (PRD v2.0) — **IN PROGRESS (~65%)**
+### Phase 7 - Multi-repo & Remote Cache (PRD v2.0) — **IN PROGRESS (~70%)**
 - [x] **Remote cache (HTTP backend)** (76acf80, 0807a49, 4a4d426) — PRD §5.7.3 **MVP COMPLETE**
   - Config types: RemoteCacheType, RemoteCacheConfig, CacheConfig with remote field
   - TOML parsing: [cache] enabled/local_dir, [cache.remote] type/bucket/region/prefix/url/auth
@@ -158,16 +158,16 @@
   - RFC1123 timestamp formatting for x-ms-date header
   - Support for custom container and prefix configuration
   - 3 unit tests: missing credentials, formatRFC1123, signature generation
-- [x] **Multi-repo config and sync** (1eea8c9, 66ae75e) — **PARTIAL** — zr-repos.toml parser, sync/status modules
+- [x] **Multi-repo config and sync** (1eea8c9, 66ae75e, 3871cf5) — **COMPLETE** — zr-repos.toml parser, sync/status modules, CLI
   - `config/types.zig` — RepoConfig, RepoWorkspaceConfig structs for multi-repo metadata
   - `config/repos.zig` — Manual TOML parser for zr-repos.toml (workspace, repos.*, deps sections)
   - `multirepo/sync.zig` — syncRepos() with clone/pull operations, SyncOptions, RepoStatus
   - `multirepo/status.zig` — getRepoStatuses() with git branch/ahead/behind/modified tracking
-  - 7 unit tests: parser validation (3), sync/status functionality (4)
+  - `cli/repo.zig` — `zr repo sync` and `zr repo status` commands with color-coded output
+  - 8 unit tests: parser validation (3), sync/status functionality (4), CLI help (1)
 - [ ] **Cross-repo dependency graph** — NOT implemented (PRD §5.9.2)
 - [ ] **Cross-repo task execution** — NOT implemented (`zr repo run`, PRD §5.9.3)
 - [ ] **Synthetic workspace** — NOT implemented (PRD §5.9.4)
-- [ ] **CLI commands** — NOT implemented (`zr repo sync`, `zr repo status`, `zr repo run`)
 
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
@@ -178,9 +178,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-6 COMPLETE (100%), Phase 7 in progress (~65%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**.
+> **Reality**: **Phase 1-6 COMPLETE (100%), Phase 7 in progress (~70%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo CLI commands: `zr repo sync` and `zr repo status`**.
 
-- **Tests**: 452 total (444 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests
+- **Tests**: 453 total (445 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
