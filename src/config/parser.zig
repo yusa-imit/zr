@@ -524,6 +524,39 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_workspace = false;
             in_tools = false;
             in_constraint = true;
+            in_metadata = false;
+        } else if (std.mem.eql(u8, trimmed, "[metadata]")) {
+            // Flush pending sections
+            if (constraint_rule) |rule| {
+                const owned_from = if (constraint_from) |f| try dupeConstraintScope(allocator, f) else null;
+                errdefer if (owned_from) |*f| {
+                    var scope_copy = f.*;
+                    scope_copy.deinit(allocator);
+                };
+                const owned_to = if (constraint_to) |t| try dupeConstraintScope(allocator, t) else null;
+                errdefer if (owned_to) |*t| {
+                    var scope_copy = t.*;
+                    scope_copy.deinit(allocator);
+                };
+                try constraint_list.append(allocator, types.Constraint{
+                    .rule = rule,
+                    .scope = if (constraint_scope) |s| try dupeConstraintScope(allocator, s) else .all,
+                    .from = owned_from,
+                    .to = owned_to,
+                    .allow = constraint_allow,
+                    .message = if (constraint_message) |m| try allocator.dupe(u8, m) else null,
+                });
+                constraint_rule = null;
+                constraint_scope = null;
+                constraint_from = null;
+                constraint_to = null;
+                constraint_allow = true;
+                constraint_message = null;
+            }
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_metadata = true;
         } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             in_tools = false;
@@ -858,6 +891,27 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (in_metadata) {
+                // Inside [metadata] — parse tags and dependencies arrays
+                if (std.mem.eql(u8, key, "tags")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const t = std.mem.trim(u8, item, " \t\"");
+                            if (t.len > 0) try metadata_tags.append(allocator, t);
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "dependencies")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const t = std.mem.trim(u8, item, " \t\"");
+                            if (t.len > 0) try metadata_deps.append(allocator, t);
+                        }
+                    }
+                }
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
@@ -1074,6 +1128,36 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             .members = members,
             .ignore = ignore,
             .member_dependencies = member_deps,
+        };
+    }
+
+    // Flush metadata if present
+    if (in_metadata or metadata_tags.items.len > 0 or metadata_deps.items.len > 0) {
+        const tags = try allocator.alloc([]const u8, metadata_tags.items.len);
+        var tduped: usize = 0;
+        errdefer {
+            for (tags[0..tduped]) |t| allocator.free(t);
+            if (tags.len > 0) allocator.free(tags);
+        }
+        for (metadata_tags.items, 0..) |t, i| {
+            tags[i] = try allocator.dupe(u8, t);
+            tduped += 1;
+        }
+
+        const deps = try allocator.alloc([]const u8, metadata_deps.items.len);
+        var dduped: usize = 0;
+        errdefer {
+            for (deps[0..dduped]) |d| allocator.free(d);
+            if (deps.len > 0) allocator.free(deps);
+        }
+        for (metadata_deps.items, 0..) |d, i| {
+            deps[i] = try allocator.dupe(u8, d);
+            dduped += 1;
+        }
+
+        config.metadata = types.Metadata{
+            .tags = tags,
+            .dependencies = deps,
         };
     }
 
@@ -1651,6 +1735,40 @@ test "workspace null when no workspace section" {
     var config = try parseToml(allocator, toml_content);
     defer config.deinit();
     try std.testing.expect(config.workspace == null);
+}
+
+test "parse metadata section from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.test]
+        \\cmd = "npm test"
+        \\
+        \\[metadata]
+        \\tags = ["app", "frontend"]
+        \\dependencies = ["packages/core", "packages/utils"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.metadata != null);
+    const meta = config.metadata.?;
+    try std.testing.expectEqual(@as(usize, 2), meta.tags.len);
+    try std.testing.expectEqualStrings("app", meta.tags[0]);
+    try std.testing.expectEqualStrings("frontend", meta.tags[1]);
+    try std.testing.expectEqual(@as(usize, 2), meta.dependencies.len);
+    try std.testing.expectEqualStrings("packages/core", meta.dependencies[0]);
+    try std.testing.expectEqualStrings("packages/utils", meta.dependencies[1]);
+}
+
+test "metadata null when no metadata section" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "make"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.metadata == null);
 }
 
 test "parse cache = true from toml" {
