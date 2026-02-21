@@ -88,17 +88,30 @@
 - [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
 - [x] **Auto-install on task run** (1db7ecb) — Per-task toolchain requirements ([tasks.X.toolchain]), auto-detection and installation before execution, "tool@version" parsing, ensureToolchainsInstalled() in scheduler
 
+### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **IN PROGRESS (~20%)**
+- [x] **Affected detection** (9bccfef) — Git diff-based change detection for workspace members
+  - `util/affected.zig` — detectAffected(), getChangedFiles(), findProjectForFile()
+  - `--affected <ref>` CLI flag — Filter workspace members based on git changes
+  - `zr --affected origin/main workspace run test` — Run tasks only on changed projects
+  - 5 unit tests for file-to-project mapping
+- [ ] **Dependency graph expansion** — expandWithDependents() to include projects that depend on affected ones
+- [ ] **Content hash caching** — Already implemented in Phase 2, documented here for completeness
+- [ ] **Project graph visualization** — ASCII/DOT/JSON/HTML output formats (PRD §5.7.4)
+- [ ] **Architecture constraints** — `[constraints]` section, `zr lint` command (PRD §5.7.6)
+- [ ] **Module boundary rules** — Tag-based dependency control
+
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
 - [x] `util/semver.zig` — semantic version parsing and comparison (gte/gt/lt/lte/eql)
 - [x] `util/hash.zig` — file and string hashing with Wyhash (hashFile/hashString/hashStrings)
 - [x] `util/platform.zig` — cross-platform POSIX wrappers
+- [x] `util/affected.zig` — git diff-based affected detection for monorepo workflows
 
 ## Status Summary
 
-> **Reality**: Phase 1-5 complete (MVP → Plugins → Toolchains). **Production-ready with full toolchain management** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run with per-task requirements, PATH injection, CLI tools (`zr tools list/install`), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: Phase 1-5 complete, Phase 6 in progress (MVP → Plugins → Toolchains → Monorepo). **Production-ready with full toolchain management + affected detection** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 404 total (395 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test
+- **Tests**: 409 total (400 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 5 affected detection tests
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -117,7 +130,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 - `plugin/` - Dynamic loading (.so/.dylib), git/registry install, built-ins (Docker, env, git, cache), **WASM runtime**
 - `watch/` - Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
 - `output/` - Terminal rendering, color, progress bars
-- `util/` - glob, semver, hash, platform wrappers
+- `util/` - glob, semver, hash, platform wrappers, **affected (git diff-based change detection)**
 - `toolchain/` - **Phase 5**: types (ToolKind, ToolVersion, ToolSpec), installer (version management, directory structure), downloader (URL resolution, HTTP download, archive extraction), path (PATH injection, env var building)
 
 ## Config File
@@ -150,4 +163,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 12. ~~**Toolchain PATH injection**~~ — **COMPLETE** ✓ (PATH prepending, JAVA_HOME/GOROOT, scheduler integration) (8c52f7c, e0030b4)
 13. ~~**`zr tools` CLI**~~ — **COMPLETE** ✓ (list/install/outdated commands) (be3b994)
 14. ~~**Auto-install**~~ — **COMPLETE** ✓ (per-task toolchain field, auto-detection and installation) (1db7ecb)
-15. **Remote cache** — shared cache for CI pipelines (future enhancement)
+15. ~~**Affected detection**~~ — **COMPLETE** ✓ (git diff-based change detection, --affected flag) (9bccfef)
+16. **Dependency graph expansion** — expandWithDependents() for transitive affected projects
+17. **Project graph visualization** — ASCII/DOT/JSON/HTML formats (PRD §5.7.4)
+18. **Architecture constraints** — `[constraints]` + `zr lint` (PRD §5.7.6)
+19. **Remote cache** — shared cache for CI pipelines (future enhancement)
