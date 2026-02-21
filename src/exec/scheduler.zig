@@ -7,12 +7,17 @@ const expr = @import("../config/expr.zig");
 const cache_store = @import("../cache/store.zig");
 const control = @import("control.zig");
 const toolchain_path = @import("../toolchain/path.zig");
+const toolchain_types = @import("../toolchain/types.zig");
+const toolchain_installer = @import("../toolchain/installer.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
     CycleDetected,
     BuildFailed,
     NodeNotFound,
+    InvalidToolchainSpec,
+    UnknownToolchainKind,
+    InvalidVersionFormat,
 } || std.mem.Allocator.Error;
 
 pub const SchedulerConfig = struct {
@@ -406,6 +411,48 @@ fn resolveMaxJobs(max_jobs: u32) u32 {
     return max_jobs;
 }
 
+/// Parse and auto-install missing toolchains for a task.
+/// Returns error if parsing fails. Installation errors are logged but don't fail the task.
+/// Parses toolchain specs like "node@20.11", "python@3.12" from the task's toolchain field.
+fn ensureToolchainsInstalled(allocator: std.mem.Allocator, task: loader.Task) SchedulerError!void {
+    if (task.toolchain.len == 0) return; // No toolchains needed
+
+    for (task.toolchain) |spec_str| {
+        // Parse "tool@version" format (e.g., "node@20.11")
+        const at_idx = std.mem.indexOf(u8, spec_str, "@") orelse {
+            std.debug.print("Invalid toolchain spec: {s} (expected format: tool@version)\n", .{spec_str});
+            return error.InvalidToolchainSpec;
+        };
+
+        const kind_str = spec_str[0..at_idx];
+        const version_str = spec_str[at_idx + 1 ..];
+
+        // Parse tool kind
+        const kind = toolchain_types.ToolKind.fromString(kind_str) orelse {
+            std.debug.print("Unknown toolchain kind: {s}\n", .{kind_str});
+            return error.UnknownToolchainKind;
+        };
+
+        // Parse version
+        const version = toolchain_types.ToolVersion.parse(version_str) catch {
+            std.debug.print("Invalid version format: {s}\n", .{version_str});
+            return error.InvalidVersionFormat;
+        };
+
+        // Check if installed
+        const installed = toolchain_installer.isInstalled(allocator, kind, version) catch false;
+        if (!installed) {
+            std.debug.print("Installing {s} {s}...\n", .{ kind.toString(), version_str });
+            // Don't fail the task if installation fails; just log the error
+            toolchain_installer.install(allocator, kind, version) catch |err| {
+                std.debug.print("Warning: Failed to install {s} {s}: {}\n", .{ kind.toString(), version_str, err });
+                continue;
+            };
+            std.debug.print("Successfully installed {s} {s}\n", .{ kind.toString(), version_str });
+        }
+    }
+}
+
 /// Run a single task synchronously (on the calling thread). Records result.
 /// Holds results_mutex while appending so it is safe to call concurrently with worker threads.
 /// Returns true if the task succeeded (or has allow_failure set).
@@ -418,6 +465,9 @@ fn runTaskSync(
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
 ) !bool {
+    // Auto-install any missing toolchains specified in task.toolchain
+    try ensureToolchainsInstalled(allocator, task);
+
     // Build environment with toolchain PATH injection
     const merged_env = buildEnvWithToolchains(allocator, env, toolchains);
     defer if (merged_env) |e| toolchain_path.freeToolchainEnv(allocator, e);
