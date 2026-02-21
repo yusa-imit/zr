@@ -745,19 +745,271 @@ pub const RemoteCache = struct {
 
     // ─── Azure Backend ──────────────────────────────────────────────────────
 
+    /// Azure Blob Storage backend using Shared Key authentication.
+    /// Reference: https://learn.microsoft.com/en-us/rest/api/storageservices/authorize-with-shared-key
+    /// Requires AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY environment variables.
     fn pullAzure(self: *const RemoteCache, key: []const u8) !?[]u8 {
-        // TODO: Implement Azure Blob Storage backend
-        _ = self;
-        _ = key;
-        return error.NotImplemented;
+        const bucket = self.config.bucket orelse return error.MissingBucket; // Container name
+        const prefix = self.config.prefix orelse "";
+
+        // Construct Azure blob path
+        const blob_name = if (prefix.len > 0)
+            try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ prefix, key })
+        else
+            try std.fmt.allocPrint(self.allocator, "{s}.cache", .{key});
+        defer self.allocator.free(blob_name);
+
+        // Get Azure credentials from environment
+        const platform = @import("../util/platform.zig");
+        const account = platform.getenv("AZURE_STORAGE_ACCOUNT") orelse return error.MissingAzureCredentials;
+        const access_key = platform.getenv("AZURE_STORAGE_KEY") orelse return error.MissingAzureCredentials;
+
+        // Generate timestamp (RFC1123 format)
+        const date = try self.formatRFC1123(std.time.timestamp());
+        defer self.allocator.free(date);
+
+        // Construct URL: https://{account}.blob.core.windows.net/{container}/{blob}
+        const url = try std.fmt.allocPrint(
+            self.allocator,
+            "https://{s}.blob.core.windows.net/{s}/{s}",
+            .{ account, bucket, blob_name },
+        );
+        defer self.allocator.free(url);
+
+        // Construct canonicalized resource: /{account}/{container}/{blob}
+        const canonicalized_resource = try std.fmt.allocPrint(
+            self.allocator,
+            "/{s}/{s}/{s}",
+            .{ account, bucket, blob_name },
+        );
+        defer self.allocator.free(canonicalized_resource);
+
+        // Sign request with Shared Key
+        const auth_header = try self.signAzureRequest(
+            "GET",
+            "",
+            "",
+            date,
+            canonicalized_resource,
+            account,
+            access_key,
+        );
+        defer self.allocator.free(auth_header);
+
+        // Use curl for Azure GET
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s");
+        try argv.append(self.allocator, "-f");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "x-ms-date: {s}", .{date}));
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "x-ms-version: 2023-11-03");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "Authorization: {s}", .{auth_header}));
+        try argv.append(self.allocator, url);
+
+        const result = std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        }) catch return null;
+        defer self.allocator.free(result.stderr);
+
+        // exit 22 = HTTP 404 (cache miss)
+        if (result.term.Exited != 0) {
+            self.allocator.free(result.stdout);
+            return null;
+        }
+
+        return result.stdout; // Caller owns
     }
 
     fn pushAzure(self: *const RemoteCache, key: []const u8, data: []const u8) !void {
-        // TODO: Implement Azure Blob Storage backend
-        _ = self;
-        _ = key;
-        _ = data;
-        return error.NotImplemented;
+        const bucket = self.config.bucket orelse return error.MissingBucket; // Container name
+        const prefix = self.config.prefix orelse "";
+
+        // Construct Azure blob path
+        const blob_name = if (prefix.len > 0)
+            try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ prefix, key })
+        else
+            try std.fmt.allocPrint(self.allocator, "{s}.cache", .{key});
+        defer self.allocator.free(blob_name);
+
+        // Get Azure credentials from environment
+        const platform = @import("../util/platform.zig");
+        const account = platform.getenv("AZURE_STORAGE_ACCOUNT") orelse return error.MissingAzureCredentials;
+        const access_key = platform.getenv("AZURE_STORAGE_KEY") orelse return error.MissingAzureCredentials;
+
+        // Generate timestamp (RFC1123 format)
+        const date = try self.formatRFC1123(std.time.timestamp());
+        defer self.allocator.free(date);
+
+        // Construct URL: https://{account}.blob.core.windows.net/{container}/{blob}
+        const url = try std.fmt.allocPrint(
+            self.allocator,
+            "https://{s}.blob.core.windows.net/{s}/{s}",
+            .{ account, bucket, blob_name },
+        );
+        defer self.allocator.free(url);
+
+        // Construct canonicalized resource: /{account}/{container}/{blob}
+        const canonicalized_resource = try std.fmt.allocPrint(
+            self.allocator,
+            "/{s}/{s}/{s}",
+            .{ account, bucket, blob_name },
+        );
+        defer self.allocator.free(canonicalized_resource);
+
+        // Content-Length for signature
+        const content_length = try std.fmt.allocPrint(self.allocator, "{d}", .{data.len});
+        defer self.allocator.free(content_length);
+
+        // Sign request with Shared Key
+        const auth_header = try self.signAzureRequest(
+            "PUT",
+            "application/octet-stream",
+            content_length,
+            date,
+            canonicalized_resource,
+            account,
+            access_key,
+        );
+        defer self.allocator.free(auth_header);
+
+        // Write data to temp file for curl upload
+        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_path);
+        const file = try std.fs.cwd().createFile(tmp_path, .{});
+        defer file.close();
+        defer std.fs.cwd().deleteFile(tmp_path) catch {};
+        try file.writeAll(data);
+
+        // Use curl for Azure PUT
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s");
+        try argv.append(self.allocator, "-f");
+        try argv.append(self.allocator, "-X");
+        try argv.append(self.allocator, "PUT");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "x-ms-date: {s}", .{date}));
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "x-ms-version: 2023-11-03");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "x-ms-blob-type: BlockBlob");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "Content-Length: {s}", .{content_length}));
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "Content-Type: application/octet-stream");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "Authorization: {s}", .{auth_header}));
+        try argv.append(self.allocator, "--data-binary");
+        const data_arg = try std.fmt.allocPrint(self.allocator, "@{s}", .{tmp_path});
+        defer self.allocator.free(data_arg);
+        try argv.append(self.allocator, data_arg);
+        try argv.append(self.allocator, url);
+
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        if (result.term.Exited != 0) {
+            return error.RemoteCacheFailed;
+        }
+    }
+
+    /// Sign Azure Blob Storage request using Shared Key.
+    /// Reference: https://learn.microsoft.com/en-us/rest/api/storageservices/authorize-with-shared-key
+    fn signAzureRequest(
+        self: *const RemoteCache,
+        method: []const u8,
+        content_type: []const u8,
+        content_length: []const u8,
+        date: []const u8,
+        canonicalized_resource: []const u8,
+        account: []const u8,
+        access_key: []const u8,
+    ) ![]u8 {
+        // Construct string to sign for Azure Shared Key
+        // Format: VERB\n\n\nContent-Length\n\nContent-Type\n\n\n\n\n\n\nx-ms-blob-type:BlockBlob\nx-ms-date:DATE\nx-ms-version:VERSION\n/ACCOUNT/RESOURCE
+        const api_version = "2023-11-03";
+
+        // For GET, content_length and content_type are empty
+        // For PUT, we need to include them + x-ms-blob-type header
+        const string_to_sign = if (std.mem.eql(u8, method, "PUT"))
+            try std.fmt.allocPrint(
+                self.allocator,
+                "{s}\n\n\n{s}\n\n{s}\n\n\n\n\n\n\nx-ms-blob-type:BlockBlob\nx-ms-date:{s}\nx-ms-version:{s}\n{s}",
+                .{ method, content_length, content_type, date, api_version, canonicalized_resource },
+            )
+        else
+            try std.fmt.allocPrint(
+                self.allocator,
+                "{s}\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:{s}\nx-ms-version:{s}\n{s}",
+                .{ method, date, api_version, canonicalized_resource },
+            );
+        defer self.allocator.free(string_to_sign);
+
+        // Decode base64 access key
+        const decoder = std.base64.standard;
+        const decoded_key_len = try decoder.Decoder.calcSizeForSlice(access_key);
+        const decoded_key = try self.allocator.alloc(u8, decoded_key_len);
+        defer self.allocator.free(decoded_key);
+        try decoder.Decoder.decode(decoded_key, access_key);
+
+        // HMAC-SHA256 signature
+        var signature_buf: [32]u8 = undefined;
+        std.crypto.auth.hmac.sha2.HmacSha256.create(&signature_buf, string_to_sign, decoded_key);
+
+        // Base64 encode signature
+        const encoder = std.base64.standard;
+        const encoded_len = encoder.Encoder.calcSize(signature_buf.len);
+        const encoded_sig = try self.allocator.alloc(u8, encoded_len);
+        _ = encoder.Encoder.encode(encoded_sig, &signature_buf);
+
+        // Authorization header: SharedKey {account}:{signature}
+        const auth_header = try std.fmt.allocPrint(
+            self.allocator,
+            "SharedKey {s}:{s}",
+            .{ account, encoded_sig },
+        );
+        self.allocator.free(encoded_sig);
+
+        return auth_header; // Caller owns
+    }
+
+    /// Format Unix timestamp as RFC1123 for Azure (e.g., "Mon, 01 Jan 2024 12:00:00 GMT").
+    fn formatRFC1123(self: *const RemoteCache, timestamp: i64) ![]u8 {
+        const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = @intCast(timestamp) };
+        const day_seconds = epoch_seconds.getDaySeconds();
+        const epoch_day = epoch_seconds.getEpochDay();
+        const year_day = epoch_day.calculateYearDay();
+        const month_day = year_day.calculateMonthDay();
+
+        // 1970-01-01 was Thursday (index 3 in our array starting with Mon=0)
+        // epoch_day.day is days since 1970-01-01
+        const day_of_week = @mod(epoch_day.day + 3, 7);
+        const weekdays = [_][]const u8{ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+        const months = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{s}, {d:0>2} {s} {d} {d:0>2}:{d:0>2}:{d:0>2} GMT",
+            .{
+                weekdays[day_of_week],
+                month_day.day_index + 1,
+                months[month_day.month.numeric() - 1],
+                year_day.year,
+                day_seconds.getHoursIntoDay(),
+                day_seconds.getMinutesIntoHour(),
+                day_seconds.getSecondsIntoMinute(),
+            },
+        );
     }
 };
 
@@ -904,4 +1156,71 @@ test "GCS JWT header and payload format" {
     // Verify header is properly base64 encoded
     try std.testing.expect(header_b64.len > 0);
     try std.testing.expectEqualStrings("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9", header_b64);
+}
+
+test "Azure backend missing credentials" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .azure,
+        .bucket = "test-container",
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Azure operations should fail without credentials
+    // (unless they happen to be set in the environment)
+    const result = cache.pullAzure("test-key") catch |err| {
+        // Expected to fail with MissingAzureCredentials
+        try std.testing.expect(err == error.MissingAzureCredentials);
+        return;
+    };
+
+    // If we got here, Azure credentials were in the environment
+    if (result) |data| {
+        allocator.free(data);
+    }
+}
+
+test "formatRFC1123" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .azure,
+        .bucket = "test-container",
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Test known timestamp: Monday, 01 Jan 2024 00:00:00 GMT = 1704067200
+    const rfc1123 = try cache.formatRFC1123(1704067200);
+    defer allocator.free(rfc1123);
+
+    try std.testing.expectEqualStrings("Mon, 01 Jan 2024 00:00:00 GMT", rfc1123);
+}
+
+test "Azure signature generation" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .azure,
+        .bucket = "test-container",
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Test signature generation with known values
+    // Using a test access key (base64 encoded 32-byte key)
+    const test_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    const test_account = "testaccount";
+    const test_date = "Mon, 01 Jan 2024 00:00:00 GMT";
+
+    const auth_header = try cache.signAzureRequest(
+        "GET",
+        "",
+        "",
+        test_date,
+        "/testaccount/test-container/test.cache",
+        test_account,
+        test_key,
+    );
+    defer allocator.free(auth_header);
+
+    // Verify the header starts with "SharedKey testaccount:"
+    try std.testing.expect(std.mem.startsWith(u8, auth_header, "SharedKey testaccount:"));
+    try std.testing.expect(auth_header.len > 30); // Should have a base64 signature
 }
