@@ -38,6 +38,7 @@ const validate_cmd = @import("cli/validate.zig");
 const tools_cmd = @import("cli/tools.zig");
 const graph_cmd = @import("cli/graph.zig");
 const lint_cmd = @import("cli/lint.zig");
+const repo_cmd = @import("cli/repo.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -96,6 +97,7 @@ comptime {
     _ = tools_cmd;
     _ = graph_cmd;
     _ = lint_cmd;
+    _ = repo_cmd;
     _ = platform;
     _ = semver;
     _ = hash_util;
@@ -391,6 +393,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "lint")) {
         const lint_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return lint_cmd.run(allocator, lint_args);
+    } else if (std.mem.eql(u8, cmd, "repo")) {
+        const sub = if (effective_args.len >= 3) effective_args[2] else "";
+        return repo_cmd.cmdRepo(allocator, sub, effective_args, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -430,7 +435,9 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n", .{});
     try w.print("  tools list [kind]      List installed toolchain versions\n", .{});
     try w.print("  tools install <k>@<v>  Install a toolchain (e.g., node@20.11.1)\n", .{});
-    try w.print("  tools outdated [kind]  Check for outdated toolchains\n\n", .{});
+    try w.print("  tools outdated [kind]  Check for outdated toolchains\n", .{});
+    try w.print("  repo sync              Sync all multi-repo repositories\n", .{});
+    try w.print("  repo status            Show git status of all repositories\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
