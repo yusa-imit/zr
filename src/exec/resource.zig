@@ -7,6 +7,17 @@ const getpid = if (builtin.os.tag != .windows)
 else
     undefined;
 
+/// Cross-platform process kill for resource limit enforcement.
+/// Sends SIGKILL on POSIX; uses TerminateProcess on Windows.
+fn killProcess(pid: if (builtin.os.tag == .windows) std.os.windows.HANDLE else std.posix.pid_t) void {
+    if (comptime builtin.os.tag == .windows) {
+        const windows = std.os.windows;
+        _ = windows.TerminateProcess(pid, 1);
+    } else {
+        std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+    }
+}
+
 /// Cross-platform resource monitoring and limiting for task execution.
 ///
 /// Platform-specific implementations:
@@ -287,14 +298,15 @@ pub const ResourceMonitor = struct {
     }
 
     /// Check current usage and enforce limits if exceeded.
-    /// Returns true if process should be killed due to limit violation.
+    /// Returns true if process was killed due to limit violation.
     pub fn checkLimits(self: *ResourceMonitor) bool {
         const usage = getProcessUsage(self.pid) orelse return false;
 
         // Memory limit enforcement
         if (self.max_memory_bytes) |limit| {
             if (usage.rss_bytes > limit) {
-                // TODO: Kill process with SIGKILL (or TerminateProcess on Windows)
+                // Kill process immediately on memory limit violation
+                killProcess(self.pid);
                 return true;
             }
         }
@@ -750,4 +762,49 @@ test "HardLimitHandle: create and cleanup (Windows)" {
 
     // Job handle should be created
     try std.testing.expect(handle.job_handle != null);
+}
+
+test "ResourceMonitor: checkLimits returns false when within limits" {
+    const allocator = std.testing.allocator;
+
+    // Get current process PID for testing
+    const pid = if (comptime builtin.os.tag == .windows) blk: {
+        const windows = std.os.windows;
+        break :blk windows.GetCurrentProcess();
+    } else blk: {
+        break :blk getpid();
+    };
+
+    // Create monitor with generous limits (current process should be well within)
+    var monitor = ResourceMonitor.init(
+        allocator,
+        pid,
+        4, // 4 CPU cores
+        10 * 1024 * 1024 * 1024, // 10GB memory - way more than test process uses
+    );
+    defer monitor.deinit();
+
+    // Check limits - should not exceed
+    const should_kill = monitor.checkLimits();
+    try std.testing.expectEqual(false, should_kill);
+}
+
+test "ResourceMonitor: getUsage returns current process stats" {
+    const allocator = std.testing.allocator;
+
+    const pid = if (comptime builtin.os.tag == .windows) blk: {
+        const windows = std.os.windows;
+        break :blk windows.GetCurrentProcess();
+    } else blk: {
+        break :blk getpid();
+    };
+
+    var monitor = ResourceMonitor.init(allocator, pid, null, null);
+    defer monitor.deinit();
+
+    const usage = monitor.getUsage();
+    // Usage should be available for current process
+    if (usage) |u| {
+        try std.testing.expect(u.rss_bytes > 0);
+    }
 }

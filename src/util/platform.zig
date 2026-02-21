@@ -10,10 +10,15 @@ pub fn getHome() []const u8 {
 }
 
 /// Cross-platform process kill.
-/// Sends SIGKILL on POSIX; no-op on Windows.
+/// Sends SIGKILL on POSIX; uses TerminateProcess on Windows.
 pub fn killProcess(pid: std.process.Child.Id) void {
-    if (comptime native_os == .windows) return;
-    std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+    if (comptime native_os == .windows) {
+        const windows = std.os.windows;
+        const handle: windows.HANDLE = @ptrCast(pid);
+        _ = windows.TerminateProcess(handle, 1);
+    } else {
+        std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+    }
 }
 
 /// Cross-platform process pause.
