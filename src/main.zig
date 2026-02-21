@@ -14,6 +14,7 @@ const monitor = @import("output/monitor.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
+const cache_remote = @import("cache/remote.zig");
 const plugin_loader = @import("plugin/loader.zig");
 const plugin_install = @import("plugin/install.zig");
 const plugin_builtin = @import("plugin/builtin.zig");
@@ -68,6 +69,7 @@ comptime {
     _ = history;
     _ = watcher;
     _ = cache_store;
+    _ = cache_remote;
     _ = plugin_loader;
     _ = plugin_install;
     _ = plugin_builtin;
