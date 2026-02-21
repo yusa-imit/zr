@@ -291,3 +291,198 @@ test "findProjectForFile - exact prefix match" {
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("packages/core", result.?);
 }
+
+test "expandWithDependents - single level" {
+    const allocator = std.testing.allocator;
+
+    // Setup: packages/ui depends on packages/core
+    var deps_map = std.StringHashMap([]const []const u8).init(allocator);
+    defer {
+        var it = deps_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.*) |dep| allocator.free(dep);
+            allocator.free(entry.value_ptr.*);
+        }
+        deps_map.deinit();
+    }
+
+    const ui_deps = try allocator.alloc([]const u8, 1);
+    ui_deps[0] = try allocator.dupe(u8, "packages/core");
+    try deps_map.put(try allocator.dupe(u8, "packages/ui"), ui_deps);
+
+    // Create affected result with only core affected
+    var affected = AffectedResult{
+        .projects = std.StringHashMap(void).init(allocator),
+        .base_ref = try allocator.dupe(u8, "main"),
+    };
+    defer affected.deinit(allocator);
+
+    const core = try allocator.dupe(u8, "packages/core");
+    try affected.projects.put(core, {});
+
+    // Expand to include dependents
+    try expandWithDependents(allocator, &affected, deps_map);
+
+    // Should now include both core and ui
+    try std.testing.expect(affected.contains("packages/core"));
+    try std.testing.expect(affected.contains("packages/ui"));
+}
+
+test "expandWithDependents - transitive dependencies" {
+    const allocator = std.testing.allocator;
+
+    // Setup dependency chain: app -> ui -> core
+    var deps_map = std.StringHashMap([]const []const u8).init(allocator);
+    defer {
+        var it = deps_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.*) |dep| allocator.free(dep);
+            allocator.free(entry.value_ptr.*);
+        }
+        deps_map.deinit();
+    }
+
+    const ui_deps = try allocator.alloc([]const u8, 1);
+    ui_deps[0] = try allocator.dupe(u8, "packages/core");
+    try deps_map.put(try allocator.dupe(u8, "packages/ui"), ui_deps);
+
+    const app_deps = try allocator.alloc([]const u8, 1);
+    app_deps[0] = try allocator.dupe(u8, "packages/ui");
+    try deps_map.put(try allocator.dupe(u8, "apps/web"), app_deps);
+
+    // Only core is affected initially
+    var affected = AffectedResult{
+        .projects = std.StringHashMap(void).init(allocator),
+        .base_ref = try allocator.dupe(u8, "main"),
+    };
+    defer affected.deinit(allocator);
+
+    const core = try allocator.dupe(u8, "packages/core");
+    try affected.projects.put(core, {});
+
+    // Expand - should find ui and app transitively
+    try expandWithDependents(allocator, &affected, deps_map);
+
+    try std.testing.expect(affected.contains("packages/core"));
+    try std.testing.expect(affected.contains("packages/ui"));
+    try std.testing.expect(affected.contains("apps/web"));
+}
+
+test "expandWithDependents - multiple initial affected" {
+    const allocator = std.testing.allocator;
+
+    // Setup: app1 -> utils, app2 -> utils, ui -> core
+    var deps_map = std.StringHashMap([]const []const u8).init(allocator);
+    defer {
+        var it = deps_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.*) |dep| allocator.free(dep);
+            allocator.free(entry.value_ptr.*);
+        }
+        deps_map.deinit();
+    }
+
+    const app1_deps = try allocator.alloc([]const u8, 1);
+    app1_deps[0] = try allocator.dupe(u8, "packages/utils");
+    try deps_map.put(try allocator.dupe(u8, "apps/app1"), app1_deps);
+
+    const app2_deps = try allocator.alloc([]const u8, 1);
+    app2_deps[0] = try allocator.dupe(u8, "packages/utils");
+    try deps_map.put(try allocator.dupe(u8, "apps/app2"), app2_deps);
+
+    const ui_deps = try allocator.alloc([]const u8, 1);
+    ui_deps[0] = try allocator.dupe(u8, "packages/core");
+    try deps_map.put(try allocator.dupe(u8, "packages/ui"), ui_deps);
+
+    // Both utils and core are affected
+    var affected = AffectedResult{
+        .projects = std.StringHashMap(void).init(allocator),
+        .base_ref = try allocator.dupe(u8, "main"),
+    };
+    defer affected.deinit(allocator);
+
+    const utils = try allocator.dupe(u8, "packages/utils");
+    try affected.projects.put(utils, {});
+    const core = try allocator.dupe(u8, "packages/core");
+    try affected.projects.put(core, {});
+
+    try expandWithDependents(allocator, &affected, deps_map);
+
+    // Should include utils, core, app1, app2, ui
+    try std.testing.expect(affected.contains("packages/utils"));
+    try std.testing.expect(affected.contains("packages/core"));
+    try std.testing.expect(affected.contains("apps/app1"));
+    try std.testing.expect(affected.contains("apps/app2"));
+    try std.testing.expect(affected.contains("packages/ui"));
+}
+
+test "expandWithDependents - no dependents" {
+    const allocator = std.testing.allocator;
+
+    // Empty dependency map
+    var deps_map = std.StringHashMap([]const []const u8).init(allocator);
+    defer deps_map.deinit();
+
+    var affected = AffectedResult{
+        .projects = std.StringHashMap(void).init(allocator),
+        .base_ref = try allocator.dupe(u8, "main"),
+    };
+    defer affected.deinit(allocator);
+
+    const core = try allocator.dupe(u8, "packages/core");
+    try affected.projects.put(core, {});
+
+    // Should not crash, affected should remain unchanged
+    try expandWithDependents(allocator, &affected, deps_map);
+
+    try std.testing.expect(affected.contains("packages/core"));
+    try std.testing.expectEqual(@as(usize, 1), affected.projects.count());
+}
+
+test "expandWithDependents - circular dependencies" {
+    const allocator = std.testing.allocator;
+
+    // Setup circular: a -> b -> c -> a
+    var deps_map = std.StringHashMap([]const []const u8).init(allocator);
+    defer {
+        var it = deps_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.*) |dep| allocator.free(dep);
+            allocator.free(entry.value_ptr.*);
+        }
+        deps_map.deinit();
+    }
+
+    const a_deps = try allocator.alloc([]const u8, 1);
+    a_deps[0] = try allocator.dupe(u8, "b");
+    try deps_map.put(try allocator.dupe(u8, "a"), a_deps);
+
+    const b_deps = try allocator.alloc([]const u8, 1);
+    b_deps[0] = try allocator.dupe(u8, "c");
+    try deps_map.put(try allocator.dupe(u8, "b"), b_deps);
+
+    const c_deps = try allocator.alloc([]const u8, 1);
+    c_deps[0] = try allocator.dupe(u8, "a");
+    try deps_map.put(try allocator.dupe(u8, "c"), c_deps);
+
+    var affected = AffectedResult{
+        .projects = std.StringHashMap(void).init(allocator),
+        .base_ref = try allocator.dupe(u8, "main"),
+    };
+    defer affected.deinit(allocator);
+
+    const a = try allocator.dupe(u8, "a");
+    try affected.projects.put(a, {});
+
+    // Should handle circular dependencies without infinite loop
+    try expandWithDependents(allocator, &affected, deps_map);
+
+    // All three should be affected
+    try std.testing.expect(affected.contains("a"));
+    try std.testing.expect(affected.contains("b"));
+    try std.testing.expect(affected.contains("c"));
+}
