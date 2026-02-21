@@ -126,7 +126,7 @@
   - Full integration with constraint validation system
   - 3 new tests (metadata parsing + extraction)
 
-### Phase 7 - Multi-repo & Remote Cache (PRD v2.0) — **IN PROGRESS (~75%)**
+### Phase 7 - Multi-repo & Remote Cache (PRD v2.0) — **IN PROGRESS (~85%)**
 - [x] **Remote cache (HTTP backend)** (76acf80, 0807a49, 4a4d426) — PRD §5.7.3 **MVP COMPLETE**
   - Config types: RemoteCacheType, RemoteCacheConfig, CacheConfig with remote field
   - TOML parsing: [cache] enabled/local_dir, [cache.remote] type/bucket/region/prefix/url/auth
@@ -171,7 +171,14 @@
   - Tag-based filtering: `--tags backend,frontend`
   - Cycle detection with path reporting
   - 7 unit tests: graph construction (3), cycle detection (1), topological sort (1), tag filtering (1), empty graph (1)
-- [ ] **Cross-repo task execution** — NOT implemented (`zr repo run`, PRD §5.9.3)
+- [x] **Cross-repo task execution** (f0961f7) — **COMPLETE** — `zr repo run <task>` with topological ordering (PRD §5.9.3)
+  - `multirepo/run.zig` — runTaskAcrossRepos(), RunOptions, RepoTaskResult
+  - `cli/repo.zig` — cmdRepoRun() with --affected/--repos/--tags/--jobs/--dry-run flags
+  - Topological execution order respecting cross-repo dependencies via buildRepoGraph() + topologicalSort()
+  - Per-repo task configuration loading (loads each repo's zr.toml, finds task, executes with env vars)
+  - Filter support: --repos (comma-separated list), --tags (tag-based), --affected (git diff placeholder)
+  - Execution summary with success/failure counts and total duration
+  - 4 unit tests: RunOptions defaults, shouldRunInRepo (no filters, by repo, by tags)
 - [ ] **Synthetic workspace** — NOT implemented (PRD §5.9.4)
 
 ### Missing Utility Modules (PRD §7.2)
@@ -183,9 +190,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-6 COMPLETE (100%), Phase 7 in progress (~75%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph` with cross-repo dependency visualization**.
+> **Reality**: **Phase 1-6 COMPLETE (100%), Phase 7 in progress (~85%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph` with cross-repo dependency visualization**, **Cross-repo task execution: `zr repo run <task>` with topological ordering and filtering**.
 
-- **Tests**: 460 total (452 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests
+- **Tests**: 464 total (456 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
