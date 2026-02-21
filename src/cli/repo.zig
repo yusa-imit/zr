@@ -4,6 +4,7 @@ const repos_parser = @import("../config/repos.zig");
 const sync = @import("../multirepo/sync.zig");
 const status = @import("../multirepo/status.zig");
 const repo_graph = @import("../multirepo/graph.zig");
+const run = @import("../multirepo/run.zig");
 const common = @import("common.zig");
 
 /// Main entry point for `zr repo` command.
@@ -21,12 +22,14 @@ pub fn cmdRepo(
         return cmdRepoStatus(allocator, args, w, ew, use_color);
     } else if (std.mem.eql(u8, sub, "graph")) {
         return cmdRepoGraph(allocator, args, w, ew, use_color);
+    } else if (std.mem.eql(u8, sub, "run")) {
+        return cmdRepoRun(allocator, args, w, ew, use_color);
     } else if (std.mem.eql(u8, sub, "help") or std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h") or sub.len == 0) {
         try printHelp(w, use_color);
         return 0;
     } else {
         try color.printError(ew, use_color,
-            "repo: unknown subcommand '{s}'\n\n  Hint: zr repo sync | zr repo status | zr repo graph\n", .{sub});
+            "repo: unknown subcommand '{s}'\n\n  Hint: zr repo sync | zr repo status | zr repo graph | zr repo run\n", .{sub});
         return 1;
     }
 }
@@ -443,6 +446,169 @@ fn cmdRepoGraph(
     return 0;
 }
 
+/// `zr repo run <task>` - run a task across multiple repositories
+fn cmdRepoRun(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    // Parse task name and options
+    var task_name: ?[]const u8 = null;
+    var repos_file: []const u8 = "zr-repos.toml";
+    var options = run.RunOptions{ .no_color = !use_color };
+
+    var i: usize = 3; // args[0] = zr, args[1] = repo, args[2] = run
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--affected")) {
+            options.affected = true;
+            if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "--")) {
+                options.affected_base = args[i + 1];
+                i += 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--repos")) {
+            if (i + 1 < args.len) {
+                options.repos = args[i + 1];
+                i += 1;
+            } else {
+                try color.printError(ew, use_color, "--repos: missing repository list\n", .{});
+                return 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--tags")) {
+            if (i + 1 < args.len) {
+                options.tags = args[i + 1];
+                i += 1;
+            } else {
+                try color.printError(ew, use_color, "--tags: missing tag list\n", .{});
+                return 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
+            options.verbose = true;
+        } else if (std.mem.eql(u8, arg, "--jobs") or std.mem.eql(u8, arg, "-j")) {
+            if (i + 1 < args.len) {
+                options.jobs = std.fmt.parseInt(usize, args[i + 1], 10) catch {
+                    try color.printError(ew, use_color, "--jobs: invalid number\n", .{});
+                    return 1;
+                };
+                i += 1;
+            } else {
+                try color.printError(ew, use_color, "--jobs: missing number\n", .{});
+                return 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--dry-run") or std.mem.eql(u8, arg, "-n")) {
+            options.dry_run = true;
+        } else if (std.mem.eql(u8, arg, "--config") or std.mem.eql(u8, arg, "-c")) {
+            if (i + 1 < args.len) {
+                repos_file = args[i + 1];
+                i += 1;
+            } else {
+                try color.printError(ew, use_color, "--config: missing file path\n", .{});
+                return 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try printRunHelp(w, use_color);
+            return 0;
+        } else if (!std.mem.startsWith(u8, arg, "--")) {
+            // First non-option argument is the task name
+            if (task_name == null) {
+                task_name = arg;
+            } else {
+                try color.printError(ew, use_color, "Unknown argument: {s}\n", .{arg});
+                return 1;
+            }
+        } else {
+            try color.printError(ew, use_color, "Unknown option: {s}\n", .{arg});
+            return 1;
+        }
+    }
+
+    if (task_name == null) {
+        try color.printError(ew, use_color, "Missing task name\n\n", .{});
+        try printRunHelp(ew, use_color);
+        return 1;
+    }
+
+    // Load zr-repos.toml
+    var config = repos_parser.loadRepoConfig(allocator, repos_file) catch |err| {
+        try color.printError(ew, use_color,
+            "Failed to load {s}: {s}\n\n  Hint: Create a zr-repos.toml file with [[repos]] entries\n",
+            .{ repos_file, @errorName(err) });
+        return 1;
+    };
+    defer config.deinit(allocator);
+
+    if (config.repos.len == 0) {
+        if (use_color) try w.writeAll(color.Code.yellow);
+        try w.print("No repositories defined in {s}\n", .{repos_file});
+        if (use_color) try w.writeAll(color.Code.reset);
+        return 0;
+    }
+
+    // Run task across repos
+    const results = run.runTaskAcrossRepos(
+        allocator,
+        &config,
+        task_name.?,
+        options,
+        w,
+        ew,
+    ) catch |err| {
+        try color.printError(ew, use_color, "Task execution failed: {s}\n", .{@errorName(err)});
+        return 1;
+    };
+    defer {
+        for (results) |*r| {
+            var r_mut = r.*;
+            r_mut.deinit(allocator);
+        }
+        allocator.free(results);
+    }
+
+    // Print summary
+    if (results.len > 0 and !options.dry_run) {
+        try w.print("\n", .{});
+        try color.printBold(w, use_color, "Summary:\n", .{});
+
+        var success_count: usize = 0;
+        var failure_count: usize = 0;
+        var total_duration: u64 = 0;
+
+        for (results) |r| {
+            if (r.success) {
+                success_count += 1;
+            } else {
+                failure_count += 1;
+            }
+            total_duration += r.duration_ms;
+        }
+
+        if (success_count > 0) {
+            if (use_color) try w.writeAll(color.Code.green);
+            try w.print("  ✓ {d} succeeded", .{success_count});
+            if (use_color) try w.writeAll(color.Code.reset);
+            try w.print("\n", .{});
+        }
+
+        if (failure_count > 0) {
+            if (use_color) try w.writeAll(color.Code.red);
+            try w.print("  ✗ {d} failed", .{failure_count});
+            if (use_color) try w.writeAll(color.Code.reset);
+            try w.print("\n", .{});
+        }
+
+        try color.printDim(w, use_color, "  Total: {d}ms\n", .{total_duration});
+    }
+
+    // Return non-zero if any failures
+    for (results) |r| {
+        if (!r.success) return 1;
+    }
+
+    return 0;
+}
+
 fn printAsciiGraph(w: *std.Io.Writer, graph: *const repo_graph.RepoGraph, filter: ?[][]const u8, use_color: bool) !void {
     const allocator = graph.allocator;
 
@@ -605,6 +771,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  sync         Sync all repositories (clone missing, pull updates)\n", .{});
     try w.print("  status       Show git status of all repositories\n", .{});
     try w.print("  graph        Show cross-repo dependency graph\n", .{});
+    try w.print("  run          Run a task across multiple repositories\n", .{});
     try w.print("\n", .{});
     try color.printDim(w, use_color, "For more help on a command: zr repo <command> --help\n", .{});
 }
@@ -649,6 +816,29 @@ fn printGraphHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  zr repo graph -f dot       # Graphviz DOT format\n", .{});
     try w.print("  zr repo graph -f json      # JSON format\n", .{});
     try w.print("  zr repo graph --tags=api   # Only repos tagged 'api'\n", .{});
+}
+
+fn printRunHelp(w: *std.Io.Writer, use_color: bool) !void {
+    try color.printBold(w, use_color, "zr repo run", .{});
+    try w.print(" - Run a task across multiple repositories\n\n", .{});
+    try color.printBold(w, use_color, "Usage:\n", .{});
+    try w.print("  zr repo run <task> [options]\n\n", .{});
+    try color.printBold(w, use_color, "Options:\n", .{});
+    try w.print("  --affected [ref]    Only run on affected repositories (git diff-based)\n", .{});
+    try w.print("  --repos <list>      Filter to specific repositories (comma-separated)\n", .{});
+    try w.print("  --tags <tags>       Filter by tags (comma-separated)\n", .{});
+    try w.print("  --jobs, -j <n>      Number of parallel jobs (default: auto)\n", .{});
+    try w.print("  --dry-run, -n       Show execution plan without running\n", .{});
+    try w.print("  --verbose, -v       Show detailed output\n", .{});
+    try w.print("  --config, -c <path> Path to zr-repos.toml (default: zr-repos.toml)\n", .{});
+    try w.print("  --help, -h          Show this help message\n", .{});
+    try w.print("\n", .{});
+    try color.printBold(w, use_color, "Examples:\n", .{});
+    try w.print("  zr repo run build                        # Run 'build' in all repos\n", .{});
+    try w.print("  zr repo run test --affected              # Run 'test' only in affected repos\n", .{});
+    try w.print("  zr repo run lint --repos=api,frontend    # Run 'lint' in specific repos\n", .{});
+    try w.print("  zr repo run deploy --tags=backend        # Run 'deploy' in repos tagged 'backend'\n", .{});
+    try w.print("  zr repo run build --dry-run              # Show execution order without running\n", .{});
 }
 
 // ============================================================================
