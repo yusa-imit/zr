@@ -419,19 +419,328 @@ pub const RemoteCache = struct {
 
     // ─── GCS Backend ────────────────────────────────────────────────────────
 
+    /// Google Cloud Storage backend using OAuth2 service account authentication.
+    /// Reference: https://cloud.google.com/storage/docs/authentication
+    /// Authentication methods:
+    /// 1. Service account key via GOOGLE_APPLICATION_CREDENTIALS env var (JSON file path)
+    /// 2. Access token via GOOGLE_ACCESS_TOKEN env var (for pre-authenticated scenarios)
     fn pullGCS(self: *const RemoteCache, key: []const u8) !?[]u8 {
-        // TODO: Implement GCS backend
-        _ = self;
-        _ = key;
-        return error.NotImplemented;
+        const bucket = self.config.bucket orelse return error.MissingBucket;
+        const prefix = self.config.prefix orelse "";
+
+        // Construct GCS object path
+        const object_key = if (prefix.len > 0)
+            try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ prefix, key })
+        else
+            try std.fmt.allocPrint(self.allocator, "{s}.cache", .{key});
+        defer self.allocator.free(object_key);
+
+        // Get access token
+        const access_token = try self.getGCSAccessToken();
+        defer self.allocator.free(access_token);
+
+        // Build GCS URL (using JSON API for simplicity, supports alt=media for raw download)
+        const url = try std.fmt.allocPrint(
+            self.allocator,
+            "https://storage.googleapis.com/storage/v1/b/{s}/o/{s}?alt=media",
+            .{ bucket, object_key },
+        );
+        defer self.allocator.free(url);
+
+        // Use curl for GCS GET
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s");
+        try argv.append(self.allocator, "-f");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "Authorization: Bearer {s}", .{access_token}));
+        try argv.append(self.allocator, url);
+
+        const result = std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        }) catch return null;
+        defer self.allocator.free(result.stderr);
+
+        // exit 22 = HTTP 404 (cache miss)
+        if (result.term.Exited != 0) {
+            self.allocator.free(result.stdout);
+            return null;
+        }
+
+        return result.stdout; // Caller owns
     }
 
     fn pushGCS(self: *const RemoteCache, key: []const u8, data: []const u8) !void {
-        // TODO: Implement GCS backend
-        _ = self;
-        _ = key;
-        _ = data;
-        return error.NotImplemented;
+        const bucket = self.config.bucket orelse return error.MissingBucket;
+        const prefix = self.config.prefix orelse "";
+
+        // Construct GCS object path
+        const object_key = if (prefix.len > 0)
+            try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ prefix, key })
+        else
+            try std.fmt.allocPrint(self.allocator, "{s}.cache", .{key});
+        defer self.allocator.free(object_key);
+
+        // Get access token
+        const access_token = try self.getGCSAccessToken();
+        defer self.allocator.free(access_token);
+
+        // Write data to temp file for curl upload
+        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_path);
+        const file = try std.fs.cwd().createFile(tmp_path, .{});
+        defer file.close();
+        defer std.fs.cwd().deleteFile(tmp_path) catch {};
+        try file.writeAll(data);
+
+        // Build GCS upload URL (using JSON API with uploadType=media)
+        const url = try std.fmt.allocPrint(
+            self.allocator,
+            "https://storage.googleapis.com/upload/storage/v1/b/{s}/o?uploadType=media&name={s}",
+            .{ bucket, object_key },
+        );
+        defer self.allocator.free(url);
+
+        // Use curl for GCS POST
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s");
+        try argv.append(self.allocator, "-f");
+        try argv.append(self.allocator, "-X");
+        try argv.append(self.allocator, "POST");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "Authorization: Bearer {s}", .{access_token}));
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "Content-Type: application/octet-stream");
+        try argv.append(self.allocator, "--data-binary");
+        const data_arg = try std.fmt.allocPrint(self.allocator, "@{s}", .{tmp_path});
+        defer self.allocator.free(data_arg);
+        try argv.append(self.allocator, data_arg);
+        try argv.append(self.allocator, url);
+
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        if (result.term.Exited != 0) {
+            return error.RemoteCacheFailed;
+        }
+    }
+
+    /// Get GCS access token from environment.
+    /// Supports two methods:
+    /// 1. GOOGLE_ACCESS_TOKEN - pre-authenticated bearer token
+    /// 2. GOOGLE_APPLICATION_CREDENTIALS - path to service account JSON key file
+    fn getGCSAccessToken(self: *const RemoteCache) ![]u8 {
+        const platform = @import("../util/platform.zig");
+
+        // Method 1: Direct access token
+        if (platform.getenv("GOOGLE_ACCESS_TOKEN")) |token| {
+            return try self.allocator.dupe(u8, token);
+        }
+
+        // Method 2: Service account key file
+        if (platform.getenv("GOOGLE_APPLICATION_CREDENTIALS")) |creds_path| {
+            return try self.getGCSAccessTokenFromServiceAccount(creds_path);
+        }
+
+        return error.MissingGCPCredentials;
+    }
+
+    /// Obtain OAuth2 access token from service account JSON key file.
+    /// Uses Google's OAuth2 token endpoint with JWT assertion.
+    /// Reference: https://developers.google.com/identity/protocols/oauth2/service-account
+    fn getGCSAccessTokenFromServiceAccount(self: *const RemoteCache, creds_path: []const u8) ![]u8 {
+        // Read service account JSON file
+        const file = try std.fs.cwd().openFile(creds_path, .{});
+        defer file.close();
+        const json_data = try file.readToEndAlloc(self.allocator, 1024 * 1024); // 1MB max
+        defer self.allocator.free(json_data);
+
+        // Parse JSON to extract client_email and private_key
+        const parsed = try std.json.parseFromSlice(
+            struct {
+                client_email: []const u8,
+                private_key: []const u8,
+                token_uri: ?[]const u8 = null,
+            },
+            self.allocator,
+            json_data,
+            .{},
+        );
+        defer parsed.deinit();
+
+        const service_account = parsed.value;
+        const token_uri = service_account.token_uri orelse "https://oauth2.googleapis.com/token";
+
+        // Create JWT assertion
+        const jwt = try self.createGCSJWT(service_account.client_email, service_account.private_key);
+        defer self.allocator.free(jwt);
+
+        // Exchange JWT for access token via OAuth2 token endpoint
+        const form_data = try std.fmt.allocPrint(
+            self.allocator,
+            "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion={s}",
+            .{jwt},
+        );
+        defer self.allocator.free(form_data);
+
+        // Write form data to temp file
+        const tmp_path = "/tmp/zr-gcs-oauth-form.tmp";
+        const tmp_file = try std.fs.cwd().createFile(tmp_path, .{});
+        defer tmp_file.close();
+        defer std.fs.cwd().deleteFile(tmp_path) catch {};
+        try tmp_file.writeAll(form_data);
+
+        // Use curl to POST to token endpoint
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "curl");
+        try argv.append(self.allocator, "-s");
+        try argv.append(self.allocator, "-f");
+        try argv.append(self.allocator, "-X");
+        try argv.append(self.allocator, "POST");
+        try argv.append(self.allocator, "-H");
+        try argv.append(self.allocator, "Content-Type: application/x-www-form-urlencoded");
+        try argv.append(self.allocator, "--data-binary");
+        try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "@{s}", .{tmp_path}));
+        try argv.append(self.allocator, token_uri);
+
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        if (result.term.Exited != 0) {
+            return error.GCSOAuth2Failed;
+        }
+
+        // Parse JSON response to extract access_token
+        const token_response = try std.json.parseFromSlice(
+            struct {
+                access_token: []const u8,
+                expires_in: ?i64 = null,
+                token_type: ?[]const u8 = null,
+            },
+            self.allocator,
+            result.stdout,
+            .{},
+        );
+        defer token_response.deinit();
+
+        return try self.allocator.dupe(u8, token_response.value.access_token);
+    }
+
+    /// Create JWT assertion for GCS service account OAuth2.
+    /// Reference: https://developers.google.com/identity/protocols/oauth2/service-account#authorizingrequests
+    fn createGCSJWT(self: *const RemoteCache, client_email: []const u8, private_key: []const u8) ![]u8 {
+        // JWT Header (alg: RS256, typ: JWT)
+        const header = "{\"alg\":\"RS256\",\"typ\":\"JWT\"}";
+        const header_b64 = try self.base64UrlEncode(header);
+        defer self.allocator.free(header_b64);
+
+        // JWT Payload (iss, scope, aud, exp, iat)
+        const now = std.time.timestamp();
+        const exp = now + 3600; // 1 hour expiration
+        const payload = try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"iss\":\"{s}\",\"scope\":\"https://www.googleapis.com/auth/devstorage.read_write\",\"aud\":\"https://oauth2.googleapis.com/token\",\"exp\":{d},\"iat\":{d}}}",
+            .{ client_email, exp, now },
+        );
+        defer self.allocator.free(payload);
+        const payload_b64 = try self.base64UrlEncode(payload);
+        defer self.allocator.free(payload_b64);
+
+        // Construct signing input: header.payload
+        const signing_input = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}.{s}",
+            .{ header_b64, payload_b64 },
+        );
+        defer self.allocator.free(signing_input);
+
+        // Sign with RS256 (RSA-SHA256) using private_key
+        // NOTE: This is a simplified implementation using openssl command.
+        // A production implementation should use a proper RSA signing library.
+        const signature = try self.signRS256(signing_input, private_key);
+        defer self.allocator.free(signature);
+
+        // Construct final JWT: header.payload.signature
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{s}.{s}.{s}",
+            .{ header_b64, payload_b64, signature },
+        );
+    }
+
+    /// Base64 URL-safe encoding (without padding).
+    fn base64UrlEncode(self: *const RemoteCache, data: []const u8) ![]u8 {
+        const encoder = std.base64.url_safe_no_pad;
+        const encoded_len = encoder.Encoder.calcSize(data.len);
+        const encoded = try self.allocator.alloc(u8, encoded_len);
+        _ = encoder.Encoder.encode(encoded, data);
+        return encoded;
+    }
+
+    /// Sign data with RS256 (RSA-SHA256) using private key.
+    /// Uses openssl command for RSA signing (Zig 0.15 lacks RSA in std.crypto).
+    fn signRS256(self: *const RemoteCache, data: []const u8, private_key: []const u8) ![]u8 {
+        // Write private key to temp file
+        const key_path = "/tmp/zr-gcs-privkey.pem";
+        const key_file = try std.fs.cwd().createFile(key_path, .{});
+        defer key_file.close();
+        defer std.fs.cwd().deleteFile(key_path) catch {};
+        try key_file.writeAll(private_key);
+
+        // Write data to temp file
+        const data_path = "/tmp/zr-gcs-data.tmp";
+        const data_file = try std.fs.cwd().createFile(data_path, .{});
+        defer data_file.close();
+        defer std.fs.cwd().deleteFile(data_path) catch {};
+        try data_file.writeAll(data);
+
+        // Sign using openssl
+        const sig_path = "/tmp/zr-gcs-sig.bin";
+        defer std.fs.cwd().deleteFile(sig_path) catch {};
+
+        var argv = std.ArrayList([]const u8){};
+        defer argv.deinit(self.allocator);
+        try argv.append(self.allocator, "openssl");
+        try argv.append(self.allocator, "dgst");
+        try argv.append(self.allocator, "-sha256");
+        try argv.append(self.allocator, "-sign");
+        try argv.append(self.allocator, key_path);
+        try argv.append(self.allocator, "-out");
+        try argv.append(self.allocator, sig_path);
+        try argv.append(self.allocator, data_path);
+
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = argv.items,
+        });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        if (result.term.Exited != 0) {
+            return error.RSASigningFailed;
+        }
+
+        // Read signature binary
+        const sig_file = try std.fs.cwd().openFile(sig_path, .{});
+        defer sig_file.close();
+        const sig_binary = try sig_file.readToEndAlloc(self.allocator, 4096);
+        defer self.allocator.free(sig_binary);
+
+        // Base64 URL-safe encode signature
+        return try self.base64UrlEncode(sig_binary);
     }
 
     // ─── Azure Backend ──────────────────────────────────────────────────────
@@ -540,4 +849,59 @@ test "S3 backend missing credentials" {
     if (result) |data| {
         allocator.free(data);
     }
+}
+
+test "GCS backend missing credentials" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .gcs,
+        .bucket = "test-bucket",
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // GCS operations should fail without credentials
+    // (unless they happen to be set in the environment)
+    const result = cache.pullGCS("test-key") catch |err| {
+        // Expected to fail with MissingGCPCredentials
+        try std.testing.expect(err == error.MissingGCPCredentials);
+        return;
+    };
+
+    // If we got here, GCP credentials were in the environment
+    if (result) |data| {
+        allocator.free(data);
+    }
+}
+
+test "base64UrlEncode" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .gcs,
+        .bucket = "test-bucket",
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Test known base64 encoding (without padding)
+    const result = try cache.base64UrlEncode("hello world");
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("aGVsbG8gd29ybGQ", result);
+}
+
+test "GCS JWT header and payload format" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .gcs,
+        .bucket = "test-bucket",
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Test JWT header encoding
+    const header = "{\"alg\":\"RS256\",\"typ\":\"JWT\"}";
+    const header_b64 = try cache.base64UrlEncode(header);
+    defer allocator.free(header_b64);
+
+    // Verify header is properly base64 encoded
+    try std.testing.expect(header_b64.len > 0);
+    try std.testing.expectEqualStrings("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9", header_b64);
 }
