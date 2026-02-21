@@ -176,6 +176,65 @@ pub const Constraint = struct {
     }
 };
 
+/// Repository configuration from [repos.NAME] section (PRD §5.9 Phase 7).
+pub const RepoConfig = struct {
+    /// Repository name (section key).
+    name: []const u8,
+    /// Git URL for cloning.
+    url: []const u8,
+    /// Local checkout path (relative or absolute).
+    path: []const u8,
+    /// Target branch for operations.
+    branch: []const u8 = "main",
+    /// Repository tags for filtering.
+    tags: [][]const u8 = &.{},
+
+    pub fn deinit(self: *RepoConfig, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.url);
+        allocator.free(self.path);
+        allocator.free(self.branch);
+        for (self.tags) |tag| allocator.free(tag);
+        if (self.tags.len > 0) allocator.free(self.tags);
+    }
+};
+
+/// Multi-repo workspace configuration (PRD §5.9 Phase 7).
+pub const RepoWorkspaceConfig = struct {
+    /// Workspace name from [workspace] section.
+    name: ?[]const u8 = null,
+    /// Repository configurations from [repos.NAME] sections.
+    repos: []RepoConfig = &.{},
+    /// Cross-repo dependencies from [deps] section (repo_name -> [dependencies]).
+    dependencies: std.StringHashMap([][]const u8),
+
+    pub fn init(allocator: std.mem.Allocator) RepoWorkspaceConfig {
+        return .{
+            .name = null,
+            .repos = &.{},
+            .dependencies = std.StringHashMap([][]const u8).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *RepoWorkspaceConfig, allocator: std.mem.Allocator) void {
+        if (self.name) |n| allocator.free(n);
+        for (self.repos) |*repo| {
+            var repo_mut = repo.*;
+            repo_mut.deinit(allocator);
+        }
+        if (self.repos.len > 0) allocator.free(self.repos);
+
+        // Free dependencies
+        var it = self.dependencies.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.*) |dep| allocator.free(dep);
+            if (entry.value_ptr.len > 0) allocator.free(entry.value_ptr.*);
+        }
+        self.dependencies.deinit();
+    }
+};
+
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
