@@ -38,6 +38,71 @@ pub const GlobalResourceConfig = struct {
     max_cpu_percent: ?u8 = null,
 };
 
+/// Constraint rule types for architecture governance (PRD §5.7.6).
+pub const ConstraintRule = enum {
+    /// Prohibit circular dependencies in the workspace.
+    no_circular,
+    /// Tag-based dependency control (e.g., app → lib allowed).
+    tag_based,
+    /// Explicitly ban specific dependencies.
+    banned_dependency,
+
+    pub fn parse(s: []const u8) !ConstraintRule {
+        if (std.mem.eql(u8, s, "no-circular")) return .no_circular;
+        if (std.mem.eql(u8, s, "tag-based")) return .tag_based;
+        if (std.mem.eql(u8, s, "banned-dependency")) return .banned_dependency;
+        return error.InvalidConstraintRule;
+    }
+};
+
+/// Constraint scope selector (e.g., { tag = "app" } or specific project path).
+pub const ConstraintScope = union(enum) {
+    /// All workspace members.
+    all,
+    /// Projects with a specific tag.
+    tag: []const u8,
+    /// Specific project path.
+    path: []const u8,
+
+    pub fn deinit(self: *ConstraintScope, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .tag => |t| allocator.free(t),
+            .path => |p| allocator.free(p),
+            .all => {},
+        }
+    }
+};
+
+/// A single architecture constraint (from [[constraints]] section).
+pub const Constraint = struct {
+    /// Constraint rule type.
+    rule: ConstraintRule,
+    /// Scope of projects this constraint applies to (for no-circular: "all").
+    scope: ConstraintScope = .all,
+    /// Source scope for directional constraints (tag-based, banned-dependency).
+    from: ?ConstraintScope = null,
+    /// Target scope for directional constraints (tag-based, banned-dependency).
+    to: ?ConstraintScope = null,
+    /// Whether the dependency is allowed (true) or banned (false).
+    allow: bool = true,
+    /// Optional custom error message for violations.
+    message: ?[]const u8 = null,
+
+    pub fn deinit(self: *Constraint, allocator: std.mem.Allocator) void {
+        var scope_mut = self.scope;
+        scope_mut.deinit(allocator);
+        if (self.from) |f| {
+            var from_mut = f;
+            from_mut.deinit(allocator);
+        }
+        if (self.to) |t| {
+            var to_mut = t;
+            to_mut.deinit(allocator);
+        }
+        if (self.message) |m| allocator.free(m);
+    }
+};
+
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
@@ -50,6 +115,8 @@ pub const Config = struct {
     global_resources: GlobalResourceConfig = .{},
     /// Toolchain config from [tools] section (Phase 5).
     toolchains: ToolchainConfig = .{ .tools = &.{} },
+    /// Architecture constraints from [[constraints]] sections (Phase 6).
+    constraints: []Constraint = &.{},
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -90,6 +157,10 @@ pub const Config = struct {
         }
         if (self.plugins.len > 0) self.allocator.free(self.plugins);
         self.toolchains.deinit(self.allocator);
+        for (self.constraints) |*c| {
+            c.deinit(self.allocator);
+        }
+        if (self.constraints.len > 0) self.allocator.free(self.constraints);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks

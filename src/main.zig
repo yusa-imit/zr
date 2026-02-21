@@ -36,6 +36,7 @@ const interactive_run = @import("cli/interactive_run.zig");
 const validate_cmd = @import("cli/validate.zig");
 const tools_cmd = @import("cli/tools.zig");
 const graph_cmd = @import("cli/graph.zig");
+const lint_cmd = @import("cli/lint.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -47,6 +48,7 @@ const toolchain_types = @import("toolchain/types.zig");
 const toolchain_installer = @import("toolchain/installer.zig");
 const toolchain_downloader = @import("toolchain/downloader.zig");
 const toolchain_path = @import("toolchain/path.zig");
+const constraints_mod = @import("config/constraints.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -54,6 +56,7 @@ comptime {
     _ = parser;
     _ = expr;
     _ = matrix;
+    _ = constraints_mod;
     _ = dag_mod;
     _ = topo_sort;
     _ = cycle_detect;
@@ -87,6 +90,7 @@ comptime {
     _ = validate_cmd;
     _ = tools_cmd;
     _ = graph_cmd;
+    _ = lint_cmd;
     _ = platform;
     _ = semver;
     _ = hash_util;
@@ -376,6 +380,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "graph")) {
         const graph_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return graph_cmd.graphCommand(allocator, graph_args, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "lint")) {
+        const lint_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return lint_cmd.run(allocator, lint_args);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -411,6 +418,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
+    try w.print("  lint                   Validate architecture constraints\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n", .{});
     try w.print("  tools list [kind]      List installed toolchain versions\n", .{});
     try w.print("  tools install <k>@<v>  Install a toolchain (e.g., node@20.11.1)\n", .{});

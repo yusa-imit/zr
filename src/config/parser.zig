@@ -18,6 +18,43 @@ const addTaskImpl = types.addTaskImpl;
 const addMatrixTask = matrix.addMatrixTask;
 const toolchain_types = @import("../toolchain/types.zig");
 
+/// Parse a constraint scope value from TOML (e.g., { tag = "app" } or "path/to/project").
+/// Returns non-owning slices into the value string.
+fn parseScopeValue(value: []const u8) !?types.ConstraintScope {
+    if (std.mem.eql(u8, value, "all")) return .all;
+
+    // Check for inline table: { tag = "value" } or { path = "value" }
+    if (std.mem.startsWith(u8, value, "{") and std.mem.endsWith(u8, value, "}")) {
+        const inner = std.mem.trim(u8, value[1 .. value.len - 1], " \t");
+        const eq_idx = std.mem.indexOf(u8, inner, "=") orelse return null;
+        const k = std.mem.trim(u8, inner[0..eq_idx], " \t");
+        var v = std.mem.trim(u8, inner[eq_idx + 1 ..], " \t");
+
+        // Strip quotes
+        if (v.len >= 2 and v[0] == '"' and v[v.len - 1] == '"') {
+            v = v[1 .. v.len - 1];
+        }
+
+        if (std.mem.eql(u8, k, "tag")) {
+            return types.ConstraintScope{ .tag = v };
+        } else if (std.mem.eql(u8, k, "path")) {
+            return types.ConstraintScope{ .path = v };
+        }
+    }
+
+    // Plain string is treated as a path
+    return types.ConstraintScope{ .path = value };
+}
+
+/// Dupe a ConstraintScope, allocating owned copies of strings.
+fn dupeConstraintScope(allocator: std.mem.Allocator, scope: types.ConstraintScope) !types.ConstraintScope {
+    return switch (scope) {
+        .all => .all,
+        .tag => |t| types.ConstraintScope{ .tag = try allocator.dupe(u8, t) },
+        .path => |p| types.ConstraintScope{ .path = try allocator.dupe(u8, p) },
+    };
+}
+
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
     errdefer config.deinit();
@@ -131,6 +168,21 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer {
         for (tools_specs.items) |*ts| ts.deinit(allocator);
         tools_specs.deinit(allocator);
+    }
+
+    // Constraint parsing state (Phase 6) — [[constraints]]
+    var in_constraint: bool = false;
+    var constraint_rule: ?types.ConstraintRule = null;
+    var constraint_scope: ?types.ConstraintScope = null;
+    var constraint_from: ?types.ConstraintScope = null;
+    var constraint_to: ?types.ConstraintScope = null;
+    var constraint_allow: bool = true;
+    var constraint_message: ?[]const u8 = null;
+    // Collected constraints (owned)
+    var constraint_list = std.ArrayList(types.Constraint){};
+    defer {
+        for (constraint_list.items) |*c| c.deinit(allocator);
+        constraint_list.deinit(allocator);
     }
 
     while (lines.next()) |line| {
@@ -432,9 +484,43 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             in_workspace = false;
             in_tools = true;
+            in_constraint = false;
+        } else if (std.mem.eql(u8, trimmed, "[[constraints]]")) {
+            // Flush pending constraint (if any)
+            if (constraint_rule) |rule| {
+                const owned_from = if (constraint_from) |f| try dupeConstraintScope(allocator, f) else null;
+                errdefer if (owned_from) |*f| {
+                    var scope_copy = f.*;
+                    scope_copy.deinit(allocator);
+                };
+                const owned_to = if (constraint_to) |t| try dupeConstraintScope(allocator, t) else null;
+                errdefer if (owned_to) |*t| {
+                    var scope_copy = t.*;
+                    scope_copy.deinit(allocator);
+                };
+
+                try constraint_list.append(allocator, types.Constraint{
+                    .rule = rule,
+                    .scope = if (constraint_scope) |s| try dupeConstraintScope(allocator, s) else .all,
+                    .from = owned_from,
+                    .to = owned_to,
+                    .allow = constraint_allow,
+                    .message = if (constraint_message) |m| try allocator.dupe(u8, m) else null,
+                });
+                constraint_rule = null;
+                constraint_scope = null;
+                constraint_from = null;
+                constraint_to = null;
+                constraint_allow = true;
+                constraint_message = null;
+            }
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = true;
         } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             in_tools = false;
+            in_constraint = false;
             // Flush pending task (if any)
             if (current_task) |task_name| {
                 if (task_cmd) |cmd| {
@@ -686,6 +772,21 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     .kind = tool_kind,
                     .version = tool_version,
                 });
+            } else if (in_constraint) {
+                // Inside [[constraints]] — parse constraint fields
+                if (std.mem.eql(u8, key, "rule")) {
+                    constraint_rule = types.ConstraintRule.parse(value) catch null;
+                } else if (std.mem.eql(u8, key, "scope")) {
+                    constraint_scope = if (std.mem.eql(u8, value, "all")) .all else null;
+                } else if (std.mem.eql(u8, key, "from")) {
+                    constraint_from = try parseScopeValue(value);
+                } else if (std.mem.eql(u8, key, "to")) {
+                    constraint_to = try parseScopeValue(value);
+                } else if (std.mem.eql(u8, key, "allow")) {
+                    constraint_allow = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "message")) {
+                    constraint_message = value;
+                }
             } else if (current_plugin_name != null and current_task == null and current_workflow == null and current_profile == null and !in_workspace) {
                 // Inside [plugins.X] — parse source and config fields
                 if (std.mem.eql(u8, key, "source")) {
@@ -1009,6 +1110,37 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         @memcpy(owned_tools, tools_specs.items);
         tools_specs.clearRetainingCapacity();
         config.toolchains.tools = owned_tools;
+    }
+
+    // Flush final constraint (Phase 6)
+    if (constraint_rule) |rule| {
+        const owned_from = if (constraint_from) |f| try dupeConstraintScope(allocator, f) else null;
+        errdefer if (owned_from) |*f| {
+            var scope_copy = f.*;
+            scope_copy.deinit(allocator);
+        };
+        const owned_to = if (constraint_to) |t| try dupeConstraintScope(allocator, t) else null;
+        errdefer if (owned_to) |*t| {
+            var scope_copy = t.*;
+            scope_copy.deinit(allocator);
+        };
+
+        try constraint_list.append(allocator, types.Constraint{
+            .rule = rule,
+            .scope = if (constraint_scope) |s| try dupeConstraintScope(allocator, s) else .all,
+            .from = owned_from,
+            .to = owned_to,
+            .allow = constraint_allow,
+            .message = if (constraint_message) |m| try allocator.dupe(u8, m) else null,
+        });
+    }
+
+    // Transfer constraints to config
+    if (constraint_list.items.len > 0) {
+        const owned_constraints = try allocator.alloc(types.Constraint, constraint_list.items.len);
+        @memcpy(owned_constraints, constraint_list.items);
+        constraint_list.clearRetainingCapacity();
+        config.constraints = owned_constraints;
     }
 
     return config;
