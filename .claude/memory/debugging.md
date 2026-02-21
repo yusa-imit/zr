@@ -164,3 +164,15 @@ Record solutions to tricky bugs here. Future agents will check this before debug
   - PID type varies by platform: `std.posix.pid_t` on POSIX, `std.os.windows.HANDLE` on Windows
 - **Integration**: Called from resource watcher thread in process.zig when hard limits unavailable or disabled
 - **Prevention**: Always provide fallback soft limits when kernel-level enforcement may be unavailable
+
+## Threading TaskControl Through Scheduler and CLI Layers
+- **Problem**: Interactive run creates TaskControl for keyboard input, but it wasn't connected to the actual task execution
+- **Solution**: Add optional task_control parameter to SchedulerConfig and thread it through to process.run
+- **Implementation**:
+  1. Add `task_control: ?*control.TaskControl = null` to SchedulerConfig
+  2. Add `task_control: ?*control.TaskControl` to WorkerCtx (non-optional — receives from config)
+  3. Update cmdRun signature to accept `task_control: ?*control.TaskControl` parameter
+  4. Update all cmdRun call sites: pass `null` for non-interactive, pass `ctrl` in interactive_run
+  5. Thread task_control from SchedulerConfig → WorkerCtx → process.ProcessConfig
+- **Testing**: Update all test calls to cmdRun to include `null` parameter
+- **Prevention**: When adding new fields to scheduler/process config, consider the full path from CLI → scheduler → worker → process
