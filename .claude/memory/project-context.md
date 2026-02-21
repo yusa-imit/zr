@@ -79,13 +79,13 @@
 - [ ] **Plugin registry index server** — NOT implemented (uses GitHub as backend only)
 - [ ] **Remote cache** — NOT implemented (local cache only; PRD §9)
 
-### Phase 5 - Toolchain Management (PRD v2.0) — **IN PROGRESS (60%)**
+### Phase 5 - Toolchain Management (PRD v2.0) — **IN PROGRESS (80%)**
 - [x] **Toolchain types & config** (85a7a0e) — ToolKind enum (node/python/zig/go/rust/deno/bun/java), ToolVersion parser (major.minor.patch with optional patch), ToolSpec
 - [x] **Config [tools] section** (85a7a0e) — TOML parser integration, toolchains field in Config struct
 - [x] **Installer infrastructure** (85a7a0e) — getToolDir, isInstalled, listInstalled, install/uninstall stubs (directory creation only)
 - [x] **Actual downloaders** (6298ae1) — Download tarballs from official sources (Node.js, Python, Zig, Go, Rust, Deno, Bun, Java), curl-based HTTP download, archive extraction (tar/unzip/PowerShell)
 - [x] **PATH manipulation** (8c52f7c, e0030b4) — Inject toolchain bin paths into task execution environment, JAVA_HOME/GOROOT env vars, integrated with scheduler
-- [ ] **CLI commands** — `zr tools list`, `zr tools install`, `zr tools outdated`
+- [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
 - [ ] **Auto-install on task run** — Detect missing toolchains and install on-demand
 
 ### Missing Utility Modules (PRD §7.2)
@@ -96,9 +96,9 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1-4 complete (MVP → Plugins). **Phase 5 (Toolchain Management) 60% complete** — downloader infrastructure, URL resolution for all 8 toolchains, and PATH injection integrated into scheduler. Next: CLI commands (`zr tools`) and auto-install. Production-ready MVP with event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: Phase 1-4 complete (MVP → Plugins). **Phase 5 (Toolchain Management) 80% complete** — downloader infrastructure, URL resolution for all 8 toolchains, PATH injection integrated into scheduler, and full CLI implementation (`zr tools list/install/outdated`). Next: auto-install on task run. Production-ready MVP with event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 396 total (387 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 new toolchain tests (URL resolution, PATH injection, env building)
+- **Tests**: 403 total (394 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 toolchain tests + 7 new CLI tests
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -109,8 +109,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ```
 
 ### Key Modules (src/)
-- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run) + color output
-- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls)
+- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools) + color output
+- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**
 - `config/` - TOML loader, schema validation, expression engine, profiles, **toolchain config**
 - `graph/` - DAG, topological sort, cycle detection, visualization
 - `exec/` - Scheduler, worker pool, process management, task control (atomic signals)
