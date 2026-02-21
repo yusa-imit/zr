@@ -292,6 +292,7 @@ fn cmdInteractiveInner(
                     0,
                     config_path,
                     false,
+                    false, // monitor
                     w,
                     ew,
                     use_color,

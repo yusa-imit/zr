@@ -157,6 +157,7 @@ pub fn cmdInteractiveRun(
             0,
             config_path,
             false,
+            false, // monitor
             w,
             ew,
             use_color,
@@ -174,6 +175,7 @@ pub fn cmdInteractiveRun(
             0,
             config_path,
             false,
+            false, // monitor
             w,
             ew,
             use_color,
@@ -195,6 +197,7 @@ pub fn cmdInteractiveRun(
             0,
             config_path,
             false,
+            false, // monitor
             w,
             ew,
             use_color,
@@ -224,6 +227,7 @@ pub fn cmdInteractiveRun(
         0,
         config_path,
         false,
+        false, // monitor
         w,
         ew,
         use_color,

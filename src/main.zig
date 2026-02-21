@@ -10,6 +10,7 @@ const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const color = @import("output/color.zig");
 const progress = @import("output/progress.zig");
+const monitor = @import("output/monitor.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
@@ -52,6 +53,7 @@ comptime {
     _ = process;
     _ = color;
     _ = progress;
+    _ = monitor;
     _ = history;
     _ = watcher;
     _ = cache_store;
@@ -126,7 +128,7 @@ fn run(
         return 0;
     }
 
-    // Parse global flags: --profile <name>, --dry-run, --jobs, --no-color, --quiet, --verbose, --config, --format
+    // Parse global flags: --profile <name>, --dry-run, --jobs, --no-color, --quiet, --verbose, --config, --format, --monitor
     // Scan args for flags; strip them from the args slice before command dispatch.
     var profile_name: ?[]const u8 = null;
     var dry_run: bool = false;
@@ -136,6 +138,7 @@ fn run(
     var verbose: bool = false;
     var json_output: bool = false;
     var config_path: []const u8 = common.CONFIG_FILE;
+    var enable_monitor: bool = false;
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
     {
@@ -205,6 +208,8 @@ fn run(
                         "--config: missing path\n\n  Hint: zr --config <path> run <task>\n", .{});
                     return 1;
                 }
+            } else if (std.mem.eql(u8, args[i], "--monitor") or std.mem.eql(u8, args[i], "-m")) {
+                enable_monitor = true;
             } else {
                 try remaining_args.append(allocator, args[i]);
             }
@@ -258,7 +263,7 @@ fn run(
             return 1;
         }
         const task_name = effective_args[2];
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, effective_w, ew, effective_color);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
@@ -368,7 +373,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  --quiet, -q           Suppress non-error output\n", .{});
     try w.print("  --verbose, -v         Verbose output\n", .{});
     try w.print("  --config <path>       Config file path (default: zr.toml)\n", .{});
-    try w.print("  --format, -f <fmt>    Output format: text (default) or json\n\n", .{});
+    try w.print("  --format, -f <fmt>    Output format: text (default) or json\n", .{});
+    try w.print("  --monitor, -m         Display live resource usage (CPU/memory) during execution\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }

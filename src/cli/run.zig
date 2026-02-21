@@ -15,6 +15,7 @@ pub fn cmdRun(
     max_jobs: u32,
     config_path: []const u8,
     json_output: bool,
+    monitor: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -54,6 +55,8 @@ pub fn cmdRun(
 
     var sched_result = scheduler.run(allocator, &config, &task_names, .{
         .max_jobs = max_jobs,
+        .monitor = monitor,
+        .use_color = use_color,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -543,6 +546,7 @@ test "cmdRun: missing config returns error" {
         1,
         "/tmp/zr_test_nonexistent/zr.toml",
         false,
+        false, // monitor
         &out_w.interface,
         &err_w.interface,
         false,
@@ -580,6 +584,7 @@ test "cmdRun: unknown task returns error" {
         1,
         config_path,
         false,
+        false, // monitor
         &out_w.interface,
         &err_w.interface,
         false,
@@ -617,6 +622,7 @@ test "cmdRun: dry run shows plan without executing" {
         1,
         config_path,
         false,
+        false, // monitor
         &out_w.interface,
         &err_w.interface,
         false,
@@ -654,6 +660,7 @@ test "cmdRun: successful task returns 0" {
         1,
         config_path,
         false,
+        false, // monitor
         &out_w.interface,
         &err_w.interface,
         false,
@@ -691,6 +698,7 @@ test "cmdRun: failing task returns 1" {
         1,
         config_path,
         false,
+        false, // monitor
         &out_w.interface,
         &err_w.interface,
         false,

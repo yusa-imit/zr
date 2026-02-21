@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const platform = @import("../util/platform.zig");
 const resource = @import("resource.zig");
 const control = @import("control.zig");
+const monitor_mod = @import("../output/monitor.zig");
 
 pub const ProcessError = error{
     SpawnFailed,
@@ -42,6 +43,14 @@ pub const ProcessConfig = struct {
     output_ctx: ?*anyopaque = null,
     /// Optional task control handle for cancel/pause/resume operations.
     task_control: ?*control.TaskControl = null,
+    /// If true, spawn a monitor thread to display live resource usage.
+    enable_monitor: bool = false,
+    /// Task name for monitor display.
+    monitor_task_name: ?[]const u8 = null,
+    /// Whether to use color in monitor output.
+    monitor_use_color: bool = false,
+    /// Allocator for monitor context.
+    monitor_allocator: ?std.mem.Allocator = null,
 };
 
 /// Context shared between the main thread and the timeout watcher thread.
@@ -257,6 +266,21 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         maybe_control_thread = std.Thread.spawn(.{}, controlWatcher, .{ctx}) catch null;
     }
 
+    // Optionally start monitor display thread
+    var maybe_monitor_thread: ?std.Thread = null;
+    var maybe_monitor_ctx: ?monitor_mod.MonitorContext = null;
+    if (config.enable_monitor and config.monitor_task_name != null and config.monitor_allocator != null) {
+        const ctx = monitor_mod.MonitorContext{
+            .pid = child.id,
+            .task_name = config.monitor_task_name.?,
+            .done = &child_done,
+            .use_color = config.monitor_use_color,
+            .allocator = config.monitor_allocator.?,
+        };
+        maybe_monitor_ctx = ctx;
+        maybe_monitor_thread = std.Thread.spawn(.{}, monitor_mod.monitorDisplay, .{&maybe_monitor_ctx.?}) catch null;
+    }
+
     // If output callback is provided and stdio is piped, spawn reader threads
     const StreamReaderCtx = struct {
         file: std.fs.File,
@@ -332,6 +356,7 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
     if (maybe_timeout_thread) |t| t.join();
     if (maybe_resource_thread) |t| t.join();
     if (maybe_control_thread) |t| t.join();
+    if (maybe_monitor_thread) |t| t.join();
 
     const end_ms = std.time.milliTimestamp();
     const duration_ms: u64 = @intCast(@max(0, end_ms - start_ms));

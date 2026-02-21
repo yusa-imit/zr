@@ -23,6 +23,10 @@ pub const SchedulerConfig = struct {
     /// If true, compute the execution plan but do not run any tasks.
     /// Each task appears in the result with skipped=true, success=true, duration_ms=0.
     dry_run: bool = false,
+    /// If true, display live resource usage (CPU/memory) during execution.
+    monitor: bool = false,
+    /// Whether to use color in output.
+    use_color: bool = false,
 };
 
 /// A single level in the dry-run execution plan.
@@ -144,6 +148,10 @@ const WorkerCtx = struct {
     cache: bool,
     /// Pre-computed cache key (owned by worker, freed in defer).
     cache_key: ?[]u8,
+    /// If true, display live resource monitoring.
+    monitor: bool,
+    /// Whether to use color in monitor output.
+    use_color: bool,
 };
 
 fn workerFn(ctx: WorkerCtx) void {
@@ -185,6 +193,10 @@ fn workerFn(ctx: WorkerCtx) void {
         .env = ctx.env,
         .inherit_stdio = ctx.inherit_stdio,
         .timeout_ms = ctx.timeout_ms,
+        .enable_monitor = ctx.monitor,
+        .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
+        .monitor_use_color = ctx.use_color,
+        .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
     }) catch process.ProcessResult{
         .exit_code = 1,
         .duration_ms = 0,
@@ -205,6 +217,10 @@ fn workerFn(ctx: WorkerCtx) void {
                 .env = ctx.env,
                 .inherit_stdio = ctx.inherit_stdio,
                 .timeout_ms = ctx.timeout_ms,
+                .enable_monitor = ctx.monitor,
+                .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
+                .monitor_use_color = ctx.use_color,
+                .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
             }) catch process.ProcessResult{
                 .exit_code = 1,
                 .duration_ms = 0,
@@ -620,6 +636,8 @@ pub fn run(
                 .failed = &failed,
                 .cache = task.cache,
                 .cache_key = cache_key,
+                .monitor = sched_config.monitor,
+                .use_color = sched_config.use_color,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
