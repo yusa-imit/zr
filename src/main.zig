@@ -39,6 +39,7 @@ const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
 const glob = @import("util/glob.zig");
+const affected = @import("util/affected.zig");
 const resource = @import("exec/resource.zig");
 const control = @import("exec/control.zig");
 const toolchain_types = @import("toolchain/types.zig");
@@ -88,6 +89,7 @@ comptime {
     _ = semver;
     _ = hash_util;
     _ = glob;
+    _ = affected;
     _ = resource;
     _ = control;
     _ = toolchain_types;
@@ -151,6 +153,7 @@ fn run(
     var json_output: bool = false;
     var config_path: []const u8 = common.CONFIG_FILE;
     var enable_monitor: bool = false;
+    var affected_base: ?[]const u8 = null;
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
     {
@@ -222,6 +225,15 @@ fn run(
                 }
             } else if (std.mem.eql(u8, args[i], "--monitor") or std.mem.eql(u8, args[i], "-m")) {
                 enable_monitor = true;
+            } else if (std.mem.eql(u8, args[i], "--affected")) {
+                if (i + 1 < args.len) {
+                    affected_base = args[i + 1];
+                    i += 1; // skip value
+                } else {
+                    try color.printError(ew, use_color,
+                        "--affected: missing base reference\n\n  Hint: zr --affected origin/main workspace run <task>\n", .{});
+                    return 1;
+                }
             } else {
                 try remaining_args.append(allocator, args[i]);
             }
@@ -328,7 +340,7 @@ fn run(
                 return 1;
             }
             const task_name = effective_args[3];
-            return workspace.cmdWorkspaceRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, effective_w, ew, effective_color);
+            return workspace.cmdWorkspaceRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, affected_base, effective_w, ew, effective_color);
         } else {
             try color.printError(ew, effective_color,
                 "workspace: unknown subcommand '{s}'\n\n  Hint: zr workspace list | zr workspace run <task>\n", .{sub});
@@ -408,7 +420,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  --verbose, -v         Verbose output\n", .{});
     try w.print("  --config <path>       Config file path (default: zr.toml)\n", .{});
     try w.print("  --format, -f <fmt>    Output format: text (default) or json\n", .{});
-    try w.print("  --monitor, -m         Display live resource usage (CPU/memory) during execution\n\n", .{});
+    try w.print("  --monitor, -m         Display live resource usage (CPU/memory) during execution\n", .{});
+    try w.print("  --affected <ref>      Run only affected workspace members (e.g., origin/main)\n\n", .{});
     try color.printDim(w, use_color, "Config file: zr.toml (in current directory)\n", .{});
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }

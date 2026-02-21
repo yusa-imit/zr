@@ -4,6 +4,7 @@ const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
 const scheduler = @import("../exec/scheduler.zig");
 const glob = @import("../util/glob.zig");
+const affected_mod = @import("../util/affected.zig");
 
 /// Resolve workspace member directories from glob patterns.
 /// Supports wildcards in patterns (e.g., "packages/*", "tools/*/src", "apps/*/backend").
@@ -179,6 +180,7 @@ pub fn cmdWorkspaceRun(
     max_jobs: u32,
     config_path: []const u8,
     json_output: bool,
+    affected_base: ?[]const u8,
     w: *std.Io.Writer,
     ew: *std.Io.Writer,
     use_color: bool,
@@ -205,6 +207,52 @@ pub fn cmdWorkspaceRun(
         return 1;
     }
 
+    // Filter members based on affected detection if --affected is provided
+    var filtered_members: []const []const u8 = undefined;
+    var affected_result_opt: ?affected_mod.AffectedResult = null;
+    defer if (affected_result_opt) |*ar| ar.deinit(allocator);
+
+    if (affected_base) |base_ref| {
+        const cwd = std.fs.cwd().realpathAlloc(allocator, ".") catch ".";
+        defer allocator.free(cwd);
+
+        affected_result_opt = affected_mod.detectAffected(allocator, base_ref, members, cwd) catch |err| {
+            try color.printError(ew, use_color,
+                "workspace: affected detection failed: {s}\n\n  Hint: Ensure git is installed and {s} is a valid git reference\n",
+                .{ @errorName(err), base_ref });
+            return 1;
+        };
+
+        // Filter members to only affected ones
+        var filtered = std.ArrayList([]const u8){};
+        defer filtered.deinit(allocator);
+
+        for (members) |m| {
+            if (affected_result_opt.?.contains(m)) {
+                try filtered.append(allocator, m);
+            }
+        }
+
+        if (filtered.items.len == 0) {
+            if (!json_output) {
+                try color.printDim(w, use_color, "No affected members found (base: {s})\n", .{base_ref});
+            }
+            return 0;
+        }
+
+        filtered_members = filtered.items;
+
+        if (!json_output) {
+            try color.printBold(w, use_color, "Affected members ({d} of {d}, base: {s}):\n", .{ filtered_members.len, members.len, base_ref });
+            for (filtered_members) |m| {
+                try color.printDim(w, use_color, "  {s}\n", .{m});
+            }
+            try w.writeAll("\n");
+        }
+    } else {
+        filtered_members = members;
+    }
+
     var overall_success: bool = true;
     var ran_count: usize = 0;
     var skip_count: usize = 0;
@@ -222,7 +270,7 @@ pub fn cmdWorkspaceRun(
         try w.writeAll(",\"members\":[");
     }
 
-    for (members) |member_path| {
+    for (filtered_members) |member_path| {
         // Build path to member config
         const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, common.CONFIG_FILE });
         defer allocator.free(member_cfg);
