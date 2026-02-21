@@ -33,6 +33,7 @@ const list_cmd = @import("cli/list.zig");
 const tui = @import("cli/tui.zig");
 const live_cmd = @import("cli/live.zig");
 const interactive_run = @import("cli/interactive_run.zig");
+const validate_cmd = @import("cli/validate.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -76,6 +77,7 @@ comptime {
     _ = tui;
     _ = live_cmd;
     _ = interactive_run;
+    _ = validate_cmd;
     _ = platform;
     _ = semver;
     _ = hash_util;
@@ -287,6 +289,21 @@ fn run(
         return run_cmd.cmdHistory(allocator, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
         return init.cmdInit(std.fs.cwd(), effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "validate")) {
+        // Parse validate options
+        var strict = false;
+        var show_schema = false;
+        for (effective_args[2..]) |arg| {
+            if (std.mem.eql(u8, arg, "--strict")) {
+                strict = true;
+            } else if (std.mem.eql(u8, arg, "--schema")) {
+                show_schema = true;
+            }
+        }
+        return validate_cmd.cmdValidate(allocator, config_path, .{
+            .strict = strict,
+            .show_schema = show_schema,
+        }, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "completion")) {
         const shell = if (effective_args.len >= 3) effective_args[2] else "";
         return completion.cmdCompletion(shell, effective_w, ew, effective_color);
@@ -363,6 +380,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
+    try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
