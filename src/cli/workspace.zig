@@ -3,9 +3,10 @@ const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
 const scheduler = @import("../exec/scheduler.zig");
+const glob = @import("../util/glob.zig");
 
 /// Resolve workspace member directories from glob patterns.
-/// Only handles "dir/*" (list all direct subdirectories of `dir`).
+/// Supports wildcards in patterns (e.g., "packages/*", "tools/*/src", "apps/*/backend").
 /// Returns a caller-owned slice of owned paths (absolute or relative to cwd).
 pub fn resolveWorkspaceMembers(
     allocator: std.mem.Allocator,
@@ -19,31 +20,84 @@ pub fn resolveWorkspaceMembers(
     }
 
     for (ws.members) |pattern| {
-        // Check if pattern ends with "/*" — list all subdirs of parent.
-        if (std.mem.endsWith(u8, pattern, "/*")) {
-            const parent_dir = pattern[0 .. pattern.len - 2];
-            var dir = std.fs.cwd().openDir(parent_dir, .{ .iterate = true }) catch continue;
-            defer dir.close();
+        // Check if pattern contains wildcards
+        const has_wildcards = std.mem.indexOfAny(u8, pattern, "*?") != null;
 
-            var it = dir.iterate();
-            while (try it.next()) |entry| {
-                if (entry.kind != .directory) continue;
-                // Skip hidden directories
-                if (entry.name[0] == '.') continue;
-                // Build path: parent_dir/entry.name
-                const member_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ parent_dir, entry.name });
-                errdefer allocator.free(member_path);
+        if (has_wildcards) {
+            // Determine base directory and relative pattern
+            // If pattern is absolute, extract the base dir
+            var base_dir: std.fs.Dir = blk: {
+                if (pattern.len > 0 and pattern[0] == '/') {
+                    // Absolute path - find the first component with wildcard
+                    var i: usize = 0;
+                    while (i < pattern.len) : (i += 1) {
+                        if (pattern[i] == '*' or pattern[i] == '?') break;
+                    }
+                    // Find last '/' before the wildcard
+                    const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], '/');
+                    if (last_slash) |idx| {
+                        const base_path = pattern[0..idx];
+                        break :blk std.fs.openDirAbsolute(base_path, .{ .iterate = true }) catch {
+                            continue;
+                        };
+                    }
+                }
+                break :blk std.fs.cwd();
+            };
+            const is_absolute = (pattern.len > 0 and pattern[0] == '/');
+            defer if (is_absolute) base_dir.close();
+
+            // Extract relative pattern
+            const relative_pattern: []const u8 = blk: {
+                if (pattern.len > 0 and pattern[0] == '/') {
+                    var i: usize = 0;
+                    while (i < pattern.len) : (i += 1) {
+                        if (pattern[i] == '*' or pattern[i] == '?') break;
+                    }
+                    const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], '/');
+                    if (last_slash) |idx| {
+                        break :blk pattern[idx + 1 ..];
+                    }
+                }
+                break :blk pattern;
+            };
+
+            // Use glob.findDirs to resolve directories matching the pattern
+            const matching_dirs = glob.findDirs(allocator, base_dir, relative_pattern) catch continue;
+            defer {
+                for (matching_dirs) |d| allocator.free(d);
+                allocator.free(matching_dirs);
+            }
+
+            for (matching_dirs) |dir_path| {
+                // Reconstruct full path
+                const full_path: []const u8 = blk: {
+                    if (pattern.len > 0 and pattern[0] == '/') {
+                        // Find the base part of the absolute pattern
+                        var i: usize = 0;
+                        while (i < pattern.len) : (i += 1) {
+                            if (pattern[i] == '*' or pattern[i] == '?') break;
+                        }
+                        const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], '/');
+                        if (last_slash) |idx| {
+                            const base_path = pattern[0..idx];
+                            break :blk try std.fmt.allocPrint(allocator, "{s}/{s}", .{ base_path, dir_path });
+                        }
+                    }
+                    break :blk try allocator.dupe(u8, dir_path);
+                };
+                defer allocator.free(full_path);
+
                 // Only include if it has a config file
-                const cfg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, config_filename });
+                const cfg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ full_path, config_filename });
                 defer allocator.free(cfg_path);
                 const has_config: bool = blk: {
                     std.fs.cwd().access(cfg_path, .{}) catch break :blk false;
                     break :blk true;
                 };
-                if (!has_config) {
-                    allocator.free(member_path);
-                    continue;
-                }
+                if (!has_config) continue;
+
+                const member_path = try allocator.dupe(u8, full_path);
                 try members.append(allocator, member_path);
             }
         } else {
