@@ -88,15 +88,24 @@
 - [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
 - [x] **Auto-install on task run** (1db7ecb) — Per-task toolchain requirements ([tasks.X.toolchain]), auto-detection and installation before execution, "tool@version" parsing, ensureToolchainsInstalled() in scheduler
 
-### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **IN PROGRESS (~20%)**
+### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **IN PROGRESS (~60%)**
 - [x] **Affected detection** (9bccfef) — Git diff-based change detection for workspace members
   - `util/affected.zig` — detectAffected(), getChangedFiles(), findProjectForFile()
   - `--affected <ref>` CLI flag — Filter workspace members based on git changes
   - `zr --affected origin/main workspace run test` — Run tasks only on changed projects
   - 5 unit tests for file-to-project mapping
-- [ ] **Dependency graph expansion** — expandWithDependents() to include projects that depend on affected ones
+- [x] **Dependency graph expansion** (d503d7b) — expandWithDependents() to include projects that depend on affected ones
+  - Transitive dependency expansion with BFS traversal
+  - Circular dependency handling to prevent infinite loops
+  - 6 comprehensive tests (single-level, transitive, multi-initial, edge cases, cycles)
 - [ ] **Content hash caching** — Already implemented in Phase 2, documented here for completeness
-- [ ] **Project graph visualization** — ASCII/DOT/JSON/HTML output formats (PRD §5.7.4)
+- [x] **Project graph visualization** (d8f4316) — ASCII/DOT/JSON/HTML output formats (PRD §5.7.4)
+  - `cli/graph.zig` — `zr graph` command with 4 output formats
+  - ASCII: Terminal tree view with affected highlighting
+  - DOT: Graphviz format for visual diagrams
+  - JSON: Programmatic access to dependency structure
+  - HTML: Interactive D3.js force-directed graph
+  - `--affected <ref>` integration for highlighting changed projects
 - [ ] **Architecture constraints** — `[constraints]` section, `zr lint` command (PRD §5.7.6)
 - [ ] **Module boundary rules** — Tag-based dependency control
 
@@ -109,10 +118,10 @@
 
 ## Status Summary
 
-> **Reality**: Phase 1-5 complete, Phase 6 in progress (MVP → Plugins → Toolchains → Monorepo). **Production-ready with full toolchain management + affected detection** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
+> **Reality**: Phase 1-5 complete, Phase 6 ~60% (MVP → Plugins → Toolchains → Monorepo). **Production-ready with full toolchain management + monorepo intelligence** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 409 total (400 passing, 8 skipped platform-specific, 1 unrelated) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 5 affected detection tests
-- **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
+- **Tests**: 415 total (415 passing, 0 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests
+- **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
 ## Architecture (High-Level)
@@ -123,7 +132,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 
 ### Key Modules (src/)
 - `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools) + color output
-- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**
+- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**
 - `config/` - TOML loader, schema validation, expression engine, profiles, **toolchain config**
 - `graph/` - DAG, topological sort, cycle detection, visualization
 - `exec/` - Scheduler, worker pool, process management, task control (atomic signals)
@@ -164,7 +173,7 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 13. ~~**`zr tools` CLI**~~ — **COMPLETE** ✓ (list/install/outdated commands) (be3b994)
 14. ~~**Auto-install**~~ — **COMPLETE** ✓ (per-task toolchain field, auto-detection and installation) (1db7ecb)
 15. ~~**Affected detection**~~ — **COMPLETE** ✓ (git diff-based change detection, --affected flag) (9bccfef)
-16. **Dependency graph expansion** — expandWithDependents() for transitive affected projects
-17. **Project graph visualization** — ASCII/DOT/JSON/HTML formats (PRD §5.7.4)
+16. ~~**Dependency graph expansion**~~ — **COMPLETE** ✓ (expandWithDependents() for transitive affected projects) (d503d7b)
+17. ~~**Project graph visualization**~~ — **COMPLETE** ✓ (ASCII/DOT/JSON/HTML formats, `zr graph` command) (d8f4316)
 18. **Architecture constraints** — `[constraints]` + `zr lint` (PRD §5.7.6)
 19. **Remote cache** — shared cache for CI pipelines (future enhancement)
