@@ -40,7 +40,7 @@
   - [x] Environment variables: `env.VAR == "val"`, `env.VAR != "val"`, truthy checks
   - [x] **Runtime state refs**: `stages['name'].success`, `tasks['name'].duration` with all comparison operators
 
-### Phase 3 - UX & Resources — **COMPLETE (100%)**
+### Phase 3 - UX & Resources — **COMPLETE (100%)** ✓
 - [x] `--dry-run` / `-n` flag (execution plan without running)
 - [x] `zr init` command (scaffold starter zr.toml)
 - [x] Shell completion (bash/zsh/fish)
@@ -64,7 +64,7 @@
   - [x] Integration with process spawning (resource watcher thread, memory limit kill) (f1f7cd3)
   - [x] cgroups v2 / Job Objects hard limit enforcement (Linux/Windows kernel-level limits)
   - [x] ResourceMonitor soft limit enforcement (process killing on memory limit violation) (d99de2d)
-  - [ ] `--monitor` CLI flag for live resource display (future enhancement)
+  - [x] `--monitor` CLI flag for live resource display (dd1a9fd)
 
 ### Phase 4 - Extensibility — **PARTIAL (~90%)**
 - [x] Native plugin system (.so/.dylib via DynLib, C-ABI hooks)
