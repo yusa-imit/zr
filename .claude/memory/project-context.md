@@ -43,6 +43,7 @@
 ### Phase 3 - UX & Resources — **COMPLETE (100%)** ✓
 - [x] `--dry-run` / `-n` flag (execution plan without running)
 - [x] `zr init` command (scaffold starter zr.toml)
+- [x] `zr validate` command (config validation with --strict and --schema modes) (29d771a)
 - [x] Shell completion (bash/zsh/fish)
 - [x] Global CLI flags: `--jobs`, `--no-color`, `--quiet`, `--verbose`, `--config`, `--format json`
 - [x] `max_concurrent` per-task resource limit
@@ -87,7 +88,7 @@
 
 > **Reality**: Phase 1 complete. Phase 2 **100% complete** (native filesystem watchers + full expression engine). Phase 3 **100% complete** (TUI with cancel/retry/pause controls). Phase 4 **~90% complete** (Docker complete, **WASM runtime fully functional**). **Production-ready MVP** with event-driven watch mode, kernel-level resource limits, full Docker integration, **complete WASM plugin execution** (parser + interpreter), and interactive TUI with task controls.
 
-- **Tests**: 351 passing (8 skipped platform-specific) — TUI + Docker + WASM runtime + bytecode interpreter + resource monitoring + utility modules
+- **Tests**: 369 passing (8 skipped platform-specific) — TUI + Docker + WASM runtime + bytecode interpreter + resource monitoring + validate command + utility modules
 - **Binary**: 2.9MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
