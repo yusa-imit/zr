@@ -126,15 +126,21 @@
   - Full integration with constraint validation system
   - 3 new tests (metadata parsing + extraction)
 
-### Phase 7 - Multi-repo & Remote Cache (PRD v2.0) — **IN PROGRESS (~15%)**
+### Phase 7 - Multi-repo & Remote Cache (PRD v2.0) — **IN PROGRESS (~40%)**
 - [x] **Remote cache (HTTP backend)** (76acf80, 0807a49, 4a4d426) — PRD §5.7.3 **MVP COMPLETE**
   - Config types: RemoteCacheType, RemoteCacheConfig, CacheConfig with remote field
   - TOML parsing: [cache] enabled/local_dir, [cache.remote] type/bucket/region/prefix/url/auth
   - HTTP client: curl-based GET/PUT (std.http.Client limited in Zig 0.15)
   - Scheduler integration: pull before run (local → remote → execute), push after success (local + remote)
   - 3 TOML parsing tests (local-only, S3 config, HTTP config)
-  - S3/GCS/Azure backends stubbed (NotImplemented)
-- [ ] **S3 backend** — AWS Signature v4, S3-compatible (MinIO, R2, etc.)
+- [x] **S3 backend** (9ea8b6c) — **COMPLETE** — AWS Signature v4, S3-compatible (MinIO, R2, etc.)
+  - AWS Signature v4 signing algorithm with HMAC-SHA256
+  - pullS3(): authenticated GET for cache retrieval
+  - pushS3(): authenticated PUT for cache storage
+  - Reads credentials from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars
+  - Support for custom region, bucket, and prefix configuration
+  - Compatible with S3, MinIO, Cloudflare R2, and other S3-compatible backends
+  - 4 unit tests: init, formatISO8601, formatDateStamp, hmacSha256, missing credentials
 - [ ] **GCS backend** — Google Cloud Storage authentication & API
 - [ ] **Azure Blob backend** — Azure authentication & API
 - [ ] **Multi-repo orchestration** — zr-repos.toml, repo sync, cross-repo tasks
@@ -149,9 +155,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-6 COMPLETE (100%), Phase 7 in progress (~15%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **and HTTP remote cache for self-hosted team-wide caching** (S3/GCS/Azure backends TBD).
+> **Reality**: **Phase 1-6 COMPLETE (100%), Phase 7 in progress (~40%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **HTTP and S3 remote cache backends** (GCS/Azure TBD).
 
-- **Tests**: 434 total (432 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests
+- **Tests**: 439 total (431 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 2 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -209,5 +215,6 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 18. ~~**Architecture constraints**~~ — **COMPLETE** ✓ (`[[constraints]]` + `zr lint` with 3 rule types) (6e5f826)
 19. ~~**Module boundary rules**~~ — **COMPLETE** ✓ (tag metadata + member discovery + full validation) (a5e05b7)
 20. ~~**Remote cache (HTTP)**~~ — **COMPLETE** ✓ (76acf80, 0807a49, 4a4d426) — HTTP backend with curl, scheduler integration, config types, TOML parsing
-21. **S3 remote cache backend** — AWS Signature v4, S3-compatible (MinIO, R2)
-22. **Multi-repo orchestration** — zr-repos.toml, repo sync, cross-repo tasks
+21. ~~**S3 remote cache backend**~~ — **COMPLETE** ✓ (9ea8b6c) — AWS Signature v4, S3-compatible (MinIO, R2, etc.)
+22. **GCS remote cache backend** — Google Cloud Storage with OAuth2/service account auth
+23. **Multi-repo orchestration** — zr-repos.toml, repo sync, cross-repo tasks
