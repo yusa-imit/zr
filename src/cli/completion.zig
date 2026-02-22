@@ -5,7 +5,7 @@ pub const BASH_COMPLETION =
     \\_zr_completion() {
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env"
+    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env upgrade"
     \\    local options="--help --version --profile --dry-run --jobs --no-color --quiet --verbose --config --format --monitor --affected -h -p -n -j -q -v -f -m"
     \\
     \\    case "$prev" in
@@ -103,6 +103,7 @@ pub const ZSH_COMPLETION =
     \\        'bench:Benchmark task performance'
     \\        'doctor:Diagnose environment and toolchain setup'
     \\        'env:Display environment variables for tasks'
+    \\        'upgrade:Upgrade zr to the latest version'
     \\    )
     \\    options=(
     \\        '--help[Show help]'
@@ -209,6 +210,7 @@ pub const FISH_COMPLETION =
     \\complete -c zr -f -n '__fish_use_subcommand' -a bench      -d 'Benchmark task performance'
     \\complete -c zr -f -n '__fish_use_subcommand' -a doctor     -d 'Diagnose environment setup'
     \\complete -c zr -f -n '__fish_use_subcommand' -a env        -d 'Display environment variables'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a upgrade    -d 'Upgrade zr to latest version'
     \\
     \\# Subcommand arguments
     \\complete -c zr -f -n '__fish_seen_subcommand_from workspace' -a 'list run sync'
