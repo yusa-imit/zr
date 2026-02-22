@@ -42,6 +42,7 @@ const repo_cmd = @import("cli/repo.zig");
 const codeowners_cmd = @import("cli/codeowners.zig");
 const version_cmd = @import("cli/version.zig");
 const publish_cmd = @import("cli/publish.zig");
+const analytics_cmd = @import("cli/analytics.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -128,10 +129,15 @@ comptime {
     _ = codeowners_generator;
     _ = version_cmd;
     _ = publish_cmd;
+    _ = analytics_cmd;
     _ = @import("versioning/types.zig");
     _ = @import("versioning/bump.zig");
     _ = @import("versioning/conventional.zig");
     _ = @import("versioning/changelog.zig");
+    _ = @import("analytics/types.zig");
+    _ = @import("analytics/collector.zig");
+    _ = @import("analytics/html.zig");
+    _ = @import("analytics/json.zig");
 }
 
 pub fn main() !void {
@@ -430,6 +436,9 @@ fn run(
         const publish_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         try publish_cmd.cmdPublish(allocator, publish_args);
         return 0;
+    } else if (std.mem.eql(u8, cmd, "analytics")) {
+        const analytics_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return analytics_cmd.cmdAnalytics(allocator, analytics_args);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -475,7 +484,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  repo status            Show git status of all repositories\n", .{});
     try w.print("  codeowners generate    Generate CODEOWNERS file from workspace\n", .{});
     try w.print("  version [--bump=TYPE]  Show or bump package version (major|minor|patch)\n", .{});
-    try w.print("  publish [OPTIONS]      Publish a new version (auto or manual)\n\n", .{});
+    try w.print("  publish [OPTIONS]      Publish a new version (auto or manual)\n", .{});
+    try w.print("  analytics [OPTIONS]    Generate build analysis reports\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
