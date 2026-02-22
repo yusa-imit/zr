@@ -2,6 +2,7 @@ const std = @import("std");
 const color = @import("../output/color.zig");
 const toolchain_types = @import("../toolchain/types.zig");
 const toolchain_installer = @import("../toolchain/installer.zig");
+const toolchain_registry = @import("../toolchain/registry.zig");
 const ToolKind = toolchain_types.ToolKind;
 const ToolVersion = toolchain_types.ToolVersion;
 const InstalledTool = toolchain_types.InstalledTool;
@@ -178,8 +179,6 @@ fn cmdToolsInstall(
 }
 
 /// `zr tools outdated [kind]` - Check for installed tools that might have newer versions
-/// NOTE: This is a stub implementation. Full implementation would require querying
-/// official registries for latest versions, which is out of scope for Phase 5 MVP.
 fn cmdToolsOutdated(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -187,15 +186,136 @@ fn cmdToolsOutdated(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    _ = args;
-    _ = allocator;
-    _ = ew;
+    // Parse optional kind filter
+    var filter_kind: ?ToolKind = null;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try printOutdatedHelp(w, use_color);
+            return 0;
+        }
+        if (ToolKind.fromString(arg)) |kind| {
+            filter_kind = kind;
+        }
+    }
 
-    try color.printDim(w, use_color, "tools outdated: not yet implemented\n", .{});
-    try w.print("\n  Hint: this command will check for newer versions of installed toolchains\n", .{});
-    try w.print("  in a future release.\n", .{});
+    // Get list of all installed tools
+    const all_kinds = [_]ToolKind{ .node, .python, .zig, .go, .rust, .deno, .bun, .java };
 
-    return 0;
+    var has_outdated = false;
+    var checked_count: usize = 0;
+
+    for (all_kinds) |kind| {
+        // Skip if filtered by kind
+        if (filter_kind) |fk| {
+            if (fk != kind) continue;
+        }
+
+        // List installed versions for this kind
+        const installed = try toolchain_installer.listInstalled(allocator, kind);
+        defer {
+            for (installed) |*tool| {
+                tool.deinit(allocator);
+            }
+            allocator.free(installed);
+        }
+
+        if (installed.len == 0) continue;
+
+        checked_count += 1;
+
+        // Fetch latest version from registry
+        const latest = toolchain_registry.fetchLatestVersion(allocator, kind) catch |err| {
+            if (checked_count == 1) {
+                try color.printDim(w, use_color, "Checking for outdated toolchains...\n\n", .{});
+            }
+            try color.printDim(w, use_color, "  {s}: ", .{kind.toString()});
+            try color.printError(ew, use_color, "failed to fetch latest version ({s})\n", .{@errorName(err)});
+            continue;
+        };
+
+        if (checked_count == 1) {
+            try color.printDim(w, use_color, "Checking for outdated toolchains...\n\n", .{});
+        }
+
+        // Find highest installed version
+        var highest_installed: ?ToolVersion = null;
+        for (installed) |tool| {
+            if (highest_installed == null) {
+                highest_installed = tool.version;
+            } else {
+                const curr = highest_installed.?;
+                if (isNewer(tool.version, curr)) {
+                    highest_installed = tool.version;
+                }
+            }
+        }
+
+        const curr_version = highest_installed.?;
+        const is_outdated = isNewer(latest, curr_version);
+
+        // Print comparison
+        const curr_str = try curr_version.toString(allocator);
+        defer allocator.free(curr_str);
+        const latest_str = try latest.toString(allocator);
+        defer allocator.free(latest_str);
+
+        if (is_outdated) {
+            has_outdated = true;
+            try color.printInfo(w, use_color, "  {s: <10}", .{kind.toString()});
+            try w.print(" {s: <12} → ", .{curr_str});
+            try color.printSuccess(w, use_color, "{s: <12}", .{latest_str});
+            try color.printDim(w, use_color, " (update available)\n", .{});
+        } else {
+            try color.printSuccess(w, use_color, "✓ ", .{});
+            try color.printDim(w, use_color, "{s: <10} {s: <12}", .{ kind.toString(), curr_str });
+            try color.printDim(w, use_color, " (up to date)\n", .{});
+        }
+    }
+
+    if (checked_count == 0) {
+        try color.printDim(w, use_color, "No toolchains installed.\n\n", .{});
+        try w.print("  Hint: Install a toolchain with: zr tools install <kind>@<version>\n", .{});
+        return 0;
+    }
+
+    if (has_outdated) {
+        try w.writeAll("\n");
+        try color.printDim(w, use_color, "  Run ", .{});
+        try color.printBold(w, use_color, "zr tools install <kind>@<version>", .{});
+        try color.printDim(w, use_color, " to update.\n", .{});
+        return 1; // Exit code 1 to indicate updates available
+    } else {
+        try w.writeAll("\n");
+        try color.printSuccess(w, use_color, "  All installed toolchains are up to date!\n", .{});
+        return 0;
+    }
+}
+
+/// Helper: check if v1 is newer than v2
+fn isNewer(v1: ToolVersion, v2: ToolVersion) bool {
+    if (v1.major > v2.major) return true;
+    if (v1.major < v2.major) return false;
+    if (v1.minor > v2.minor) return true;
+    if (v1.minor < v2.minor) return false;
+
+    const p1 = v1.patch orelse 0;
+    const p2 = v2.patch orelse 0;
+    return p1 > p2;
+}
+
+fn printOutdatedHelp(w: *std.Io.Writer, use_color: bool) !void {
+    try color.printBold(w, use_color, "zr tools outdated", .{});
+    try w.print(" - Check for outdated toolchains\n\n", .{});
+    try color.printBold(w, use_color, "Usage:\n", .{});
+    try w.print("  zr tools outdated [kind]\n\n", .{});
+    try color.printBold(w, use_color, "Description:\n", .{});
+    try w.print("  Checks installed toolchains against their official registries\n", .{});
+    try w.print("  and reports which ones have newer versions available.\n\n", .{});
+    try color.printBold(w, use_color, "Arguments:\n", .{});
+    try w.print("  kind    Optional filter (node|python|zig|go|rust|deno|bun|java)\n\n", .{});
+    try color.printBold(w, use_color, "Examples:\n", .{});
+    try w.print("  zr tools outdated        # Check all installed toolchains\n", .{});
+    try w.print("  zr tools outdated node   # Check only Node.js installations\n", .{});
 }
 
 fn printToolsHelp(w: *std.Io.Writer, ew: *std.Io.Writer, use_color: bool) !void {
@@ -207,12 +327,14 @@ fn printToolsHelp(w: *std.Io.Writer, ew: *std.Io.Writer, use_color: bool) !void 
     try color.printBold(w, use_color, "Subcommands:\n", .{});
     try w.print("  list [kind]           List installed toolchain versions\n", .{});
     try w.print("  install <kind>@<ver>  Install a specific toolchain version\n", .{});
-    try w.print("  outdated [kind]       Check for outdated toolchains (not yet implemented)\n\n", .{});
+    try w.print("  outdated [kind]       Check for outdated toolchains\n\n", .{});
     try color.printBold(w, use_color, "Examples:\n", .{});
-    try w.print("  zr tools list              # List all installed toolchains\n", .{});
-    try w.print("  zr tools list node         # List installed Node.js versions\n", .{});
+    try w.print("  zr tools list                  # List all installed toolchains\n", .{});
+    try w.print("  zr tools list node             # List installed Node.js versions\n", .{});
     try w.print("  zr tools install node@20.11.1  # Install Node.js 20.11.1\n", .{});
-    try w.print("  zr tools install python@3.12   # Install Python 3.12\n\n", .{});
+    try w.print("  zr tools install python@3.12   # Install Python 3.12\n", .{});
+    try w.print("  zr tools outdated              # Check all for updates\n", .{});
+    try w.print("  zr tools outdated node         # Check only Node.js\n\n", .{});
     try color.printBold(w, use_color, "Supported toolchains:\n", .{});
     try w.print("  node, python, zig, go, rust, deno, bun, java\n", .{});
 }
@@ -313,7 +435,45 @@ test "cmdToolsInstall with unknown kind returns error" {
     try std.testing.expectEqual(@as(u8, 1), exit_code);
 }
 
-test "cmdToolsOutdated stub implementation" {
+test "isNewer version comparison" {
+    const v1 = ToolVersion{ .major = 20, .minor = 11, .patch = 1 };
+    const v2 = ToolVersion{ .major = 20, .minor = 12, .patch = 0 };
+    const v3 = ToolVersion{ .major = 21, .minor = 0, .patch = 0 };
+    const v4 = ToolVersion{ .major = 20, .minor = 11, .patch = 2 };
+
+    // v2 is newer than v1 (minor version bump)
+    try std.testing.expect(isNewer(v2, v1));
+    try std.testing.expect(!isNewer(v1, v2));
+
+    // v3 is newer than v1 (major version bump)
+    try std.testing.expect(isNewer(v3, v1));
+    try std.testing.expect(!isNewer(v1, v3));
+
+    // v4 is newer than v1 (patch version bump)
+    try std.testing.expect(isNewer(v4, v1));
+    try std.testing.expect(!isNewer(v1, v4));
+
+    // Same version
+    try std.testing.expect(!isNewer(v1, v1));
+}
+
+test "cmdToolsOutdated with --help shows help" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+
+    var err_buf: [4096]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_w = stderr_file.writer(&err_buf);
+
+    const args = &[_][]const u8{ "zr", "tools", "outdated", "--help" };
+    const exit_code = try cmdToolsOutdated(allocator, args, &out_w.interface, &err_w.interface, false);
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+}
+
+test "cmdToolsOutdated with no installed tools" {
     const allocator = std.testing.allocator;
     var out_buf: [4096]u8 = undefined;
     const stdout = std.fs.File.stdout();
@@ -326,5 +486,6 @@ test "cmdToolsOutdated stub implementation" {
     const args = &[_][]const u8{ "zr", "tools", "outdated" };
     const exit_code = try cmdToolsOutdated(allocator, args, &out_w.interface, &err_w.interface, false);
 
+    // Should return 0 when no tools installed (not an error condition)
     try std.testing.expectEqual(@as(u8, 0), exit_code);
 }
