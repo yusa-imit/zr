@@ -47,6 +47,7 @@ const context_cmd = @import("cli/context.zig");
 const conformance_cmd = @import("cli/conformance.zig");
 const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
+const setup_cmd = @import("cli/setup.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -156,6 +157,7 @@ comptime {
     _ = @import("bench/runner.zig");
     _ = @import("bench/formatter.zig");
     _ = doctor_cmd;
+    _ = setup_cmd;
 }
 
 pub fn main() !void {
@@ -477,6 +479,9 @@ fn run(
             }
         }
         return doctor_cmd.cmdDoctor(allocator, opts);
+    } else if (std.mem.eql(u8, cmd, "setup")) {
+        const setup_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return setup_cmd.cmdSetup(allocator, setup_args);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -512,6 +517,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
+    try w.print("  setup                  Set up project (install tools, run setup tasks)\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  lint                   Validate architecture constraints\n", .{});
     try w.print("  conformance [OPTIONS]  Check code conformance against rules\n", .{});
