@@ -191,7 +191,7 @@
   - `cli/workspace.zig` — cmdWorkspaceList() and cmdWorkspaceRun() use synthetic workspace members when available
   - 4 unit tests: init/deinit, active check, load null, buildGraphFromSyntheticWorkspace
 
-### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~20%)**
+### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~40%)**
 - [x] **CODEOWNERS auto-generation** (d467a16) — **COMPLETE** — `zr codeowners generate` command (PRD §9 Phase 8 §1)
   - `codeowners/types.zig` — CodeownersConfig, OwnerPattern types
   - `codeowners/generator.zig` — Generator with workspace member detection, pattern building
@@ -201,7 +201,16 @@
   - Default catch-all owners via config.default_owners
   - GitHub/GitLab CODEOWNERS format with header comments
   - 7 unit tests: types init/deinit, OwnerPattern deinit, addPattern, generate basic, detectFromWorkspace
-- [ ] **Publishing & versioning automation** — `zr publish`, `zr version` (PRD §9 Phase 8 §2)
+- [x] **Publishing & versioning automation** (a063f28) — **PARTIAL** — `zr version` command (PRD §9 Phase 8 §2)
+  - `versioning/types.zig` — VersioningMode (fixed/independent), VersioningConvention (conventional/manual), BumpType, VersioningConfig, PackageVersion
+  - `versioning/bump.zig` — bumpVersion() semver increment, readPackageJsonVersion(), writePackageJsonVersion()
+  - `config/types.zig` — versioning field in Config, parser integration
+  - `config/parser.zig` — [versioning] section parsing (mode, convention) with 2 tests
+  - `cli/version.zig` — cmdVersion() with --bump/--package/--config flags
+  - Interactive display: shows current version, mode, convention, and example bumps
+  - Manual bump: `zr version --bump=major|minor|patch`
+  - 7 unit tests (5 versioning types, 2 parser tests)
+  - **Missing**: `zr publish` command, conventional commits parsing, CHANGELOG.md generation
 - [ ] **Build analysis reports** — Local HTML with execution time trends, cache hit rates, critical path (PRD §9 Phase 8 §3)
 - [ ] **AI-friendly metadata generation** — `zr context` command (PRD §9 Phase 8 §4)
 - [ ] **Conformance rules engine** — Advanced architecture governance beyond constraints (PRD §9 Phase 8 §5)
@@ -217,7 +226,7 @@
 
 > **Reality**: **Phase 1-7 COMPLETE (100%), Phase 8 ~20%** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise**). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**.
 
-- **Tests**: 474 total (474 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests
+- **Tests**: 481 total (481 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 7 versioning tests (5 types + 2 parser)
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
