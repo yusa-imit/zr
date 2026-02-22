@@ -1007,6 +1007,28 @@ pub const HardLimitHandle = switch (builtin.os.tag) {
 - Test with limits → verify cgroup dir exists (Linux) or job_handle != null (Windows)
 - Graceful degradation: tests should not fail due to permission errors (return SkipZigTest or check for null handle)
 
+### Config Loading with Profile Support (cli/common.zig)
+When loading TOML config with optional profile overrides:
+```zig
+const common = @import("../cli/common.zig");
+
+// Create stderr writer for error reporting
+var err_buf: [8192]u8 = undefined;
+const stderr_file = std.fs.File.stderr();
+var err_writer = stderr_file.writer(&err_buf);
+
+// Load config with profile (applies profile overrides if specified)
+var cfg = (try common.loadConfig(allocator, config_path, profile_opt, &err_writer.interface, use_color)) orelse {
+    return error.ConfigLoadFailed;
+};
+defer cfg.deinit();
+```
+- Use `common.loadConfig()` instead of `config.loadFromFile()` to get profile support
+- `profile_opt: ?[]const u8` can be `null`, a `--profile` flag value, or from `ZR_PROFILE` env var
+- Returns `?Config` (null on error) - errors are printed via err_writer
+- Profile overrides are applied via `config.applyProfile()` inside loadConfig
+- `.interface` field on File.Writer provides the `*std.Io.Writer` that loadConfig expects
+
 ### Native Filesystem Watchers (src/watch/native.zig)
 Cross-platform event-driven file watching using OS-specific APIs (8ef87a4).
 

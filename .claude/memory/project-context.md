@@ -193,7 +193,7 @@
   - 4 unit tests: init/deinit, active check, load null, buildGraphFromSyntheticWorkspace
 
 ### Phase 8 - Enterprise & Community (PRD v2.0) — **COMPLETE (100%)** ✓
-- [x] **Performance benchmarking** (bcdbf80) — **NEW** — `zr bench <task>` command with statistical analysis
+- [x] **Performance benchmarking** (bcdbf80, 1bbd571) — **COMPLETE** — `zr bench <task>` with profile and quiet mode support
 - [x] **CODEOWNERS auto-generation** (d467a16) — **COMPLETE** — `zr codeowners generate` command (PRD §9 Phase 8 §1)
   - `codeowners/types.zig` — CodeownersConfig, OwnerPattern types
   - `codeowners/generator.zig` — Generator with workspace member detection, pattern building
