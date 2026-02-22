@@ -191,7 +191,7 @@
   - `cli/workspace.zig` — cmdWorkspaceList() and cmdWorkspaceRun() use synthetic workspace members when available
   - 4 unit tests: init/deinit, active check, load null, buildGraphFromSyntheticWorkspace
 
-### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~80%)**
+### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~90%)**
 - [x] **CODEOWNERS auto-generation** (d467a16) — **COMPLETE** — `zr codeowners generate` command (PRD §9 Phase 8 §1)
   - `codeowners/types.zig` — CodeownersConfig, OwnerPattern types
   - `codeowners/generator.zig` — Generator with workspace member detection, pattern building
@@ -224,7 +224,16 @@
   - Report contents: task execution time trends, failure rates, critical path (slowest tasks), parallelization efficiency
   - Integrated with history/store.zig for data collection from .zr_history
   - 4 unit tests: TaskStats calculations, ParallelizationMetrics, AnalyticsReport init/deinit, TaskStatsBuilder
-- [ ] **AI-friendly metadata generation** — `zr context` command (PRD §9 Phase 8 §4)
+- [x] **AI-friendly metadata generation** (3eaad9f) — **COMPLETE** — `zr context` command (PRD §9 Phase 8 §4)
+  - `context/types.zig` — ProjectContext, ProjectGraph, PackageNode, PackageTaskInfo, TaskInfo, OwnershipEntry, RecentChanges, ToolchainInfo
+  - `context/generator.zig` — generateContext(), collectProjectGraph(), collectTaskCatalog(), collectToolchains(), collectOwnership(), collectRecentChanges()
+  - `context/json.zig` — generateJsonOutput() for JSON format
+  - `context/yaml.zig` — generateYamlOutput() for YAML format
+  - `cli/context.zig` — cmdContext() with --format (json/yaml) and --scope (path filter) flags
+  - Output contents: project dependency graph, task catalog per package, file ownership mapping (CODEOWNERS), recent changes summary (git commits), toolchain info
+  - Workspace-aware (monorepo and single-project modes)
+  - Git integration for project name detection and commit history
+  - 3 unit tests: ProjectContext init/deinit, PackageNode init/deinit, TaskInfo init/deinit, JSON/YAML output generation
 - [ ] **Conformance rules engine** — Advanced architecture governance beyond constraints (PRD §9 Phase 8 §5)
 
 ### Missing Utility Modules (PRD §7.2)
@@ -236,9 +245,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-7 COMPLETE (100%), Phase 8 ~80%** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise**). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**.
+> **Reality**: **Phase 1-7 COMPLETE (100%), Phase 8 ~90%** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise**). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**, **AI-friendly metadata: `zr context` outputs structured project info (graph, tasks, ownership, toolchains) in JSON/YAML for AI agents**.
 
-- **Tests**: 498 total (498 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests
+- **Tests**: 501 total (501 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
