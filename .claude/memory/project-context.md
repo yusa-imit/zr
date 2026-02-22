@@ -191,7 +191,7 @@
   - `cli/workspace.zig` — cmdWorkspaceList() and cmdWorkspaceRun() use synthetic workspace members when available
   - 4 unit tests: init/deinit, active check, load null, buildGraphFromSyntheticWorkspace
 
-### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~60%)**
+### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~80%)**
 - [x] **CODEOWNERS auto-generation** (d467a16) — **COMPLETE** — `zr codeowners generate` command (PRD §9 Phase 8 §1)
   - `codeowners/types.zig` — CodeownersConfig, OwnerPattern types
   - `codeowners/generator.zig` — Generator with workspace member detection, pattern building
@@ -215,7 +215,15 @@
   - CHANGELOG.md generation with grouped sections and commit references
   - Git tag creation (v{version}) and staged commit guidance
   - 13 unit tests (5 types, 2 parser, 6 conventional commits/changelog)
-- [ ] **Build analysis reports** — Local HTML with execution time trends, cache hit rates, critical path (PRD §9 Phase 8 §3)
+- [x] **Build analysis reports** — **COMPLETE** — `zr analytics` command with HTML/JSON output (PRD §9 Phase 8 §3)
+  - `analytics/types.zig` — TaskStats, TimeSeriesPoint, CriticalPathNode, ParallelizationMetrics, AnalyticsReport
+  - `analytics/collector.zig` — collectAnalytics() from execution history, TaskStatsBuilder, critical path analysis
+  - `analytics/html.zig` — generateHtmlReport() with Chart.js visualizations, task statistics tables
+  - `analytics/json.zig` — generateJsonReport() for programmatic access
+  - `cli/analytics.zig` — cmdAnalytics() with --json/--output/--limit flags, browser auto-open
+  - Report contents: task execution time trends, failure rates, critical path (slowest tasks), parallelization efficiency
+  - Integrated with history/store.zig for data collection from .zr_history
+  - 4 unit tests: TaskStats calculations, ParallelizationMetrics, AnalyticsReport init/deinit, TaskStatsBuilder
 - [ ] **AI-friendly metadata generation** — `zr context` command (PRD §9 Phase 8 §4)
 - [ ] **Conformance rules engine** — Advanced architecture governance beyond constraints (PRD §9 Phase 8 §5)
 
@@ -228,9 +236,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-7 COMPLETE (100%), Phase 8 ~60%** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise**). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**.
+> **Reality**: **Phase 1-7 COMPLETE (100%), Phase 8 ~80%** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise**). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**.
 
-- **Tests**: 494 total (494 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test
+- **Tests**: 498 total (498 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
