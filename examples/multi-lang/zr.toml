@@ -1,0 +1,104 @@
+# Multi-Language Project Example
+# This demonstrates using zr with multiple programming languages
+
+[project]
+name = "polyglot-app"
+version = "1.0.0"
+
+# Frontend (TypeScript/Node.js)
+[tasks.frontend-install]
+command = "npm install"
+description = "Install frontend dependencies"
+cwd = "./frontend"
+outputs = ["frontend/node_modules/"]
+
+[tasks.frontend-build]
+command = "npm run build"
+description = "Build frontend"
+cwd = "./frontend"
+deps = ["frontend-install"]
+inputs = ["frontend/src/**/*.ts", "frontend/package.json"]
+outputs = ["frontend/dist/"]
+
+[tasks.frontend-test]
+command = "npm test"
+description = "Test frontend"
+cwd = "./frontend"
+deps = ["frontend-install"]
+
+# Backend (Python)
+[tasks.backend-venv]
+command = "python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+description = "Set up Python virtual environment"
+cwd = "./backend"
+outputs = ["backend/venv/"]
+
+[tasks.backend-test]
+command = "source venv/bin/activate && pytest"
+description = "Run Python tests"
+cwd = "./backend"
+deps = ["backend-venv"]
+inputs = ["backend/**/*.py", "backend/requirements.txt"]
+
+[tasks.backend-lint]
+command = "source venv/bin/activate && pylint src/"
+description = "Lint Python code"
+cwd = "./backend"
+deps = ["backend-venv"]
+
+# Database migrations (SQL)
+[tasks.db-migrate]
+command = "psql -f migrations/latest.sql"
+description = "Run database migrations"
+cwd = "./backend"
+env = { DATABASE_URL = "postgresql://localhost/mydb" }
+
+# Infrastructure (Go)
+[tasks.infra-build]
+command = "go build -o bin/deploy ./cmd/deploy"
+description = "Build deployment tool"
+cwd = "./infra"
+outputs = ["infra/bin/"]
+inputs = ["infra/**/*.go", "infra/go.mod"]
+
+[tasks.infra-test]
+command = "go test ./..."
+description = "Test infrastructure code"
+cwd = "./infra"
+
+# Rust CLI tool
+[tasks.cli-build]
+command = "cargo build --release"
+description = "Build CLI tool"
+cwd = "./cli-tool"
+outputs = ["cli-tool/target/release/"]
+inputs = ["cli-tool/src/**/*.rs", "cli-tool/Cargo.toml"]
+
+[tasks.cli-test]
+command = "cargo test"
+description = "Test CLI tool"
+cwd = "./cli-tool"
+
+# Aggregate tasks
+[tasks.build]
+description = "Build all components"
+deps = ["frontend-build", "infra-build", "cli-build"]
+
+[tasks.test]
+description = "Test all components"
+deps = ["frontend-test", "backend-test", "infra-test", "cli-test"]
+
+[tasks.lint]
+description = "Lint all components"
+deps = ["backend-lint"]
+
+# Docker build
+[tasks.docker-build]
+command = "docker build -t polyglot-app:latest ."
+description = "Build Docker image"
+deps = ["build"]
+
+# Full CI pipeline
+[tasks.ci]
+description = "Full CI pipeline"
+deps = ["lint", "test", "build"]

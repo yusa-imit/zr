@@ -1,0 +1,64 @@
+# Toolchain Management Example
+# This demonstrates zr's built-in toolchain management (Phase 6)
+
+[project]
+name = "toolchain-demo"
+version = "1.0.0"
+
+# Declare required toolchains
+[toolchains]
+node = "20.11.1"      # Specific Node.js version
+python = "3.12.0"     # Specific Python version
+go = "1.22"           # Go version (latest patch)
+
+# Optional: configure toolchain behavior
+[toolchains.config]
+auto_install = true   # Auto-install missing versions on first run
+prefer_system = false # Don't use system versions, always use zr-managed
+
+# Tasks that use managed toolchains
+[tasks.node-version]
+command = "node --version"
+description = "Check Node.js version"
+# Uses node@20.11.1 from zr toolchain
+
+[tasks.python-version]
+command = "python --version"
+description = "Check Python version"
+# Uses python@3.12.0 from zr toolchain
+
+[tasks.install-deps]
+command = "npm install"
+description = "Install npm dependencies"
+# Uses node@20.11.1
+
+[tasks.build]
+command = "npm run build"
+description = "Build the project"
+deps = ["install-deps"]
+
+[tasks.python-script]
+command = "python scripts/process.py"
+description = "Run Python script"
+# Uses python@3.12.0
+
+[tasks.go-build]
+command = "go build -o bin/app cmd/main.go"
+description = "Build Go binary"
+# Uses go@1.22
+
+# Setup task that ensures toolchains are installed
+[tasks.setup]
+command = "echo 'Project setup complete!'"
+description = "Set up project environment"
+# zr setup will install all declared toolchains
+
+# Matrix example with different Node versions
+[tasks.test-matrix]
+command = "node --version && npm test"
+description = "Test on multiple Node versions"
+matrix.toolchain = [
+    { node = "18.19.0" },
+    { node = "20.11.1" },
+    { node = "21.6.0" }
+]

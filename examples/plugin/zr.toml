@@ -1,0 +1,63 @@
+# Plugin Usage Example
+# This demonstrates zr's plugin system
+
+[project]
+name = "plugin-demo"
+version = "1.0.0"
+
+# Built-in plugins
+[plugins.env]
+# Environment variable plugin (built-in)
+# Automatically loads .env files
+
+[plugins.git]
+# Git plugin (built-in)
+# Provides git info to tasks
+
+# Custom plugin (local)
+[plugins.custom-notifier]
+path = "./plugins/notifier"
+enabled = true
+
+# Custom plugin (git repository)
+[plugins.slack-notifier]
+url = "https://github.com/example/zr-plugin-slack.git"
+ref = "v1.0.0"
+enabled = true
+
+# Tasks that use plugin features
+[tasks.build]
+command = "echo 'Building...' && sleep 2"
+description = "Build the project"
+# Plugin hooks will trigger on this task
+
+[tasks.deploy]
+command = "echo 'Deploying to $ENV...'"
+description = "Deploy to environment"
+deps = ["build"]
+# env plugin provides .env variables
+
+[tasks.git-info]
+command = "echo 'Branch: $GIT_BRANCH, Commit: $GIT_COMMIT'"
+description = "Show git information"
+# git plugin provides GIT_* variables
+
+[tasks.notify]
+command = "echo 'Task completed!'"
+description = "Task with notification"
+# custom-notifier plugin will send notification
+
+# Plugin configuration
+[plugins.env.config]
+files = [".env", ".env.local"]
+override = true
+
+[plugins.git.config]
+include_commit = true
+include_branch = true
+include_dirty = true
+
+[plugins.slack-notifier.config]
+webhook_url = "${SLACK_WEBHOOK}"
+channel = "#builds"
+notify_on = ["success", "failure"]

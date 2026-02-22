@@ -1,0 +1,56 @@
+# Workspace/Monorepo Example
+# This demonstrates zr's monorepo capabilities
+
+[project]
+name = "my-monorepo"
+version = "2.0.0"
+
+# Define workspace members
+[workspace]
+members = ["packages/*", "apps/*"]
+
+# Root-level tasks that apply to all workspace members
+[tasks.build]
+command = "npm run build"
+description = "Build a package"
+outputs = ["dist/"]
+inputs = ["src/**/*.ts", "package.json"]
+
+[tasks.test]
+command = "npm test"
+description = "Run tests"
+deps = ["build"]
+inputs = ["src/**/*.ts", "tests/**/*.ts"]
+
+[tasks.lint]
+command = "npm run lint"
+description = "Lint code"
+inputs = ["src/**/*.ts"]
+
+[tasks.clean]
+command = "rm -rf dist/ node_modules/ .turbo/"
+description = "Clean build artifacts"
+
+# Workspace-wide tasks
+[tasks.build-all]
+command = "zr workspace run build"
+description = "Build all packages in workspace"
+
+[tasks.test-all]
+command = "zr workspace run test"
+description = "Test all packages in workspace"
+
+[tasks.affected-build]
+command = "zr affected build"
+description = "Build only affected packages"
+
+# Affected detection configuration
+[affected]
+base = "origin/main"  # Compare against main branch
+
+# Cache configuration for faster builds
+[cache]
+enabled = true
+# Content-based hashing for accurate cache hits
+inputs_hash = "content"
+# Share cache across workspace
