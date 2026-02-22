@@ -252,13 +252,36 @@ pub fn cmdCache(
         };
         try color.printSuccess(w, use_color, "Cleared {d} cached task result(s)\n", .{removed});
         return 0;
+    } else if (std.mem.eql(u8, sub, "status")) {
+        var store = cache_store.CacheStore.init(allocator) catch |err| {
+            try color.printError(ew, use_color,
+                "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
+                .{err});
+            return 1;
+        };
+        defer store.deinit();
+
+        const stats = store.getStats() catch |err| {
+            try color.printError(ew, use_color,
+                "cache: error reading cache statistics: {}\n", .{err});
+            return 1;
+        };
+
+        try color.printBold(w, use_color, "Cache Status:\n\n", .{});
+        try color.printDim(w, use_color, "  Directory: ", .{});
+        try w.print("{s}\n", .{stats.cache_dir});
+        try color.printDim(w, use_color, "  Entries:   ", .{});
+        try color.printSuccess(w, use_color, "{d}\n", .{stats.total_entries});
+        try color.printDim(w, use_color, "  Size:      ", .{});
+        try color.printSuccess(w, use_color, "{d} bytes\n", .{stats.total_size_bytes});
+        return 0;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
-            "cache: missing subcommand\n\n  Hint: zr cache clear\n", .{});
+            "cache: missing subcommand\n\n  Hint: zr cache clear | zr cache status\n", .{});
         return 1;
     } else {
         try color.printError(ew, use_color,
-            "cache: unknown subcommand '{s}'\n\n  Hint: zr cache clear\n", .{sub});
+            "cache: unknown subcommand '{s}'\n\n  Hint: zr cache clear | zr cache status\n", .{sub});
         return 1;
     }
 }

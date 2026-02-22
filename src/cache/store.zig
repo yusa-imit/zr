@@ -116,6 +116,43 @@ pub const CacheStore = struct {
 
         return count;
     }
+
+    /// Get cache statistics.
+    pub fn getStats(self: *const CacheStore) !CacheStats {
+        var stats = CacheStats{
+            .total_entries = 0,
+            .total_size_bytes = 0,
+            .cache_dir = self.dir_path,
+        };
+
+        var dir = std.fs.cwd().openDir(self.dir_path, .{ .iterate = true }) catch {
+            // Directory doesn't exist yet
+            return stats;
+        };
+        defer dir.close();
+
+        var it = dir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.name, ".ok")) continue;
+
+            stats.total_entries += 1;
+
+            // Get file size
+            const file = dir.openFile(entry.name, .{}) catch continue;
+            defer file.close();
+            const stat = file.stat() catch continue;
+            stats.total_size_bytes += stat.size;
+        }
+
+        return stats;
+    }
+};
+
+pub const CacheStats = struct {
+    total_entries: usize,
+    total_size_bytes: u64,
+    cache_dir: []const u8,
 };
 
 // --- Tests ---

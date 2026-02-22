@@ -48,6 +48,7 @@ const conformance_cmd = @import("cli/conformance.zig");
 const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
 const setup_cmd = @import("cli/setup.zig");
+const env_cmd = @import("cli/env.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -482,6 +483,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "setup")) {
         const setup_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return setup_cmd.cmdSetup(allocator, setup_args);
+    } else if (std.mem.eql(u8, cmd, "env")) {
+        const env_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return env_cmd.cmdEnv(allocator, env_args, config_path, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -505,6 +509,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  workspace sync         Build synthetic workspace from multi-repo\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
+    try w.print("  cache status           Show cache statistics\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin builtins        List available built-in plugins\n", .{});
     try w.print("  plugin search [query]  Search installed plugins by name/description\n", .{});
@@ -533,7 +538,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  analytics [OPTIONS]    Generate build analysis reports\n", .{});
     try w.print("  context [OPTIONS]      Generate AI-friendly project metadata\n", .{});
     try w.print("  bench <task> [OPTIONS] Benchmark task performance with statistics\n", .{});
-    try w.print("  doctor                 Diagnose environment and toolchain setup\n\n", .{});
+    try w.print("  doctor                 Diagnose environment and toolchain setup\n", .{});
+    try w.print("  env [OPTIONS]          Display environment variables for tasks\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
