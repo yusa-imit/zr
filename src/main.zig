@@ -50,6 +50,7 @@ const doctor_cmd = @import("cli/doctor.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
 const affected_cmd = @import("cli/affected.zig");
+const clean_cmd = @import("cli/clean.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -163,6 +164,7 @@ comptime {
     _ = setup_cmd;
     _ = env_cmd;
     _ = affected_cmd;
+    _ = clean_cmd;
 }
 
 pub fn main() !void {
@@ -493,6 +495,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "affected")) {
         const affected_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return affected_cmd.cmdAffected(allocator, affected_args, profile_name, dry_run, max_jobs, config_path, json_output, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "clean")) {
+        const clean_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return clean_cmd.cmdClean(allocator, clean_args, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -518,6 +523,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  affected <task>        Run task on affected workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  cache status           Show cache statistics\n", .{});
+    try w.print("  clean [OPTIONS]        Clean zr data (cache, history, toolchains, plugins)\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin builtins        List available built-in plugins\n", .{});
     try w.print("  plugin search [query]  Search installed plugins by name/description\n", .{});
