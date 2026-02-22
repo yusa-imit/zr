@@ -5,6 +5,10 @@ pub const PluginSourceKind = plugin_loader.SourceKind;
 const toolchain_types = @import("../toolchain/types.zig");
 pub const ToolchainConfig = toolchain_types.ToolchainConfig;
 pub const ToolSpec = toolchain_types.ToolSpec;
+const versioning_types = @import("../versioning/types.zig");
+pub const VersioningConfig = versioning_types.VersioningConfig;
+pub const VersioningMode = versioning_types.VersioningMode;
+pub const VersioningConvention = versioning_types.VersioningConvention;
 
 /// Project metadata from [metadata] section (for constraint validation).
 pub const Metadata = struct {
@@ -253,6 +257,8 @@ pub const Config = struct {
     metadata: ?Metadata = null,
     /// Cache configuration from [cache] section (Phase 2 local + Phase 7 remote).
     cache: CacheConfig = .{},
+    /// Versioning configuration from [versioning] section (Phase 8).
+    versioning: ?VersioningConfig = null,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -299,6 +305,7 @@ pub const Config = struct {
         if (self.constraints.len > 0) self.allocator.free(self.constraints);
         if (self.metadata) |*m| m.deinit(self.allocator);
         self.cache.deinit(self.allocator);
+        if (self.versioning) |*v| v.deinit();
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks

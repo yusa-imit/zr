@@ -204,6 +204,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var cache_remote_url: ?[]const u8 = null;
     var cache_remote_auth: ?[]const u8 = null;
 
+    // Versioning parsing state (Phase 8) — [versioning]
+    var in_versioning: bool = false;
+    var versioning_mode: ?types.VersioningMode = null;
+    var versioning_convention: ?types.VersioningConvention = null;
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
@@ -571,6 +576,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_metadata = true;
             in_cache = false;
             in_cache_remote = false;
+            in_versioning = false;
         } else if (std.mem.eql(u8, trimmed, "[cache]")) {
             in_workspace = false;
             in_tools = false;
@@ -578,6 +584,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_metadata = false;
             in_cache = true;
             in_cache_remote = false;
+            in_versioning = false;
         } else if (std.mem.eql(u8, trimmed, "[cache.remote]")) {
             in_workspace = false;
             in_tools = false;
@@ -585,6 +592,15 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_metadata = false;
             in_cache = false;
             in_cache_remote = true;
+            in_versioning = false;
+        } else if (std.mem.eql(u8, trimmed, "[versioning]")) {
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_metadata = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_versioning = true;
         } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             in_tools = false;
@@ -962,6 +978,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "auth")) {
                     cache_remote_auth = value;
                 }
+            } else if (in_versioning) {
+                // Inside [versioning] — parse mode and convention
+                if (std.mem.eql(u8, key, "mode")) {
+                    versioning_mode = types.VersioningMode.fromString(value);
+                } else if (std.mem.eql(u8, key, "convention")) {
+                    versioning_convention = types.VersioningConvention.fromString(value);
+                }
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
@@ -1296,6 +1319,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             .url = if (cache_remote_url) |u| try allocator.dupe(u8, u) else null,
             .auth = if (cache_remote_auth) |a| try allocator.dupe(u8, a) else null,
         };
+    }
+
+    // Assign versioning config if parsed (Phase 8)
+    if (versioning_mode != null and versioning_convention != null) {
+        config.versioning = types.VersioningConfig.init(versioning_mode.?, versioning_convention.?);
     }
 
     return config;
@@ -2069,4 +2097,34 @@ test "parse cache config with HTTP remote" {
     try std.testing.expectEqualStrings("https://cache.example.com", remote.url.?);
     try std.testing.expect(remote.auth != null);
     try std.testing.expectEqualStrings("bearer:SECRET", remote.auth.?);
+}
+
+test "parse versioning config" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[versioning]
+        \\mode = "independent"
+        \\convention = "conventional"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.versioning != null);
+    const versioning = config.versioning.?;
+    try std.testing.expectEqual(types.VersioningMode.independent, versioning.mode);
+    try std.testing.expectEqual(types.VersioningConvention.conventional, versioning.convention);
+}
+
+test "parse versioning config with fixed mode" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[versioning]
+        \\mode = "fixed"
+        \\convention = "manual"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+    try std.testing.expect(config.versioning != null);
+    const versioning = config.versioning.?;
+    try std.testing.expectEqual(types.VersioningMode.fixed, versioning.mode);
+    try std.testing.expectEqual(types.VersioningConvention.manual, versioning.convention);
 }
