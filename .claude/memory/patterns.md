@@ -37,7 +37,34 @@ Patterns confirmed to work well in this project. Update as patterns evolve.
   - Level N = depends only on levels < N
   - Each level can execute in parallel
 
-### Testing Patterns
+### Validation Patterns
+
+### Edge Case Detection
+Use specific checks for common configuration errors:
+```zig
+// Check for whitespace-only strings
+const trimmed = std.mem.trim(u8, value, &std.ascii.whitespace);
+if (trimmed.len == 0) {
+    // Error: value is empty or whitespace-only
+}
+```
+
+### Duplicate Detection in Collections
+Use StringHashMap for efficient duplicate tracking:
+```zig
+var seen = std.StringHashMap(void).init(allocator);
+defer seen.deinit();
+
+for (items) |item| {
+    if (seen.contains(item)) {
+        // Error: duplicate found
+    } else {
+        try seen.put(item, {});
+    }
+}
+```
+
+## Testing Patterns
 - Test simple cases first (linear chains)
 - Test complex cases (parallel branches, diamonds)
 - Test edge cases (self-cycles, empty graphs)

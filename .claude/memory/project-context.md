@@ -267,6 +267,13 @@
 - [x] `util/platform.zig` — cross-platform POSIX wrappers
 - [x] `util/affected.zig` — git diff-based affected detection for monorepo workflows
 
+## Recent Enhancements (Post Phase 8)
+- [x] **Enhanced validation** (c9c2347) — Added edge case detection:
+  - Whitespace-only command validation (detects cmd = "   ")
+  - Duplicate task detection in workflow stages
+  - StringHashMap-based tracking for efficient duplicate detection
+  - 2 new unit tests for edge cases
+
 ## Status Summary
 
 > **Reality**: **Phase 1-8 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise** → **FINISHED**). **Production-ready with full enterprise feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main` flag AND `zr affected <task>` standalone command), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**, **Publishing & versioning: `zr version` and `zr publish` with conventional commits, auto-bump, CHANGELOG generation**, **Build analytics: `zr analytics` with HTML/JSON reports, critical path analysis, parallelization metrics**, **AI-friendly metadata: `zr context` outputs structured project info (graph, tasks, ownership, toolchains, recent changes) in JSON/YAML for AI agents**, **Conformance rules engine: `zr conformance` with file-level governance (import patterns, naming conventions, size limits, depth limits, extension rules)**, **Standalone affected command: `zr affected <task>` with --include-dependents, --exclude-self, --include-dependencies, --list options per PRD §5.7.1**.
