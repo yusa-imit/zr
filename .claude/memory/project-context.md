@@ -191,6 +191,21 @@
   - `cli/workspace.zig` — cmdWorkspaceList() and cmdWorkspaceRun() use synthetic workspace members when available
   - 4 unit tests: init/deinit, active check, load null, buildGraphFromSyntheticWorkspace
 
+### Phase 8 - Enterprise & Community (PRD v2.0) — **IN PROGRESS (~20%)**
+- [x] **CODEOWNERS auto-generation** (d467a16) — **COMPLETE** — `zr codeowners generate` command (PRD §9 Phase 8 §1)
+  - `codeowners/types.zig` — CodeownersConfig, OwnerPattern types
+  - `codeowners/generator.zig` — Generator with workspace member detection, pattern building
+  - `cli/codeowners.zig` — `zr codeowners generate` with --output, --dry-run, --config flags
+  - Auto-detect ownership from workspace members via member_owners HashMap
+  - Custom manual patterns via config.patterns array
+  - Default catch-all owners via config.default_owners
+  - GitHub/GitLab CODEOWNERS format with header comments
+  - 7 unit tests: types init/deinit, OwnerPattern deinit, addPattern, generate basic, detectFromWorkspace
+- [ ] **Publishing & versioning automation** — `zr publish`, `zr version` (PRD §9 Phase 8 §2)
+- [ ] **Build analysis reports** — Local HTML with execution time trends, cache hit rates, critical path (PRD §9 Phase 8 §3)
+- [ ] **AI-friendly metadata generation** — `zr context` command (PRD §9 Phase 8 §4)
+- [ ] **Conformance rules engine** — Advanced architecture governance beyond constraints (PRD §9 Phase 8 §5)
+
 ### Missing Utility Modules (PRD §7.2)
 - [x] `util/glob.zig` — **ENHANCED** (f439225) — glob pattern matching with recursive directory support (*/? wildcards, nested patterns like `packages/*/src`, absolute path handling)
 - [x] `util/semver.zig` — semantic version parsing and comparison (gte/gt/lt/lte/eql)
@@ -200,9 +215,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-7 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**.
+> **Reality**: **Phase 1-7 COMPLETE (100%), Phase 8 ~20%** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise**). **Production-ready with full feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**.
 
-- **Tests**: 468 total (460 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests
+- **Tests**: 474 total (474 passing, 8 skipped) — includes 29 toolchain tests + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
