@@ -93,6 +93,7 @@
 - [x] **PATH manipulation** (8c52f7c, e0030b4) — Inject toolchain bin paths into task execution environment, JAVA_HOME/GOROOT env vars, integrated with scheduler
 - [x] **CLI commands** (be3b994) — `zr tools list`, `zr tools install`, `zr tools outdated` (stub) with full help, error handling, and 7 unit tests
 - [x] **Auto-install on task run** (1db7ecb) — Per-task toolchain requirements ([tasks.X.toolchain]), auto-detection and installation before execution, "tool@version" parsing, ensureToolchainsInstalled() in scheduler
+- [x] **Environment diagnostics** (97f94d0) — `zr doctor` command for toolchain/environment verification, checks git/docker/curl/toolchains, colored status output, exit code 1 on issues
 
 ### Phase 6 - Monorepo Intelligence (PRD §9 Phase 5) — **COMPLETE (100%)**
 - [x] **Affected detection** (9bccfef) — Git diff-based change detection for workspace members
