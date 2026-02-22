@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const config = @import("../config/loader.zig");
+const common = @import("../cli/common.zig");
 const exec = @import("../exec/scheduler.zig");
 
 const BenchmarkRun = types.BenchmarkRun;
@@ -12,9 +13,18 @@ pub fn runBenchmark(
     allocator: std.mem.Allocator,
     bench_config: *const BenchmarkConfig,
 ) !BenchmarkStats {
-    // Load configuration
+    // Load configuration with profile support
     const cfg_path = bench_config.config_path orelse "zr.toml";
-    var cfg = try config.loadFromFile(allocator, cfg_path);
+
+    // Get stderr writer for common.loadConfig error reporting
+    var err_buf: [8192]u8 = undefined;
+    const stderr_file = std.fs.File.stderr();
+    var err_writer = stderr_file.writer(&err_buf);
+
+    var cfg = (try common.loadConfig(allocator, cfg_path, bench_config.profile, &err_writer.interface, false)) orelse {
+        std.debug.print("Failed to load configuration from {s}\n", .{cfg_path});
+        return error.ConfigLoadFailed;
+    };
     defer cfg.deinit();
 
     // Verify the task exists
@@ -76,11 +86,13 @@ fn runSingleIteration(
     profile: ?[]const u8,
     quiet: bool,
 ) !BenchmarkRun {
-    _ = profile; // TODO: support profile in benchmarking
-    _ = quiet; // TODO: support quiet mode properly
+    // Profile is already applied in runBenchmark via common.loadConfig
+    _ = profile;
+
     const start_time = std.time.nanoTimestamp();
 
     const task_names = &[_][]const u8{task_name};
+
     const result = try exec.run(
         allocator,
         cfg,
@@ -90,6 +102,8 @@ fn runSingleIteration(
             .monitor = false,
             .use_color = false,
             .task_control = null,
+            // In quiet mode, don't inherit stdio to suppress task output
+            .inherit_stdio = !quiet,
         },
     );
 
