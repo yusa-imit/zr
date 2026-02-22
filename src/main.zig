@@ -44,6 +44,7 @@ const version_cmd = @import("cli/version.zig");
 const publish_cmd = @import("cli/publish.zig");
 const analytics_cmd = @import("cli/analytics.zig");
 const context_cmd = @import("cli/context.zig");
+const conformance_cmd = @import("cli/conformance.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -144,6 +145,10 @@ comptime {
     _ = @import("context/generator.zig");
     _ = @import("context/json.zig");
     _ = @import("context/yaml.zig");
+    _ = conformance_cmd;
+    _ = @import("conformance/types.zig");
+    _ = @import("conformance/engine.zig");
+    _ = @import("conformance/parser.zig");
 }
 
 pub fn main() !void {
@@ -448,6 +453,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "context")) {
         const context_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return context_cmd.cmdContext(allocator, context_args);
+    } else if (std.mem.eql(u8, cmd, "conformance")) {
+        const conformance_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return conformance_cmd.cmdConformance(allocator, conformance_args);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -485,6 +493,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  lint                   Validate architecture constraints\n", .{});
+    try w.print("  conformance [OPTIONS]  Check code conformance against rules\n", .{});
     try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n", .{});
     try w.print("  tools list [kind]      List installed toolchain versions\n", .{});
     try w.print("  tools install <k>@<v>  Install a toolchain (e.g., node@20.11.1)\n", .{});

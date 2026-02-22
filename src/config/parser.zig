@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const matrix = @import("matrix.zig");
+const conformance_types = @import("../conformance/types.zig");
 
 const Config = types.Config;
 const Task = types.Task;
@@ -208,6 +209,38 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var in_versioning: bool = false;
     var versioning_mode: ?types.VersioningMode = null;
     var versioning_convention: ?types.VersioningConvention = null;
+
+    // Conformance parsing state (Phase 8) — [conformance] and [[conformance.rules]]
+    var in_conformance: bool = false;
+    var in_conformance_rule: bool = false;
+    var conformance_fail_on_warning: bool = false;
+    var conformance_ignore = std.ArrayList([]const u8){};
+    defer {
+        for (conformance_ignore.items) |item| allocator.free(item);
+        conformance_ignore.deinit(allocator);
+    }
+    var conformance_rules = std.ArrayList(conformance_types.ConformanceRule){};
+    defer {
+        for (conformance_rules.items) |*rule| rule.deinit();
+        conformance_rules.deinit(allocator);
+    }
+    // Current conformance rule being parsed
+    var current_rule_id: ?[]const u8 = null;
+    var current_rule_type: ?conformance_types.RuleType = null;
+    var current_rule_severity: conformance_types.Severity = .err;
+    var current_rule_scope: ?[]const u8 = null;
+    var current_rule_pattern: ?[]const u8 = null;
+    var current_rule_message: ?[]const u8 = null;
+    var current_rule_fixable: bool = false;
+    var current_rule_config = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = current_rule_config.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        current_rule_config.deinit();
+    }
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -601,6 +634,54 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_cache = false;
             in_cache_remote = false;
             in_versioning = true;
+            in_conformance = false;
+            in_conformance_rule = false;
+        } else if (std.mem.eql(u8, trimmed, "[conformance]")) {
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_metadata = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_versioning = false;
+            in_conformance = true;
+            in_conformance_rule = false;
+        } else if (std.mem.eql(u8, trimmed, "[[conformance.rules]]")) {
+            // Flush pending conformance rule
+            if (in_conformance_rule) {
+                if (current_rule_id) |id| {
+                    if (current_rule_type) |rule_type| {
+                        if (current_rule_scope) |scope| {
+                            if (current_rule_message) |message| {
+                                var rule = conformance_types.ConformanceRule.init(
+                                    allocator,
+                                    id,
+                                    rule_type,
+                                    current_rule_severity,
+                                    scope,
+                                    message,
+                                );
+                                rule.pattern = current_rule_pattern;
+                                rule.fixable = current_rule_fixable;
+                                rule.config = current_rule_config;
+                                try conformance_rules.append(allocator, rule);
+                                // Reset config for next rule
+                                current_rule_config = std.StringHashMap([]const u8).init(allocator);
+                            }
+                        }
+                    }
+                }
+            }
+            // Start new conformance rule
+            in_conformance = false;
+            in_conformance_rule = true;
+            current_rule_id = null;
+            current_rule_type = null;
+            current_rule_severity = .err;
+            current_rule_scope = null;
+            current_rule_pattern = null;
+            current_rule_message = null;
+            current_rule_fixable = false;
         } else if (std.mem.startsWith(u8, trimmed, "[plugins.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             in_tools = false;
@@ -985,6 +1066,62 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "convention")) {
                     versioning_convention = types.VersioningConvention.fromString(value);
                 }
+            } else if (in_conformance) {
+                // Inside [conformance] — parse fail_on_warning and ignore
+                if (std.mem.eql(u8, key, "fail_on_warning")) {
+                    conformance_fail_on_warning = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "ignore")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const t = std.mem.trim(u8, item, " \t\"");
+                            if (t.len > 0) {
+                                const duped = try allocator.dupe(u8, t);
+                                try conformance_ignore.append(allocator, duped);
+                            }
+                        }
+                    }
+                }
+            } else if (in_conformance_rule) {
+                // Inside [[conformance.rules]] — parse rule fields
+                if (std.mem.eql(u8, key, "id")) {
+                    current_rule_id = value;
+                } else if (std.mem.eql(u8, key, "type")) {
+                    if (std.mem.eql(u8, value, "import_pattern")) {
+                        current_rule_type = .import_pattern;
+                    } else if (std.mem.eql(u8, value, "file_naming")) {
+                        current_rule_type = .file_naming;
+                    } else if (std.mem.eql(u8, value, "file_size")) {
+                        current_rule_type = .file_size;
+                    } else if (std.mem.eql(u8, value, "directory_depth")) {
+                        current_rule_type = .directory_depth;
+                    } else if (std.mem.eql(u8, value, "file_extension")) {
+                        current_rule_type = .file_extension;
+                    }
+                } else if (std.mem.eql(u8, key, "severity")) {
+                    if (std.mem.eql(u8, value, "error")) {
+                        current_rule_severity = .err;
+                    } else if (std.mem.eql(u8, value, "warning")) {
+                        current_rule_severity = .warning;
+                    } else if (std.mem.eql(u8, value, "info")) {
+                        current_rule_severity = .info;
+                    }
+                } else if (std.mem.eql(u8, key, "scope")) {
+                    current_rule_scope = value;
+                } else if (std.mem.eql(u8, key, "pattern")) {
+                    current_rule_pattern = value;
+                } else if (std.mem.eql(u8, key, "message")) {
+                    current_rule_message = value;
+                } else if (std.mem.eql(u8, key, "fixable")) {
+                    current_rule_fixable = std.mem.eql(u8, value, "true");
+                } else if (std.mem.startsWith(u8, key, "config.")) {
+                    // Parse config.KEY = VALUE
+                    const config_key = key[7..]; // Skip "config."
+                    const config_key_duped = try allocator.dupe(u8, config_key);
+                    const config_value_duped = try allocator.dupe(u8, value);
+                    try current_rule_config.put(config_key_duped, config_value_duped);
+                }
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
@@ -1324,6 +1461,39 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Assign versioning config if parsed (Phase 8)
     if (versioning_mode != null and versioning_convention != null) {
         config.versioning = types.VersioningConfig.init(versioning_mode.?, versioning_convention.?);
+    }
+
+    // Flush pending conformance rule (if any)
+    if (in_conformance_rule) {
+        if (current_rule_id) |id| {
+            if (current_rule_type) |rule_type| {
+                if (current_rule_scope) |scope| {
+                    if (current_rule_message) |message| {
+                        var rule = conformance_types.ConformanceRule.init(
+                            allocator,
+                            id,
+                            rule_type,
+                            current_rule_severity,
+                            scope,
+                            message,
+                        );
+                        rule.pattern = current_rule_pattern;
+                        rule.fixable = current_rule_fixable;
+                        rule.config = current_rule_config;
+                        try conformance_rules.append(allocator, rule);
+                    }
+                }
+            }
+        }
+    }
+
+    // Build conformance config
+    if (conformance_rules.items.len > 0 or conformance_ignore.items.len > 0 or conformance_fail_on_warning) {
+        config.conformance.fail_on_warning = conformance_fail_on_warning;
+        config.conformance.ignore = try allocator.alloc([]const u8, conformance_ignore.items.len);
+        @memcpy(config.conformance.ignore, conformance_ignore.items);
+        config.conformance.rules = try allocator.alloc(conformance_types.ConformanceRule, conformance_rules.items.len);
+        @memcpy(config.conformance.rules, conformance_rules.items);
     }
 
     return config;

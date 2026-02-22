@@ -9,6 +9,8 @@ const versioning_types = @import("../versioning/types.zig");
 pub const VersioningConfig = versioning_types.VersioningConfig;
 pub const VersioningMode = versioning_types.VersioningMode;
 pub const VersioningConvention = versioning_types.VersioningConvention;
+const conformance_types = @import("../conformance/types.zig");
+pub const ConformanceConfig = conformance_types.ConformanceConfig;
 
 /// Project metadata from [metadata] section (for constraint validation).
 pub const Metadata = struct {
@@ -259,6 +261,8 @@ pub const Config = struct {
     cache: CacheConfig = .{},
     /// Versioning configuration from [versioning] section (Phase 8).
     versioning: ?VersioningConfig = null,
+    /// Conformance configuration from [conformance] section (Phase 8).
+    conformance: ConformanceConfig = .{ .rules = &.{}, .fail_on_warning = false, .ignore = &.{} },
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -269,6 +273,7 @@ pub const Config = struct {
             .workspace = null,
             .plugins = &.{},
             .toolchains = ToolchainConfig.init(allocator),
+            .conformance = ConformanceConfig.init(allocator),
             .allocator = allocator,
         };
     }
@@ -306,6 +311,7 @@ pub const Config = struct {
         if (self.metadata) |*m| m.deinit(self.allocator);
         self.cache.deinit(self.allocator);
         if (self.versioning) |*v| v.deinit();
+        self.conformance.deinit(self.allocator);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks
