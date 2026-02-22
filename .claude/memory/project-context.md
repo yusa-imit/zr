@@ -248,15 +248,16 @@
   - Workspace-aware (monorepo and single-project modes)
   - Git integration for project name detection and commit history
   - 3 unit tests: ProjectContext init/deinit, PackageNode init/deinit, TaskInfo init/deinit, JSON/YAML output generation
-- [x] **Conformance rules engine** (144a5a7, d47050f) — **COMPLETE** — `zr conformance` command (PRD §9 Phase 8 §5)
+- [x] **Conformance rules engine** (144a5a7, d47050f, **7ce2237**) — **COMPLETE** — `zr conformance` command (PRD §9 Phase 8 §5)
   - `conformance/types.zig` — ConformanceRule, ConformanceViolation, ConformanceConfig, ConformanceResult with severity levels (err/warning/info)
   - `conformance/engine.zig` — checkConformance(), 5 rule type checkers (import_pattern/file_naming/file_size/directory_depth/file_extension)
   - `conformance/parser.zig` — parseConformanceConfig() for TOML [conformance] and [[conformance.rules]] sections
-  - `cli/conformance.zig` — cmdConformance() with --fix (stub)/--verbose/--config flags, violation reporting
-  - Rule types: import_pattern (detect banned imports), file_naming (glob patterns), file_size (max_bytes), directory_depth (max_depth), file_extension (allowed/banned)
+  - `conformance/fixer.zig` — **NEW (7ce2237)** — Auto-fix engine: applyFixes(), fixImportPatternViolations() removes banned import lines, 3 tests
+  - `cli/conformance.zig` — cmdConformance() with **--fix (IMPLEMENTED 7ce2237)**/--verbose/--config flags, violation reporting, fix result summary
+  - Rule types: import_pattern (detect banned imports, **auto-fixable**), file_naming (glob patterns), file_size (max_bytes), directory_depth (max_depth), file_extension (allowed/banned)
   - File-level governance: scope (glob), pattern matching, config parameters, ignore patterns
-  - Exit code based on fail_on_warning setting
-  - 6 unit tests: types (3), parser (2), CLI (1)
+  - Exit code based on fail_on_warning setting (or 0 if --fix succeeds)
+  - 9 unit tests: types (3), parser (2), CLI (1), **fixer (3)**
   - **AI metadata enhancement** (d47050f): files_changed tracking in RecentChanges, git diff-based affected file counting, multi-repo --affected filtering with hasGitChanges()
 
 ### Missing Utility Modules (PRD §7.2)
@@ -270,7 +271,7 @@
 
 > **Reality**: **Phase 1-8 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise** → **FINISHED**). **Production-ready with full enterprise feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main` flag AND `zr affected <task>` standalone command), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**, **Publishing & versioning: `zr version` and `zr publish` with conventional commits, auto-bump, CHANGELOG generation**, **Build analytics: `zr analytics` with HTML/JSON reports, critical path analysis, parallelization metrics**, **AI-friendly metadata: `zr context` outputs structured project info (graph, tasks, ownership, toolchains, recent changes) in JSON/YAML for AI agents**, **Conformance rules engine: `zr conformance` with file-level governance (import patterns, naming conventions, size limits, depth limits, extension rules)**, **Standalone affected command: `zr affected <task>` with --include-dependents, --exclude-self, --include-dependencies, --list options per PRD §5.7.1**.
 
-- **Tests**: 524 total (~524 passing, 8 skipped) — includes 32 toolchain tests (29 + 3 outdated) + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 2 hasGitChanges tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test + 6 conformance tests (3 types + 2 parser + 1 CLI) + 5 benchmark tests (2 types + 2 runner + 1 formatter + 1 CLI) + 2 registry tests (2 ToolVersion) + **1 affected command test**
+- **Tests**: 527 total (~527 passing, 8 skipped) — includes 32 toolchain tests (29 + 3 outdated) + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 2 hasGitChanges tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test + **9 conformance tests (3 types + 2 parser + 1 CLI + 3 fixer)** + 5 benchmark tests (2 types + 2 runner + 1 formatter + 1 CLI) + 2 registry tests (2 ToolVersion) + 1 affected command test
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
