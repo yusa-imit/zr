@@ -84,6 +84,18 @@ pub fn cmdValidate(
             error_count += 1;
         }
 
+        // Check for whitespace-only commands
+        if (has_cmd) {
+            const trimmed = std.mem.trim(u8, task.cmd, &std.ascii.whitespace);
+            if (trimmed.len == 0) {
+                try color.printError(err_writer, use_color,
+                    "✗ Task '{s}': command is empty or whitespace-only\n  Hint: Remove 'cmd' field or provide a valid command\n\n",
+                    .{task_name},
+                );
+                error_count += 1;
+            }
+        }
+
         // Validate dependency references
         for (task.deps) |dep_name| {
             if (config.tasks.get(dep_name) == null) {
@@ -120,8 +132,12 @@ pub fn cmdValidate(
             error_count += 1;
         }
 
-        // Validate stage task references
+        // Validate stage task references and check for duplicates
         for (workflow.stages, 0..) |stage, i| {
+            // Track tasks in this stage to detect duplicates
+            var stage_tasks = std.StringHashMap(void).init(allocator);
+            defer stage_tasks.deinit();
+
             for (stage.tasks) |task_name| {
                 if (config.tasks.get(task_name) == null) {
                     try color.printError(err_writer, use_color,
@@ -129,6 +145,17 @@ pub fn cmdValidate(
                         .{ workflow_name, i, task_name },
                     );
                     error_count += 1;
+                }
+
+                // Check for duplicate task in this stage
+                if (stage_tasks.contains(task_name)) {
+                    try color.printError(err_writer, use_color,
+                        "✗ Workflow '{s}', stage {d}: task '{s}' appears multiple times\n  Hint: Remove duplicate task references\n\n",
+                        .{ workflow_name, i, task_name },
+                    );
+                    error_count += 1;
+                } else {
+                    try stage_tasks.put(task_name, {});
                 }
             }
         }
@@ -473,3 +500,68 @@ test "cmdValidate: schema output" {
     try std.testing.expect(std.mem.indexOf(u8, out_str, "[tasks.<name>]") != null);
     try std.testing.expect(std.mem.indexOf(u8, out_str, "Schema Reference") != null);
 }
+
+test "cmdValidate: whitespace-only command fails" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "   "
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    try std.testing.expectEqual(@as(u8, 1), result);
+    const err_str = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, err_str, "whitespace-only") != null);
+}
+
+test "cmdValidate: duplicate task in workflow stage fails" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[workflows.ci]
+        \\[[workflows.ci.stages]]
+        \\tasks = ["build", "build"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    try std.testing.expectEqual(@as(u8, 1), result);
+    const err_str = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, err_str, "appears multiple times") != null);
+}
+
