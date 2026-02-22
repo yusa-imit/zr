@@ -102,6 +102,17 @@
   - `--affected <ref>` CLI flag — Filter workspace members based on git changes
   - `zr --affected origin/main workspace run test` — Run tasks only on changed projects
   - 5 unit tests for file-to-project mapping
+- [x] **Standalone affected command** (ff3d151) — `zr affected <task>` command (PRD §5.7.1)
+  - `cli/affected.zig` — cmdAffected() with full option parsing (310 lines)
+  - `--base <ref>` — Git reference to compare against (default: HEAD)
+  - `--include-dependents` — Also run on projects that depend on affected ones
+  - `--exclude-self` — Exclude directly affected, only run on dependents
+  - `--include-dependencies` — Also run on dependencies of affected projects
+  - `--list` — Only list affected projects without running tasks
+  - `cli/workspace.zig` — cmdWorkspaceRunFiltered() for pre-filtered member execution
+  - Supports all global flags: --jobs, --dry-run, --profile, --format json
+  - Examples: `zr affected build`, `zr affected test --base origin/main --include-dependents`
+  - 1 unit test for help output
 - [x] **Dependency graph expansion** (d503d7b) — expandWithDependents() to include projects that depend on affected ones
   - Transitive dependency expansion with BFS traversal
   - Circular dependency handling to prevent infinite loops
@@ -257,9 +268,9 @@
 
 ## Status Summary
 
-> **Reality**: **Phase 1-8 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise** → **FINISHED**). **Production-ready with full enterprise feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main`), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**, **Publishing & versioning: `zr version` and `zr publish` with conventional commits, auto-bump, CHANGELOG generation**, **Build analytics: `zr analytics` with HTML/JSON reports, critical path analysis, parallelization metrics**, **AI-friendly metadata: `zr context` outputs structured project info (graph, tasks, ownership, toolchains, recent changes) in JSON/YAML for AI agents**, **Conformance rules engine: `zr conformance` with file-level governance (import patterns, naming conventions, size limits, depth limits, extension rules)**.
+> **Reality**: **Phase 1-8 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise** → **FINISHED**). **Production-ready with full enterprise feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main` flag AND `zr affected <task>` standalone command), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**, **Publishing & versioning: `zr version` and `zr publish` with conventional commits, auto-bump, CHANGELOG generation**, **Build analytics: `zr analytics` with HTML/JSON reports, critical path analysis, parallelization metrics**, **AI-friendly metadata: `zr context` outputs structured project info (graph, tasks, ownership, toolchains, recent changes) in JSON/YAML for AI agents**, **Conformance rules engine: `zr conformance` with file-level governance (import patterns, naming conventions, size limits, depth limits, extension rules)**, **Standalone affected command: `zr affected <task>` with --include-dependents, --exclude-self, --include-dependencies, --list options per PRD §5.7.1**.
 
-- **Tests**: 523 total (~523 passing, 8 skipped) — includes 32 toolchain tests (29 + 3 outdated) + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 2 hasGitChanges tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test + 6 conformance tests (3 types + 2 parser + 1 CLI) + 5 benchmark tests (2 types + 2 runner + 1 formatter + 1 CLI) + **2 registry tests (2 ToolVersion)**
+- **Tests**: 524 total (~524 passing, 8 skipped) — includes 32 toolchain tests (29 + 3 outdated) + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 2 hasGitChanges tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test + 6 conformance tests (3 types + 2 parser + 1 CLI) + 5 benchmark tests (2 types + 2 runner + 1 formatter + 1 CLI) + 2 registry tests (2 ToolVersion) + **1 affected command test**
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -270,8 +281,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ```
 
 ### Key Modules (src/)
-- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools, **bench**) + color output
-- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**, **bench (performance benchmarking)**
+- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools, **bench**, **affected**) + color output
+- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**, **bench (performance benchmarking)**, **affected (standalone affected task runner)**
 - `bench/` - **NEW**: Performance benchmarking (types, runner, formatter) with statistical analysis (mean/median/stddev/CV)
 - `config/` - TOML loader, schema validation, expression engine, profiles, **toolchain config**
 - `graph/` - DAG, topological sort, cycle detection, visualization
