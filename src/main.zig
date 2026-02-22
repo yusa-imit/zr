@@ -39,6 +39,7 @@ const tools_cmd = @import("cli/tools.zig");
 const graph_cmd = @import("cli/graph.zig");
 const lint_cmd = @import("cli/lint.zig");
 const repo_cmd = @import("cli/repo.zig");
+const codeowners_cmd = @import("cli/codeowners.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -57,6 +58,8 @@ const multirepo_status = @import("multirepo/status.zig");
 const multirepo_graph = @import("multirepo/graph.zig");
 const multirepo_run = @import("multirepo/run.zig");
 const multirepo_synthetic = @import("multirepo/synthetic.zig");
+const codeowners_types = @import("codeowners/types.zig");
+const codeowners_generator = @import("codeowners/generator.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -101,6 +104,7 @@ comptime {
     _ = graph_cmd;
     _ = lint_cmd;
     _ = repo_cmd;
+    _ = codeowners_cmd;
     _ = platform;
     _ = semver;
     _ = hash_util;
@@ -118,6 +122,8 @@ comptime {
     _ = multirepo_graph;
     _ = multirepo_run;
     _ = multirepo_synthetic;
+    _ = codeowners_types;
+    _ = codeowners_generator;
 }
 
 pub fn main() !void {
@@ -405,6 +411,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "repo")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return repo_cmd.cmdRepo(allocator, sub, effective_args, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "codeowners")) {
+        const codeowners_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return codeowners_cmd.cmdCodeowners(allocator, codeowners_args, effective_w, ew, effective_color);
     } else {
         try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
         try printHelp(effective_w, effective_color);
@@ -447,7 +456,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  tools install <k>@<v>  Install a toolchain (e.g., node@20.11.1)\n", .{});
     try w.print("  tools outdated [kind]  Check for outdated toolchains\n", .{});
     try w.print("  repo sync              Sync all multi-repo repositories\n", .{});
-    try w.print("  repo status            Show git status of all repositories\n\n", .{});
+    try w.print("  repo status            Show git status of all repositories\n", .{});
+    try w.print("  codeowners generate    Generate CODEOWNERS file from workspace\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
