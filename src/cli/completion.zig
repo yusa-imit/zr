@@ -5,11 +5,11 @@ pub const BASH_COMPLETION =
     \\_zr_completion() {
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    \\    local commands="run watch workflow list graph history workspace plugin interactive live init completion"
-    \\    local options="--help --profile --dry-run --jobs --no-color --quiet --verbose --config --format -h -p -n -j -q -v -f"
+    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env"
+    \\    local options="--help --version --profile --dry-run --jobs --no-color --quiet --verbose --config --format --monitor --affected -h -p -n -j -q -v -f -m"
     \\
     \\    case "$prev" in
-    \\        run|watch|live)
+    \\        run|watch|live|affected|bench|interactive-run|irun)
     \\            # Complete task names from zr.toml
     \\            local tasks
     \\            tasks=$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')
@@ -22,10 +22,22 @@ pub const BASH_COMPLETION =
     \\            COMPREPLY=($(compgen -W "$workflows" -- "$cur"))
     \\            return ;;
     \\        workspace)
-    \\            COMPREPLY=($(compgen -W "list run" -- "$cur"))
+    \\            COMPREPLY=($(compgen -W "list run sync" -- "$cur"))
     \\            return ;;
     \\        plugin)
     \\            COMPREPLY=($(compgen -W "list search install remove update info builtins create" -- "$cur"))
+    \\            return ;;
+    \\        tools)
+    \\            COMPREPLY=($(compgen -W "list install outdated" -- "$cur"))
+    \\            return ;;
+    \\        repo)
+    \\            COMPREPLY=($(compgen -W "sync status graph run" -- "$cur"))
+    \\            return ;;
+    \\        cache)
+    \\            COMPREPLY=($(compgen -W "clear status" -- "$cur"))
+    \\            return ;;
+    \\        codeowners)
+    \\            COMPREPLY=($(compgen -W "generate" -- "$cur"))
     \\            return ;;
     \\        completion)
     \\            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
@@ -64,18 +76,38 @@ pub const ZSH_COMPLETION =
     \\        'watch:Watch files and auto-run task on changes'
     \\        'workflow:Run a workflow by name'
     \\        'list:List all available tasks'
-    \\        'graph:Show dependency tree'
+    \\        'graph:Visualize workspace dependency graph'
     \\        'history:Show recent run history'
-    \\        'init:Scaffold a new zr.toml'
-    \\        'completion:Print shell completion script'
-    \\        'workspace:Manage workspace members (list|run)'
+    \\        'workspace:Manage workspace members (list|run|sync)'
+    \\        'affected:Run task on affected workspace members'
+    \\        'cache:Manage task cache (clear|status)'
+    \\        'clean:Clean zr data (cache, history, toolchains, plugins)'
     \\        'plugin:Manage plugins (list|search|install|remove|update|info|builtins|create)'
     \\        'interactive:Launch interactive TUI task picker'
     \\        'live:Run task with live TUI log streaming'
+    \\        'interactive-run:Run task with cancel/retry controls'
+    \\        'irun:Alias for interactive-run'
+    \\        'init:Scaffold a new zr.toml'
+    \\        'setup:Set up project (install tools, run setup tasks)'
+    \\        'validate:Validate zr.toml configuration file'
+    \\        'lint:Validate architecture constraints'
+    \\        'conformance:Check code conformance against rules'
+    \\        'completion:Print shell completion script'
+    \\        'tools:Manage toolchains (list|install|outdated)'
+    \\        'repo:Multi-repo orchestration (sync|status|graph|run)'
+    \\        'codeowners:Generate CODEOWNERS file from workspace'
+    \\        'version:Show or bump package version'
+    \\        'publish:Publish a new version'
+    \\        'analytics:Generate build analysis reports'
+    \\        'context:Generate AI-friendly project metadata'
+    \\        'bench:Benchmark task performance'
+    \\        'doctor:Diagnose environment and toolchain setup'
+    \\        'env:Display environment variables for tasks'
     \\    )
     \\    options=(
     \\        '--help[Show help]'
     \\        '-h[Show help]'
+    \\        '--version[Show version information]'
     \\        '--profile[Activate named profile]:profile name'
     \\        '-p[Activate named profile]:profile name'
     \\        '--dry-run[Show plan without executing]'
@@ -90,6 +122,9 @@ pub const ZSH_COMPLETION =
     \\        '--config[Config file path]:file:_files'
     \\        '--format[Output format]:format:(text json)'
     \\        '-f[Output format]:format:(text json)'
+    \\        '--monitor[Display live resource usage]'
+    \\        '-m[Display live resource usage]'
+    \\        '--affected[Run only affected workspace members]:ref'
     \\    )
     \\    _arguments -C \
     \\        $options \
@@ -100,7 +135,7 @@ pub const ZSH_COMPLETION =
     \\            _describe 'command' commands ;;
     \\        args)
     \\            case $words[2] in
-    \\                run|watch|live)
+    \\                run|watch|live|affected|bench|interactive-run|irun)
     \\                    local -a tasks
     \\                    tasks=(${(f)"$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')"})
     \\                    _describe 'task' tasks ;;
@@ -111,9 +146,17 @@ pub const ZSH_COMPLETION =
     \\                completion)
     \\                    _values 'shell' bash zsh fish ;;
     \\                workspace)
-    \\                    _values 'subcommand' list run ;;
+    \\                    _values 'subcommand' list run sync ;;
     \\                plugin)
     \\                    _values 'subcommand' list search install remove update info builtins create ;;
+    \\                tools)
+    \\                    _values 'subcommand' list install outdated ;;
+    \\                repo)
+    \\                    _values 'subcommand' sync status graph run ;;
+    \\                cache)
+    \\                    _values 'subcommand' clear status ;;
+    \\                codeowners)
+    \\                    _values 'subcommand' generate ;;
     \\            esac ;;
     \\    esac
     \\}
@@ -134,23 +177,49 @@ pub const FISH_COMPLETION =
     \\end
     \\
     \\# Subcommands
-    \\complete -c zr -f -n '__fish_use_subcommand' -a run        -d 'Run a task'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a watch      -d 'Watch and auto-run task'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a workflow   -d 'Run a workflow'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a list       -d 'List tasks'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a graph      -d 'Show dependency tree'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a history    -d 'Show run history'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a init       -d 'Scaffold zr.toml'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a completion -d 'Print completion script'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a workspace    -d 'Workspace commands (list|run)'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a plugin       -d 'Plugin commands (list|install|...)'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a interactive  -d 'Interactive TUI task picker'
-    \\complete -c zr -f -n '__fish_use_subcommand' -a live         -d 'Live TUI log streaming'
-    \\complete -c zr -f -n '__fish_seen_subcommand_from workspace' -a 'list run'
-    \\complete -c zr -f -n '__fish_seen_subcommand_from plugin' -a 'list search install remove update info builtins create'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a run        -d 'Run a task and its dependencies'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a watch      -d 'Watch files and auto-run task'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a workflow   -d 'Run a workflow by name'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a list       -d 'List all available tasks'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a graph      -d 'Visualize workspace dependency graph'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a history    -d 'Show recent run history'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a workspace  -d 'Manage workspace members'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a affected   -d 'Run task on affected members'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a cache      -d 'Manage task cache'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a clean      -d 'Clean zr data'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a plugin     -d 'Manage plugins'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a interactive -d 'Interactive TUI task picker'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a i          -d 'Alias for interactive'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a live       -d 'Run task with live log streaming'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a interactive-run -d 'Run with cancel/retry controls'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a irun       -d 'Alias for interactive-run'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a init       -d 'Scaffold a new zr.toml'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a setup      -d 'Set up project environment'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a validate   -d 'Validate zr.toml'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a lint       -d 'Validate architecture constraints'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a conformance -d 'Check code conformance'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a completion -d 'Print shell completion script'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a tools      -d 'Manage toolchains'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a repo       -d 'Multi-repo orchestration'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a codeowners -d 'Generate CODEOWNERS file'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a version    -d 'Show or bump version'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a publish    -d 'Publish a new version'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a analytics  -d 'Generate build analysis'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a context    -d 'Generate AI-friendly metadata'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a bench      -d 'Benchmark task performance'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a doctor     -d 'Diagnose environment setup'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a env        -d 'Display environment variables'
     \\
-    \\# Task name completions for run/watch/live
-    \\complete -c zr -f -n '__fish_seen_subcommand_from run watch live' -a '(__zr_tasks)'
+    \\# Subcommand arguments
+    \\complete -c zr -f -n '__fish_seen_subcommand_from workspace' -a 'list run sync'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from plugin' -a 'list search install remove update info builtins create'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from tools' -a 'list install outdated'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from repo' -a 'sync status graph run'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from cache' -a 'clear status'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from codeowners' -a 'generate'
+    \\
+    \\# Task name completions for run/watch/live/affected/bench/interactive-run/irun
+    \\complete -c zr -f -n '__fish_seen_subcommand_from run watch live affected bench interactive-run irun' -a '(__zr_tasks)'
     \\
     \\# Workflow name completions for workflow
     \\complete -c zr -f -n '__fish_seen_subcommand_from workflow' -a '(__zr_workflows)'
@@ -160,6 +229,7 @@ pub const FISH_COMPLETION =
     \\
     \\# Global options
     \\complete -c zr -l help       -s h -d 'Show help'
+    \\complete -c zr -l version          -d 'Show version information'
     \\complete -c zr -l profile    -s p -d 'Activate named profile' -r
     \\complete -c zr -l dry-run    -s n -d 'Show plan without executing'
     \\complete -c zr -l jobs       -s j -d 'Max parallel tasks' -r
@@ -167,7 +237,9 @@ pub const FISH_COMPLETION =
     \\complete -c zr -l quiet      -s q -d 'Suppress non-error output'
     \\complete -c zr -l verbose    -s v -d 'Verbose output'
     \\complete -c zr -l config           -d 'Config file path' -r -F
-    \\complete -c zr -l format    -s f -d 'Output format' -r -a 'text json'
+    \\complete -c zr -l format     -s f -d 'Output format' -r -a 'text json'
+    \\complete -c zr -l monitor    -s m -d 'Display live resource usage'
+    \\complete -c zr -l affected         -d 'Run only affected members' -r
     \\
 ;
 
@@ -238,4 +310,67 @@ test "completion scripts include workspace command" {
     try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "workspace") != null);
     try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "workspace") != null);
     try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "workspace") != null);
+}
+
+test "completion scripts include new Phase 5-8 commands" {
+    // Phase 5: toolchains
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "tools") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "tools") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "tools") != null);
+
+    // Phase 6: monorepo intelligence
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "affected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "affected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "affected") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "lint") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "lint") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "lint") != null);
+
+    // Phase 7: multi-repo
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "repo") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "repo") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "repo") != null);
+
+    // Phase 8: enterprise
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "codeowners") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "codeowners") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "codeowners") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "analytics") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "analytics") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "analytics") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "conformance") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "conformance") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "conformance") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "bench") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "bench") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "bench") != null);
+
+    // Utility commands
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "doctor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "doctor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "doctor") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "clean") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "clean") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "clean") != null);
+}
+
+test "completion scripts include --monitor and --affected flags" {
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--monitor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--monitor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "monitor") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--affected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--affected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "affected") != null);
+}
+
+test "completion scripts include --version flag" {
+    try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "--version") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ZSH_COMPLETION, "--version") != null);
+    try std.testing.expect(std.mem.indexOf(u8, FISH_COMPLETION, "version") != null);
 }
