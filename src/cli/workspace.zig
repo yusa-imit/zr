@@ -470,6 +470,146 @@ pub fn cmdWorkspaceRun(
     return if (overall_success) 0 else 1;
 }
 
+/// Run a task on a filtered list of workspace members
+/// Used by `zr affected` command with pre-computed affected projects
+pub fn cmdWorkspaceRunFiltered(
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    filtered_members: []const []const u8,
+    profile_name: ?[]const u8,
+    dry_run: bool,
+    max_jobs: u32,
+    config_path: []const u8,
+    json_output: bool,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    _ = profile_name;
+    _ = config_path;
+
+    var overall_success: bool = true;
+    var ran_count: usize = 0;
+    var skip_count: usize = 0;
+    var json_emitted: usize = 0;
+
+    const effective_json = json_output and !dry_run;
+
+    if (effective_json) {
+        try w.writeAll("{\"task\":");
+        try common.writeJsonString(w, task_name);
+        try w.writeAll(",\"members\":[");
+    }
+
+    for (filtered_members) |member_path| {
+        const member_cfg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ member_path, common.CONFIG_FILE });
+        defer allocator.free(member_cfg);
+
+        var member_config = loader.loadFromFile(allocator, member_cfg) catch |err| {
+            if (err == error.FileNotFound) continue;
+            try color.printError(ew, use_color,
+                "workspace: failed to load {s}: {s}\n", .{ member_cfg, @errorName(err) });
+            overall_success = false;
+            continue;
+        };
+        defer member_config.deinit();
+
+        if (member_config.tasks.get(task_name) == null) {
+            skip_count += 1;
+            continue;
+        }
+
+        ran_count += 1;
+
+        if (dry_run) {
+            try color.printBold(w, use_color, "\n── {s} (dry-run) ──\n", .{member_path});
+            var plan = try scheduler.planDryRun(allocator, &member_config, &[_][]const u8{task_name});
+            defer plan.deinit();
+            for (plan.levels, 0..) |level, li| {
+                try w.print("  Level {d}: ", .{li});
+                for (level.tasks, 0..) |t, ti| {
+                    if (ti > 0) try w.writeAll(", ");
+                    try w.writeAll(t);
+                }
+                try w.writeAll("\n");
+            }
+            continue;
+        }
+
+        if (effective_json) {
+            if (json_emitted > 0) try w.writeAll(",");
+        } else {
+            try color.printBold(w, use_color, "\n── {s} ──\n", .{member_path});
+        }
+
+        const sched_cfg = scheduler.SchedulerConfig{
+            .max_jobs = max_jobs,
+            .inherit_stdio = true,
+            .dry_run = false,
+        };
+        const task_names = [_][]const u8{task_name};
+        var result = scheduler.run(allocator, &member_config, &task_names, sched_cfg) catch |err| {
+            try color.printError(ew, use_color,
+                "workspace: {s}: failed: {s}\n", .{ member_path, @errorName(err) });
+            overall_success = false;
+            if (effective_json) {
+                try w.writeAll("{\"path\":");
+                try common.writeJsonString(w, member_path);
+                try w.writeAll(",\"success\":false}");
+                json_emitted += 1;
+            }
+            continue;
+        };
+        defer result.deinit(allocator);
+
+        if (!result.total_success) overall_success = false;
+
+        if (effective_json) {
+            try w.writeAll("{\"path\":");
+            try common.writeJsonString(w, member_path);
+            try w.print(",\"success\":{s}", .{if (result.total_success) "true" else "false"});
+            try w.writeAll("}");
+            json_emitted += 1;
+        } else {
+            if (result.total_success) {
+                try color.printSuccess(w, use_color, "  ✓ {s}\n", .{member_path});
+            } else {
+                try color.printError(ew, use_color, "  ✗ {s}: task failed\n", .{member_path});
+            }
+        }
+    }
+
+    if (ran_count == 0 and !dry_run) {
+        if (effective_json) {
+            try w.print("],\"ran\":0,\"skipped\":{d},\"success\":false}}\n", .{skip_count});
+        } else {
+            try color.printError(ew, use_color,
+                "workspace: no members define task '{s}'\n", .{task_name});
+        }
+        return 1;
+    }
+
+    if (effective_json) {
+        try w.print("],\"ran\":{d},\"skipped\":{d},\"success\":{s}}}\n",
+            .{ ran_count, skip_count, if (overall_success) "true" else "false" });
+    } else {
+        try w.print("\n", .{});
+        if (skip_count > 0) {
+            try color.printDim(w, use_color, "  ({d} member(s) skipped — task '{s}' not defined)\n",
+                .{ skip_count, task_name });
+        }
+        if (overall_success) {
+            try color.printSuccess(w, use_color, "All {d} member(s) succeeded\n", .{ran_count});
+        } else {
+            try color.printError(ew, use_color,
+                "workspace: one or more members failed\n", .{});
+            return 1;
+        }
+    }
+
+    return if (overall_success) 0 else 1;
+}
+
 test "workspace: Workspace struct deinit is safe" {
     const allocator = std.testing.allocator;
     // Build a Workspace manually and deinit it
