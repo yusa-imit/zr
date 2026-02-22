@@ -154,6 +154,50 @@ pub fn runTaskAcrossRepos(
     return try results.toOwnedSlice(allocator);
 }
 
+/// Check if a repository has git changes compared to a base reference.
+fn hasGitChanges(
+    allocator: std.mem.Allocator,
+    repo_path: []const u8,
+    base_ref: []const u8,
+) !bool {
+    // Build git command: git diff --quiet <base_ref>...HEAD
+    // Exit code 0 = no changes, 1 = has changes, >1 = error
+    const diff_spec = try std.fmt.allocPrint(allocator, "{s}...HEAD", .{base_ref});
+    defer allocator.free(diff_spec);
+
+    const args = [_][]const u8{
+        "git",
+        "diff",
+        "--quiet",
+        diff_spec,
+    };
+
+    var child = std.process.Child.init(&args, allocator);
+    child.cwd = repo_path;
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+
+    child.spawn() catch {
+        // If git command fails, assume no changes (repo might not be initialized)
+        return false;
+    };
+
+    const term = child.wait() catch {
+        // If wait fails, assume no changes
+        return false;
+    };
+
+    // git diff --quiet returns:
+    // - 0 if no changes
+    // - 1 if there are changes
+    // - >1 if error
+    if (term == .Exited) {
+        return term.Exited == 1; // true if exit code is 1 (has changes)
+    }
+
+    return false;
+}
+
 /// Determine if a task should run in a specific repository.
 fn shouldRunInRepo(
     allocator: std.mem.Allocator,
@@ -202,9 +246,13 @@ fn shouldRunInRepo(
 
     // Filter by affected (git diff-based)
     if (options.affected) {
-        // TODO: Implement git diff-based affected detection
-        // For now, return true (no filtering)
-        return true;
+        const base_ref = options.affected_base orelse "origin/main";
+
+        // Get changed files in this repo
+        const repo_path = node.path;
+        const changed = try hasGitChanges(allocator, repo_path, base_ref);
+
+        return changed;
     }
 
     return true;
@@ -433,4 +481,129 @@ test "shouldRunInRepo - filter by tags" {
 
     const result_web = try shouldRunInRepo(allocator, &graph, "web", options);
     try std.testing.expectEqual(false, result_web);
+}
+
+test "hasGitChanges - repo with changes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Create a temporary directory for testing
+    const tmp_dir = std.testing.tmpDir(.{});
+    var dir = tmp_dir.dir;
+
+    // Initialize git repo
+    {
+        const args = [_][]const u8{ "git", "init" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+
+    // Create initial commit
+    {
+        const file = try dir.createFile("test.txt", .{});
+        defer file.close();
+        try file.writeAll("initial");
+    }
+    {
+        const args = [_][]const u8{ "git", "add", "test.txt" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+    {
+        const args = [_][]const u8{ "git", "commit", "-m", "initial" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+
+    // Make a change
+    {
+        const file = try dir.createFile("test.txt", .{});
+        defer file.close();
+        try file.writeAll("changed");
+    }
+
+    var buf: [1024]u8 = undefined;
+    const path = try dir.realpath(".", &buf);
+
+    // Check if there are changes (should be true)
+    const has_changes = try hasGitChanges(allocator, path, "HEAD");
+    try std.testing.expectEqual(true, has_changes);
+}
+
+test "hasGitChanges - repo without changes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Create a temporary directory for testing
+    const tmp_dir = std.testing.tmpDir(.{});
+    var dir = tmp_dir.dir;
+
+    // Initialize git repo
+    {
+        const args = [_][]const u8{ "git", "init" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+
+    // Create initial commit
+    {
+        const file = try dir.createFile("test.txt", .{});
+        defer file.close();
+        try file.writeAll("initial");
+    }
+    {
+        const args = [_][]const u8{ "git", "add", "test.txt" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+    {
+        const args = [_][]const u8{ "git", "commit", "-m", "initial" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+
+    var buf: [1024]u8 = undefined;
+    const path = try dir.realpath(".", &buf);
+
+    // Check if there are changes (should be false - no changes made)
+    const has_changes = try hasGitChanges(allocator, path, "HEAD");
+    try std.testing.expectEqual(false, has_changes);
 }

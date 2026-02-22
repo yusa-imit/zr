@@ -87,6 +87,7 @@ pub fn generateYamlOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
     // Recent changes
     try writer.writeAll("\nrecent_changes:\n");
     try writer.print("  commit_count: {d}\n", .{ctx.recent_changes.commit_count});
+    try writer.print("  files_changed: {d}\n", .{ctx.recent_changes.files_changed});
     try writer.print("  time_range_days: {d}\n", .{ctx.recent_changes.time_range_days});
     try writer.writeAll("  affected_packages:\n");
 

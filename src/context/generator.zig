@@ -312,8 +312,44 @@ fn collectRecentChanges(allocator: std.mem.Allocator, ctx: *ProjectContext) !voi
 
     ctx.recent_changes.commit_count = line_count;
 
-    // TODO: Could parse git diff to get affected files/packages
-    // For now, just report commit count
+    // Get affected files from git diff
+    collectAffectedFiles(allocator, ctx, @intCast(days)) catch {
+        // If git diff fails, just continue without affected files
+    };
+}
+
+/// Collect affected files from git diff
+fn collectAffectedFiles(allocator: std.mem.Allocator, ctx: *ProjectContext, days: u32) !void {
+    // Get changed files in the time range
+    const since_arg = try std.fmt.allocPrint(allocator, "HEAD@{{'{d} days ago'}}", .{days});
+    defer allocator.free(since_arg);
+
+    const argv = [_][]const u8{ "git", "diff", "--name-only", since_arg, "HEAD" };
+
+    var child = std.process.Child.init(&argv, allocator);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Ignore;
+
+    try child.spawn();
+
+    const stdout = try child.stdout.?.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    defer allocator.free(stdout);
+
+    const term = try child.wait();
+    if (term != .Exited or term.Exited != 0) {
+        return error.GitDiffFailed;
+    }
+
+    // Count unique files
+    var file_count: usize = 0;
+    var lines = std.mem.splitScalar(u8, stdout, '\n');
+    while (lines.next()) |line| {
+        if (line.len > 0) {
+            file_count += 1;
+        }
+    }
+
+    ctx.recent_changes.files_changed = file_count;
 }
 
 /// Get current project name from directory or git

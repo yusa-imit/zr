@@ -171,6 +171,7 @@ pub const RecentChanges = struct {
     allocator: std.mem.Allocator,
     affected_packages: std.ArrayList([]const u8),
     commit_count: usize,
+    files_changed: usize,
     time_range_days: usize,
 
     pub fn init(allocator: std.mem.Allocator) RecentChanges {
@@ -178,6 +179,7 @@ pub const RecentChanges = struct {
             .allocator = allocator,
             .affected_packages = std.ArrayList([]const u8){},
             .commit_count = 0,
+            .files_changed = 0,
             .time_range_days = 7, // Default: last 7 days
         };
     }
