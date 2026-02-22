@@ -350,6 +350,11 @@ fn run(
         return 0;
     }
 
+    if (std.mem.eql(u8, cmd, "--version")) {
+        try printVersion(effective_w, effective_color);
+        return 0;
+    }
+
     if (std.mem.eql(u8, cmd, "run")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "run: missing task name\n\n  Hint: zr run <task-name>\n", .{});
@@ -505,6 +510,11 @@ fn run(
     }
 }
 
+fn printVersion(w: *std.Io.Writer, use_color: bool) !void {
+    try color.printBold(w, use_color, "zr v0.0.4", .{});
+    try w.print("\n", .{});
+}
+
 fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "zr v0.0.4", .{});
     try w.print(" - Zig Task Runner\n\n", .{});
@@ -556,6 +566,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  env [OPTIONS]          Display environment variables for tasks\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
+    try w.print("  --version             Show version information\n", .{});
     try w.print("  --profile, -p <name>  Activate a named profile (overrides env/task settings)\n", .{});
     try w.print("  --dry-run, -n         Show what would run without executing (run/workflow only)\n", .{});
     try w.print("  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n", .{});
@@ -619,6 +630,22 @@ test "--verbose flag is parsed and does not crash" {
 
     // --verbose with no command prints help (exit 0).
     const fake_args = [_][]const u8{ "zr", "--verbose" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "--version flag prints version and exits successfully" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    // --version should print version info and exit 0.
+    const fake_args = [_][]const u8{ "zr", "--version" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
