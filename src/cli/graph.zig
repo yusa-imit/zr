@@ -4,6 +4,7 @@ const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
 const workspace = @import("workspace.zig");
 const affected_mod = @import("../util/affected.zig");
+const synthetic = @import("../multirepo/synthetic.zig");
 
 /// Output format for graph visualization
 pub const GraphFormat = enum {
@@ -34,6 +35,14 @@ pub fn buildDependencyGraph(
     config_path: []const u8,
     ew: *std.Io.Writer,
 ) ![]GraphNode {
+    // Check if synthetic workspace is active first
+    var synthetic_workspace = try synthetic.loadSyntheticWorkspace(allocator);
+    if (synthetic_workspace) |*sw| {
+        defer sw.deinit(allocator);
+        return buildGraphFromSyntheticWorkspace(allocator, sw);
+    }
+
+    // Fall back to regular workspace configuration
     var root_config = (try common.loadConfig(allocator, config_path, null, ew, true)) orelse return error.NoConfig;
     defer root_config.deinit();
 
@@ -78,6 +87,42 @@ pub fn buildDependencyGraph(
         var deps = std.ArrayList([]const u8){};
         if (member_config.workspace) |member_ws| {
             for (member_ws.member_dependencies) |dep| {
+                try deps.append(allocator, try allocator.dupe(u8, dep));
+            }
+        }
+
+        try nodes.append(allocator, GraphNode{
+            .path = path_copy,
+            .dependencies = try deps.toOwnedSlice(allocator),
+            .is_affected = false,
+        });
+    }
+
+    return nodes.toOwnedSlice(allocator);
+}
+
+/// Build dependency graph from synthetic workspace
+fn buildGraphFromSyntheticWorkspace(
+    allocator: std.mem.Allocator,
+    sw: *const synthetic.SyntheticWorkspace,
+) ![]GraphNode {
+    var nodes = std.ArrayList(GraphNode){};
+    errdefer {
+        for (nodes.items) |node| {
+            allocator.free(node.path);
+            for (node.dependencies) |dep| allocator.free(dep);
+            allocator.free(node.dependencies);
+        }
+        nodes.deinit(allocator);
+    }
+
+    for (sw.members) |member_path| {
+        const path_copy = try allocator.dupe(u8, member_path);
+
+        // Get dependencies from synthetic workspace dependency map
+        var deps = std.ArrayList([]const u8){};
+        if (sw.dependencies.get(member_path)) |member_deps| {
+            for (member_deps) |dep| {
                 try deps.append(allocator, try allocator.dupe(u8, dep));
             }
         }
@@ -474,4 +519,62 @@ test "markAffectedNodes" {
 
     try std.testing.expect(nodes[0].is_affected);
     try std.testing.expect(!nodes[1].is_affected);
+}
+
+test "buildGraphFromSyntheticWorkspace" {
+    const allocator = std.testing.allocator;
+
+    // Create a mock synthetic workspace
+    const members = try allocator.alloc([]const u8, 2);
+    members[0] = try allocator.dupe(u8, "repo1");
+    members[1] = try allocator.dupe(u8, "repo2");
+
+    var deps_map = std.StringHashMap([]const []const u8).init(allocator);
+
+    // repo1 depends on nothing
+    const repo1_deps = try allocator.alloc([]const u8, 0);
+    try deps_map.put(try allocator.dupe(u8, "repo1"), repo1_deps);
+
+    // repo2 depends on repo1
+    const repo2_deps = try allocator.alloc([]const u8, 1);
+    repo2_deps[0] = try allocator.dupe(u8, "repo1");
+    try deps_map.put(try allocator.dupe(u8, "repo2"), repo2_deps);
+
+    var sw = synthetic.SyntheticWorkspace{
+        .name = try allocator.dupe(u8, "test-workspace"),
+        .root_path = try allocator.dupe(u8, "/tmp/test"),
+        .members = members,
+        .dependencies = deps_map,
+    };
+    defer sw.deinit(allocator);
+
+    const nodes = try buildGraphFromSyntheticWorkspace(allocator, &sw);
+    defer {
+        for (nodes) |node| {
+            allocator.free(node.path);
+            for (node.dependencies) |dep| allocator.free(dep);
+            allocator.free(node.dependencies);
+        }
+        allocator.free(nodes);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), nodes.len);
+
+    // Find repo1 node
+    var repo1_node: ?*const GraphNode = null;
+    var repo2_node: ?*const GraphNode = null;
+    for (nodes) |*node| {
+        if (std.mem.eql(u8, node.path, "repo1")) {
+            repo1_node = node;
+        } else if (std.mem.eql(u8, node.path, "repo2")) {
+            repo2_node = node;
+        }
+    }
+
+    try std.testing.expect(repo1_node != null);
+    try std.testing.expect(repo2_node != null);
+
+    try std.testing.expectEqual(@as(usize, 0), repo1_node.?.dependencies.len);
+    try std.testing.expectEqual(@as(usize, 1), repo2_node.?.dependencies.len);
+    try std.testing.expectEqualStrings("repo1", repo2_node.?.dependencies[0]);
 }

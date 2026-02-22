@@ -134,6 +134,35 @@ pub fn cmdWorkspaceList(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
+    // Check if synthetic workspace is active
+    var synthetic_workspace = try synthetic.loadSyntheticWorkspace(allocator);
+    if (synthetic_workspace) |*sw| {
+        defer sw.deinit(allocator);
+
+        if (json_output) {
+            try w.writeAll("{\"members\":[");
+            for (sw.members, 0..) |m, i| {
+                if (i > 0) try w.writeAll(",");
+                try w.writeAll("{\"path\":");
+                try common.writeJsonString(w, m);
+                try w.writeAll("}");
+            }
+            try w.writeAll("]}\n");
+        } else {
+            try color.printBold(w, use_color, "Workspace Members ({d}) [synthetic]:\n", .{sw.members.len});
+            if (sw.members.len == 0) {
+                try color.printDim(w, use_color, "  (no members found)\n", .{});
+            } else {
+                for (sw.members) |m| {
+                    try w.print("  {s}\n", .{m});
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    // Fall back to regular workspace configuration
     var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -186,21 +215,45 @@ pub fn cmdWorkspaceRun(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    var root_config = (try common.loadConfig(allocator, config_path, profile_name, ew, use_color)) orelse return 1;
-    defer root_config.deinit();
-
-    const ws = root_config.workspace orelse {
-        try color.printError(ew, use_color,
-            "workspace: no [workspace] section in {s}\n\n  Hint: Add [workspace] members = [\"packages/*\"] to your zr.toml\n",
-            .{config_path});
-        return 1;
+    // Check if synthetic workspace is active
+    var synthetic_workspace = try synthetic.loadSyntheticWorkspace(allocator);
+    const members_from_synthetic = if (synthetic_workspace) |*sw| blk: {
+        // Use synthetic workspace members
+        const members_copy = try allocator.alloc([]const u8, sw.members.len);
+        for (sw.members, 0..) |m, i| {
+            members_copy[i] = try allocator.dupe(u8, m);
+        }
+        break :blk members_copy;
+    } else null;
+    defer if (synthetic_workspace) |*sw| {
+        sw.deinit(allocator);
+    };
+    defer if (members_from_synthetic) |mfs| {
+        for (mfs) |m| allocator.free(m);
+        allocator.free(mfs);
     };
 
-    const members = try resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
-    defer {
-        for (members) |m| allocator.free(m);
-        allocator.free(members);
-    }
+    // Fall back to regular workspace if no synthetic workspace
+    var root_config_opt: ?loader.Config = null;
+    defer if (root_config_opt) |*cfg| cfg.deinit();
+
+    const members = if (members_from_synthetic) |mfs| blk: {
+        break :blk mfs;
+    } else blk: {
+        const root_config = (try common.loadConfig(allocator, config_path, profile_name, ew, use_color)) orelse return 1;
+        root_config_opt = root_config;
+
+        const ws = root_config.workspace orelse {
+            try color.printError(ew, use_color,
+                "workspace: no [workspace] section in {s}\n\n  Hint: Add [workspace] members = [\"packages/*\"] to your zr.toml\n",
+                .{config_path});
+            return 1;
+        };
+
+        const resolved_members = try resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
+        break :blk resolved_members;
+    };
+    // Note: members will be freed by the defers above
 
     if (members.len == 0) {
         try color.printError(ew, use_color,
