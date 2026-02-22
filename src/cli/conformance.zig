@@ -1,6 +1,7 @@
 const std = @import("std");
 const conformance_types = @import("../conformance/types.zig");
 const conformance_engine = @import("../conformance/engine.zig");
+const conformance_fixer = @import("../conformance/fixer.zig");
 const config_loader = @import("../config/loader.zig");
 const output = @import("../output/color.zig");
 
@@ -88,7 +89,35 @@ pub fn cmdConformance(allocator: std.mem.Allocator, args: []const []const u8) !u
     }
 
     if (fix_mode) {
-        std.debug.print("\nNote: Auto-fix is not yet implemented for these violations.\n", .{});
+        std.debug.print("\nAttempting to auto-fix violations...\n", .{});
+
+        // Build list of rule types for each violation
+        var rule_types = std.ArrayList(conformance_types.RuleType){};
+        defer rule_types.deinit(allocator);
+
+        for (result.violations) |violation| {
+            // Find the rule type for this violation
+            for (config.conformance.rules) |rule| {
+                if (std.mem.eql(u8, rule.id, violation.rule_id)) {
+                    try rule_types.append(allocator, rule.type);
+                    break;
+                }
+            }
+        }
+
+        const fix_result = try conformance_fixer.applyFixes(allocator, result.violations, rule_types.items);
+
+        std.debug.print("\nFix results:\n", .{});
+        std.debug.print("  Fixed: {d}\n", .{fix_result.fixed_count});
+        std.debug.print("  Skipped (not auto-fixable): {d}\n", .{fix_result.skipped_count});
+        if (fix_result.failed_count > 0) {
+            std.debug.print("  Failed: {d}\n", .{fix_result.failed_count});
+        }
+
+        if (fix_result.fixed_count > 0) {
+            std.debug.print("\n✓ Successfully fixed {d} violation(s).\n", .{fix_result.fixed_count});
+            return 0;
+        }
     }
 
     // Return non-zero if there are errors or (fail_on_warning and warnings)
@@ -125,7 +154,7 @@ fn printHelp() void {
         \\Check code conformance against configured rules.
         \\
         \\Options:
-        \\  --fix              Auto-fix violations where possible (not yet implemented)
+        \\  --fix              Auto-fix violations where possible
         \\  -v, --verbose      Show detailed violation information
         \\  -c, --config PATH  Path to config file (default: zr.toml)
         \\  -h, --help         Show this help message
@@ -133,7 +162,7 @@ fn printHelp() void {
         \\Examples:
         \\  zr conformance              # Run all conformance checks
         \\  zr conformance --verbose    # Show detailed rule information
-        \\  zr conformance --fix        # Auto-fix violations (future)
+        \\  zr conformance --fix        # Auto-fix violations
         \\
         \\Configuration:
         \\  Add conformance rules to zr.toml:

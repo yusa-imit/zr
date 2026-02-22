@@ -154,6 +154,7 @@ comptime {
     _ = @import("conformance/types.zig");
     _ = @import("conformance/engine.zig");
     _ = @import("conformance/parser.zig");
+    _ = @import("conformance/fixer.zig");
     _ = bench_cmd;
     _ = @import("bench/types.zig");
     _ = @import("bench/runner.zig");
