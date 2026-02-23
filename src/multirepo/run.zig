@@ -160,39 +160,50 @@ fn hasGitChanges(
     repo_path: []const u8,
     base_ref: []const u8,
 ) !bool {
-    // Build git command: git diff --quiet <base_ref>...HEAD
-    // Exit code 0 = no changes, 1 = has changes, >1 = error
-    const diff_spec = try std.fmt.allocPrint(allocator, "{s}...HEAD", .{base_ref});
-    defer allocator.free(diff_spec);
+    // Check for uncommitted changes first (working directory + staged)
+    {
+        const args = [_][]const u8{ "git", "diff", "--quiet" };
+        var child = std.process.Child.init(&args, allocator);
+        child.cwd = repo_path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        child.spawn() catch return false;
+        const term = child.wait() catch return false;
+        if (term == .Exited and term.Exited == 1) {
+            return true; // Has uncommitted changes
+        }
+    }
 
-    const args = [_][]const u8{
-        "git",
-        "diff",
-        "--quiet",
-        diff_spec,
-    };
+    // Check for staged changes
+    {
+        const args = [_][]const u8{ "git", "diff", "--quiet", "--cached" };
+        var child = std.process.Child.init(&args, allocator);
+        child.cwd = repo_path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        child.spawn() catch return false;
+        const term = child.wait() catch return false;
+        if (term == .Exited and term.Exited == 1) {
+            return true; // Has staged changes
+        }
+    }
 
-    var child = std.process.Child.init(&args, allocator);
-    child.cwd = repo_path;
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
+    // Check for committed changes between base_ref and HEAD
+    // Only check if base_ref is not HEAD (to avoid HEAD...HEAD comparison)
+    if (!std.mem.eql(u8, base_ref, "HEAD")) {
+        const diff_spec = try std.fmt.allocPrint(allocator, "{s}...HEAD", .{base_ref});
+        defer allocator.free(diff_spec);
 
-    child.spawn() catch {
-        // If git command fails, assume no changes (repo might not be initialized)
-        return false;
-    };
-
-    const term = child.wait() catch {
-        // If wait fails, assume no changes
-        return false;
-    };
-
-    // git diff --quiet returns:
-    // - 0 if no changes
-    // - 1 if there are changes
-    // - >1 if error
-    if (term == .Exited) {
-        return term.Exited == 1; // true if exit code is 1 (has changes)
+        const args = [_][]const u8{ "git", "diff", "--quiet", diff_spec };
+        var child = std.process.Child.init(&args, allocator);
+        child.cwd = repo_path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        child.spawn() catch return false;
+        const term = child.wait() catch return false;
+        if (term == .Exited and term.Exited == 1) {
+            return true; // Has committed changes
+        }
     }
 
     return false;
