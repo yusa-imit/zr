@@ -518,12 +518,17 @@ pub const Config = struct {
             const s_cond = if (stage.condition) |c| try self.allocator.dupe(u8, c) else null;
             errdefer if (s_cond) |c| self.allocator.free(c);
 
+            const s_on_failure = if (stage.on_failure) |f| try self.allocator.dupe(u8, f) else null;
+            errdefer if (s_on_failure) |f| self.allocator.free(f);
+
             wf_stages[i] = Stage{
                 .name = s_name,
                 .tasks = s_tasks,
                 .parallel = stage.parallel,
                 .fail_fast = stage.fail_fast,
                 .condition = s_cond,
+                .approval = stage.approval,
+                .on_failure = s_on_failure,
             };
             stages_duped += 1;
         }
