@@ -347,7 +347,15 @@
   - Colored terminal output (cyan for alias names)
   - Example: `zr alias add dev "run build && run test"`
   - 8 unit tests: init/deinit, set/get/remove, TOML parsing, CLI validation
-  - Future enhancement: automatic alias expansion (e.g., `zr dev` → `zr run build && run test`)
+- [x] **Alias expansion** — NEW FEATURE: Automatic alias expansion for custom shortcuts
+  - Aliases are automatically expanded at command dispatch (e.g., `zr dev` → `zr run build`)
+  - Built-in command names take precedence over aliases
+  - Supports aliases with flags (e.g., `zr alias add check "list --tree"` → `zr check`)
+  - Recursive expansion: expanded command is re-parsed through normal dispatch
+  - Simple tokenization by spaces (sufficient for most use cases)
+  - Error handling: graceful fallback if alias loading fails
+  - 4 new unit tests: expand simple/flags/complex commands, nonexistent alias
+  - Integrated with main.zig command dispatcher before built-in routing
 
 ## Status Summary
 
