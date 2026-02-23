@@ -6,6 +6,7 @@ const matrix = @import("config/matrix.zig");
 const dag_mod = @import("graph/dag.zig");
 const topo_sort = @import("graph/topo_sort.zig");
 const cycle_detect = @import("graph/cycle_detect.zig");
+const graph_ascii = @import("graph/ascii.zig");
 const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const color = @import("output/color.zig");
@@ -84,6 +85,7 @@ comptime {
     _ = dag_mod;
     _ = topo_sort;
     _ = cycle_detect;
+    _ = graph_ascii;
     _ = scheduler;
     _ = process;
     _ = color;
@@ -387,7 +389,14 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "list")) {
         return list_cmd.cmdList(allocator, config_path, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
-        return list_cmd.cmdGraph(allocator, config_path, json_output, effective_w, ew, effective_color);
+        // Parse graph options
+        var ascii_mode = false;
+        for (effective_args[2..]) |arg| {
+            if (std.mem.eql(u8, arg, "--ascii")) {
+                ascii_mode = true;
+            }
+        }
+        return list_cmd.cmdGraph(allocator, config_path, json_output, ascii_mode, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "history")) {
         return run_cmd.cmdHistory(allocator, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
@@ -538,7 +547,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
     try w.print("  workflow <name>        Run a workflow by name\n", .{});
     try w.print("  list                   List all available tasks\n", .{});
-    try w.print("  graph [options]        Visualize workspace dependency graph\n", .{});
+    try w.print("  graph [--ascii]        Show task dependency graph (--ascii for tree view)\n", .{});
     try w.print("  history                Show recent run history\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});

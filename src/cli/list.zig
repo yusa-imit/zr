@@ -4,6 +4,7 @@ const common = @import("common.zig");
 const cycle_detect = @import("../graph/cycle_detect.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
 const cache_store = @import("../cache/store.zig");
+const graph_ascii = @import("../graph/ascii.zig");
 
 pub fn cmdList(
     allocator: std.mem.Allocator,
@@ -128,6 +129,7 @@ pub fn cmdGraph(
     allocator: std.mem.Allocator,
     config_path: []const u8,
     json_output: bool,
+    ascii_mode: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -148,6 +150,14 @@ pub fn cmdGraph(
             .{},
         );
         return 1;
+    }
+
+    // ASCII tree visualization mode
+    if (ascii_mode and !json_output) {
+        try graph_ascii.renderGraph(allocator, w, &dag, .{
+            .use_color = use_color,
+        });
+        return 0;
     }
 
     // Get execution levels for structured output
@@ -377,7 +387,7 @@ test "cmdGraph: text output shows dependency levels" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdGraph(allocator, config_path, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdGraph(allocator, config_path, false, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -401,7 +411,7 @@ test "cmdGraph: json output contains levels array" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdGraph(allocator, config_path, true, &out_w, &err_w, false);
+    const code = try cmdGraph(allocator, config_path, true, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
