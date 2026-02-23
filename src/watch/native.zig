@@ -152,15 +152,25 @@ const LinuxBackend = if (builtin.os.tag == .linux) struct {
             var offset: usize = 0;
             while (offset < n) {
                 const event = @as(*const std.os.linux.inotify_event, @ptrCast(@alignCast(&self.buffer[offset])));
-                offset += @sizeOf(std.os.linux.inotify_event) + event.len;
+                const event_size = @sizeOf(std.os.linux.inotify_event);
+
+                // The name comes after the inotify_event struct
+                const name_ptr = if (event.len > 0)
+                    @as([*:0]const u8, @ptrCast(&self.buffer[offset + event_size]))
+                else
+                    null;
+
+                offset += event_size + event.len;
 
                 // Ignore events we don't care about
-                if (shouldSkip(std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&event.name)), 0))) continue;
+                if (name_ptr) |ptr| {
+                    if (shouldSkip(std.mem.sliceTo(ptr, 0))) continue;
+                }
 
                 const base_path = self.wd_to_path.get(event.wd) orelse continue;
 
                 // Build full path
-                const name_slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&event.name)), 0);
+                const name_slice = if (name_ptr) |ptr| std.mem.sliceTo(ptr, 0) else "";
                 const full_path = if (name_slice.len > 0)
                     try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ base_path, name_slice })
                 else
