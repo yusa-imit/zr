@@ -49,6 +49,7 @@ const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
+const export_cmd = @import("cli/export.zig");
 const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
@@ -164,6 +165,7 @@ comptime {
     _ = doctor_cmd;
     _ = setup_cmd;
     _ = env_cmd;
+    _ = export_cmd;
     _ = affected_cmd;
     _ = clean_cmd;
     _ = upgrade_cmd;
@@ -502,6 +504,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "env")) {
         const env_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return env_cmd.cmdEnv(allocator, env_args, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "export")) {
+        const export_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return export_cmd.cmdExport(allocator, export_args, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "affected")) {
         const affected_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return affected_cmd.cmdAffected(allocator, affected_args, profile_name, dry_run, max_jobs, config_path, json_output, effective_w, ew, effective_color);
@@ -572,6 +577,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  bench <task> [OPTIONS] Benchmark task performance with statistics\n", .{});
     try w.print("  doctor                 Diagnose environment and toolchain setup\n", .{});
     try w.print("  env [OPTIONS]          Display environment variables for tasks\n", .{});
+    try w.print("  export [OPTIONS]       Export env vars in shell-sourceable format\n", .{});
     try w.print("  upgrade [OPTIONS]      Upgrade zr to the latest version\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
