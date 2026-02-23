@@ -22,7 +22,7 @@
 - [x] Task fields: timeout, allow_failure, deps_serial, env, retry, condition, cache, max_concurrent, matrix
 
 ### Phase 2 - Workflows & Expressions — **COMPLETE (100%)**
-- [x] Workflow system (`[workflows.X]` + `[[workflows.X.stages]]`, fail_fast)
+- [x] Workflow system (`[workflows.X]` + `[[workflows.X.stages]]`, fail_fast, **approval**, **on_failure**)
 - [x] Profile system (`--profile`, `ZR_PROFILE`, per-task overrides)
 - [x] **Watch mode** — **NATIVE (inotify/kqueue/ReadDirectoryChangesW)** with polling fallback (8ef87a4)
 - [x] Matrix task execution (Cartesian product, `${matrix.KEY}` interpolation)
@@ -306,6 +306,18 @@
   - 2 new comprehensive tests for tree mode functionality
   - Better UX: `zr list` shows flat list, `zr list --tree` shows dependency tree
   - Reuses battle-tested ASCII rendering from graph module (no code duplication)
+- [x] **Workflow approval and on_failure hooks** (0073a6b, 64a75ce) — NEW FEATURE: Manual approval and failure handling for workflow stages (PRD §5.2.3)
+  - Config parsing: `approval` (bool) and `on_failure` (string) fields in Stage struct
+  - TOML parser: Parse approval/on_failure from [[workflows.X.stages]] sections
+  - Runtime: Manual approval prompt with "y/N" confirmation before stage execution
+  - Runtime: on_failure hook executes specified task when stage fails
+  - src/config/types.zig: Added approval and on_failure fields to Stage struct
+  - src/config/parser.zig: Parse new fields with owned string allocation
+  - src/cli/run.zig: Implement approval prompt (stdin read) and on_failure execution
+  - src/output/color.zig: Add printWarning() with yellow warning symbol
+  - 1 comprehensive test for parsing workflow with approval and on_failure
+  - Example: `[[workflows.release.stages]]` with `approval = true` and `on_failure = "notify"`
+  - User can decline approval to skip stage, on_failure task runs via scheduler.run()
 
 ## Status Summary
 
