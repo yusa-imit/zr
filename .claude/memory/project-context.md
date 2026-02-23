@@ -273,6 +273,12 @@
   - Duplicate task detection in workflow stages
   - StringHashMap-based tracking for efficient duplicate detection
   - 2 new unit tests for edge cases
+- [x] **Toolchain PATH injection in `zr export`** (aa8c9c9) — Completed TODO at export.zig:84:
+  - `zr export --task <name>` now includes toolchain bin directories in PATH
+  - Automatically adds JAVA_HOME for Java, GOROOT for Go
+  - Supports multiple toolchains per task
+  - Enables shell environment replication: `zr export --task build > env.sh && source env.sh`
+  - 1 new test for toolchain environment merging
 
 ## Status Summary
 
