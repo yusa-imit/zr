@@ -92,6 +92,32 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_env = std.ArrayList([2][]const u8){};
     defer task_env.deinit(allocator);
 
+    // Template parsing state — non-owning slices into content
+    var current_template: ?[]const u8 = null;
+    var template_cmd: ?[]const u8 = null;
+    var template_cwd: ?[]const u8 = null;
+    var template_desc: ?[]const u8 = null;
+    var template_timeout_ms: ?u64 = null;
+    var template_allow_failure: bool = false;
+    var template_retry_max: u32 = 0;
+    var template_retry_delay_ms: u64 = 0;
+    var template_retry_backoff: bool = false;
+    var template_condition: ?[]const u8 = null;
+    var template_max_concurrent: u32 = 0;
+    var template_cache: bool = false;
+    var template_max_cpu: ?u32 = null;
+    var template_max_memory: ?u64 = null;
+    var template_deps = std.ArrayList([]const u8){};
+    defer template_deps.deinit(allocator);
+    var template_deps_serial = std.ArrayList([]const u8){};
+    defer template_deps_serial.deinit(allocator);
+    var template_env = std.ArrayList([2][]const u8){};
+    defer template_env.deinit(allocator);
+    var template_toolchain = std.ArrayList([]const u8){};
+    defer template_toolchain.deinit(allocator);
+    var template_params = std.ArrayList([]const u8){};
+    defer template_params.deinit(allocator);
+
     // Workflow parsing state — non-owning slices into content
     var current_workflow: ?[]const u8 = null;
     var workflow_desc: ?[]const u8 = null;
@@ -862,6 +888,138 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
             // Non-owning slice into content
             current_task = trimmed[start..][0..end];
+        } else if (std.mem.startsWith(u8, trimmed, "[templates.")) {
+            // Flush pending template before starting a new one
+            if (current_template) |tmpl_name| {
+                if (template_cmd) |cmd| {
+                    const tmpl_name_owned = try allocator.dupe(u8, tmpl_name);
+                    errdefer allocator.free(tmpl_name_owned);
+
+                    const tmpl_cmd_owned = try allocator.dupe(u8, cmd);
+                    errdefer allocator.free(tmpl_cmd_owned);
+
+                    const tmpl_cwd_owned = if (template_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
+                    errdefer if (tmpl_cwd_owned) |c| allocator.free(c);
+
+                    const tmpl_desc_owned = if (template_desc) |desc| try allocator.dupe(u8, desc) else null;
+                    errdefer if (tmpl_desc_owned) |d| allocator.free(d);
+
+                    const tmpl_condition_owned = if (template_condition) |cond| try allocator.dupe(u8, cond) else null;
+                    errdefer if (tmpl_condition_owned) |c| allocator.free(c);
+
+                    // Dupe deps
+                    const tmpl_deps_owned = try allocator.alloc([]const u8, template_deps.items.len);
+                    var deps_duped: usize = 0;
+                    errdefer {
+                        for (tmpl_deps_owned[0..deps_duped]) |d| allocator.free(d);
+                        allocator.free(tmpl_deps_owned);
+                    }
+                    for (template_deps.items, 0..) |d, i| {
+                        tmpl_deps_owned[i] = try allocator.dupe(u8, d);
+                        deps_duped += 1;
+                    }
+
+                    // Dupe deps_serial
+                    const tmpl_deps_serial_owned = try allocator.alloc([]const u8, template_deps_serial.items.len);
+                    var deps_serial_duped: usize = 0;
+                    errdefer {
+                        for (tmpl_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
+                        allocator.free(tmpl_deps_serial_owned);
+                    }
+                    for (template_deps_serial.items, 0..) |d, i| {
+                        tmpl_deps_serial_owned[i] = try allocator.dupe(u8, d);
+                        deps_serial_duped += 1;
+                    }
+
+                    // Dupe env
+                    const tmpl_env_owned = try allocator.alloc([2][]const u8, template_env.items.len);
+                    var env_duped: usize = 0;
+                    errdefer {
+                        for (tmpl_env_owned[0..env_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
+                        allocator.free(tmpl_env_owned);
+                    }
+                    for (template_env.items, 0..) |pair, i| {
+                        tmpl_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
+                        tmpl_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
+                        env_duped += 1;
+                    }
+
+                    // Dupe toolchain
+                    const tmpl_toolchain_owned = try allocator.alloc([]const u8, template_toolchain.items.len);
+                    var toolchain_duped: usize = 0;
+                    errdefer {
+                        for (tmpl_toolchain_owned[0..toolchain_duped]) |t| allocator.free(t);
+                        allocator.free(tmpl_toolchain_owned);
+                    }
+                    for (template_toolchain.items, 0..) |t, i| {
+                        tmpl_toolchain_owned[i] = try allocator.dupe(u8, t);
+                        toolchain_duped += 1;
+                    }
+
+                    // Dupe params
+                    const tmpl_params_owned = try allocator.alloc([]const u8, template_params.items.len);
+                    var params_duped: usize = 0;
+                    errdefer {
+                        for (tmpl_params_owned[0..params_duped]) |p| allocator.free(p);
+                        allocator.free(tmpl_params_owned);
+                    }
+                    for (template_params.items, 0..) |p, i| {
+                        tmpl_params_owned[i] = try allocator.dupe(u8, p);
+                        params_duped += 1;
+                    }
+
+                    const template = types.TaskTemplate{
+                        .name = tmpl_name_owned,
+                        .cmd = tmpl_cmd_owned,
+                        .cwd = tmpl_cwd_owned,
+                        .description = tmpl_desc_owned,
+                        .deps = tmpl_deps_owned,
+                        .deps_serial = tmpl_deps_serial_owned,
+                        .env = tmpl_env_owned,
+                        .timeout_ms = template_timeout_ms,
+                        .allow_failure = template_allow_failure,
+                        .retry_max = template_retry_max,
+                        .retry_delay_ms = template_retry_delay_ms,
+                        .retry_backoff = template_retry_backoff,
+                        .condition = tmpl_condition_owned,
+                        .max_concurrent = template_max_concurrent,
+                        .cache = template_cache,
+                        .max_cpu = template_max_cpu,
+                        .max_memory = template_max_memory,
+                        .toolchain = tmpl_toolchain_owned,
+                        .params = tmpl_params_owned,
+                    };
+
+                    try config.templates.put(tmpl_name_owned, template);
+                }
+            }
+
+            // Reset template state
+            template_deps.clearRetainingCapacity();
+            template_deps_serial.clearRetainingCapacity();
+            template_env.clearRetainingCapacity();
+            template_toolchain.clearRetainingCapacity();
+            template_params.clearRetainingCapacity();
+            template_cmd = null;
+            template_cwd = null;
+            template_desc = null;
+            template_timeout_ms = null;
+            template_allow_failure = false;
+            template_retry_max = 0;
+            template_retry_delay_ms = 0;
+            template_retry_backoff = false;
+            template_condition = null;
+            template_max_concurrent = 0;
+            template_cache = false;
+            template_max_cpu = null;
+            template_max_memory = null;
+
+            const tmpl_start = "[templates.".len;
+            const tmpl_end = std.mem.indexOf(u8, trimmed[tmpl_start..], "]") orelse continue;
+            current_template = trimmed[tmpl_start..][0..tmpl_end];
         } else if (std.mem.indexOf(u8, trimmed, "=")) |eq_idx| {
             const key = std.mem.trim(u8, trimmed[0..eq_idx], " \t");
             var value = std.mem.trim(u8, trimmed[eq_idx + 1 ..], " \t");
@@ -1223,6 +1381,106 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (current_template != null) {
+                // Template-level key=value parsing (same as task but with params support)
+                if (std.mem.eql(u8, key, "cmd")) {
+                    template_cmd = value;
+                } else if (std.mem.eql(u8, key, "cwd")) {
+                    template_cwd = value;
+                } else if (std.mem.eql(u8, key, "description")) {
+                    template_desc = value;
+                } else if (std.mem.eql(u8, key, "condition")) {
+                    template_condition = value;
+                } else if (std.mem.eql(u8, key, "timeout")) {
+                    template_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "allow_failure")) {
+                    template_allow_failure = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "deps")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try template_deps.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_serial")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try template_deps_serial.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "env")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                try template_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "retry")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (std.mem.eql(u8, rkey, "max")) {
+                                template_retry_max = std.fmt.parseInt(u32, rval, 10) catch 0;
+                            } else if (std.mem.eql(u8, rkey, "delay")) {
+                                template_retry_delay_ms = parseDurationMs(rval) orelse 0;
+                            } else if (std.mem.eql(u8, rkey, "backoff")) {
+                                template_retry_backoff = std.mem.eql(u8, rval, "exponential");
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "max_concurrent")) {
+                    template_max_concurrent = std.fmt.parseInt(u32, value, 10) catch 0;
+                } else if (std.mem.eql(u8, key, "cache")) {
+                    template_cache = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "max_cpu")) {
+                    template_max_cpu = std.fmt.parseInt(u32, value, 10) catch null;
+                } else if (std.mem.eql(u8, key, "max_memory")) {
+                    template_max_memory = types.parseMemoryBytes(value);
+                } else if (std.mem.eql(u8, key, "toolchain")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const tc_str = value[1 .. value.len - 1];
+                        var tc_it = std.mem.splitScalar(u8, tc_str, ',');
+                        while (tc_it.next()) |tc| {
+                            const trimmed_tc = std.mem.trim(u8, tc, " \t\"");
+                            if (trimmed_tc.len > 0) {
+                                try template_toolchain.append(allocator, trimmed_tc);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "params")) {
+                    // Template-specific: required parameter names
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const params_str = value[1 .. value.len - 1];
+                        var params_it = std.mem.splitScalar(u8, params_str, ',');
+                        while (params_it.next()) |param| {
+                            const trimmed_param = std.mem.trim(u8, param, " \t\"");
+                            if (trimmed_param.len > 0) {
+                                try template_params.append(allocator, trimmed_param);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1266,6 +1524,109 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             } else {
                 try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items);
             }
+        }
+    }
+
+    // Flush final pending template
+    if (current_template) |tmpl_name| {
+        if (template_cmd) |cmd| {
+            const tmpl_name_owned = try allocator.dupe(u8, tmpl_name);
+            errdefer allocator.free(tmpl_name_owned);
+
+            const tmpl_cmd_owned = try allocator.dupe(u8, cmd);
+            errdefer allocator.free(tmpl_cmd_owned);
+
+            const tmpl_cwd_owned = if (template_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
+            errdefer if (tmpl_cwd_owned) |c| allocator.free(c);
+
+            const tmpl_desc_owned = if (template_desc) |desc| try allocator.dupe(u8, desc) else null;
+            errdefer if (tmpl_desc_owned) |d| allocator.free(d);
+
+            const tmpl_condition_owned = if (template_condition) |cond| try allocator.dupe(u8, cond) else null;
+            errdefer if (tmpl_condition_owned) |c| allocator.free(c);
+
+            const tmpl_deps_owned = try allocator.alloc([]const u8, template_deps.items.len);
+            var deps_duped: usize = 0;
+            errdefer {
+                for (tmpl_deps_owned[0..deps_duped]) |d| allocator.free(d);
+                allocator.free(tmpl_deps_owned);
+            }
+            for (template_deps.items, 0..) |d, i| {
+                tmpl_deps_owned[i] = try allocator.dupe(u8, d);
+                deps_duped += 1;
+            }
+
+            const tmpl_deps_serial_owned = try allocator.alloc([]const u8, template_deps_serial.items.len);
+            var deps_serial_duped: usize = 0;
+            errdefer {
+                for (tmpl_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
+                allocator.free(tmpl_deps_serial_owned);
+            }
+            for (template_deps_serial.items, 0..) |d, i| {
+                tmpl_deps_serial_owned[i] = try allocator.dupe(u8, d);
+                deps_serial_duped += 1;
+            }
+
+            const tmpl_env_owned = try allocator.alloc([2][]const u8, template_env.items.len);
+            var env_duped: usize = 0;
+            errdefer {
+                for (tmpl_env_owned[0..env_duped]) |pair| {
+                    allocator.free(pair[0]);
+                    allocator.free(pair[1]);
+                }
+                allocator.free(tmpl_env_owned);
+            }
+            for (template_env.items, 0..) |pair, i| {
+                tmpl_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
+                tmpl_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
+                env_duped += 1;
+            }
+
+            const tmpl_toolchain_owned = try allocator.alloc([]const u8, template_toolchain.items.len);
+            var toolchain_duped: usize = 0;
+            errdefer {
+                for (tmpl_toolchain_owned[0..toolchain_duped]) |t| allocator.free(t);
+                allocator.free(tmpl_toolchain_owned);
+            }
+            for (template_toolchain.items, 0..) |t, i| {
+                tmpl_toolchain_owned[i] = try allocator.dupe(u8, t);
+                toolchain_duped += 1;
+            }
+
+            const tmpl_params_owned = try allocator.alloc([]const u8, template_params.items.len);
+            var params_duped: usize = 0;
+            errdefer {
+                for (tmpl_params_owned[0..params_duped]) |p| allocator.free(p);
+                allocator.free(tmpl_params_owned);
+            }
+            for (template_params.items, 0..) |p, i| {
+                tmpl_params_owned[i] = try allocator.dupe(u8, p);
+                params_duped += 1;
+            }
+
+            const template = types.TaskTemplate{
+                .name = tmpl_name_owned,
+                .cmd = tmpl_cmd_owned,
+                .cwd = tmpl_cwd_owned,
+                .description = tmpl_desc_owned,
+                .deps = tmpl_deps_owned,
+                .deps_serial = tmpl_deps_serial_owned,
+                .env = tmpl_env_owned,
+                .timeout_ms = template_timeout_ms,
+                .allow_failure = template_allow_failure,
+                .retry_max = template_retry_max,
+                .retry_delay_ms = template_retry_delay_ms,
+                .retry_backoff = template_retry_backoff,
+                .condition = tmpl_condition_owned,
+                .max_concurrent = template_max_concurrent,
+                .cache = template_cache,
+                .max_cpu = template_max_cpu,
+                .max_memory = template_max_memory,
+                .toolchain = tmpl_toolchain_owned,
+                .params = tmpl_params_owned,
+            };
+
+            try config.templates.put(tmpl_name_owned, template);
         }
     }
 

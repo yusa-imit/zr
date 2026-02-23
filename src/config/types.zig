@@ -245,6 +245,8 @@ pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
     profiles: std.StringHashMap(Profile),
+    /// Task templates from [templates.NAME] sections.
+    templates: std.StringHashMap(TaskTemplate),
     /// Workspace config from [workspace] section, or null if not present.
     workspace: ?Workspace = null,
     /// Plugin configs from [plugins.NAME] sections (owned).
@@ -270,6 +272,7 @@ pub const Config = struct {
             .tasks = std.StringHashMap(Task).init(allocator),
             .workflows = std.StringHashMap(Workflow).init(allocator),
             .profiles = std.StringHashMap(Profile).init(allocator),
+            .templates = std.StringHashMap(TaskTemplate).init(allocator),
             .workspace = null,
             .plugins = &.{},
             .toolchains = ToolchainConfig.init(allocator),
@@ -297,6 +300,11 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.profiles.deinit();
+        var tit = self.templates.iterator();
+        while (tit.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.templates.deinit();
         if (self.workspace) |*ws| ws.deinit(self.allocator);
         for (self.plugins) |*p| {
             var pc = p.*;
@@ -527,6 +535,168 @@ pub const Config = struct {
         };
 
         try self.workflows.put(wf_name, wf);
+    }
+
+    /// Expand a template into a task with parameter substitution.
+    /// Parameters are provided as key-value pairs, and ${key} placeholders
+    /// in the template are replaced with the corresponding values.
+    pub fn expandTemplate(
+        self: *Config,
+        task_name: []const u8,
+        template_name: []const u8,
+        params: std.StringHashMap([]const u8),
+    ) !void {
+        const template = self.templates.get(template_name) orelse return error.TemplateNotFound;
+
+        // Validate that all required parameters are provided
+        for (template.params) |param| {
+            if (!params.contains(param)) {
+                return error.MissingTemplateParameter;
+            }
+        }
+
+        // Substitute parameters in cmd
+        const expanded_cmd = try substituteParams(self.allocator, template.cmd, params);
+        errdefer self.allocator.free(expanded_cmd);
+
+        // Substitute parameters in cwd
+        const expanded_cwd = if (template.cwd) |cwd|
+            try substituteParams(self.allocator, cwd, params)
+        else
+            null;
+        errdefer if (expanded_cwd) |c| self.allocator.free(c);
+
+        // Substitute parameters in description
+        const expanded_desc = if (template.description) |desc|
+            try substituteParams(self.allocator, desc, params)
+        else
+            null;
+        errdefer if (expanded_desc) |d| self.allocator.free(d);
+
+        // Substitute parameters in condition
+        const expanded_condition = if (template.condition) |cond|
+            try substituteParams(self.allocator, cond, params)
+        else
+            null;
+        errdefer if (expanded_condition) |c| self.allocator.free(c);
+
+        // Create task using addTaskImpl with template defaults
+        try addTaskImpl(
+            self,
+            self.allocator,
+            task_name,
+            expanded_cmd,
+            expanded_cwd,
+            expanded_desc,
+            template.deps,
+            template.deps_serial,
+            template.env,
+            template.timeout_ms,
+            template.allow_failure,
+            template.retry_max,
+            template.retry_delay_ms,
+            template.retry_backoff,
+            expanded_condition,
+            template.max_concurrent,
+            template.cache,
+            template.max_cpu,
+            template.max_memory,
+            template.toolchain,
+        );
+    }
+
+    /// Substitute ${param} placeholders in a string with values from the params map.
+    fn substituteParams(
+        allocator: std.mem.Allocator,
+        template_str: []const u8,
+        params: std.StringHashMap([]const u8),
+    ) ![]const u8 {
+        var result = std.ArrayList(u8){};
+        errdefer result.deinit(allocator);
+
+        var i: usize = 0;
+        while (i < template_str.len) {
+            if (i + 2 < template_str.len and template_str[i] == '$' and template_str[i + 1] == '{') {
+                // Find the closing brace
+                const start = i + 2;
+                var end = start;
+                while (end < template_str.len and template_str[end] != '}') : (end += 1) {}
+                if (end >= template_str.len) {
+                    return error.UnclosedPlaceholder;
+                }
+
+                const param_name = template_str[start..end];
+                const value = params.get(param_name) orelse return error.UnknownParameter;
+                try result.appendSlice(allocator, value);
+                i = end + 1;
+            } else {
+                try result.append(allocator, template_str[i]);
+                i += 1;
+            }
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+};
+
+/// Task template definition for reusable task configurations.
+/// Templates can be expanded with parameter substitution (e.g., ${param}).
+pub const TaskTemplate = struct {
+    /// Template name (unique identifier).
+    name: []const u8,
+    /// Command template with parameter placeholders.
+    cmd: []const u8,
+    /// Optional working directory template.
+    cwd: ?[]const u8 = null,
+    /// Optional description template.
+    description: ?[]const u8 = null,
+    /// Default dependencies (can be overridden).
+    deps: [][]const u8 = &.{},
+    /// Default sequential dependencies.
+    deps_serial: [][]const u8 = &.{},
+    /// Default environment variables.
+    env: [][2][]const u8 = &.{},
+    /// Default timeout.
+    timeout_ms: ?u64 = null,
+    /// Default allow_failure flag.
+    allow_failure: bool = false,
+    /// Default retry configuration.
+    retry_max: u32 = 0,
+    retry_delay_ms: u64 = 0,
+    retry_backoff: bool = false,
+    /// Default condition expression.
+    condition: ?[]const u8 = null,
+    /// Default max_concurrent.
+    max_concurrent: u32 = 0,
+    /// Default cache flag.
+    cache: bool = false,
+    /// Default resource limits.
+    max_cpu: ?u32 = null,
+    max_memory: ?u64 = null,
+    /// Default toolchain requirements.
+    toolchain: [][]const u8 = &.{},
+    /// Required template parameters (parameter names to be substituted).
+    params: [][]const u8 = &.{},
+
+    pub fn deinit(self: *TaskTemplate, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.cmd);
+        if (self.cwd) |cwd| allocator.free(cwd);
+        if (self.description) |desc| allocator.free(desc);
+        for (self.deps) |dep| allocator.free(dep);
+        if (self.deps.len > 0) allocator.free(self.deps);
+        for (self.deps_serial) |dep| allocator.free(dep);
+        if (self.deps_serial.len > 0) allocator.free(self.deps_serial);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (self.env.len > 0) allocator.free(self.env);
+        if (self.condition) |c| allocator.free(c);
+        for (self.toolchain) |tc| allocator.free(tc);
+        if (self.toolchain.len > 0) allocator.free(self.toolchain);
+        for (self.params) |p| allocator.free(p);
+        if (self.params.len > 0) allocator.free(self.params);
     }
 };
 
@@ -1001,4 +1171,194 @@ pub fn addTaskImpl(
     };
 
     try config.tasks.put(task_name, task);
+}
+
+test "TaskTemplate: init and deinit" {
+    const allocator = std.testing.allocator;
+
+    const name = try allocator.dupe(u8, "test-template");
+    const cmd = try allocator.dupe(u8, "echo ${message}");
+    const params_list = try allocator.alloc([]const u8, 1);
+    params_list[0] = try allocator.dupe(u8, "message");
+
+    var template = TaskTemplate{
+        .name = name,
+        .cmd = cmd,
+        .params = params_list,
+    };
+
+    template.deinit(allocator);
+}
+
+test "substituteParams: simple substitution" {
+    const allocator = std.testing.allocator;
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    try params.put("name", "world");
+
+    const result = try Config.substituteParams(allocator, "Hello ${name}!", params);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("Hello world!", result);
+}
+
+test "substituteParams: multiple substitutions" {
+    const allocator = std.testing.allocator;
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    try params.put("cmd", "build");
+    try params.put("env", "production");
+
+    const result = try Config.substituteParams(allocator, "npm run ${cmd} --env=${env}", params);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("npm run build --env=production", result);
+}
+
+test "substituteParams: no substitution" {
+    const allocator = std.testing.allocator;
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    const result = try Config.substituteParams(allocator, "plain text", params);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("plain text", result);
+}
+
+test "substituteParams: unclosed placeholder" {
+    const allocator = std.testing.allocator;
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    const result = Config.substituteParams(allocator, "invalid ${param", params);
+    try std.testing.expectError(error.UnclosedPlaceholder, result);
+}
+
+test "substituteParams: unknown parameter" {
+    const allocator = std.testing.allocator;
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    const result = Config.substituteParams(allocator, "Hello ${unknown}!", params);
+    try std.testing.expectError(error.UnknownParameter, result);
+}
+
+test "expandTemplate: basic expansion" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Create a template
+    const template_name = try allocator.dupe(u8, "node-script");
+    const template_cmd = try allocator.dupe(u8, "node ${script}");
+    const template_params = try allocator.alloc([]const u8, 1);
+    template_params[0] = try allocator.dupe(u8, "script");
+
+    const template = TaskTemplate{
+        .name = template_name,
+        .cmd = template_cmd,
+        .params = template_params,
+    };
+
+    try config.templates.put(template_name, template);
+
+    // Expand the template
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+    try params.put("script", "build.js");
+
+    try config.expandTemplate("my-build", "node-script", params);
+
+    // Verify the task was created
+    const task = config.tasks.get("my-build") orelse return error.TaskNotCreated;
+    try std.testing.expectEqualStrings("node build.js", task.cmd);
+}
+
+test "expandTemplate: missing template" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    const result = config.expandTemplate("task", "nonexistent", params);
+    try std.testing.expectError(error.TemplateNotFound, result);
+}
+
+test "expandTemplate: missing parameter" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Create a template with required parameter
+    const template_name = try allocator.dupe(u8, "test-template");
+    const template_cmd = try allocator.dupe(u8, "echo ${message}");
+    const template_params = try allocator.alloc([]const u8, 1);
+    template_params[0] = try allocator.dupe(u8, "message");
+
+    const template = TaskTemplate{
+        .name = template_name,
+        .cmd = template_cmd,
+        .params = template_params,
+    };
+
+    try config.templates.put(template_name, template);
+
+    // Try to expand without providing the required parameter
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+
+    const result = config.expandTemplate("task", "test-template", params);
+    try std.testing.expectError(error.MissingTemplateParameter, result);
+}
+
+test "expandTemplate: with all template fields" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Create a comprehensive template
+    const template_name = try allocator.dupe(u8, "comprehensive");
+    const template_cmd = try allocator.dupe(u8, "${tool} ${action}");
+    const template_desc = try allocator.dupe(u8, "Run ${action} with ${tool}");
+    const template_cwd = try allocator.dupe(u8, "./${dir}");
+    const template_params = try allocator.alloc([]const u8, 3);
+    template_params[0] = try allocator.dupe(u8, "tool");
+    template_params[1] = try allocator.dupe(u8, "action");
+    template_params[2] = try allocator.dupe(u8, "dir");
+
+    const template = TaskTemplate{
+        .name = template_name,
+        .cmd = template_cmd,
+        .description = template_desc,
+        .cwd = template_cwd,
+        .params = template_params,
+        .timeout_ms = 5000,
+        .allow_failure = true,
+        .cache = true,
+    };
+
+    try config.templates.put(template_name, template);
+
+    // Expand the template
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer params.deinit();
+    try params.put("tool", "cargo");
+    try params.put("action", "test");
+    try params.put("dir", "packages/core");
+
+    try config.expandTemplate("rust-test", "comprehensive", params);
+
+    // Verify all fields were expanded correctly
+    const task = config.tasks.get("rust-test") orelse return error.TaskNotCreated;
+    try std.testing.expectEqualStrings("cargo test", task.cmd);
+    try std.testing.expectEqualStrings("Run test with cargo", task.description.?);
+    try std.testing.expectEqualStrings("./packages/core", task.cwd.?);
+    try std.testing.expectEqual(@as(?u64, 5000), task.timeout_ms);
+    try std.testing.expectEqual(true, task.allow_failure);
+    try std.testing.expectEqual(true, task.cache);
 }
