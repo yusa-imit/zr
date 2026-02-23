@@ -441,3 +441,66 @@ test "24: doctor checks system status" {
     // Doctor writes to stderr by default, so check either stdout or stderr
     try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
 }
+
+test "25: history lists recent executions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run a task first to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+
+    // Now check history
+    var history_result = try runZr(allocator, &.{"history"}, tmp_path);
+    defer history_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), history_result.exit_code);
+}
+
+test "26: cache status shows cache info" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "27: workspace list shows members" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create a workspace config
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg1", "pkg2"]
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create member directories
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.makeDir("pkg2");
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
