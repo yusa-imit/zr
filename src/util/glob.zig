@@ -109,7 +109,13 @@ pub fn find(
         }
     } else {
         // Pattern is just filename (e.g., "*.zig")
-        var iter = base_dir.iterate();
+        // NOTE: We reopen base_dir with explicit .iterate = true permission
+        // to avoid EBADF on Linux when the dir fd is in an unexpected state.
+        // This fixes a race condition in CI where tmpDir's fd isn't iterable.
+        var iter_dir = try base_dir.openDir(".", .{ .iterate = true });
+        defer iter_dir.close();
+
+        var iter = iter_dir.iterate();
         while (try iter.next()) |entry| {
             if (entry.kind != .file) continue;
 
@@ -151,7 +157,10 @@ pub fn findDirs(
 
         if (has_wildcards) {
             // Match directories against first component pattern
-            var iter = base_dir.iterate();
+            var iter_dir = try base_dir.openDir(".", .{ .iterate = true });
+            defer iter_dir.close();
+
+            var iter = iter_dir.iterate();
             while (try iter.next()) |entry| {
                 if (entry.kind != .directory) continue;
                 if (entry.name[0] == '.') continue; // Skip hidden dirs
@@ -196,7 +205,10 @@ pub fn findDirs(
         const has_wildcards = std.mem.indexOfAny(u8, pattern, "*?") != null;
 
         if (has_wildcards) {
-            var iter = base_dir.iterate();
+            var iter_dir = try base_dir.openDir(".", .{ .iterate = true });
+            defer iter_dir.close();
+
+            var iter = iter_dir.iterate();
             while (try iter.next()) |entry| {
                 if (entry.kind != .directory) continue;
                 if (entry.name[0] == '.') continue; // Skip hidden dirs
