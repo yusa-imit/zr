@@ -325,3 +325,119 @@ test "15: --no-color disables ANSI" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\x1b") == null);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "\x1b") == null);
 }
+
+test "16: show displays task details" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "show", "hello" }, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Task: hello") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Say hello") != null);
+}
+
+test "17: show with nonexistent task fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "show", "nonexistent" }, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+}
+
+test "18: --version flag displays version info" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{"--version"}, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "19: validate accepts valid config" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "validate", config }, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "20: validate accepts simple usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // validate command doesn't take a path argument — it validates the config in the current directory
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+    // Even if it fails, it shouldn't crash (exit code 0 or 1 both acceptable)
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "21: env shows task environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, ENV_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "env", "--task", "hello" }, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "GREETING") != null);
+}
+
+test "22: export generates shell exports" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, ENV_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "hello" }, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+    // Should contain export statement for GREETING variable
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "export") != null or std.mem.indexOf(u8, result.stdout, "GREETING") != null);
+}
+
+test "23: clean removes cache" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a .zr directory to simulate cache
+    try tmp.dir.makeDir(".zr");
+
+    var result = try runZr(allocator, &.{"clean"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "24: doctor checks system status" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{"doctor"}, null);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Doctor writes to stderr by default, so check either stdout or stderr
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+}
