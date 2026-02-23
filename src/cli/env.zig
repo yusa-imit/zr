@@ -295,16 +295,11 @@ test "env task-specific display" {
     const config_content =
         \\[tasks.build]
         \\cmd = "echo build"
-        \\env = [
-        \\  ["NODE_ENV", "production"],
-        \\  ["DEBUG", "true"],
-        \\]
+        \\env = [["NODE_ENV", "production"], ["DEBUG", "true"]]
         \\
         \\[tasks.test]
         \\cmd = "echo test"
-        \\env = [
-        \\  ["NODE_ENV", "test"],
-        \\]
+        \\env = [["NODE_ENV", "test"]]
         \\
     ;
 

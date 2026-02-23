@@ -1352,10 +1352,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 } else if (std.mem.eql(u8, key, "env")) {
-                    // Parse inline table: { KEY = "value", FOO = "bar" }
-                    // value has already had outer quotes stripped; strip braces now.
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        // Parse inline table: { KEY = "value", FOO = "bar" }
                         const pairs_str = inner[1 .. inner.len - 1];
                         var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
                         while (pairs_it.next()) |pair_str| {
@@ -1365,6 +1364,33 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             if (env_key.len > 0) {
                                 // Non-owning slices into content — addTask will dupe
                                 try task_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    } else if (std.mem.startsWith(u8, inner, "[") and std.mem.endsWith(u8, inner, "]")) {
+                        // Parse array of pairs: [["KEY", "value"], ["FOO", "bar"]]
+                        const array_str = inner[1 .. inner.len - 1];
+                        var depth: usize = 0;
+                        var pair_start: usize = 0;
+                        var in_quotes = false;
+                        for (array_str, 0..) |c, i| {
+                            if (c == '"') in_quotes = !in_quotes;
+                            if (in_quotes) continue;
+                            if (c == '[') {
+                                if (depth == 0) pair_start = i + 1;
+                                depth += 1;
+                            } else if (c == ']' and depth > 0) {
+                                depth -= 1;
+                                if (depth == 0) {
+                                    const pair_str = array_str[pair_start..i];
+                                    var parts_it = std.mem.splitScalar(u8, pair_str, ',');
+                                    const key_part = parts_it.next() orelse continue;
+                                    const val_part = parts_it.next() orelse continue;
+                                    const env_key = std.mem.trim(u8, key_part, " \t\"");
+                                    const env_val = std.mem.trim(u8, val_part, " \t\"");
+                                    if (env_key.len > 0) {
+                                        try task_env.append(allocator, .{ env_key, env_val });
+                                    }
+                                }
                             }
                         }
                     }
