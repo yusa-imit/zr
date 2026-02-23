@@ -723,11 +723,11 @@ test "HardLimitHandle: create and cleanup (Linux)" {
     // (or null if we fell back to soft limits due to permissions)
     if (handle.cgroup_path) |path| {
         // Verify cgroup directory exists
-        var dir = std.fs.openDirAbsolute(path, .{}) catch {
+        var dir_obj = std.fs.openDirAbsolute(path, .{}) catch {
             try std.testing.expect(false); // Should exist
             return;
         };
-        dir.close();
+        dir_obj.close();
     }
 }
 
