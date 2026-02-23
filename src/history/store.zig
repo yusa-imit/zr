@@ -12,6 +12,8 @@ pub const Record = struct {
     duration_ms: u64,
     /// Number of tasks that ran (including deps).
     task_count: u32,
+    /// Total number of retry attempts across all tasks (0 if all succeeded on first try).
+    retry_count: u32,
 
     pub fn deinit(self: Record, allocator: std.mem.Allocator) void {
         allocator.free(self.task_name);
@@ -19,7 +21,7 @@ pub const Record = struct {
 };
 
 /// History store backed by a line-delimited text file.
-/// Each line: `<timestamp>\t<task_name>\t<ok|fail>\t<duration_ms>\t<task_count>`
+/// Each line: `<timestamp>\t<task_name>\t<ok|fail>\t<duration_ms>\t<task_count>\t<retry_count>`
 pub const Store = struct {
     path: []const u8, // owned
     allocator: std.mem.Allocator,
@@ -50,12 +52,13 @@ pub const Store = struct {
 
         var line_buf: [1024]u8 = undefined;
         const status = if (record.success) "ok" else "fail";
-        const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\t{s}\t{d}\t{d}\n", .{
+        const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\t{s}\t{d}\t{d}\t{d}\n", .{
             record.timestamp,
             record.task_name,
             status,
             record.duration_ms,
             record.task_count,
+            record.retry_count,
         });
         try file.writeAll(line);
     }
@@ -105,6 +108,7 @@ pub const Store = struct {
                 .success = r.success,
                 .duration_ms = r.duration_ms,
                 .task_count = r.task_count,
+                .retry_count = r.retry_count,
             };
             try records.append(allocator, owned);
         }
@@ -123,10 +127,12 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
     const status_str = it.next() orelse return error.InvalidFormat;
     const dur_str = it.next() orelse return error.InvalidFormat;
     const count_str = it.next() orelse return error.InvalidFormat;
+    const retry_str = it.next(); // Optional for backward compatibility
 
     const timestamp = std.fmt.parseInt(i64, ts_str, 10) catch return error.InvalidFormat;
     const duration_ms = std.fmt.parseInt(u64, dur_str, 10) catch return error.InvalidFormat;
     const task_count = std.fmt.parseInt(u32, count_str, 10) catch return error.InvalidFormat;
+    const retry_count = if (retry_str) |s| std.fmt.parseInt(u32, s, 10) catch 0 else 0;
     const success = std.mem.eql(u8, status_str, "ok");
 
     return Record{
@@ -135,6 +141,7 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
         .success = success,
         .duration_ms = duration_ms,
         .task_count = task_count,
+        .retry_count = retry_count,
     };
 }
 
@@ -150,7 +157,21 @@ pub fn defaultHistoryPath(allocator: std.mem.Allocator) ![]const u8 {
 // Tests
 // ---------------------------------------------------------------------------
 
-test "parseLine: valid line" {
+test "parseLine: valid line with retry_count" {
+    const allocator = std.testing.allocator;
+    const line = "1700000000\tbuild\tok\t1234\t3\t2";
+    const record = try parseLine(allocator, line);
+    defer record.deinit(allocator);
+
+    try std.testing.expectEqual(@as(i64, 1700000000), record.timestamp);
+    try std.testing.expectEqualStrings("build", record.task_name);
+    try std.testing.expect(record.success);
+    try std.testing.expectEqual(@as(u64, 1234), record.duration_ms);
+    try std.testing.expectEqual(@as(u32, 3), record.task_count);
+    try std.testing.expectEqual(@as(u32, 2), record.retry_count);
+}
+
+test "parseLine: backward compatibility (no retry_count)" {
     const allocator = std.testing.allocator;
     const line = "1700000000\tbuild\tok\t1234\t3";
     const record = try parseLine(allocator, line);
@@ -161,15 +182,17 @@ test "parseLine: valid line" {
     try std.testing.expect(record.success);
     try std.testing.expectEqual(@as(u64, 1234), record.duration_ms);
     try std.testing.expectEqual(@as(u32, 3), record.task_count);
+    try std.testing.expectEqual(@as(u32, 0), record.retry_count); // defaults to 0
 }
 
 test "parseLine: fail status" {
     const allocator = std.testing.allocator;
-    const line = "1700000001\ttest\tfail\t500\t1";
+    const line = "1700000001\ttest\tfail\t500\t1\t0";
     const record = try parseLine(allocator, line);
     defer record.deinit(allocator);
 
     try std.testing.expect(!record.success);
+    try std.testing.expectEqual(@as(u32, 0), record.retry_count);
 }
 
 test "parseLine: invalid format returns error" {
@@ -201,6 +224,7 @@ test "Store: append and loadLast round-trip" {
         .success = true,
         .duration_ms = 200,
         .task_count = 2,
+        .retry_count = 1,
     };
     const r2 = Record{
         .timestamp = 2000,
@@ -208,6 +232,7 @@ test "Store: append and loadLast round-trip" {
         .success = false,
         .duration_ms = 50,
         .task_count = 1,
+        .retry_count = 3,
     };
 
     try store.append(r1);
@@ -251,6 +276,7 @@ test "Store: loadLast with limit smaller than total" {
             .success = true,
             .duration_ms = 10,
             .task_count = 1,
+            .retry_count = 0,
         });
     }
 

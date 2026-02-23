@@ -114,9 +114,15 @@ pub fn cmdRun(
         }
     }
 
+    // Calculate total retry count across all tasks
+    var total_retries: u32 = 0;
+    for (sched_result.results.items) |result| {
+        total_retries += result.retry_count;
+    }
+
     // Record to history (best-effort, ignore errors)
     recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-        @intCast(sched_result.results.items.len));
+        @intCast(sched_result.results.items.len), total_retries);
 
     return if (sched_result.total_success) 0 else 1;
 }
@@ -213,7 +219,9 @@ pub fn cmdWatch(
 
         const elapsed_ms: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns, std.time.ns_per_ms));
 
+        var total_retries: u32 = 0;
         for (sched_result.results.items) |task_result| {
+            total_retries += task_result.retry_count;
             if (task_result.success) {
                 try color.printSuccess(w, use_color, "{s} ", .{task_result.task_name});
                 try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
@@ -224,7 +232,7 @@ pub fn cmdWatch(
         }
 
         recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-            @intCast(sched_result.results.items.len));
+            @intCast(sched_result.results.items.len), total_retries);
 
         try color.printDim(w, use_color, "Watching for changes (Ctrl+C to stop)...\n", .{});
     }
@@ -490,6 +498,7 @@ pub fn recordHistory(
     success: bool,
     duration_ms: u64,
     task_count: u32,
+    retry_count: u32,
 ) void {
     const hist_path = history.defaultHistoryPath(allocator) catch return;
     defer allocator.free(hist_path);
@@ -503,6 +512,7 @@ pub fn recordHistory(
         .success = success,
         .duration_ms = duration_ms,
         .task_count = task_count,
+        .retry_count = retry_count,
     }) catch {};
 }
 

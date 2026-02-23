@@ -76,6 +76,7 @@ pub fn collectAnalytics(allocator: std.mem.Allocator, limit: ?usize) !types.Anal
             record.duration_ms,
             record.success,
             false, // We don't track cache in current history format
+            record.retry_count,
         );
 
         // Update time series
@@ -130,6 +131,7 @@ const TaskStatsBuilder = struct {
     max_duration_ms: u64,
     cache_hits: usize,
     cache_misses: usize,
+    total_retries: u32,
     time_series: std.ArrayList(types.TimeSeriesPoint),
 
     fn init(allocator: std.mem.Allocator) TaskStatsBuilder {
@@ -143,6 +145,7 @@ const TaskStatsBuilder = struct {
             .max_duration_ms = 0,
             .cache_hits = 0,
             .cache_misses = 0,
+            .total_retries = 0,
             .time_series = std.ArrayList(types.TimeSeriesPoint){},
         };
     }
@@ -151,7 +154,7 @@ const TaskStatsBuilder = struct {
         self.time_series.deinit(allocator);
     }
 
-    fn addRun(self: *TaskStatsBuilder, duration_ms: u64, success: bool, cached: bool) !void {
+    fn addRun(self: *TaskStatsBuilder, duration_ms: u64, success: bool, cached: bool, retry_count: u32) !void {
         self.total_runs += 1;
         if (success) {
             self.successful_runs += 1;
@@ -162,6 +165,7 @@ const TaskStatsBuilder = struct {
         self.total_duration_ms += duration_ms;
         self.min_duration_ms = @min(self.min_duration_ms, duration_ms);
         self.max_duration_ms = @max(self.max_duration_ms, duration_ms);
+        self.total_retries += retry_count;
 
         if (cached) {
             self.cache_hits += 1;
@@ -180,6 +184,11 @@ const TaskStatsBuilder = struct {
         else
             0.0;
 
+        const avg_retries = if (self.total_runs > 0)
+            @as(f64, @floatFromInt(self.total_retries)) / @as(f64, @floatFromInt(self.total_runs))
+        else
+            0.0;
+
         return .{
             .task_name = try allocator.dupe(u8, task_name),
             .total_runs = self.total_runs,
@@ -190,6 +199,8 @@ const TaskStatsBuilder = struct {
             .max_duration_ms = self.max_duration_ms,
             .cache_hits = self.cache_hits,
             .cache_misses = self.cache_misses,
+            .total_retries = self.total_retries,
+            .avg_retries_per_run = avg_retries,
         };
     }
 };
@@ -234,9 +245,9 @@ test "TaskStatsBuilder accumulation" {
     var builder = TaskStatsBuilder.init(std.testing.allocator);
     defer builder.deinit(std.testing.allocator);
 
-    try builder.addRun(100, true, false);
-    try builder.addRun(200, true, true);
-    try builder.addRun(150, false, false);
+    try builder.addRun(100, true, false, 0);
+    try builder.addRun(200, true, true, 2);
+    try builder.addRun(150, false, false, 3);
 
     try std.testing.expectEqual(@as(usize, 3), builder.total_runs);
     try std.testing.expectEqual(@as(usize, 2), builder.successful_runs);
@@ -245,4 +256,5 @@ test "TaskStatsBuilder accumulation" {
     try std.testing.expectEqual(@as(u64, 200), builder.max_duration_ms);
     try std.testing.expectEqual(@as(usize, 1), builder.cache_hits);
     try std.testing.expectEqual(@as(usize, 2), builder.cache_misses);
+    try std.testing.expectEqual(@as(u32, 5), builder.total_retries);
 }

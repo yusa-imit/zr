@@ -117,6 +117,8 @@ pub const TaskResult = struct {
     duration_ms: u64,
     /// True if the task was skipped due to a false condition expression.
     skipped: bool = false,
+    /// Number of retry attempts (0 if succeeded on first try).
+    retry_count: u32 = 0,
 };
 
 pub const ScheduleResult = struct {
@@ -295,10 +297,12 @@ fn workerFn(ctx: WorkerCtx) void {
     };
 
     // Retry on failure up to retry_max times
+    var retry_count: u32 = 0;
     if (!proc_result.success and ctx.retry_max > 0) {
         var delay_ms: u64 = ctx.retry_delay_ms;
         var attempt: u32 = 0;
         while (!proc_result.success and attempt < ctx.retry_max) : (attempt += 1) {
+            retry_count += 1;
             if (delay_ms > 0) {
                 std.Thread.sleep(delay_ms * std.time.ns_per_ms);
             }
@@ -338,6 +342,7 @@ fn workerFn(ctx: WorkerCtx) void {
         .success = proc_result.success,
         .exit_code = proc_result.exit_code,
         .duration_ms = proc_result.duration_ms,
+        .retry_count = retry_count,
     }) catch {
         ctx.allocator.free(owned_name);
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
@@ -518,10 +523,12 @@ fn runTaskSync(
     };
 
     // Retry on failure up to retry_max times
+    var retry_count: u32 = 0;
     if (!proc_result.success and task.retry_max > 0) {
         var delay_ms: u64 = task.retry_delay_ms;
         var attempt: u32 = 0;
         while (!proc_result.success and attempt < task.retry_max) : (attempt += 1) {
+            retry_count += 1;
             if (delay_ms > 0) {
                 std.Thread.sleep(delay_ms * std.time.ns_per_ms);
             }
@@ -550,6 +557,7 @@ fn runTaskSync(
         .success = proc_result.success,
         .exit_code = proc_result.exit_code,
         .duration_ms = proc_result.duration_ms,
+        .retry_count = retry_count,
     }) catch {
         allocator.free(owned_name);
         return error.OutOfMemory;
@@ -851,6 +859,7 @@ test "TaskResult: struct fields are correct" {
         .success = false,
         .exit_code = 1,
         .duration_ms = 100,
+        .retry_count = 2,
     };
 
     try std.testing.expectEqualStrings("test", result.task_name);

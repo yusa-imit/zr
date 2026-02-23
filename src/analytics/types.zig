@@ -11,6 +11,8 @@ pub const TaskStats = struct {
     max_duration_ms: u64,
     cache_hits: usize,
     cache_misses: usize,
+    total_retries: u32,
+    avg_retries_per_run: f64,
 
     pub fn cacheHitRate(self: TaskStats) f64 {
         const total = self.cache_hits + self.cache_misses;
@@ -21,6 +23,11 @@ pub const TaskStats = struct {
     pub fn failureRate(self: TaskStats) f64 {
         if (self.total_runs == 0) return 0.0;
         return @as(f64, @floatFromInt(self.failed_runs)) / @as(f64, @floatFromInt(self.total_runs)) * 100.0;
+    }
+
+    pub fn retryRate(self: TaskStats) f64 {
+        if (self.total_runs == 0) return 0.0;
+        return self.avg_retries_per_run;
     }
 };
 
@@ -134,6 +141,8 @@ test "TaskStats cache hit rate calculation" {
         .max_duration_ms = 150,
         .cache_hits = 7,
         .cache_misses = 3,
+        .total_retries = 5,
+        .avg_retries_per_run = 0.5,
     };
 
     try std.testing.expectApproxEqRel(70.0, stats.cacheHitRate(), 0.01);
@@ -150,9 +159,29 @@ test "TaskStats failure rate calculation" {
         .max_duration_ms = 150,
         .cache_hits = 0,
         .cache_misses = 0,
+        .total_retries = 5,
+        .avg_retries_per_run = 0.5,
     };
 
     try std.testing.expectApproxEqRel(20.0, stats.failureRate(), 0.01);
+}
+
+test "TaskStats retry rate calculation" {
+    const stats = TaskStats{
+        .task_name = "test",
+        .total_runs = 10,
+        .successful_runs = 8,
+        .failed_runs = 2,
+        .avg_duration_ms = 100.0,
+        .min_duration_ms = 50,
+        .max_duration_ms = 150,
+        .cache_hits = 0,
+        .cache_misses = 0,
+        .total_retries = 15,
+        .avg_retries_per_run = 1.5,
+    };
+
+    try std.testing.expectApproxEqRel(1.5, stats.retryRate(), 0.01);
 }
 
 test "ParallelizationMetrics efficiency calculation" {
