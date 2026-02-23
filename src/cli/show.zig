@@ -62,6 +62,17 @@ pub fn cmdShow(
         try w.print("\n", .{});
     }
 
+    // Tags
+    if (task.tags.len > 0) {
+        try color.printBold(w, use_color, "Tags:\n", .{});
+        try w.print("  ", .{});
+        for (task.tags, 0..) |tag, i| {
+            if (i > 0) try w.print(", ", .{});
+            try w.print("{s}", .{tag});
+        }
+        try w.print("\n\n", .{});
+    }
+
     // Environment variables
     if (task.env.len > 0) {
         try color.printBold(w, use_color, "Environment:\n", .{});
