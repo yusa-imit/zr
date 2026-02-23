@@ -765,12 +765,17 @@ pub const Stage = struct {
     parallel: bool = true,
     fail_fast: bool = false,
     condition: ?[]const u8 = null,
+    /// Require manual approval before executing this stage (interactive mode).
+    approval: bool = false,
+    /// Task to run on stage failure (e.g., "notify-slack").
+    on_failure: ?[]const u8 = null,
 
     pub fn deinit(self: *Stage, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         for (self.tasks) |t| allocator.free(t);
         allocator.free(self.tasks);
         if (self.condition) |c| allocator.free(c);
+        if (self.on_failure) |f| allocator.free(f);
     }
 };
 

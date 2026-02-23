@@ -137,6 +137,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var stage_parallel: bool = true;
     var stage_fail_fast: bool = false;
     var stage_condition: ?[]const u8 = null;
+    var stage_approval: bool = false;
+    var stage_on_failure: ?[]const u8 = null;
 
     // Profile parsing state
     // current_profile: non-owning slice into content (profile name)
@@ -289,12 +291,16 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
                 errdefer if (s_cond) |c| allocator.free(c);
+                const s_on_failure = if (stage_on_failure) |f| try allocator.dupe(u8, f) else null;
+                errdefer if (s_on_failure) |f| allocator.free(f);
                 const new_stage = Stage{
                     .name = try allocator.dupe(u8, sn),
                     .tasks = s_tasks,
                     .parallel = stage_parallel,
                     .fail_fast = stage_fail_fast,
                     .condition = s_cond,
+                    .approval = stage_approval,
+                    .on_failure = s_on_failure,
                 };
                 try workflow_stages.append(allocator, new_stage);
             }
@@ -303,6 +309,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_tasks.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
+            stage_approval = false;
+            stage_on_failure = null;
             stage_condition = null;
         } else if (std.mem.startsWith(u8, trimmed, "[workflows.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
@@ -320,12 +328,16 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
                 errdefer if (s_cond) |c| allocator.free(c);
+                const s_on_failure = if (stage_on_failure) |f| try allocator.dupe(u8, f) else null;
+                errdefer if (s_on_failure) |f| allocator.free(f);
                 const new_stage = Stage{
                     .name = try allocator.dupe(u8, sn),
                     .tasks = s_tasks,
                     .parallel = stage_parallel,
                     .fail_fast = stage_fail_fast,
                     .condition = s_cond,
+                    .approval = stage_approval,
+                    .on_failure = s_on_failure,
                 };
                 try workflow_stages.append(allocator, new_stage);
                 stage_name = null;
@@ -333,6 +345,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 stage_parallel = true;
                 stage_fail_fast = false;
                 stage_condition = null;
+                stage_approval = false;
+                stage_on_failure = null;
             }
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
@@ -495,8 +509,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 for (stage_tasks.items, 0..) |t, i| { s_tasks[i] = try allocator.dupe(u8, t); tduped += 1; }
                 const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
                 errdefer if (s_cond) |c| allocator.free(c);
-                try workflow_stages.append(allocator, Stage{ .name = try allocator.dupe(u8, sn), .tasks = s_tasks, .parallel = stage_parallel, .fail_fast = stage_fail_fast, .condition = s_cond });
-                stage_name = null; stage_tasks.clearRetainingCapacity(); stage_parallel = true; stage_fail_fast = false; stage_condition = null;
+                const s_on_failure = if (stage_on_failure) |f| try allocator.dupe(u8, f) else null;
+                errdefer if (s_on_failure) |f| allocator.free(f);
+                try workflow_stages.append(allocator, Stage{ .name = try allocator.dupe(u8, sn), .tasks = s_tasks, .parallel = stage_parallel, .fail_fast = stage_fail_fast, .condition = s_cond, .approval = stage_approval, .on_failure = s_on_failure });
+                stage_name = null; stage_tasks.clearRetainingCapacity(); stage_parallel = true; stage_fail_fast = false; stage_condition = null; stage_approval = false; stage_on_failure = null;
             }
             if (current_workflow) |wf_name_slice| {
                 try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
@@ -773,12 +789,16 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
                 errdefer if (s_cond) |c| allocator.free(c);
+                const s_on_failure = if (stage_on_failure) |f| try allocator.dupe(u8, f) else null;
+                errdefer if (s_on_failure) |f| allocator.free(f);
                 const new_stage = Stage{
                     .name = try allocator.dupe(u8, sn),
                     .tasks = s_tasks,
                     .parallel = stage_parallel,
                     .fail_fast = stage_fail_fast,
                     .condition = s_cond,
+                    .approval = stage_approval,
+                    .on_failure = s_on_failure,
                 };
                 try workflow_stages.append(allocator, new_stage);
                 stage_name = null;
@@ -786,6 +806,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 stage_parallel = true;
                 stage_fail_fast = false;
                 stage_condition = null;
+                stage_approval = false;
+                stage_on_failure = null;
             }
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
@@ -1083,6 +1105,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     stage_fail_fast = std.mem.eql(u8, value, "true");
                 } else if (std.mem.eql(u8, key, "condition") and stage_name != null) {
                     stage_condition = value;
+                } else if (std.mem.eql(u8, key, "approval") and stage_name != null) {
+                    stage_approval = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "on_failure") and stage_name != null) {
+                    stage_on_failure = std.mem.trim(u8, value, " \t\"");
                 } else if (std.mem.eql(u8, key, "description") and stage_name == null) {
                     // Workflow-level description (not inside a stage)
                     workflow_desc = value;
@@ -2658,4 +2684,51 @@ test "parse versioning config with fixed mode" {
     const versioning = config.versioning.?;
     try std.testing.expectEqual(types.VersioningMode.fixed, versioning.mode);
     try std.testing.expectEqual(types.VersioningConvention.manual, versioning.convention);
+}
+
+test "parse workflow with approval and on_failure" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\
+        \\[tasks.notify]
+        \\cmd = "echo notify"
+        \\
+        \\[workflows.release]
+        \\description = "Release with approval"
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "build"
+        \\tasks = ["build"]
+        \\parallel = true
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "deploy"
+        \\tasks = ["deploy"]
+        \\approval = true
+        \\on_failure = "notify"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const wf = config.workflows.get("release").?;
+    try std.testing.expectEqualStrings("release", wf.name);
+    try std.testing.expectEqual(@as(usize, 2), wf.stages.len);
+
+    // First stage: no approval, no on_failure
+    const stage1 = wf.stages[0];
+    try std.testing.expectEqualStrings("build", stage1.name);
+    try std.testing.expectEqual(false, stage1.approval);
+    try std.testing.expect(stage1.on_failure == null);
+
+    // Second stage: approval=true, on_failure="notify"
+    const stage2 = wf.stages[1];
+    try std.testing.expectEqualStrings("deploy", stage2.name);
+    try std.testing.expectEqual(true, stage2.approval);
+    try std.testing.expect(stage2.on_failure != null);
+    try std.testing.expectEqualStrings("notify", stage2.on_failure.?);
 }
