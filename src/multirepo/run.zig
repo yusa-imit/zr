@@ -516,6 +516,30 @@ test "hasGitChanges - repo with changes" {
         _ = try child.wait();
     }
 
+    // Configure git user for this repo
+    {
+        const args = [_][]const u8{ "git", "config", "user.name", "Test User" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+    {
+        const args = [_][]const u8{ "git", "config", "user.email", "test@example.com" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+
     // Create initial commit
     {
         const file = try dir.createFile("test.txt", .{});
@@ -572,6 +596,30 @@ test "hasGitChanges - repo without changes" {
     // Initialize git repo
     {
         const args = [_][]const u8{ "git", "init" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+
+    // Configure git user for this repo
+    {
+        const args = [_][]const u8{ "git", "config", "user.name", "Test User" };
+        var child = std.process.Child.init(&args, allocator);
+        var buf: [1024]u8 = undefined;
+        const path = try dir.realpath(".", &buf);
+        child.cwd = path;
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        _ = try child.wait();
+    }
+    {
+        const args = [_][]const u8{ "git", "config", "user.email", "test@example.com" };
         var child = std.process.Child.init(&args, allocator);
         var buf: [1024]u8 = undefined;
         const path = try dir.realpath(".", &buf);
