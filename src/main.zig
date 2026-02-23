@@ -389,12 +389,16 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "list")) {
         // Parse list options
         var tree_mode = false;
+        var filter_pattern: ?[]const u8 = null;
         for (effective_args[2..]) |arg| {
             if (std.mem.eql(u8, arg, "--tree")) {
                 tree_mode = true;
+            } else if (!std.mem.startsWith(u8, arg, "--")) {
+                // First non-flag argument is the filter pattern
+                filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Parse graph options
         var ascii_mode = false;
@@ -553,7 +557,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  run <task>             Run a task and its dependencies\n", .{});
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
     try w.print("  workflow <name>        Run a workflow by name\n", .{});
-    try w.print("  list [--tree]          List all available tasks (--tree for dependency tree)\n", .{});
+    try w.print("  list [pattern] [--tree]  List tasks (optional pattern filter, --tree for dependency tree)\n", .{});
     try w.print("  graph [--ascii]        Show task dependency graph (--ascii for tree view)\n", .{});
     try w.print("  history                Show recent run history\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});

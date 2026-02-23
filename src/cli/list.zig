@@ -11,6 +11,7 @@ pub fn cmdList(
     config_path: []const u8,
     json_output: bool,
     tree_mode: bool,
+    filter_pattern: ?[]const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -35,6 +36,12 @@ pub fn cmdList(
 
     var it = config.tasks.keyIterator();
     while (it.next()) |key| {
+        // Apply filter if provided
+        if (filter_pattern) |pattern| {
+            if (std.mem.indexOf(u8, key.*, pattern) == null) {
+                continue; // Skip tasks that don't match the pattern
+            }
+        }
         try names.append(allocator, key.*);
     }
 
@@ -51,6 +58,12 @@ pub fn cmdList(
         defer wf_names.deinit(allocator);
         var wit2 = config.workflows.keyIterator();
         while (wit2.next()) |key| {
+            // Apply filter if provided
+            if (filter_pattern) |pattern| {
+                if (std.mem.indexOf(u8, key.*, pattern) == null) {
+                    continue;
+                }
+            }
             try wf_names.append(allocator, key.*);
         }
         std.mem.sort([]const u8, wf_names.items, {}, struct {
@@ -114,6 +127,12 @@ pub fn cmdList(
 
         var wit = config.workflows.keyIterator();
         while (wit.next()) |key| {
+            // Apply filter if provided
+            if (filter_pattern) |pattern| {
+                if (std.mem.indexOf(u8, key.*, pattern) == null) {
+                    continue;
+                }
+            }
             try wf_names.append(allocator, key.*);
         }
         std.mem.sort([]const u8, wf_names.items, {}, struct {
@@ -332,7 +351,7 @@ test "cmdList: text output lists tasks alphabetically" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, false, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -356,7 +375,7 @@ test "cmdList: json output contains tasks array" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, null, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -373,7 +392,7 @@ test "cmdList: missing config file returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, "/nonexistent/path/zr.toml", false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, "/nonexistent/path/zr.toml", false, false, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
 }
 
@@ -505,7 +524,7 @@ test "cmdList: tree mode renders dependency graph" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, true, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, true, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -531,6 +550,78 @@ test "cmdList: tree mode with no tasks shows empty message" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, true, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, true, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "cmdList: filter pattern matches subset of tasks" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.test-unit]
+        \\cmd = "run unit tests"
+        \\
+        \\[tasks.test-integration]
+        \\cmd = "run integration tests"
+        \\
+        \\[tasks.build]
+        \\cmd = "build project"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const code = try cmdList(allocator, config_path, true, false, "test", &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    // Should contain test-unit and test-integration but not build
+    try std.testing.expect(std.mem.indexOf(u8, written, "test-unit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "test-integration") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "build") == null);
+}
+
+test "cmdList: filter pattern with no matches returns empty list" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\
+        \\[tasks.test]
+        \\cmd = "test"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const code = try cmdList(allocator, config_path, true, false, "nonexistent", &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"tasks\":[]") != null);
 }
