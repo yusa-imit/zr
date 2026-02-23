@@ -55,6 +55,7 @@ const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
+const estimate_cmd = @import("cli/estimate.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -81,6 +82,7 @@ const aliases = @import("config/aliases.zig");
 comptime {
     _ = aliases;
     _ = alias_cmd;
+    _ = estimate_cmd;
     _ = loader;
     _ = parser;
     _ = expr;
@@ -378,7 +380,7 @@ fn run(
         "codeowners", "version",    "publish",    "analytics",
         "context",    "conformance", "bench",      "doctor",
         "setup",      "env",        "export",     "affected",
-        "clean",      "upgrade",    "alias",
+        "clean",      "upgrade",    "alias",      "estimate",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -607,6 +609,14 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "alias")) {
         const alias_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return alias_cmd.cmdAlias(allocator, alias_args, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "estimate")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "Usage: zr estimate <task>\n", .{});
+            return 1;
+        }
+        const task_name = effective_args[2];
+        const limit: usize = 20; // Default to last 20 runs
+        return estimate_cmd.cmdEstimate(allocator, task_name, config_path, limit, effective_w, ew, effective_color);
     }
 
     // This should never be reached due to alias expansion logic above
@@ -670,6 +680,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  export [OPTIONS]       Export env vars in shell-sourceable format\n", .{});
     try w.print("  upgrade [OPTIONS]      Upgrade zr to the latest version\n", .{});
     try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
+    try w.print("  estimate <task>        Estimate task duration based on execution history\n", .{});
     try w.print("  <alias>                Run a user-defined alias (e.g., 'zr dev' if 'dev' is defined)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});

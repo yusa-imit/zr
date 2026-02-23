@@ -1,0 +1,10 @@
+[tasks.build]
+cmd = "zig build"
+
+[tasks.test]
+cmd = "zig build test"
+deps = ["build"]
+
+[tasks.run]
+cmd = "./zig-out/bin/zr --help"
+deps = ["build"]
