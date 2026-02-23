@@ -368,6 +368,70 @@ fn run(
         return 0;
     }
 
+    // Alias expansion: if cmd is not a known built-in, check if it's an alias
+    const known_commands = [_][]const u8{
+        "run",        "watch",      "workflow",   "list",
+        "graph",      "history",    "init",       "validate",
+        "completion", "workspace",  "cache",      "plugin",
+        "interactive", "i",          "live",       "interactive-run",
+        "irun",       "tools",      "lint",       "repo",
+        "codeowners", "version",    "publish",    "analytics",
+        "context",    "conformance", "bench",      "doctor",
+        "setup",      "env",        "export",     "affected",
+        "clean",      "upgrade",    "alias",
+    };
+    var is_builtin = false;
+    for (known_commands) |known| {
+        if (std.mem.eql(u8, cmd, known)) {
+            is_builtin = true;
+            break;
+        }
+    }
+
+    if (!is_builtin) {
+        // Try to load aliases and expand
+        var alias_config = aliases.AliasConfig.load(allocator) catch |err| {
+            // If alias loading fails, just continue with unknown command error
+            if (err != error.FileNotFound) {
+                try color.printError(ew, effective_color, "Failed to load aliases: {}\n", .{err});
+            }
+            try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
+            try printHelp(effective_w, effective_color);
+            return 1;
+        };
+        defer alias_config.deinit();
+
+        if (alias_config.get(cmd)) |alias_command| {
+            // Expand the alias: split alias_command by spaces and prepend "zr"
+            // Example: alias_command = "run build && run test"
+            // We need to tokenize this properly, handling quoted strings
+            var expanded_args = std.ArrayList([]const u8){};
+            defer expanded_args.deinit(allocator);
+
+            try expanded_args.append(allocator, effective_args[0]); // preserve "zr" binary path
+
+            // Simple tokenization (split by spaces, no quote handling for MVP)
+            // This is sufficient for most alias use cases
+            var tokens = std.mem.tokenizeScalar(u8, alias_command, ' ');
+            while (tokens.next()) |token| {
+                try expanded_args.append(allocator, token);
+            }
+
+            // Append remaining args after the alias name
+            for (effective_args[2..]) |arg| {
+                try expanded_args.append(allocator, arg);
+            }
+
+            // Recursively call run with expanded args
+            return try run(allocator, expanded_args.items, w, ew, use_color);
+        } else {
+            // Not a builtin and not an alias
+            try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
+            try printHelp(effective_w, effective_color);
+            return 1;
+        }
+    }
+
     if (std.mem.eql(u8, cmd, "run")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "run: missing task name\n\n  Hint: zr run <task-name>\n", .{});
@@ -543,11 +607,10 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "alias")) {
         const alias_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return alias_cmd.cmdAlias(allocator, alias_args, effective_w, ew, effective_color);
-    } else {
-        try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
-        try printHelp(effective_w, effective_color);
-        return 1;
     }
+
+    // This should never be reached due to alias expansion logic above
+    unreachable;
 }
 
 fn printVersion(w: *std.Io.Writer, use_color: bool) !void {
@@ -606,7 +669,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  env [OPTIONS]          Display environment variables for tasks\n", .{});
     try w.print("  export [OPTIONS]       Export env vars in shell-sourceable format\n", .{});
     try w.print("  upgrade [OPTIONS]      Upgrade zr to the latest version\n", .{});
-    try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n\n", .{});
+    try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
+    try w.print("  <alias>                Run a user-defined alias (e.g., 'zr dev' if 'dev' is defined)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});
     try w.print("  --version             Show version information\n", .{});

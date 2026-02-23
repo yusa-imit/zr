@@ -117,6 +117,27 @@ pub const AliasConfig = struct {
     pub fn get(self: *AliasConfig, name: []const u8) ?[]const u8 {
         return self.aliases.get(name);
     }
+
+    /// Expand an alias into a list of arguments
+    /// Returns null if the alias is not found
+    /// Caller owns the returned ArrayList
+    pub fn expand(self: *AliasConfig, allocator: Allocator, name: []const u8) !?std.ArrayList([]const u8) {
+        const alias_command = self.aliases.get(name) orelse return null;
+
+        var args = std.ArrayList([]const u8){};
+        errdefer {
+            for (args.items) |arg| allocator.free(arg);
+            args.deinit(allocator);
+        }
+
+        // Simple tokenization by spaces
+        var tokens = mem.tokenizeScalar(u8, alias_command, ' ');
+        while (tokens.next()) |token| {
+            try args.append(allocator, try allocator.dupe(u8, token));
+        }
+
+        return args;
+    }
 };
 
 /// Get the path to the aliases file (~/.zr/aliases.toml)
@@ -226,4 +247,65 @@ test "parseAliasToml" {
     try std.testing.expectEqualStrings("run build && run test", config.get("dev").?);
     try std.testing.expectEqualStrings("run build --profile=production", config.get("prod").?);
     try std.testing.expectEqualStrings("run lint && run fmt", config.get("check").?);
+}
+
+test "AliasConfig expand - simple command" {
+    const allocator = std.testing.allocator;
+    var config = AliasConfig.init(allocator);
+    defer config.deinit();
+
+    try config.set("dev", "run build");
+    var args = (try config.expand(allocator, "dev")).?;
+    defer {
+        for (args.items) |arg| allocator.free(arg);
+        args.deinit(allocator);
+    }
+
+    try std.testing.expect(args.items.len == 2);
+    try std.testing.expectEqualStrings("run", args.items[0]);
+    try std.testing.expectEqualStrings("build", args.items[1]);
+}
+
+test "AliasConfig expand - command with flags" {
+    const allocator = std.testing.allocator;
+    var config = AliasConfig.init(allocator);
+    defer config.deinit();
+
+    try config.set("prod", "run build --profile=production");
+    var args = (try config.expand(allocator, "prod")).?;
+    defer {
+        for (args.items) |arg| allocator.free(arg);
+        args.deinit(allocator);
+    }
+
+    try std.testing.expect(args.items.len == 3);
+    try std.testing.expectEqualStrings("run", args.items[0]);
+    try std.testing.expectEqualStrings("build", args.items[1]);
+    try std.testing.expectEqualStrings("--profile=production", args.items[2]);
+}
+
+test "AliasConfig expand - complex command" {
+    const allocator = std.testing.allocator;
+    var config = AliasConfig.init(allocator);
+    defer config.deinit();
+
+    try config.set("check", "list --tree");
+    var args = (try config.expand(allocator, "check")).?;
+    defer {
+        for (args.items) |arg| allocator.free(arg);
+        args.deinit(allocator);
+    }
+
+    try std.testing.expect(args.items.len == 2);
+    try std.testing.expectEqualStrings("list", args.items[0]);
+    try std.testing.expectEqualStrings("--tree", args.items[1]);
+}
+
+test "AliasConfig expand - nonexistent alias" {
+    const allocator = std.testing.allocator;
+    var config = AliasConfig.init(allocator);
+    defer config.deinit();
+
+    const result = try config.expand(allocator, "nonexistent");
+    try std.testing.expect(result == null);
 }
