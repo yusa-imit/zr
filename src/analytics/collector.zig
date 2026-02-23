@@ -4,11 +4,18 @@ const history = @import("../history/store.zig");
 
 /// Collects analytics data from execution history
 pub fn collectAnalytics(allocator: std.mem.Allocator, limit: ?usize) !types.AnalyticsReport {
+    return collectAnalyticsWithPath(allocator, limit, null);
+}
+
+fn collectAnalyticsWithPath(allocator: std.mem.Allocator, limit: ?usize, history_path: ?[]const u8) !types.AnalyticsReport {
     var report = types.AnalyticsReport.init(allocator);
     errdefer report.deinit();
 
     // Get history path
-    const hist_path = try history.defaultHistoryPath(allocator);
+    const hist_path = if (history_path) |p|
+        try allocator.dupe(u8, p)
+    else
+        try history.defaultHistoryPath(allocator);
     defer allocator.free(hist_path);
 
     // Load history store
@@ -234,7 +241,8 @@ fn buildCriticalPath(allocator: std.mem.Allocator, report: *types.AnalyticsRepor
 }
 
 test "collectAnalytics with empty history" {
-    var report = try collectAnalytics(std.testing.allocator, null);
+    // Use a nonexistent path to ensure empty history
+    var report = try collectAnalyticsWithPath(std.testing.allocator, null, "/tmp/nonexistent-zr-history-test.jsonl");
     defer report.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), report.total_executions);
