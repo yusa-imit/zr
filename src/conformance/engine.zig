@@ -424,7 +424,11 @@ test "checkDirectoryDepth - violation" {
     );
     defer rule.deinit();
 
-    try rule.config.put("max_depth", "3");
+    const key = try allocator.dupe(u8, "max_depth");
+    errdefer allocator.free(key);
+    const value = try allocator.dupe(u8, "3");
+    errdefer allocator.free(value);
+    try rule.config.put(key, value);
 
     const file_path = "/workspace/a/b/c/d/file.txt";
     const workspace_root = "/workspace";

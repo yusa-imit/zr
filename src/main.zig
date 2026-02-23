@@ -739,12 +739,14 @@ test "basic functionality" {
 test "--no-color and --jobs are consumed before command dispatch" {
     const allocator = std.testing.allocator;
 
+    // Open /dev/null for discard writer
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // With only flags and no command after them, should print help (exit 0),
     // not "Unknown command: --no-color".
@@ -756,12 +758,13 @@ test "--no-color and --jobs are consumed before command dispatch" {
 test "--quiet flag is parsed and does not crash" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // --quiet with no command prints help (exit 0).
     const fake_args = [_][]const u8{ "zr", "--quiet" };
@@ -772,12 +775,13 @@ test "--quiet flag is parsed and does not crash" {
 test "--verbose flag is parsed and does not crash" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // --verbose with no command prints help (exit 0).
     const fake_args = [_][]const u8{ "zr", "--verbose" };
@@ -788,12 +792,13 @@ test "--verbose flag is parsed and does not crash" {
 test "--version flag prints version and exits successfully" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // --version should print version info and exit 0.
     const fake_args = [_][]const u8{ "zr", "--version" };
@@ -804,12 +809,13 @@ test "--version flag prints version and exits successfully" {
 test "--config flag missing value returns error" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // --config without a value should return exit code 1.
     const fake_args = [_][]const u8{ "zr", "--config" };
@@ -820,12 +826,13 @@ test "--config flag missing value returns error" {
 test "--jobs with invalid value returns error" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // --jobs with non-numeric value should return exit code 1.
     const fake_args = [_][]const u8{ "zr", "--jobs", "notanumber" };
@@ -836,12 +843,13 @@ test "--jobs with invalid value returns error" {
 test "--format json is parsed and does not crash" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // --format json with no command prints help (exit 0).
     const fake_args = [_][]const u8{ "zr", "--format", "json" };
@@ -852,12 +860,13 @@ test "--format json is parsed and does not crash" {
 test "--format text is parsed and does not crash" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     const fake_args = [_][]const u8{ "zr", "--format", "text" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
@@ -867,12 +876,13 @@ test "--format text is parsed and does not crash" {
 test "--format unknown value returns error" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     const fake_args = [_][]const u8{ "zr", "--format", "yaml" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
@@ -882,12 +892,13 @@ test "--format unknown value returns error" {
 test "--format missing value returns error" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     const fake_args = [_][]const u8{ "zr", "--format" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
@@ -895,26 +906,29 @@ test "--format missing value returns error" {
 }
 
 test "writeJsonString escapes special characters" {
-    var buf: [256]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var w = stdout.writer(&buf);
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = null_file.writer(&out_buf);
 
     // Just test that it runs without error on common characters.
-    try common.writeJsonString(&w.interface, "hello world");
-    try common.writeJsonString(&w.interface, "with \"quotes\"");
-    try common.writeJsonString(&w.interface, "with\nnewline");
-    try common.writeJsonString(&w.interface, "with\\backslash");
+    try common.writeJsonString(&out_w.interface, "hello world");
+    try common.writeJsonString(&out_w.interface, "with \"quotes\"");
+    try common.writeJsonString(&out_w.interface, "with\nnewline");
+    try common.writeJsonString(&out_w.interface, "with\\backslash");
 }
 
 test "cmdList --format json returns valid JSON with tasks field" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // Without a real config file this returns 1 — ensure it doesn't crash
     // and that flag parsing itself works (no panic).
@@ -927,12 +941,13 @@ test "cmdList --format json returns valid JSON with tasks field" {
 test "workspace command: missing subcommand returns error" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // "workspace" with unknown subcommand returns 1
     const fake_args = [_][]const u8{ "zr", "workspace", "unknown" };
@@ -943,12 +958,13 @@ test "workspace command: missing subcommand returns error" {
 test "workspace command: run missing task name returns error" {
     const allocator = std.testing.allocator;
 
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
 
     // "workspace run" without task name returns 1
     const fake_args = [_][]const u8{ "zr", "workspace", "run" };

@@ -32,7 +32,11 @@ pub fn build(b: *std.Build) void {
         .root_module = exe.root_module,
     });
 
-    const run_exe_tests = b.addRunArtifact(exe_tests);
+    // Run tests without --listen=- protocol (bypasses zig_test server mode).
+    // Many unit tests write to stdout which corrupts the build system protocol pipe.
+    const run_exe_tests = std.Build.Step.Run.create(b, "run unit tests");
+    run_exe_tests.addArtifactArg(exe_tests);
+    run_exe_tests.has_side_effects = true;
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_tests.step);

@@ -138,7 +138,18 @@ fn calculateStats(
     failed: usize,
 ) !BenchmarkStats {
     if (runs.len == 0) {
-        return BenchmarkStats.init(allocator);
+        return BenchmarkStats{
+            .mean_ns = 0,
+            .median_ns = 0,
+            .min_ns = 0,
+            .max_ns = 0,
+            .std_dev_ns = 0,
+            .runs = runs,
+            .total_runs = 0,
+            .successful_runs = 0,
+            .failed_runs = 0,
+            .allocator = allocator,
+        };
     }
 
     // Calculate mean
@@ -196,7 +207,7 @@ test "calculateStats basic" {
     const allocator = std.testing.allocator;
 
     const runs = try allocator.alloc(BenchmarkRun, 5);
-    defer allocator.free(runs);
+    // Note: don't free runs here — stats.deinit() owns and frees it
 
     runs[0] = .{ .duration_ns = 100, .exit_code = 0, .timestamp = 0 };
     runs[1] = .{ .duration_ns = 200, .exit_code = 0, .timestamp = 0 };
@@ -220,7 +231,7 @@ test "calculateStats empty runs" {
     const allocator = std.testing.allocator;
 
     const runs = try allocator.alloc(BenchmarkRun, 0);
-    defer allocator.free(runs);
+    // Note: don't free runs here — stats.deinit() owns and frees it
 
     var stats = try calculateStats(allocator, runs, 0, 0);
     defer stats.deinit();
