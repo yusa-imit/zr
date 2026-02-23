@@ -1531,7 +1531,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         }
     }
 
-    // Flush final pending stage
+    // Flush final pending stage (including approval and on_failure fields)
     if (stage_name) |sn| {
         const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
         var tduped: usize = 0;
@@ -1545,12 +1545,16 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         }
         const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
         errdefer if (s_cond) |c| allocator.free(c);
+        const s_on_failure = if (stage_on_failure) |f| try allocator.dupe(u8, f) else null;
+        errdefer if (s_on_failure) |f| allocator.free(f);
         const new_stage = Stage{
             .name = try allocator.dupe(u8, sn),
             .tasks = s_tasks,
             .parallel = stage_parallel,
             .fail_fast = stage_fail_fast,
             .condition = s_cond,
+            .approval = stage_approval,
+            .on_failure = s_on_failure,
         };
         try workflow_stages.append(allocator, new_stage);
     }
