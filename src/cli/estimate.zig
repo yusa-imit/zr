@@ -4,6 +4,11 @@ const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const history = @import("../history/store.zig");
 
+pub const OutputFormat = enum {
+    text,
+    json,
+};
+
 pub fn cmdEstimate(
     allocator: Allocator,
     task_name: []const u8,
@@ -12,6 +17,7 @@ pub fn cmdEstimate(
     w: *std.Io.Writer,
     ew: *std.Io.Writer,
     use_color: bool,
+    output_format: OutputFormat,
 ) !u8 {
     // Load config to verify task exists
     var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
@@ -71,7 +77,10 @@ pub fn cmdEstimate(
     const stats = calculateStats(limited_records);
 
     // Print estimation report
-    try printEstimation(w, task_name, limited_records, stats, use_color);
+    switch (output_format) {
+        .text => try printEstimation(w, task_name, limited_records, stats, use_color),
+        .json => try printEstimationJson(allocator, w, task_name, limited_records, stats),
+    }
 
     return 0;
 }
@@ -140,6 +149,72 @@ fn calculateStats(records: []const history.Record) Stats {
         .std_dev = std_dev,
         .success_rate = success_rate,
     };
+}
+
+fn printEstimationJson(
+    _: Allocator,
+    w: *std.Io.Writer,
+    task_name: []const u8,
+    records: []const history.Record,
+    stats: Stats,
+) !void {
+    // Calculate coefficient of variation
+    const cv = if (stats.mean_ms > 0) (stats.std_dev / stats.mean_ms) * 100.0 else 0.0;
+
+    // Determine confidence level
+    const confidence = if (cv < 20.0)
+        "high"
+    else if (cv < 50.0)
+        "medium"
+    else
+        "low";
+
+    // Calculate trend
+    var trend: []const u8 = "stable";
+    var trend_percentage: f64 = 0.0;
+    if (records.len >= 6) {
+        const recent_end = records.len;
+        const recent_start = records.len - 3;
+        const older_end = recent_start;
+        const older_start = if (older_end >= 3) older_end - 3 else 0;
+
+        const recent_avg = calculateAverage(records[recent_start..recent_end]);
+        const older_avg = calculateAverage(records[older_start..older_end]);
+
+        if (recent_avg < older_avg) {
+            trend = "faster";
+            trend_percentage = ((older_avg - recent_avg) / older_avg) * 100.0;
+        } else if (recent_avg > older_avg) {
+            trend = "slower";
+            trend_percentage = ((recent_avg - older_avg) / older_avg) * 100.0;
+        }
+    }
+
+    // Build JSON output
+    try w.print("{{", .{});
+    try w.print("\"task\":\"{s}\",", .{task_name});
+    try w.print("\"sample_size\":{d},", .{records.len});
+    try w.print("\"duration\":{{", .{});
+    try w.print("\"mean_ms\":{d:.2},", .{stats.mean_ms});
+    try w.print("\"median_ms\":{d},", .{stats.median_ms});
+    try w.print("\"min_ms\":{d},", .{stats.min_ms});
+    try w.print("\"max_ms\":{d}", .{stats.max_ms});
+    try w.print("}},", .{});
+    try w.print("\"variability\":{{", .{});
+    try w.print("\"std_dev_ms\":{d:.2},", .{stats.std_dev});
+    try w.print("\"coefficient_of_variation\":{d:.2},", .{cv});
+    try w.print("\"confidence\":\"{s}\"", .{confidence});
+    try w.print("}},", .{});
+    try w.print("\"reliability\":{{", .{});
+    try w.print("\"success_rate\":{d:.2}", .{stats.success_rate});
+    try w.print("}}", .{});
+    if (records.len >= 6) {
+        try w.print(",\"trend\":{{", .{});
+        try w.print("\"direction\":\"{s}\",", .{trend});
+        try w.print("\"percentage\":{d:.2}", .{trend_percentage});
+        try w.print("}}", .{});
+    }
+    try w.print("}}\n", .{});
 }
 
 fn printEstimation(
@@ -315,3 +390,6 @@ test "calculateAverage" {
     const avg = calculateAverage(&records);
     try std.testing.expectEqual(@as(f64, 200), avg);
 }
+
+// Note: JSON output format testing is done via integration tests
+// See tests/integration.zig for JSON format validation

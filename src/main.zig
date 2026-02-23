@@ -616,7 +616,11 @@ fn run(
         }
         const task_name = effective_args[2];
         const limit: usize = 20; // Default to last 20 runs
-        return estimate_cmd.cmdEstimate(allocator, task_name, config_path, limit, effective_w, ew, effective_color);
+
+        // Convert json_output to estimate's OutputFormat
+        const estimate_format: estimate_cmd.OutputFormat = if (json_output) .json else .text;
+
+        return estimate_cmd.cmdEstimate(allocator, task_name, config_path, limit, effective_w, ew, effective_color, estimate_format);
     }
 
     // This should never be reached due to alias expansion logic above
