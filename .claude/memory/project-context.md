@@ -366,12 +366,25 @@
   - Full shell completion support (bash/zsh/fish)
   - 1 test for error handling
   - Improves task discovery and configuration understanding without reading zr.toml
+- [x] **Task tags** (b3f6f23) — Task categorization and filtering
+  - Added tags field to Task struct ([][]const u8 array)
+  - TOML parsing: `tags = ["build", "ci", "test"]` in [tasks.X] sections
+  - `zr list --tags=TAG1,TAG2` — Filter tasks by tags (OR logic)
+  - `zr show <task>` — Display task tags
+  - Enables organizing tasks by category
+- [x] **Schedule command** (08c8b44) — Task scheduling with cron expressions
+  - `zr schedule add/list/remove/show` — Manage scheduled tasks
+  - Persistent storage in ~/.zr/schedules.json
+  - Full shell completion integration
+  - Cron expression format documentation
+  - 2 unit tests
+  - 400+ lines in src/cli/schedule.zig
 
 ## Status Summary
 
 > **Reality**: **Phase 1-8 COMPLETE (100%)** (MVP → Plugins → Toolchains → Monorepo → Remote Cache → Multi-repo → **Enterprise** → **FINISHED**). **Production-ready with full enterprise feature set** — 8 supported toolchains (Node/Python/Zig/Go/Rust/Deno/Bun/Java), auto-install on task run, PATH injection, git-based affected detection (`--affected origin/main` flag AND `zr affected <task>` standalone command), transitive dependency graph expansion, multi-format graph visualization (ASCII/DOT/JSON/HTML), architecture constraints with module boundary rules, `zr lint` command, metadata-driven tag validation, event-driven watch mode, kernel-level resource limits, full Docker integration, complete WASM plugin execution (parser + interpreter), interactive TUI with task controls, **All 4 major cloud remote cache backends: HTTP, S3, GCS, and Azure Blob Storage**, **Multi-repo orchestration: `zr repo sync/status/graph/run` with cross-repo dependency visualization and task execution**, **Synthetic workspace: `zr workspace sync` unifies multi-repo into mono-repo view with full graph/workspace command integration**, **CODEOWNERS auto-generation: `zr codeowners generate` from workspace metadata**, **Publishing & versioning: `zr version` and `zr publish` with conventional commits, auto-bump, CHANGELOG generation**, **Build analytics: `zr analytics` with HTML/JSON reports, critical path analysis, parallelization metrics, retry statistics**, **AI-friendly metadata: `zr context` outputs structured project info (graph, tasks, ownership, toolchains, recent changes) in JSON/YAML for AI agents**, **Conformance rules engine: `zr conformance` with file-level governance (import patterns, naming conventions, size limits, depth limits, extension rules)**, **Standalone affected command: `zr affected <task>` with --include-dependents, --exclude-self, --include-dependencies, --list options per PRD §5.7.1**.
 
-- **Tests**: 568+ total (~568 passing, 8 skipped) — includes 32 toolchain tests (29 + 3 outdated) + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 2 hasGitChanges tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test + 9 conformance tests (3 types + 2 parser + 1 CLI + 3 fixer) + 5 benchmark tests (2 types + 2 runner + 1 formatter + 1 CLI) + 2 registry tests (2 ToolVersion) + 1 affected command test + 3 clean command tests (help, dry-run, options parsing) + 4 completion tests (scripts non-empty, new flags, workspace, Phase 5-8 commands) + 4 upgrade tests (version comparison, CLI help, options defaults, platform detection) + 11 template tests (1 init, 6 substitution, 4 expansion) + 4 ASCII graph tests (simple chain, parallel tasks, highlighting, empty graph) + 2 list --tree tests (dependency rendering, empty graph) + 3 retry tracking tests (backward compat, retry aggregation, retry rate) + 2 list filter tests (pattern matching, no matches) + **8 alias tests (init/deinit, set/get, set overwrites, remove, TOML parsing, CLI help, invalid subcommand, validation)**
+- **Tests**: 571+ total (~571 passing, 8 skipped) — includes 32 toolchain tests (29 + 3 outdated) + 7 CLI tests + 1 auto-install test + 11 affected detection tests + 3 graph visualization tests + 4 constraint validation tests + 3 metadata tests + 3 remote cache TOML parsing tests + 4 S3 backend tests + 3 GCS backend tests + 3 Azure backend tests + 3 multi-repo parser tests + 4 sync/status tests + 1 repo CLI test + 7 cross-repo graph tests + 4 cross-repo run tests + 2 hasGitChanges tests + 4 synthetic workspace tests + 7 CODEOWNERS generation tests + 13 versioning/publish tests (5 types + 2 parser + 6 conventional/changelog) + 1 publish CLI test + 4 analytics tests + 3 context generation tests + 1 context CLI test + 9 conformance tests (3 types + 2 parser + 1 CLI + 3 fixer) + 5 benchmark tests (2 types + 2 runner + 1 formatter + 1 CLI) + 2 registry tests (2 ToolVersion) + 1 affected command test + 3 clean command tests (help, dry-run, options parsing) + 4 completion tests (scripts non-empty, new flags, workspace, Phase 5-8 commands) + 4 upgrade tests (version comparison, CLI help, options defaults, platform detection) + 11 template tests (1 init, 6 substitution, 4 expansion) + 4 ASCII graph tests (simple chain, parallel tasks, highlighting, empty graph) + 2 list --tree tests (dependency rendering, empty graph) + 3 retry tracking tests (backward compat, retry aggregation, retry rate) + 2 list filter tests (pattern matching, no matches) + 8 alias tests + 1 tags test + **2 schedule tests**
 - **Binary**: ~3MB, ~0ms cold start, ~2MB RSS
 - **CI**: 6 cross-compile targets working
 
@@ -382,8 +395,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ```
 
 ### Key Modules (src/)
-- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools, **bench**, **affected**, **clean**, **upgrade**, **show**) + color output
-- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**, **bench (performance benchmarking)**, **affected (standalone affected task runner)**, **clean (comprehensive cleanup utility)**, **upgrade (self-update)**, **show (task metadata display)**
+- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools, **bench**, **affected**, **clean**, **upgrade**, **show**, **schedule**) + color output
+- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**, **bench (performance benchmarking)**, **affected (standalone affected task runner)**, **clean (comprehensive cleanup utility)**, **upgrade (self-update)**, **show (task metadata display)**, **schedule (task scheduling)**
 - `bench/` - **NEW**: Performance benchmarking (types, runner, formatter) with statistical analysis (mean/median/stddev/CV)
 - `config/` - TOML loader, schema validation, expression engine, profiles, **toolchain config**
 - `graph/` - DAG, topological sort, cycle detection, visualization
