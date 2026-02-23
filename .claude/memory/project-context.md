@@ -356,6 +356,16 @@
   - Error handling: graceful fallback if alias loading fails
   - 4 new unit tests: expand simple/flags/complex commands, nonexistent alias
   - Integrated with main.zig command dispatcher before built-in routing
+- [x] **Show command** (f2889ee) — NEW FEATURE: kubectl-style describe for tasks
+  - `zr show <task>` displays comprehensive task metadata
+  - Command, working directory, dependencies (parallel/serial), environment variables
+  - Execution settings (timeout, retries, failure handling, max concurrent)
+  - Resource limits (CPU %, memory in MB/GB)
+  - Conditions, caching, toolchain requirements
+  - Color-coded output with human-readable formatting
+  - Full shell completion support (bash/zsh/fish)
+  - 1 test for error handling
+  - Improves task discovery and configuration understanding without reading zr.toml
 
 ## Status Summary
 
@@ -372,8 +382,8 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 ```
 
 ### Key Modules (src/)
-- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools, **bench**, **affected**, **clean**, **upgrade**) + color output
-- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**, **bench (performance benchmarking)**, **affected (standalone affected task runner)**, **clean (comprehensive cleanup utility)**, **upgrade (self-update)**
+- `main.zig` - Entry point + CLI commands (run, list, graph, interactive-run, tools, **bench**, **affected**, **clean**, **upgrade**, **show**) + color output
+- `cli/` - Argument parsing, help, completion, TUI (picker, live streaming, interactive controls), **tools (list/install/outdated)**, **graph (workspace visualization)**, **bench (performance benchmarking)**, **affected (standalone affected task runner)**, **clean (comprehensive cleanup utility)**, **upgrade (self-update)**, **show (task metadata display)**
 - `bench/` - **NEW**: Performance benchmarking (types, runner, formatter) with statistical analysis (mean/median/stddev/CV)
 - `config/` - TOML loader, schema validation, expression engine, profiles, **toolchain config**
 - `graph/` - DAG, topological sort, cycle detection, visualization
