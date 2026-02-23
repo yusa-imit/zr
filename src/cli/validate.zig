@@ -543,6 +543,7 @@ test "cmdValidate: duplicate task in workflow stage fails" {
         \\
         \\[workflows.ci]
         \\[[workflows.ci.stages]]
+        \\name = "test"
         \\tasks = ["build", "build"]
     ;
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });

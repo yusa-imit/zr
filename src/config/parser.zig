@@ -1110,11 +1110,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     stage_parallel = std.mem.eql(u8, value, "true");
                 } else if (std.mem.eql(u8, key, "fail_fast")) {
                     stage_fail_fast = std.mem.eql(u8, value, "true");
-                } else if (std.mem.eql(u8, key, "condition") and stage_name != null) {
+                } else if (std.mem.eql(u8, key, "condition")) {
                     stage_condition = value;
-                } else if (std.mem.eql(u8, key, "approval") and stage_name != null) {
+                } else if (std.mem.eql(u8, key, "approval")) {
                     stage_approval = std.mem.eql(u8, value, "true");
-                } else if (std.mem.eql(u8, key, "on_failure") and stage_name != null) {
+                } else if (std.mem.eql(u8, key, "on_failure")) {
                     stage_on_failure = std.mem.trim(u8, value, " \t\"");
                 } else if (std.mem.eql(u8, key, "description") and stage_name == null) {
                     // Workflow-level description (not inside a stage)
