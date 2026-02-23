@@ -7,7 +7,7 @@ const Release = types.Release;
 const GITHUB_API_URL = "https://api.github.com/repos/YOUR_ORG/zr/releases";
 
 /// Current version of zr (from build config)
-pub const CURRENT_VERSION = "0.0.4";
+pub const CURRENT_VERSION = "0.0.5";
 
 /// Check if a newer version is available
 pub fn checkForUpdate(

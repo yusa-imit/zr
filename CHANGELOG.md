@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-02-23
+
 ### Added
-- Toolchain PATH injection in `zr export` command - toolchain bin directories now included in exported PATH
-- Task-specific environment layering in `zr env` command
+- **Shell-sourceable environment export**: `zr export` command generates shell-compatible env variable exports
+  - Supports bash, zsh, fish shell formats with `--shell` flag
+  - Automatic shell detection from `$SHELL` environment variable
+  - Toolchain PATH injection - automatically includes toolchain bin directories in exported PATH
+  - Profile-aware exports with `--profile` flag
+  - Task-specific environment merging with `--task` flag
+- **Task-specific environment layering**: Enhanced `zr env` command with task context
+  - Display merged environment for specific tasks with `--task` flag
+  - Visual layer breakdown showing system vs task-specific variables
+  - Task environment overrides system environment (proper layering semantics)
 
 ### Changed
 - Enhanced validation with whitespace-only command detection and duplicate task detection in workflow stages
