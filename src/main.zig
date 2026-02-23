@@ -57,6 +57,7 @@ const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
+const schedule_cmd = @import("cli/schedule.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -84,6 +85,7 @@ comptime {
     _ = aliases;
     _ = alias_cmd;
     _ = estimate_cmd;
+    _ = schedule_cmd;
     _ = loader;
     _ = parser;
     _ = expr;
@@ -385,7 +387,7 @@ fn run(
         "context",    "conformance", "bench",      "doctor",
         "setup",      "env",        "export",     "affected",
         "clean",      "upgrade",    "alias",      "estimate",
-        "show",
+        "show",       "schedule",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -643,6 +645,9 @@ fn run(
         }
         const task_name = effective_args[2];
         return show_cmd.cmdShow(allocator, task_name, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "schedule")) {
+        const schedule_args = if (effective_args.len > 2) effective_args[2..] else &[_][]const u8{};
+        return schedule_cmd.cmdSchedule(allocator, schedule_args, config_path, effective_w, ew, effective_color);
     }
 
     // This should never be reached due to alias expansion logic above
@@ -708,6 +713,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
     try w.print("  estimate <task>        Estimate task duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
+    try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
     try w.print("  <alias>                Run a user-defined alias (e.g., 'zr dev' if 'dev' is defined)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});

@@ -5,7 +5,7 @@ pub const BASH_COMPLETION =
     \\_zr_completion() {
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env export upgrade alias estimate show"
+    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env export upgrade alias estimate show schedule"
     \\    local options="--help --version --profile --dry-run --jobs --no-color --quiet --verbose --config --format --monitor --affected -h -p -n -j -q -v -f -m"
     \\
     \\    case "$prev" in
@@ -40,6 +40,9 @@ pub const BASH_COMPLETION =
     \\            COMPREPLY=($(compgen -W "generate" -- "$cur"))
     \\            return ;;
     \\        alias)
+    \\            COMPREPLY=($(compgen -W "add list remove show" -- "$cur"))
+    \\            return ;;
+    \\        schedule)
     \\            COMPREPLY=($(compgen -W "add list remove show" -- "$cur"))
     \\            return ;;
     \\        completion)
@@ -111,6 +114,7 @@ pub const ZSH_COMPLETION =
     \\        'alias:Manage command aliases (add|list|remove|show)'
     \\        'estimate:Estimate task duration based on execution history'
     \\        'show:Display detailed information about a task'
+    \\        'schedule:Schedule tasks to run at specific times (add|list|remove|show)'
     \\    )
     \\    options=(
     \\        '--help[Show help]'
@@ -166,6 +170,8 @@ pub const ZSH_COMPLETION =
     \\                codeowners)
     \\                    _values 'subcommand' generate ;;
     \\                alias)
+    \\                    _values 'subcommand' add list remove show ;;
+    \\                schedule)
     \\                    _values 'subcommand' add list remove show ;;
     \\            esac ;;
     \\    esac
@@ -224,6 +230,7 @@ pub const FISH_COMPLETION =
     \\complete -c zr -f -n '__fish_use_subcommand' -a alias      -d 'Manage command aliases'
     \\complete -c zr -f -n '__fish_use_subcommand' -a estimate   -d 'Estimate task duration'
     \\complete -c zr -f -n '__fish_use_subcommand' -a show       -d 'Display detailed task information'
+    \\complete -c zr -f -n '__fish_use_subcommand' -a schedule   -d 'Schedule tasks to run at specific times'
     \\
     \\# Subcommand arguments
     \\complete -c zr -f -n '__fish_seen_subcommand_from workspace' -a 'list run sync'
@@ -233,6 +240,7 @@ pub const FISH_COMPLETION =
     \\complete -c zr -f -n '__fish_seen_subcommand_from cache' -a 'clear status'
     \\complete -c zr -f -n '__fish_seen_subcommand_from codeowners' -a 'generate'
     \\complete -c zr -f -n '__fish_seen_subcommand_from alias' -a 'add list remove show'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from schedule' -a 'add list remove show'
     \\
     \\# Task name completions for run/watch/live/affected/bench/interactive-run/irun/estimate/show
     \\complete -c zr -f -n '__fish_seen_subcommand_from run watch live affected bench interactive-run irun estimate show' -a '(__zr_tasks)'
