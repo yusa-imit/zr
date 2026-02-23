@@ -296,6 +296,27 @@ pub fn cmdWorkflow(
 
         if (stage.tasks.len == 0) continue;
 
+        // Manual approval prompt if required
+        if (stage.approval) {
+            try color.printWarning(w, use_color, "  Manual approval required. Continue? (y/N): ", .{});
+            const stdin = std.fs.File.stdin();
+            var buf: [128]u8 = undefined;
+            const n = stdin.read(&buf) catch 0;
+            if (n > 0) {
+                const input = buf[0..n];
+                const trimmed = std.mem.trim(u8, input, " \t\r\n");
+                if (std.mem.eql(u8, trimmed, "y") or std.mem.eql(u8, trimmed, "Y")) {
+                    // Approved, continue
+                } else {
+                    try color.printDim(w, use_color, "  Stage '{s}' skipped by user\n", .{stage.name});
+                    continue;
+                }
+            } else {
+                try color.printDim(w, use_color, "  Stage '{s}' skipped (no input)\n", .{stage.name});
+                continue;
+            }
+        }
+
         const stage_start_ns = std.time.nanoTimestamp();
 
         var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
@@ -354,6 +375,28 @@ pub fn cmdWorkflow(
 
         if (!sched_result.total_success) {
             any_failed = true;
+
+            // Execute on_failure task if defined
+            if (stage.on_failure) |failure_task| {
+                try color.printWarning(w, use_color, "  Running on_failure task: {s}\n", .{failure_task});
+                var failure_result = scheduler.run(allocator, &config, &[_][]const u8{failure_task}, .{
+                    .inherit_stdio = true,
+                    .max_jobs = max_jobs,
+                }) catch |err| {
+                    try color.printError(err_writer, use_color,
+                        "workflow: on_failure task '{s}' failed: {s}\n",
+                        .{ failure_task, @errorName(err) });
+                    if (stage.fail_fast) return 1;
+                    continue;
+                };
+                defer failure_result.deinit(allocator);
+
+                if (!failure_result.total_success) {
+                    try color.printError(err_writer, use_color,
+                        "workflow: on_failure task '{s}' did not succeed\n", .{failure_task});
+                }
+            }
+
             if (stage.fail_fast) {
                 try color.printError(err_writer, use_color,
                     "\nworkflow: Stage '{s}' failed — stopping (fail_fast)\n", .{stage.name});

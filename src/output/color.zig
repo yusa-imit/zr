@@ -56,6 +56,14 @@ pub fn printInfo(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, a
     }
 }
 
+pub fn printWarning(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
+    if (use_color) {
+        try w.print(Code.bright_yellow ++ "⚠" ++ Code.reset ++ " " ++ fmt, args);
+    } else {
+        try w.print("⚠ " ++ fmt, args);
+    }
+}
+
 pub fn printBold(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try w.print(Code.bold ++ fmt ++ Code.reset, args);
