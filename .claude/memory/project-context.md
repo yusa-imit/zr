@@ -279,6 +279,14 @@
   - Supports multiple toolchains per task
   - Enables shell environment replication: `zr export --task build > env.sh && source env.sh`
   - 1 new test for toolchain environment merging
+- [x] **CHANGELOG.md** (d806cf8) — Comprehensive project changelog created:
+  - Documents all releases from v0.0.1 through v0.0.4
+  - Follows Keep a Changelog format for consistency
+  - Organized by phases (1-8) with detailed feature listings
+  - Migration guides for each version upgrade
+  - Version comparison table for quick reference
+  - 262 lines documenting complete project evolution
+  - Critical for production-ready project documentation
 
 ## Status Summary
 
