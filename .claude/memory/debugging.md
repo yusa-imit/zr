@@ -165,6 +165,37 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - **Integration**: Called from resource watcher thread in process.zig when hard limits unavailable or disabled
 - **Prevention**: Always provide fallback soft limits when kernel-level enforcement may be unavailable
 
+## `zig build test` Hang — Stdout Protocol Corruption (2026-02-24, commit 55cb581)
+- **Symptom**: `zig build test` hangs indefinitely; running test binary directly works fine (605/605 complete)
+- **Cause**: Zig 0.15's build system runs tests with `--listen=-` (server protocol over stdin/stdout pipe). Test code that writes to `std.fs.File.stdout()` (help text, CLI output) corrupts the protocol → pipe deadlock. Both sides block: build system waiting for protocol messages, test binary blocked on full pipe buffer.
+- **Fix**: In `build.zig`, replace `addRunArtifact(exe_tests)` with `Run.create()` + `addArtifactArg()` to bypass `enableTestRunnerMode()` which adds `--listen=-`. Also redirected test writers in main.zig to `/dev/null`.
+  ```zig
+  // DON'T: const run = b.addRunArtifact(exe_tests);  // adds --listen=-
+  // DO:
+  const run = std.Build.Step.Run.create(b, "run unit tests");
+  run.addArtifactArg(exe_tests);
+  run.has_side_effects = true;
+  ```
+- **Prevention**: NEVER use `std.fs.File.stdout()` in test code. Use `/dev/null` or buffer writers. If adding new test steps in build.zig, use `Run.create()` instead of `addRunArtifact()` for test binaries that produce stdout output.
+
+## CI Infinite Trigger Loop (2026-02-24, commit 8cb5c08)
+- **Symptom**: 6+ CI runs in_progress simultaneously, some hanging 1+ hour
+- **Cause**: `ci.yml` had `on: push: branches: ["**"]` + automated cron agent pushing every hour + test hang = infinite queue
+- **Fix**: Restrict to `branches: [main]`, add `paths-ignore` for `.claude/memory/**`, `docs/**`, `*.md`, add `concurrency` group with `cancel-in-progress: true`
+- **Prevention**: Always use specific branch triggers; add paths-ignore for non-code files; use concurrency groups
+
+## Double-Free Segfault in Test Code (2026-02-24, commit 55cb581)
+- **Symptom**: Segfault at `allocator.free(runs)` in bench/runner.zig test
+- **Cause**: `calculateStats()` stores the `runs` slice in returned struct; `stats.deinit()` frees it. Test also had `defer allocator.free(runs)` → double free
+- **Fix**: Remove `defer allocator.free(runs)` from test — `stats.deinit()` owns the memory
+- **Prevention**: If a function takes ownership of allocated memory (stores it in a struct that frees on deinit), the caller must NOT also free it
+
+## Bus Error Freeing String Literals (2026-02-24, commit 55cb581)
+- **Symptom**: Bus error in conformance/types.zig deinit when freeing HashMap keys
+- **Cause**: Test inserted string literals into HashMap; deinit called `allocator.free(entry.key_ptr.*)` on non-heap memory
+- **Fix**: Use `allocator.dupe()` to copy string literals before inserting into allocator-owned HashMap
+- **Prevention**: Never insert string literals into containers whose deinit frees entries; always dupe first
+
 ## Threading TaskControl Through Scheduler and CLI Layers
 - **Problem**: Interactive run creates TaskControl for keyboard input, but it wasn't connected to the actual task execution
 - **Solution**: Add optional task_control parameter to SchedulerConfig and thread it through to process.run
