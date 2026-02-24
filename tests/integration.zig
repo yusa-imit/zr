@@ -1018,3 +1018,173 @@ test "52: estimate without history gracefully handles missing data" {
     // Should not crash even without history data
     _ = result.exit_code;
 }
+
+test "53: watch requires task argument" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "watch" }, tmp_path);
+    defer result.deinit();
+    // Should fail without task argument
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "54: interactive command error handling" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Should work or gracefully handle non-interactive environment
+    var result = try runZr(allocator, &.{ "--config", config, "interactive" }, tmp_path);
+    defer result.deinit();
+    _ = result.exit_code; // Just ensure it doesn't crash
+}
+
+test "55: live requires task argument" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "live" }, tmp_path);
+    defer result.deinit();
+    // Should fail without task argument
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "56: circular dependency detection" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const circular_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\deps = ["b"]
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["c"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["a"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, circular_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "a" }, tmp_path);
+    defer result.deinit();
+    // Should detect circular dependency and fail
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "cycle") != null or
+        std.mem.indexOf(u8, result.stderr, "circular") != null);
+}
+
+test "57: task with circular self-reference" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const self_dep_toml =
+        \\[tasks.loop]
+        \\cmd = "echo loop"
+        \\deps = ["loop"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, self_dep_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "loop" }, tmp_path);
+    defer result.deinit();
+    // Should detect self-reference as circular dependency
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "cycle") != null or
+        std.mem.indexOf(u8, result.stderr, "circular") != null);
+}
+
+test "58: graph with no tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const empty_toml = "";
+
+    const config = try writeTmpConfig(allocator, tmp.dir, empty_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph" }, tmp_path);
+    defer result.deinit();
+    // Should succeed but show empty graph
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "59: workspace run with empty workspace" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const no_workspace_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, no_workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "hello" }, tmp_path);
+    defer result.deinit();
+    // Should handle gracefully (either error or run on single project)
+    _ = result.exit_code;
+}
+
+test "60: run with --profile and nonexistent profile" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--profile", "nonexistent", "run", "hello" }, tmp_path);
+    defer result.deinit();
+    // Should either warn or fail gracefully
+    _ = result.exit_code;
+}
