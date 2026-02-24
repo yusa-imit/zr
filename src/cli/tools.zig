@@ -16,6 +16,12 @@ pub fn cmdTools(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
+    // Handle --help flag
+    if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
+        try printToolsHelp(w, ew, use_color);
+        return 0;
+    }
+
     if (std.mem.eql(u8, sub, "list")) {
         return cmdToolsList(allocator, args, w, ew, use_color);
     } else if (std.mem.eql(u8, sub, "install")) {
