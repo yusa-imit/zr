@@ -475,6 +475,18 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 25. ~~**Self-update command**~~ — **COMPLETE** ✓ (ce0d7ff) — `zr upgrade` with version checking, binary download/replacement, interactive confirmation
 
 ## Recent Session Work (2026-02-25)
+- **Comprehensive CLI command coverage (67f9e5a)** — Added 10 new tests for command validation (210→220, +4.8%)
+  - Test 211: cache status command execution
+  - Test 212: complex dependency chains (A -> B -> C, A -> D -> C diamond pattern)
+  - Test 213: graph --format json structured dependency output
+  - Test 214: history --since time range filtering
+  - Test 215: env command displays system environment variables
+  - Test 216: context command outputs project metadata
+  - Test 217: setup configuration wizard invocation
+  - Test 218: list command with multiple task entries
+  - Test 219: show command task configuration detail display
+  - Test 220: validate --strict mode with well-formed config
+  - All 220 integration tests + 597 unit tests passing with 0 memory leaks ✅
 - **Comprehensive edge case coverage (099c0de)** — Added 10 new tests for realistic scenarios (200→210, +5.0%)
   - Test 201: estimate with nonexistent task returns error
   - Test 202: estimate with empty history shows no data
@@ -486,7 +498,6 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
   - Test 208: run with deps_serial executes dependencies sequentially
   - Test 209: run with allow_failure continues on task failure
   - Test 210: run with condition evaluates platform checks correctly
-  - All 210 integration tests + 597 unit tests passing with 0 memory leaks ✅
 - **Integration test expansion (c940ff1)** — Added 10 new tests for comprehensive command coverage (140→150, +7.1%)
   - validate --strict/--schema: Stricter validation rules and schema display tests
   - graph --ascii: Tree-style dependency graph visualization test
