@@ -1,3 +1,18 @@
+## Schedule Command Bugs (2026-02-24, commit e3b8d1d)
+**Symptom**: Schedule commands had memory leaks AND schedule persistence didn't work
+**Root causes**:
+1. Memory leak: ScheduleEntry fields were allocated with `allocator.dupe()` but never freed when HashMap.deinit() was called
+2. JSON persistence broken: `loadSchedules()` had placeholder code that always returned empty map
+
+**Fix**:
+1. Created `deinitSchedules()` helper that iterates HashMap values and calls entry.deinit() before HashMap.deinit()
+2. Implemented proper line-by-line JSON parsing with state machine for entry name/fields
+3. Critical bug in parser: initial logic skipped lines containing "}" in early check, preventing entry assembly logic from ever running — fixed by checking for "}" FIRST, assembling entry, then continuing
+
+**Lesson**: StringHashMap.deinit() only frees the HashMap structure, not the values. Always iterate and free complex values manually.
+
+---
+
 # Debugging Insights
 
 Record solutions to tricky bugs here. Future agents will check this before debugging.
