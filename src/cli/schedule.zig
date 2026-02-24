@@ -95,7 +95,7 @@ fn cmdScheduleAdd(
     defer allocator.free(schedule_data);
 
     var schedules = try loadSchedules(allocator, schedule_data);
-    defer schedules.deinit();
+    defer deinitSchedules(&schedules, allocator);
 
     // Create schedule entry
     const entry = ScheduleEntry{
@@ -130,7 +130,7 @@ fn cmdScheduleList(
     defer allocator.free(schedule_data);
 
     var schedules = try loadSchedules(allocator, schedule_data);
-    defer schedules.deinit();
+    defer deinitSchedules(&schedules, allocator);
 
     if (schedules.count() == 0) {
         try color.printWarning(w, use_color, "No schedules configured\n\n  Hint: Use 'zr schedule add <task> <cron>' to create a schedule\n", .{});
@@ -188,7 +188,7 @@ fn cmdScheduleRemove(
     defer allocator.free(schedule_data);
 
     var schedules = try loadSchedules(allocator, schedule_data);
-    defer schedules.deinit();
+    defer deinitSchedules(&schedules, allocator);
 
     if (!schedules.contains(name)) {
         try color.printError(ew, use_color, "Schedule '{s}' not found\n\n  Hint: Run 'zr schedule list' to see configured schedules\n", .{name});
@@ -224,7 +224,7 @@ fn cmdScheduleShow(
     defer allocator.free(schedule_data);
 
     var schedules = try loadSchedules(allocator, schedule_data);
-    defer schedules.deinit();
+    defer deinitSchedules(&schedules, allocator);
 
     if (!schedules.contains(name)) {
         try color.printError(ew, use_color, "Schedule '{s}' not found\n\n  Hint: Run 'zr schedule list' to see configured schedules\n", .{name});
@@ -286,13 +286,21 @@ const ScheduleEntry = struct {
     }
 };
 
+fn deinitSchedules(schedules: *std.StringHashMap(ScheduleEntry), allocator: Allocator) void {
+    var it = schedules.valueIterator();
+    while (it.next()) |entry| {
+        entry.deinit(allocator);
+    }
+    schedules.deinit();
+}
+
 fn getScheduleData(allocator: Allocator) ![]const u8 {
     const home = platform.getHome();
     return try std.fs.path.join(allocator, &.{ home, ".zr", "schedules.json" });
 }
 
 fn loadSchedules(allocator: Allocator, path: []const u8) !std.StringHashMap(ScheduleEntry) {
-    const schedules = std.StringHashMap(ScheduleEntry).init(allocator);
+    var schedules = std.StringHashMap(ScheduleEntry).init(allocator);
 
     // Try to read existing file
     const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
@@ -307,11 +315,84 @@ fn loadSchedules(allocator: Allocator, path: []const u8) !std.StringHashMap(Sche
     const content = try file.readToEndAlloc(allocator, 1024 * 1024);
     defer allocator.free(content);
 
-    // Simple JSON parsing (in production, use a proper JSON library)
-    // For now, just return empty map as placeholder
-    // TODO: Implement proper JSON parsing when needed
+    // Basic JSON parsing - line by line (simplified, assumes our specific format)
+    var lines = std.mem.splitScalar(u8, content, '\n');
+
+    var current_name: ?[]const u8 = null;
+    var current_task: ?[]const u8 = null;
+    var current_cron: ?[]const u8 = null;
+    var current_config_path: ?[]const u8 = null;
+    var current_cwd: ?[]const u8 = null;
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0 or std.mem.eql(u8, trimmed, "{")) continue;
+
+        // End of entry - assemble and store BEFORE continuing
+        if (std.mem.eql(u8, trimmed, "}") or std.mem.eql(u8, trimmed, "},")) {
+            if (current_name != null and current_task != null and current_cron != null and current_config_path != null and current_cwd != null) {
+                const entry = ScheduleEntry{
+                    .name = current_name.?,
+                    .task = current_task.?,
+                    .cron = current_cron.?,
+                    .config_path = current_config_path.?,
+                    .cwd = current_cwd.?,
+                    .cron_job_id = null,
+                };
+                try schedules.put(current_name.?, entry);
+            }
+            current_name = null;
+            current_task = null;
+            current_cron = null;
+            current_config_path = null;
+            current_cwd = null;
+            continue;
+        }
+
+        // Parse entry name: "name": {
+        if (std.mem.indexOf(u8, trimmed, "\":") != null and std.mem.indexOf(u8, trimmed, "{") != null) {
+            // Extract name between quotes
+            if (std.mem.indexOf(u8, trimmed, "\"")) |first_quote| {
+                if (std.mem.indexOfPos(u8, trimmed, first_quote + 1, "\"")) |second_quote| {
+                    current_name = try allocator.dupe(u8, trimmed[first_quote + 1 .. second_quote]);
+                }
+            }
+        }
+        // Parse fields
+        else if (std.mem.indexOf(u8, trimmed, "\"task\":")) |_| {
+            if (extractJsonString(trimmed)) |value| {
+                current_task = try allocator.dupe(u8, value);
+            }
+        } else if (std.mem.indexOf(u8, trimmed, "\"cron\":")) |_| {
+            if (extractJsonString(trimmed)) |value| {
+                current_cron = try allocator.dupe(u8, value);
+            }
+        } else if (std.mem.indexOf(u8, trimmed, "\"config_path\":")) |_| {
+            if (extractJsonString(trimmed)) |value| {
+                current_config_path = try allocator.dupe(u8, value);
+            }
+        } else if (std.mem.indexOf(u8, trimmed, "\"cwd\":")) |_| {
+            if (extractJsonString(trimmed)) |value| {
+                current_cwd = try allocator.dupe(u8, value);
+            }
+        }
+    }
 
     return schedules;
+}
+
+fn extractJsonString(line: []const u8) ?[]const u8 {
+    // Extract string value from JSON line like: "key": "value",
+    const colon_pos = std.mem.indexOf(u8, line, ":") orelse return null;
+    const after_colon = std.mem.trim(u8, line[colon_pos + 1 ..], " \t");
+    if (after_colon.len < 2) return null;
+
+    // Find first quote
+    const first_quote = std.mem.indexOf(u8, after_colon, "\"") orelse return null;
+    // Find second quote
+    const second_quote = std.mem.indexOfPos(u8, after_colon, first_quote + 1, "\"") orelse return null;
+
+    return after_colon[first_quote + 1 .. second_quote];
 }
 
 fn saveSchedules(allocator: Allocator, path: []const u8, schedules: *std.StringHashMap(ScheduleEntry)) !void {

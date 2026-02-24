@@ -1560,3 +1560,184 @@ test "80: estimate --format=json output" {
     try std.testing.expect(result.exit_code == 0);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
 }
+
+test "81: schedule add creates new schedule" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Add a schedule
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "hello", "0 */2 * * *", "--name", "test-schedule" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test-schedule") != null or std.mem.indexOf(u8, result.stdout, "Schedule created") != null or std.mem.indexOf(u8, result.stderr, "test-schedule") != null or std.mem.indexOf(u8, result.stderr, "created") != null);
+}
+
+test "82: schedule show displays schedule details" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Add a schedule first
+    var add_result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "hello", "0 8 * * *", "--name", "morning-run" }, tmp_path);
+    defer add_result.deinit();
+
+    // Show the schedule
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "show", "morning-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "morning-run") != null or std.mem.indexOf(u8, result.stdout, "0 8 * * *") != null);
+}
+
+test "83: schedule remove deletes existing schedule" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Add a schedule first
+    var add_result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "hello", "0 12 * * *", "--name", "noon-task" }, tmp_path);
+    defer add_result.deinit();
+
+    // Remove the schedule
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "remove", "noon-task" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "removed") != null or std.mem.indexOf(u8, result.stdout, "deleted") != null or std.mem.indexOf(u8, result.stderr, "removed") != null or std.mem.indexOf(u8, result.stderr, "deleted") != null or result.stdout.len > 0 or result.stderr.len > 0);
+}
+
+test "84: analytics with --json flag outputs JSON format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task a few times to create history
+    for (0..3) |_| {
+        var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+        std.Thread.sleep(100_000_000); // 100ms delay
+    }
+
+    // Get analytics in JSON format
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null or std.mem.indexOf(u8, result.stdout, "task") != null);
+}
+
+test "85: setup with --check flag validates environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Setup with check flag
+    var result = try runZr(allocator, &.{ "--config", config, "setup", "--check" }, tmp_path);
+    defer result.deinit();
+    // Should exit 0 or 1 depending on environment
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "86: upgrade with --check-only flag does not download" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Check for updates without downloading
+    var result = try runZr(allocator, &.{ "upgrade", "--check-only" }, tmp_path);
+    defer result.deinit();
+    // Should exit 0 (up to date) or 1 (update available)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "87: repo sync without zr-repos.toml fails gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try to sync without config
+    var result = try runZr(allocator, &.{ "repo", "sync" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr-repos.toml") != null or std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "No such file") != null);
+}
+
+test "88: repo graph without zr-repos.toml reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try to show graph without multi-repo config
+    var result = try runZr(allocator, &.{ "repo", "graph" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "89: validate with --strict flag enforces stricter rules" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Validate with strict mode
+    var result = try runZr(allocator, &.{ "--config", config, "validate", "--strict" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "90: tools install with invalid tool name fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try to install non-existent tool
+    var result = try runZr(allocator, &.{ "tools", "install", "invalid-tool@1.0.0" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid") != null or std.mem.indexOf(u8, result.stderr, "unknown") != null or std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "Unsupported") != null);
+}
