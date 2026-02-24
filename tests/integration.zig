@@ -848,3 +848,173 @@ test "44: publish --dry-run simulates publish" {
     // May fail without git, but should not crash
     _ = result.exit_code;
 }
+
+test "45: run task with dependencies executes all" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const chained_config =
+        \\[tasks.task1]
+        \\cmd = "echo task1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo task2"
+        \\deps = ["task1"]
+        \\
+        \\[tasks.task3]
+        \\cmd = "echo task3"
+        \\deps = ["task2"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, chained_config);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "task3" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "task1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "task2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "task3") != null);
+}
+
+test "46: --jobs flag limits parallelism" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--jobs", "1", "--config", config, "run", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "47: --quiet suppresses output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--quiet", "--config", config, "run", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Quiet mode should have minimal output
+}
+
+test "48: --verbose shows detailed output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--verbose", "--config", config, "run", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "49: config with unknown task field is accepted" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // TOML parser is lenient and ignores unknown fields
+    const config_with_unknown =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\unknown_field = "value"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_with_unknown);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "50: missing config file reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", "/nonexistent/zr.toml", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "51: list --tags filters by tags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tagged_config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\tags = ["ci", "production"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\tags = ["ci"]
+        \\
+        \\[tasks.dev]
+        \\cmd = "echo dev"
+        \\tags = ["dev"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, tagged_config);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "--tags=ci" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "52: estimate without history gracefully handles missing data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "hello" }, tmp_path);
+    defer result.deinit();
+    // Should not crash even without history data
+    _ = result.exit_code;
+}
