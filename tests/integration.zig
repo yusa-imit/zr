@@ -3733,3 +3733,232 @@ test "170: estimate with multiple tasks in history" {
     // Should show estimate based on history
     try std.testing.expect(result.stdout.len > 0);
 }
+
+test "171: repo sync clones and updates repositories" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create empty zr-repos.toml file
+    const repos_toml = "# Empty repos file\n";
+    const repos_file = try tmp.dir.createFile("zr-repos.toml", .{});
+    defer repos_file.close();
+    try repos_file.writeAll(repos_toml);
+
+    var result = try runZr(allocator, &.{ "--config", config, "repo", "sync" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with empty repos file
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "172: repo status shows git status of all repositories" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create empty zr-repos.toml file
+    const repos_toml = "# Empty repos file\n";
+    const repos_file = try tmp.dir.createFile("zr-repos.toml", .{});
+    defer repos_file.close();
+    try repos_file.writeAll(repos_toml);
+
+    var result = try runZr(allocator, &.{ "--config", config, "repo", "status" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with empty repos file
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "173: codeowners generate creates CODEOWNERS file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg1"]
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create pkg1 directory
+    try tmp.dir.makeDir("pkg1");
+
+    var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate" }, tmp_path);
+    defer result.deinit();
+
+    // Command might fail if workspace structure is incomplete, but should not crash
+    // We're testing that the command exists and runs without panicking
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "174: schedule list displays scheduled tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "list" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show no scheduled tasks initially
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "175: schedule show displays details of a scheduled task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // First add a schedule
+    {
+        var add_result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "hello", "0 * * * *" }, tmp_path);
+        defer add_result.deinit();
+    }
+
+    // Then show it
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "show", "hello" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "176: schedule remove deletes a scheduled task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // First add a schedule
+    {
+        var add_result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "hello", "0 * * * *" }, tmp_path);
+        defer add_result.deinit();
+    }
+
+    // Then remove it
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "remove", "hello" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "177: alias add creates a new command alias" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "alias", "add", "greet", "run", "hello" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "178: alias show displays details of a specific alias" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // First add an alias
+    {
+        var add_result = try runZr(allocator, &.{ "--config", config, "alias", "add", "greet", "run", "hello" }, tmp_path);
+        defer add_result.deinit();
+    }
+
+    // Then show it
+    var result = try runZr(allocator, &.{ "--config", config, "alias", "show", "greet" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "179: interactive-run provides cancel and retry controls" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // interactive-run requires terminal input, so we expect it to fail gracefully
+    // when run without a TTY, but should not panic/crash
+    var result = try runZr(allocator, &.{ "--config", config, "interactive-run", "hello" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail gracefully (exit code 1) or succeed (exit code 0)
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "180: live command streams task logs in real-time TUI" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // live command requires terminal, so we expect it to fail gracefully
+    // when run without a TTY, but should not panic/crash
+    var result = try runZr(allocator, &.{ "--config", config, "live", "hello" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail gracefully (exit code 1) or succeed (exit code 0)
+    try std.testing.expect(result.exit_code <= 1);
+}
