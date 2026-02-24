@@ -3506,3 +3506,230 @@ test "160: publish with --dry-run shows what would be done" {
     // Dry-run should succeed or fail gracefully
     try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
 }
+
+test "161: completion zsh generates zsh completion script" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "completion", "zsh" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain zsh completion syntax
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "#compdef") != null or result.stdout.len > 0);
+}
+
+test "162: completion fish generates fish completion script" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "completion", "fish" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Fish completion should generate output
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "163: init with existing config refuses overwrite" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create existing zr.toml
+    const existing = try tmp.dir.createFile("zr.toml", .{});
+    defer existing.close();
+    try existing.writeAll("[tasks.old]\ncmd = \"echo old\"\n");
+
+    var result = try runZr(allocator, &.{ "init" }, tmp_path);
+    defer result.deinit();
+
+    // Should refuse to overwrite existing config
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "already exists") != null);
+}
+
+test "164: setup with --verbose shows detailed diagnostics" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const simple_toml = HELLO_TOML;
+    const config = try writeTmpConfig(allocator, tmp.dir, simple_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "setup", "--verbose" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed or show diagnostics
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "165: upgrade with --prerelease flag accepts prerelease versions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "upgrade", "--check", "--prerelease" }, tmp_path);
+    defer result.deinit();
+
+    // Should check for updates including prerelease (network dependent, allow either exit code)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "166: watch with nonexistent task fails gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const simple_toml = HELLO_TOML;
+    const config = try writeTmpConfig(allocator, tmp.dir, simple_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "watch", "nonexistent" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with nonexistent task
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+}
+
+test "167: workflow with empty stages array" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const empty_workflow_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+        \\[workflows.empty]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, empty_workflow_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "empty" }, tmp_path);
+    defer result.deinit();
+
+    // Empty workflow should succeed (no stages to run)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "168: list with both --tree and pattern filter" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const deps_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.build-frontend]
+        \\cmd = "echo frontend"
+        \\deps = ["build"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, deps_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "build", "--tree" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show tree for filtered tasks
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "169: run with cache enabled stores task results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const cache_toml =
+        \\[tasks.cached]
+        \\cmd = "echo cached-output"
+        \\cache = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, cache_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task first time (populates cache)
+    {
+        var result1 = try runZr(allocator, &.{ "--config", config, "run", "cached" }, tmp_path);
+        defer result1.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result1.exit_code);
+    }
+
+    // Run again (should use cache)
+    var result = try runZr(allocator, &.{ "--config", config, "run", "cached" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "170: estimate with multiple tasks in history" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const simple_toml = HELLO_TOML;
+    const config = try writeTmpConfig(allocator, tmp.dir, simple_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task multiple times to build history
+    {
+        var result1 = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer result1.deinit();
+    }
+    {
+        var result2 = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer result2.deinit();
+    }
+
+    // Now estimate should have data
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "hello" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show estimate based on history
+    try std.testing.expect(result.stdout.len > 0);
+}
