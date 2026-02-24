@@ -1188,3 +1188,375 @@ test "60: run with --profile and nonexistent profile" {
     // Should either warn or fail gracefully
     _ = result.exit_code;
 }
+
+test "61: estimate command with history data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task first to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+
+    // Now estimate should work
+    var estimate_result = try runZr(allocator, &.{ "--config", config, "estimate", "hello" }, tmp_path);
+    defer estimate_result.deinit();
+    try std.testing.expect(estimate_result.exit_code == 0);
+}
+
+test "62: export command with default bash format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, ENV_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "export GREETING") != null);
+}
+
+test "63: export command with fish format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, ENV_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "hello", "--shell", "fish" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "set -gx GREETING") != null);
+}
+
+test "64: export command with powershell format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, ENV_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "hello", "--shell", "powershell" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "$env:GREETING") != null);
+}
+
+test "65: alias add and list workflow" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Alias commands will use ~/.zr/aliases.toml, but for the test
+    // we just verify they don't crash and exit cleanly
+    var add_result = try runZr(allocator, &.{ "alias", "add", "test-alias", "list" }, tmp_path);
+    defer add_result.deinit();
+    try std.testing.expect(add_result.exit_code == 0);
+
+    // List should show the alias
+    var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
+    defer list_result.deinit();
+    try std.testing.expect(list_result.exit_code == 0);
+}
+
+test "66: alias show specific alias" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Add alias first
+    var add_result = try runZr(allocator, &.{ "alias", "add", "show-test", "list --tree" }, tmp_path);
+    defer add_result.deinit();
+
+    // Show specific alias
+    var show_result = try runZr(allocator, &.{ "alias", "show", "show-test" }, tmp_path);
+    defer show_result.deinit();
+    try std.testing.expect(show_result.exit_code == 0);
+}
+
+test "67: alias remove existing alias" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Add alias
+    var add_result = try runZr(allocator, &.{ "alias", "add", "remove-me", "list" }, tmp_path);
+    defer add_result.deinit();
+
+    // Remove alias
+    var remove_result = try runZr(allocator, &.{ "alias", "remove", "remove-me" }, tmp_path);
+    defer remove_result.deinit();
+    try std.testing.expect(remove_result.exit_code == 0);
+}
+
+test "68: graph command with task dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+}
+
+test "69: graph with --ascii flag" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--ascii" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+}
+
+test "70: bench with --format=csv output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "hello", "--iterations=2", "--format=csv" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // CSV output should have iteration column
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "iteration") != null);
+}
+
+test "71: bench with --format=json output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "hello", "--iterations=2", "--format=json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
+}
+
+test "72: list with pattern filter" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const multi_task_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, multi_task_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "test" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "73: context with --format json output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "context", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
+}
+
+test "74: export with missing task argument" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task" }, tmp_path);
+    defer result.deinit();
+    // Should fail with error about missing task
+    try std.testing.expect(result.exit_code == 1);
+}
+
+test "75: export with nonexistent task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "nonexistent" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 1);
+}
+
+test "76: estimate with nonexistent task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "nonexistent" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 1);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null);
+}
+
+test "77: alias with invalid name characters" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try to add alias with invalid characters
+    var result = try runZr(allocator, &.{ "alias", "add", "invalid@name", "list" }, tmp_path);
+    defer result.deinit();
+    // Should fail validation
+    try std.testing.expect(result.exit_code == 1);
+}
+
+test "78: list --tree with filtered pattern" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "build", "--tree" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+}
+
+test "79: show with tags display" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tagged_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\tags = ["ci", "test"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, tagged_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "show", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tags") != null or std.mem.indexOf(u8, result.stdout, "tags") != null);
+}
+
+test "80: estimate --format=json output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+
+    // Estimate with JSON output (use global --format json flag)
+    var result = try runZr(allocator, &.{ "--config", config, "--format", "json", "estimate", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
+}
