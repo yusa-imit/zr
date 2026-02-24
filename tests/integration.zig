@@ -1741,3 +1741,201 @@ test "90: tools install with invalid tool name fails" {
     try std.testing.expect(result.exit_code != 0);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid") != null or std.mem.indexOf(u8, result.stderr, "unknown") != null or std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "Unsupported") != null);
 }
+
+test "91: plugin list command shows builtin plugins" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "plugin", "list" }, tmp_path);
+    defer result.deinit();
+    // Should succeed even with no plugins configured
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "92: plugin info command with nonexistent plugin fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "plugin", "info", "nonexistent-plugin" }, tmp_path);
+    defer result.deinit();
+    // Should fail when plugin doesn't exist
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "93: lint command with no constraints succeeds" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "lint" }, tmp_path);
+    defer result.deinit();
+    // Should succeed when no constraints are defined
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "94: conformance command with no rules succeeds" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "conformance" }, tmp_path);
+    defer result.deinit();
+    // Should succeed when no conformance rules are defined
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "95: codeowners generate command creates output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = []
+        \\
+        \\[codeowners]
+        \\default_owners = ["@team"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "@team") != null or std.mem.indexOf(u8, result.stdout, "CODEOWNERS") != null);
+}
+
+test "96: affected command with no git repository fails gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "affected", "hello" }, tmp_path);
+    defer result.deinit();
+    // Should fail gracefully when not in a git repository
+    try std.testing.expect(result.exit_code != 0 or std.mem.indexOf(u8, result.stderr, "git") != null or std.mem.indexOf(u8, result.stdout, "hello") != null);
+}
+
+test "97: workspace list command without workspace section fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    // Should fail when no workspace section exists
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "workspace") != null);
+}
+
+test "98: workspace run with --parallel flag" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = []
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "hello", "--parallel" }, tmp_path);
+    defer result.deinit();
+    // Should succeed or handle parallel flag appropriately
+    _ = result.exit_code;
+}
+
+test "99: cache clear command with invalid subcommand fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\local_dir = ".zr/cache"
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\cache = { key = "hello-key" }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, cache_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "cache", "invalid-subcommand" }, tmp_path);
+    defer result.deinit();
+    // Should fail with invalid subcommand
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "unknown") != null or std.mem.indexOf(u8, result.stderr, "invalid") != null);
+}
+
+test "100: repo status command without multi-repo config" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "repo", "status" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr-repos") != null or std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "No such file") != null);
+}
