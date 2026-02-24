@@ -14,7 +14,19 @@ pub fn cmdPlugin(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    if (std.mem.eql(u8, sub, "list")) {
+    if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
+        try color.printBold(w, use_color, "zr plugin - Plugin management\n\n", .{});
+        try w.writeAll("Usage:\n");
+        try w.writeAll("  zr plugin list                  List plugins declared in zr.toml\n");
+        try w.writeAll("  zr plugin builtins              List available built-in plugins\n");
+        try w.writeAll("  zr plugin search [query]        Search installed plugins by name/description\n");
+        try w.writeAll("  zr plugin install <path|url>    Install a plugin (local path or git URL)\n");
+        try w.writeAll("  zr plugin remove <name>         Remove an installed plugin\n");
+        try w.writeAll("  zr plugin update <name> [path]  Update a plugin (git pull, or from new path)\n");
+        try w.writeAll("  zr plugin info <name>           Show metadata for an installed plugin\n");
+        try w.writeAll("  zr plugin create <name>         Scaffold a new plugin template directory\n");
+        return 0;
+    } else if (std.mem.eql(u8, sub, "list")) {
         var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
         defer config.deinit();
 

@@ -19,6 +19,12 @@ pub fn cmdSchedule(
 
     const subcmd = args[0];
 
+    // Handle --help flag
+    if (std.mem.eql(u8, subcmd, "--help") or std.mem.eql(u8, subcmd, "-h")) {
+        try printHelp(w, use_color);
+        return 0;
+    }
+
     if (std.mem.eql(u8, subcmd, "add")) {
         return cmdScheduleAdd(allocator, args[1..], config_path, w, ew, use_color);
     } else if (std.mem.eql(u8, subcmd, "list")) {

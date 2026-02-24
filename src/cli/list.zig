@@ -298,7 +298,13 @@ pub fn cmdCache(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    if (std.mem.eql(u8, sub, "clear")) {
+    if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
+        try color.printBold(w, use_color, "zr cache - Task result cache management\n\n", .{});
+        try w.writeAll("Usage:\n");
+        try w.writeAll("  zr cache clear      Clear all cached task results\n");
+        try w.writeAll("  zr cache status     Show cache statistics\n");
+        return 0;
+    } else if (std.mem.eql(u8, sub, "clear")) {
         var store = cache_store.CacheStore.init(allocator) catch |err| {
             try color.printError(ew, use_color,
                 "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",

@@ -519,7 +519,14 @@ fn run(
         return completion.cmdCompletion(shell, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "workspace")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
-        if (std.mem.eql(u8, sub, "list")) {
+        if (std.mem.eql(u8, sub, "") or std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
+            try color.printBold(effective_w, effective_color, "zr workspace - Monorepo and multi-repository management\n\n", .{});
+            try effective_w.writeAll("Usage:\n");
+            try effective_w.writeAll("  zr workspace list              List workspace member directories\n");
+            try effective_w.writeAll("  zr workspace run <task>        Run a task across all workspace members\n");
+            try effective_w.writeAll("  zr workspace sync [path]       Build synthetic workspace from multi-repo\n");
+            return if (std.mem.eql(u8, sub, "")) @as(u8, 1) else @as(u8, 0);
+        } else if (std.mem.eql(u8, sub, "list")) {
             return workspace.cmdWorkspaceList(allocator, config_path, json_output, effective_w, ew, effective_color);
         } else if (std.mem.eql(u8, sub, "run")) {
             if (effective_args.len < 4) {
