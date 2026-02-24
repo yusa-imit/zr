@@ -2238,31 +2238,61 @@ test "115: affected command with --list flag shows affected projects" {
     defer allocator.free(tmp_path);
 
     // Initialize git repo
-    _ = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "git", "init" },
-        .cwd = tmp_path,
-    }) catch return;
-    _ = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "git", "config", "user.email", "test@example.com" },
-        .cwd = tmp_path,
-    }) catch return;
-    _ = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "git", "config", "user.name", "Test User" },
-        .cwd = tmp_path,
-    }) catch return;
-    _ = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "git", "add", "." },
-        .cwd = tmp_path,
-    }) catch return;
-    _ = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "git", "commit", "-m", "initial" },
-        .cwd = tmp_path,
-    }) catch return;
+    {
+        const git_init = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        }) catch return;
+        defer {
+            allocator.free(git_init.stdout);
+            allocator.free(git_init.stderr);
+        }
+    }
+    {
+        const git_config_email = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@example.com" },
+            .cwd = tmp_path,
+        }) catch return;
+        defer {
+            allocator.free(git_config_email.stdout);
+            allocator.free(git_config_email.stderr);
+        }
+    }
+    {
+        const git_config_name = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test User" },
+            .cwd = tmp_path,
+        }) catch return;
+        defer {
+            allocator.free(git_config_name.stdout);
+            allocator.free(git_config_name.stderr);
+        }
+    }
+    {
+        const git_add = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        }) catch return;
+        defer {
+            allocator.free(git_add.stdout);
+            allocator.free(git_add.stderr);
+        }
+    }
+    {
+        const git_commit = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        }) catch return;
+        defer {
+            allocator.free(git_commit.stdout);
+            allocator.free(git_commit.stderr);
+        }
+    }
 
     var result = try runZr(allocator, &.{ "--config", config, "affected", "test", "--list" }, tmp_path);
     defer result.deinit();
