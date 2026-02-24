@@ -369,7 +369,7 @@ const WindowsBackend = if (builtin.os.tag == .windows) struct {
     allocator: std.mem.Allocator,
     handles: std.ArrayList(std.os.windows.HANDLE),
     paths: std.ArrayList([]const u8),
-    buffer: []u8,
+    buffer: []align(4) u8,
 
     const BUFFER_SIZE = 4096;
 
@@ -379,7 +379,7 @@ const WindowsBackend = if (builtin.os.tag == .windows) struct {
         var paths_list = std.ArrayList([]const u8){};
         errdefer paths_list.deinit(allocator);
 
-        const buffer = try allocator.alloc(u8, BUFFER_SIZE);
+        const buffer = try allocator.alignedAlloc(u8, .@"4", BUFFER_SIZE);
         errdefer allocator.free(buffer);
 
         var self = @This(){
@@ -420,7 +420,7 @@ const WindowsBackend = if (builtin.os.tag == .windows) struct {
             std.os.windows.OPEN_EXISTING,
             std.os.windows.FILE_FLAG_BACKUP_SEMANTICS,
             null,
-        ) catch return error.CannotWatch;
+        );
 
         if (handle == std.os.windows.INVALID_HANDLE_VALUE) return error.CannotWatch;
 
@@ -437,10 +437,11 @@ const WindowsBackend = if (builtin.os.tag == .windows) struct {
         const FILE_NOTIFY_CHANGE_SIZE = 0x00000008;
         const FILE_NOTIFY_CHANGE_LAST_WRITE = 0x00000010;
 
-        const filter = FILE_NOTIFY_CHANGE_FILE_NAME |
+        const filter_bits: u32 = FILE_NOTIFY_CHANGE_FILE_NAME |
             FILE_NOTIFY_CHANGE_DIR_NAME |
             FILE_NOTIFY_CHANGE_SIZE |
             FILE_NOTIFY_CHANGE_LAST_WRITE;
+        const filter: std.os.windows.FileNotifyChangeFilter = @bitCast(filter_bits);
 
         while (true) {
             for (self.handles.items, 0..) |handle, idx| {
@@ -464,7 +465,9 @@ const WindowsBackend = if (builtin.os.tag == .windows) struct {
                 while (offset < bytes_returned) {
                     const info = @as(*const std.os.windows.FILE_NOTIFY_INFORMATION, @ptrCast(@alignCast(&self.buffer[offset])));
 
-                    const filename_bytes = @as([*]const u16, @ptrCast(@alignCast(&info.FileName)))[0 .. info.FileNameLength / 2];
+                    // FileName is a flexible array member - calculate pointer after struct
+                    const filename_ptr = @as([*]const u16, @ptrCast(@alignCast(&self.buffer[offset + @sizeOf(std.os.windows.FILE_NOTIFY_INFORMATION)])));
+                    const filename_bytes = filename_ptr[0 .. info.FileNameLength / 2];
                     const filename = std.unicode.utf16LeToUtf8Alloc(self.allocator, filename_bytes) catch continue;
                     defer self.allocator.free(filename);
 

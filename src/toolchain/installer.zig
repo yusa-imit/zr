@@ -5,11 +5,12 @@ const ToolKind = types.ToolKind;
 const ToolVersion = types.ToolVersion;
 const InstalledTool = types.InstalledTool;
 const builtin = @import("builtin");
+const platform = @import("../util/platform.zig");
 
 /// Get the base directory for toolchain installations.
 /// Returns ~/.zr/toolchains
 pub fn getToolchainsDir(allocator: std.mem.Allocator) ![]u8 {
-    const home = std.posix.getenv("HOME") orelse return error.NoHomeDir;
+    const home = platform.getHome();
     return std.fmt.allocPrint(allocator, "{s}/.zr/toolchains", .{home});
 }
 

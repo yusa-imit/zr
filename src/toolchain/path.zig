@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const types = @import("types.zig");
 const installer = @import("installer.zig");
+const platform = @import("../util/platform.zig");
 const ToolKind = types.ToolKind;
 const ToolVersion = types.ToolVersion;
 const ToolSpec = types.ToolSpec;
@@ -114,7 +115,7 @@ pub fn buildToolchainEnv(
     }
 
     // Get current PATH from environment
-    const current_path = std.posix.getenv("PATH");
+    const current_path = platform.getenv("PATH");
 
     // Build new PATH with toolchain bins prepended
     const new_path = try buildPathWithToolchains(allocator, toolchains, current_path);

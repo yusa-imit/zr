@@ -15,7 +15,7 @@ pub fn killProcess(pid: std.process.Child.Id) void {
     if (comptime native_os == .windows) {
         const windows = std.os.windows;
         const handle: windows.HANDLE = @ptrCast(pid);
-        _ = windows.TerminateProcess(handle, 1);
+        windows.TerminateProcess(handle, 1) catch {};
     } else {
         std.posix.kill(pid, std.posix.SIG.KILL) catch {};
     }

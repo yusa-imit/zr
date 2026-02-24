@@ -3,6 +3,7 @@ const types = @import("../config/types.zig");
 const loader = @import("../config/loader.zig");
 const repos_mod = @import("../config/repos.zig");
 const sync_mod = @import("sync.zig");
+const platform = @import("../util/platform.zig");
 
 /// Directory for synthetic workspace storage (relative to HOME).
 const SYNTHETIC_DIR = ".zr/synthetic-workspace";
@@ -123,7 +124,7 @@ pub fn saveSyntheticWorkspace(
     allocator: std.mem.Allocator,
     workspace: *const SyntheticWorkspace,
 ) !void {
-    const home = std.posix.getenv("HOME") orelse return error.NoHomeDir;
+    const home = platform.getHome();
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, SYNTHETIC_DIR });
     defer allocator.free(cache_dir);
 
@@ -159,7 +160,7 @@ pub fn saveSyntheticWorkspace(
 
 /// Load synthetic workspace metadata from cache.
 pub fn loadSyntheticWorkspace(allocator: std.mem.Allocator) !?SyntheticWorkspace {
-    const home = std.posix.getenv("HOME") orelse return null;
+    const home = platform.getHome();
     const metadata_path = try std.fmt.allocPrint(allocator, "{s}/{s}/metadata.json", .{ home, SYNTHETIC_DIR });
     defer allocator.free(metadata_path);
 
@@ -240,7 +241,7 @@ pub fn isSyntheticWorkspaceActive(allocator: std.mem.Allocator) !bool {
 
 /// Clear synthetic workspace cache.
 pub fn clearSyntheticWorkspace(allocator: std.mem.Allocator) !void {
-    const home = std.posix.getenv("HOME") orelse return error.NoHomeDir;
+    const home = platform.getHome();
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, SYNTHETIC_DIR });
     defer allocator.free(cache_dir);
 

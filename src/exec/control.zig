@@ -1,6 +1,7 @@
 /// Interactive task control — cancel/retry/pause signals for running tasks.
 /// Thread-safe control flags and operations for managing task execution lifecycle.
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const ControlSignal = enum(u8) {
     none = 0,
@@ -8,6 +9,9 @@ pub const ControlSignal = enum(u8) {
     pause = 2,
     resume_task = 3,
 };
+
+/// Platform-specific PID storage type (i32 on POSIX, usize on Windows for handle)
+const PidStorageType = if (builtin.os.tag == .windows) usize else i32;
 
 /// Thread-safe control handle for a running task.
 /// Shared between execution thread and UI/control thread.
@@ -17,7 +21,7 @@ pub const TaskControl = struct {
     /// Task name (owned)
     task_name: []const u8,
     /// Process ID (set after spawn, 0 means not set)
-    pid: std.atomic.Value(i32),
+    pid: std.atomic.Value(PidStorageType),
     /// Whether task has finished (atomic)
     finished: std.atomic.Value(bool),
     /// Allocator used for task_name
@@ -28,7 +32,7 @@ pub const TaskControl = struct {
         ctrl.* = TaskControl{
             .signal = std.atomic.Value(u8).init(@intFromEnum(ControlSignal.none)),
             .task_name = try allocator.dupe(u8, task_name),
-            .pid = std.atomic.Value(i32).init(0),
+            .pid = std.atomic.Value(PidStorageType).init(0),
             .finished = std.atomic.Value(bool).init(false),
             .allocator = allocator,
         };
@@ -42,12 +46,25 @@ pub const TaskControl = struct {
 
     /// Set the process ID after spawning.
     pub fn setPid(self: *TaskControl, pid: std.process.Child.Id) void {
-        self.pid.store(pid, .release);
+        if (comptime builtin.os.tag == .windows) {
+            // On Windows, Child.Id is *anyopaque (HANDLE)
+            self.pid.store(@intFromPtr(pid), .release);
+        } else {
+            // On POSIX, Child.Id is i32
+            self.pid.store(pid, .release);
+        }
     }
 
     /// Get the process ID (returns 0 if not set).
     pub fn getPid(self: *TaskControl) std.process.Child.Id {
-        return self.pid.load(.acquire);
+        const stored = self.pid.load(.acquire);
+        if (comptime builtin.os.tag == .windows) {
+            // On Windows, convert usize back to *anyopaque (HANDLE)
+            return @ptrFromInt(stored);
+        } else {
+            // On POSIX, return i32 directly
+            return stored;
+        }
     }
 
     /// Request cancellation of the running task.

@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
+const platform = @import("../util/platform.zig");
 
 pub fn cmdSchedule(
     allocator: Allocator,
@@ -286,7 +287,7 @@ const ScheduleEntry = struct {
 };
 
 fn getScheduleData(allocator: Allocator) ![]const u8 {
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     return try std.fs.path.join(allocator, &.{ home, ".zr", "schedules.json" });
 }
 
@@ -315,7 +316,7 @@ fn loadSchedules(allocator: Allocator, path: []const u8) !std.StringHashMap(Sche
 
 fn saveSchedules(allocator: Allocator, path: []const u8, schedules: *std.StringHashMap(ScheduleEntry)) !void {
     // Ensure ~/.zr directory exists
-    const home = std.posix.getenv("HOME") orelse ".";
+    const home = platform.getHome();
     const zr_dir = try std.fs.path.join(allocator, &.{ home, ".zr" });
     defer allocator.free(zr_dir);
 

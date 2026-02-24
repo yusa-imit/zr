@@ -161,6 +161,7 @@ pub fn cmdInteractiveRun(
             w,
             ew,
             use_color,
+            null, // task_control
         );
     }
 
