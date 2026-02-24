@@ -609,6 +609,12 @@ pub const Config = struct {
             template.toolchain,
             &[_][]const u8{}, // tags not supported in templates yet
         );
+
+        // Free the allocated strings (addTaskImpl dupes them)
+        self.allocator.free(expanded_cmd);
+        if (expanded_cwd) |c| self.allocator.free(c);
+        if (expanded_desc) |d| self.allocator.free(d);
+        if (expanded_condition) |c| self.allocator.free(c);
     }
 
     /// Substitute ${param} placeholders in a string with values from the params map.
