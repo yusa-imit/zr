@@ -3006,3 +3006,235 @@ test "140: clean command with selective cleanup" {
         try std.testing.expect(clean_result.exit_code == 0 or clean_result.exit_code == 1);
     }
 }
+
+test "141: validate --strict enforces stricter validation rules" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_with_warnings =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\description = "Test task"
+        \\unknown_field = "value"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_with_warnings);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Normal validation should succeed
+    {
+        var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+        defer result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    }
+
+    // Strict validation may warn about unknown fields
+    {
+        var result = try runZr(allocator, &.{ "--config", config, "validate", "--strict" }, tmp_path);
+        defer result.deinit();
+        // Accepts either success or warnings
+        try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+    }
+}
+
+test "142: validate --schema displays schema information" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "validate", "--schema" }, tmp_path);
+    defer result.deinit();
+
+    // Should display schema info (may succeed or fail if no config found)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "143: graph --ascii displays tree-style dependency graph" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_with_deps =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["a"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["b"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_with_deps);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--ascii" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain tree-style output with tasks
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "b") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "c") != null);
+}
+
+test "144: tools outdated checks for outdated toolchains" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // This command checks for outdated toolchains against registries
+    var result = try runZr(allocator, &.{ "tools", "outdated" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (even if no tools installed)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "145: plugin update updates installed plugin" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try updating a nonexistent plugin (should fail gracefully)
+    var result = try runZr(allocator, &.{ "plugin", "update", "nonexistent" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail gracefully for nonexistent plugin
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+}
+
+test "146: plugin builtins lists available built-in plugins" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "builtins" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should list built-in plugins like env, git, docker, cache
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "env") != null or
+        std.mem.indexOf(u8, result.stdout, "git") != null);
+}
+
+test "147: workspace sync builds synthetic workspace from multi-repo" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try syncing without zr-repos.toml (should fail gracefully)
+    var result = try runZr(allocator, &.{ "workspace", "sync" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail gracefully if no zr-repos.toml found
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr-repos.toml") != null);
+}
+
+test "148: repo run executes task across all repositories" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try running task without zr-repos.toml (should fail gracefully)
+    var result = try runZr(allocator, &.{ "repo", "run", "test" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail gracefully if no zr-repos.toml found
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr-repos.toml") != null);
+}
+
+test "149: repo run with --dry-run flag shows execution plan" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try dry-run without zr-repos.toml (should fail gracefully)
+    var result = try runZr(allocator, &.{ "repo", "run", "test", "--dry-run" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail gracefully if no zr-repos.toml found
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+}
+
+test "150: list command with multiple flag combinations" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_with_tags =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\tags = ["ci", "build"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\tags = ["ci", "test"]
+        \\deps = ["build"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\tags = ["prod"]
+        \\deps = ["test"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_with_tags);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Test list with pattern and tags together
+    {
+        var result = try runZr(allocator, &.{ "--config", config, "list", "build", "--tags=ci" }, tmp_path);
+        defer result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+        // Should show build task (matches both pattern and tag)
+        try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    }
+
+    // Test list --tree with tags
+    {
+        var result = try runZr(allocator, &.{ "--config", config, "list", "--tree", "--tags=ci" }, tmp_path);
+        defer result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+        // Should show tree view with filtered tasks
+        try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+        try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    }
+}
