@@ -449,3 +449,14 @@ CLI Interface -> Config Engine -> Task Graph Engine -> Execution Engine -> Plugi
 23. ~~**Azure Blob remote cache backend**~~ — **COMPLETE** ✓ (64c28c8) — Shared Key HMAC-SHA256 authentication
 24. ~~**Multi-repo orchestration**~~ — **COMPLETE** ✓ — zr-repos.toml, repo sync, cross-repo tasks (Phase 7)
 25. ~~**Self-update command**~~ — **COMPLETE** ✓ (ce0d7ff) — `zr upgrade` with version checking, binary download/replacement, interactive confirmation
+
+## Recent Session Work (2026-02-25)
+- **Integration test expansion (c940ff1)** — Added 10 new tests for comprehensive command coverage (140→150, +7.1%)
+  - validate --strict/--schema: Stricter validation rules and schema display tests
+  - graph --ascii: Tree-style dependency graph visualization test
+  - tools outdated: Registry checks for outdated toolchains test
+  - plugin update/builtins: Plugin management operations tests
+  - workspace sync: Synthetic workspace error handling test
+  - repo run: Cross-repo task execution with --dry-run flag tests
+  - list multi-flag: Combined pattern + tags + --tree filter tests
+  - All 150 integration tests + 597 unit tests passing with 0 memory leaks ✅
