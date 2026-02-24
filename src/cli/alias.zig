@@ -84,12 +84,24 @@ fn cmdAliasList(allocator: Allocator, w: *std.Io.Writer, ew: *std.Io.Writer, use
 }
 
 fn cmdAliasAdd(allocator: Allocator, name: []const u8, command: []const u8, w: *std.Io.Writer, ew: *std.Io.Writer, use_color: bool) !u8 {
+    // Validate name is not empty
+    if (name.len == 0) {
+        try color.printError(ew, use_color, "Alias name cannot be empty\n", .{});
+        return 1;
+    }
+
     // Validate name (no spaces, special chars)
     for (name) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '-' and c != '_') {
             try color.printError(ew, use_color, "Alias name must contain only alphanumeric characters, hyphens, and underscores\n", .{});
             return 1;
         }
+    }
+
+    // Validate command is not empty
+    if (command.len == 0) {
+        try color.printError(ew, use_color, "Alias command cannot be empty\n", .{});
+        return 1;
     }
 
     var config = try AliasConfig.load(allocator);

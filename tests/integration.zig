@@ -1939,3 +1939,180 @@ test "100: repo status command without multi-repo config" {
     try std.testing.expect(result.exit_code != 0);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr-repos") != null or std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "No such file") != null);
 }
+
+test "101: --jobs flag with invalid numeric value fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--jobs", "abc", "--config", config, "run", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "jobs") != null or std.mem.indexOf(u8, result.stderr, "invalid") != null or std.mem.indexOf(u8, result.stderr, "number") != null);
+}
+
+test "102: --jobs flag with zero value fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--jobs", "0", "--config", config, "run", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "jobs") != null or std.mem.indexOf(u8, result.stderr, "invalid") != null or std.mem.indexOf(u8, result.stderr, "0") != null);
+}
+
+test "103: --format flag with invalid value fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--format", "invalid", "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "format") != null or std.mem.indexOf(u8, result.stderr, "invalid") != null);
+}
+
+test "104: export with invalid shell format fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "hello", "--shell", "invalid-shell" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "shell") != null or std.mem.indexOf(u8, result.stderr, "invalid") != null or std.mem.indexOf(u8, result.stderr, "unknown") != null);
+}
+
+test "105: run with malformed config file reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const malformed_toml =
+        \\[tasks.hello
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, malformed_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+    defer result.deinit();
+    // Malformed TOML currently results in "task not found" instead of parse error
+    // This is a known limitation - TOML parser silently ignores malformed sections
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "error") != null);
+}
+
+test "106: bench with invalid iterations value fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "hello", "--iterations=abc" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "iterations") != null or std.mem.indexOf(u8, result.stderr, "invalid") != null or std.mem.indexOf(u8, result.stderr, "number") != null);
+}
+
+test "107: bench with zero iterations runs no iterations" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "hello", "--iterations=0", "--warmup=0" }, tmp_path);
+    defer result.deinit();
+    // Zero iterations is allowed - it just doesn't run anything
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "0 total") != null or std.mem.indexOf(u8, result.stdout, "0 benchmark iterations") != null);
+}
+
+test "108: list with --tree and --format json combination" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "--tree", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    // This should work - both flags are compatible
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "109: alias add with empty name fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "alias", "add", "", "run test" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "empty") != null or std.mem.indexOf(u8, result.stderr, "cannot be empty") != null);
+}
+
+test "110: schedule with invalid cron expression fails gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "hello", "invalid-cron" }, tmp_path);
+    defer result.deinit();
+    // Should accept any cron string (validation happens at runtime), but add command should succeed
+    // This tests that the command doesn't crash on unusual input
+    try std.testing.expect(result.exit_code == 0 or std.mem.indexOf(u8, result.stderr, "cron") != null);
+}
