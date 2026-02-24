@@ -4865,3 +4865,300 @@ test "210: run with condition evaluates platform checks correctly" {
     // Should skip or succeed without running
     try std.testing.expect(result2.exit_code <= 1);
 }
+
+test "211: cache status command executes successfully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with cache-enabled task
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.build]
+        \\cmd = "echo cached build"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // Check cache status command works
+    var result = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "212: run with complex dependency chains" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create complex dependency graph: A -> B -> C, A -> D -> C
+    const complex_toml =
+        \\[tasks.C]
+        \\cmd = "echo C"
+        \\
+        \\[tasks.B]
+        \\cmd = "echo B"
+        \\deps = ["C"]
+        \\
+        \\[tasks.D]
+        \\cmd = "echo D"
+        \\deps = ["C"]
+        \\
+        \\[tasks.A]
+        \\cmd = "echo A"
+        \\deps = ["B", "D"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(complex_toml);
+
+    // Run top-level task
+    var result = try runZr(allocator, &.{ "run", "A" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // All tasks should run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "C") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "B") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "D") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "A") != null);
+}
+
+test "213: graph --format json outputs structured dependency graph" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with dependencies
+    const graph_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["install"]
+        \\
+        \\[tasks.install]
+        \\cmd = "echo install"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(graph_toml);
+
+    // Get graph in JSON format
+    var result = try runZr(allocator, &.{ "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "install") != null);
+}
+
+test "214: history --since filters by time range" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create simple task
+    const history_toml =
+        \\[tasks.test]
+        \\cmd = "echo test run"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(history_toml);
+
+    // Run task to create history
+    var result1 = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result1.exit_code);
+
+    // Check history with --since flag
+    var result2 = try runZr(allocator, &.{ "history", "--since", "1h" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
+}
+
+test "215: env command displays system environment variables" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create minimal config
+    const env_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(env_toml);
+
+    // Run env command - should show system env vars
+    var result = try runZr(allocator, &.{"env"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should have some output (system environment variables)
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "216: context outputs project metadata in default format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create simple config
+    const context_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(context_toml);
+
+    // Run context command
+    var result = try runZr(allocator, &.{"context"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "217: setup displays configuration wizard" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create minimal config
+    const setup_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(setup_toml);
+
+    // Run setup command
+    var result = try runZr(allocator, &.{"setup"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "218: list with multiple tasks shows all entries" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+
+    // Create config with multiple tasks
+    const multi_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\
+    ;
+
+    const zr_toml = try tmp_dir.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(multi_toml);
+
+    // List all tasks
+    var result = try runZr(allocator, &.{"list"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy") != null);
+}
+
+test "219: show command displays task configuration details" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with detailed task
+    const show_toml =
+        \\[tasks.test-unit]
+        \\cmd = "npm test"
+        \\cwd = "/src"
+        \\description = "Run unit tests"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Show task details
+    var result = try runZr(allocator, &.{ "show", "test-unit" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "npm test") != null);
+}
+
+test "220: validate accepts well-formed config in strict mode" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create valid config
+    const valid_toml =
+        \\[tasks.build]
+        \\cmd = "make build"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(valid_toml);
+
+    // Validate in strict mode
+    var result = try runZr(allocator, &.{ "validate", "--strict" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
