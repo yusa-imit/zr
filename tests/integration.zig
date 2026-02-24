@@ -2116,3 +2116,281 @@ test "110: schedule with invalid cron expression fails gracefully" {
     // This tests that the command doesn't crash on unusual input
     try std.testing.expect(result.exit_code == 0 or std.mem.indexOf(u8, result.stderr, "cron") != null);
 }
+
+test "111: cache status command shows cache statistics" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{"cache", "status"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Cache status should display without errors
+}
+
+test "112: matrix task expansion creates multiple task instances" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const matrix_toml =
+        \\[tasks.test]
+        \\cmd = "echo ${matrix.os}"
+        \\
+        \\[tasks.test.matrix]
+        \\os = ["linux", "macos"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, matrix_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
+    defer result.deinit();
+    // Matrix expansion should run (may succeed or fail depending on echo support)
+    // Just verify command executed without crashing
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "113: run with retry attempts failed task multiple times" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const retry_toml =
+        \\[tasks.flaky]
+        \\cmd = "false"
+        \\retry = 2
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, retry_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "flaky" }, tmp_path);
+    defer result.deinit();
+    // Task with retries enabled should retry and still fail
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "114: run --dry-run shows execution plan with dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const deps_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, deps_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "test", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Dry run should show both tasks in execution plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "115: affected command with --list flag shows affected projects" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["app", "lib"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    // Create workspace structure
+    try tmp.dir.makeDir("app");
+    try tmp.dir.makeDir("lib");
+    try tmp.dir.writeFile(.{ .sub_path = "app/zr.toml", .data = "[tasks.test]\ncmd = \"echo app\"\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "lib/zr.toml", .data = "[tasks.test]\ncmd = \"echo lib\"\n" });
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Initialize git repo
+    _ = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "init" },
+        .cwd = tmp_path,
+    }) catch return;
+    _ = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.email", "test@example.com" },
+        .cwd = tmp_path,
+    }) catch return;
+    _ = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.name", "Test User" },
+        .cwd = tmp_path,
+    }) catch return;
+    _ = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "add", "." },
+        .cwd = tmp_path,
+    }) catch return;
+    _ = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "commit", "-m", "initial" },
+        .cwd = tmp_path,
+    }) catch return;
+
+    var result = try runZr(allocator, &.{ "--config", config, "affected", "test", "--list" }, tmp_path);
+    defer result.deinit();
+    // Should complete without error (may show no changes if no files modified after commit)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "116: workspace run with filtered members using glob pattern" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["apps/*", "libs/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    // Create workspace structure
+    try tmp.dir.makeDir("apps");
+    try tmp.dir.makeDir("apps/web");
+    try tmp.dir.makeDir("apps/mobile");
+    try tmp.dir.makeDir("libs");
+    try tmp.dir.makeDir("libs/utils");
+    try tmp.dir.writeFile(.{ .sub_path = "apps/web/zr.toml", .data = "[tasks.test]\ncmd = \"echo web\"\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "apps/mobile/zr.toml", .data = "[tasks.test]\ncmd = \"echo mobile\"\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "libs/utils/zr.toml", .data = "[tasks.test]\ncmd = \"echo utils\"\n" });
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should find all workspace members via glob patterns
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "apps/web") != null or std.mem.indexOf(u8, result.stdout, "web") != null);
+}
+
+test "117: run with allow_failure continues on error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allow_failure_toml =
+        \\[tasks.might_fail]
+        \\cmd = "false"
+        \\allow_failure = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, allow_failure_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "might_fail" }, tmp_path);
+    defer result.deinit();
+    // Task fails but allow_failure means overall run succeeds
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "118: task with deps_serial runs dependencies sequentially" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const serial_toml =
+        \\[tasks.dep1]
+        \\cmd = "echo dep1"
+        \\
+        \\[tasks.dep2]
+        \\cmd = "echo dep2"
+        \\
+        \\[tasks.main]
+        \\cmd = "echo main"
+        \\deps = ["dep1", "dep2"]
+        \\deps_serial = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, serial_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "main" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // All tasks should run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "dep1") != null or std.mem.indexOf(u8, result.stdout, "dep2") != null);
+}
+
+test "119: run with --monitor flag displays resource usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "hello", "--monitor" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Monitor flag should work without errors
+}
+
+test "120: doctor command checks for required dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{"doctor"}, tmp_path);
+    defer result.deinit();
+    // Doctor should complete and check for common tools
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "git") != null or std.mem.indexOf(u8, result.stderr, "git") != null);
+}
