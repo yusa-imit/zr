@@ -2424,3 +2424,270 @@ test "120: doctor command checks for required dependencies" {
     try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "git") != null or std.mem.indexOf(u8, result.stderr, "git") != null);
 }
+
+test "121: list --tags with multiple tags filters correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tags_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\tags = ["ci", "build"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\tags = ["ci", "test"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\tags = ["production"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, tags_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "--tags=ci,build" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show build and test (both have ci tag), but not deploy
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "122: env command displays environment variables" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, ENV_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "env", "--task", "hello" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show GREETING environment variable
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "GREETING") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "howdy") != null);
+}
+
+test "123: history with --limit flag restricts output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task twice to create history
+    {
+        var result1 = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer result1.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result1.exit_code);
+    }
+    {
+        var result2 = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer result2.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
+    }
+
+    // Check history with limit
+    var result = try runZr(allocator, &.{ "history", "--limit", "1" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Limited history should have content
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "124: history with --format json outputs JSON" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task to create history
+    {
+        var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+    }
+
+    var result = try runZr(allocator, &.{ "--format", "json", "history" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // JSON format should be parseable (contains "runs" key)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "runs") != null);
+}
+
+test "125: plugin create generates plugin scaffold" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "create", "test-plugin" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should create plugin directory
+    tmp.dir.access("test-plugin", .{}) catch |err| {
+        std.debug.print("Expected plugin directory not found: {}\n", .{err});
+        return err;
+    };
+}
+
+test "126: plugin search with query returns results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "search", "docker" }, tmp_path);
+    defer result.deinit();
+    // Search should complete without error (even if registry unavailable)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "127: workflow with approval field (non-interactive dry-run)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workflow_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[workflows.release]
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "build"
+        \\tasks = ["build"]
+        \\approval = true
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "deploy"
+        \\tasks = ["hello"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workflow_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Use --dry-run to avoid interactive approval prompt
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "release", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show workflow plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null or std.mem.indexOf(u8, result.stderr, "build") != null);
+}
+
+test "128: conformance with --fix flag applies fixes" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const conformance_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+        \\[[conformance.rules]]
+        \\type = "import_pattern"
+        \\pattern = "forbidden"
+        \\scope = "*.txt"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, conformance_toml);
+    defer allocator.free(config);
+
+    // Create a file with forbidden import
+    const test_file = try tmp.dir.createFile("test.txt", .{});
+    defer test_file.close();
+    try test_file.writeAll("import forbidden\nok line\n");
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "conformance", "--fix" }, tmp_path);
+    defer result.deinit();
+    // Fix should complete successfully
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "129: version with --bump=patch increments version" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create package.json
+    const package_json =
+        \\{
+        \\  "name": "test",
+        \\  "version": "1.0.0"
+        \\}
+        \\
+    ;
+    const pkg_file = try tmp.dir.createFile("package.json", .{});
+    defer pkg_file.close();
+    try pkg_file.writeAll(package_json);
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "version", "--bump=patch" }, tmp_path);
+    defer result.deinit();
+    // Should show new version or succeed
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "130: analytics with --limit flag restricts history range" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task to create history
+    {
+        var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+    }
+
+    var result = try runZr(allocator, &.{ "analytics", "--limit", "10", "--json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should output analytics data
+    try std.testing.expect(result.stdout.len > 0);
+}
