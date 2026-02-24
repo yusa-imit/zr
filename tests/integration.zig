@@ -571,10 +571,13 @@ test "31: plugin list shows installed plugins" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var result = try runZr(allocator, &.{ "plugin", "list" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "plugin", "list" }, tmp_path);
     defer result.deinit();
     // Should succeed even with no plugins
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -609,7 +612,7 @@ test "33: setup checks project setup" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
-test "34: analytics status shows analytics state" {
+test "34: analytics shows analytics report" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -617,25 +620,77 @@ test "34: analytics status shows analytics state" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var result = try runZr(allocator, &.{ "analytics", "status" }, tmp_path);
+    var result = try runZr(allocator, &.{"analytics"}, tmp_path);
     defer result.deinit();
+    // Should succeed even with no history
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
-test "35: affected shows affected tasks" {
+test "35: affected lists affected projects" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    // Create a workspace config
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg1"]
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
     defer allocator.free(config);
 
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var result = try runZr(allocator, &.{ "--config", config, "affected" }, tmp_path);
+    // Create member directory with config
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.writeFile(.{ .sub_path = "pkg1/zr.toml", .data = "[tasks.test]\ncmd = \"echo test\"\n" });
+
+    // Initialize git repo (affected requires git)
+    {
+        var init_child = std.process.Child.init(&.{ "git", "init" }, allocator);
+        init_child.cwd = tmp_path;
+        init_child.stdin_behavior = .Close;
+        init_child.stdout_behavior = .Ignore;
+        init_child.stderr_behavior = .Ignore;
+        _ = try init_child.spawnAndWait();
+
+        var config_user = std.process.Child.init(&.{ "git", "config", "user.email", "test@test.com" }, allocator);
+        config_user.cwd = tmp_path;
+        config_user.stdin_behavior = .Close;
+        config_user.stdout_behavior = .Ignore;
+        config_user.stderr_behavior = .Ignore;
+        _ = try config_user.spawnAndWait();
+
+        var config_name = std.process.Child.init(&.{ "git", "config", "user.name", "Test" }, allocator);
+        config_name.cwd = tmp_path;
+        config_name.stdin_behavior = .Close;
+        config_name.stdout_behavior = .Ignore;
+        config_name.stderr_behavior = .Ignore;
+        _ = try config_name.spawnAndWait();
+
+        var add_child = std.process.Child.init(&.{ "git", "add", "." }, allocator);
+        add_child.cwd = tmp_path;
+        add_child.stdin_behavior = .Close;
+        add_child.stdout_behavior = .Ignore;
+        add_child.stderr_behavior = .Ignore;
+        _ = try add_child.spawnAndWait();
+
+        var commit_child = std.process.Child.init(&.{ "git", "commit", "-m", "init" }, allocator);
+        commit_child.cwd = tmp_path;
+        commit_child.stdin_behavior = .Close;
+        commit_child.stdout_behavior = .Ignore;
+        commit_child.stderr_behavior = .Ignore;
+        _ = try commit_child.spawnAndWait();
+    }
+
+    var result = try runZr(allocator, &.{ "--config", config, "affected", "--list" }, tmp_path);
     defer result.deinit();
-    // Should exit 0 even if no git repo
+    // Should exit 0 (will show "No affected projects found")
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
