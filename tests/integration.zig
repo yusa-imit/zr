@@ -2691,3 +2691,318 @@ test "130: analytics with --limit flag restricts history range" {
     // Should output analytics data
     try std.testing.expect(result.stdout.len > 0);
 }
+
+// ── Advanced Multi-Feature Integration Tests ─────────────────────────
+
+test "131: workflow with matrix, cache, and dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const matrix_workflow_toml =
+        \\[tasks.setup]
+        \\cmd = "echo setup"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing $TARGET"
+        \\deps = ["setup"]
+        \\matrix.TARGET = ["linux", "macos", "windows"]
+        \\cache.enabled = true
+        \\cache.key = "test-$TARGET"
+        \\
+        \\[[workflows.ci.stages]]
+        \\tasks = ["test"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, matrix_workflow_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show tasks in the config
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null or std.mem.indexOf(u8, result.stdout, "setup") != null);
+}
+
+test "132: profile overrides with environment variables and dry-run" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const profile_env_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo deploying to $ENV"
+        \\env = { ENV = "dev" }
+        \\
+        \\[profiles.production]
+        \\env = { ENV = "prod" }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, profile_env_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--profile", "production", "--dry-run", "run", "deploy" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Dry-run should complete without errors
+}
+
+test "133: task with condition, retry, and timeout" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const complex_task_toml =
+        \\[tasks.flaky]
+        \\cmd = "sleep 0.1 && exit 0"
+        \\condition = "platform == 'darwin' || platform == 'linux'"
+        \\retry = 2
+        \\timeout = 5000
+        \\allow_failure = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, complex_task_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "flaky" }, tmp_path);
+    defer result.deinit();
+    // Should succeed or gracefully handle failure with allow_failure
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "134: workspace with tagged filtering and parallel execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_tags_toml =
+        \\[workspace]
+        \\members = ["pkg-a", "pkg-b"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\tags = ["ci", "build"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\tags = ["ci", "test"]
+        \\deps = ["build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_tags_toml);
+    defer allocator.free(config);
+
+    // Create workspace member directories
+    try tmp.dir.makeDir("pkg-a");
+    try tmp.dir.makeDir("pkg-b");
+
+    // Create member configs
+    const pkg_a_file = try tmp.dir.createFile("pkg-a/zr.toml", .{});
+    defer pkg_a_file.close();
+    try pkg_a_file.writeAll("[tasks.build]\ncmd = \"echo pkg-a build\"\n");
+
+    const pkg_b_file = try tmp.dir.createFile("pkg-b/zr.toml", .{});
+    defer pkg_b_file.close();
+    try pkg_b_file.writeAll("[tasks.build]\ncmd = \"echo pkg-b build\"\n");
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--jobs", "2", "list", "--tags=ci" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should list tasks with ci tag
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "135: alias expansion with flags and arguments" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create alias
+    {
+        var add_result = try runZr(allocator, &.{ "alias", "add", "quick-build", "run hello --dry-run" }, tmp_path);
+        defer add_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), add_result.exit_code);
+    }
+
+    // Use alias
+    var result = try runZr(allocator, &.{ "--config", config, "quick-build" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "136: bench with profile and JSON output format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const bench_profile_toml =
+        \\[tasks.fast]
+        \\cmd = "echo fast"
+        \\
+        \\[profiles.perf]
+        \\env = { MODE = "fast" }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, bench_profile_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--profile", "perf", "bench", "fast", "-n", "3", "--format=json", "--quiet" }, tmp_path);
+    defer result.deinit();
+    // Exit code 0 or 1 acceptable (bench may fail on resource constraints)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "137: show command with complex task configuration" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const complex_show_toml =
+        \\[tasks.complex]
+        \\cmd = "echo complex"
+        \\description = "Complex task"
+        \\cwd = "/tmp"
+        \\deps = ["dep1", "dep2"]
+        \\env = { VAR1 = "value1", VAR2 = "value2" }
+        \\timeout = 30000
+        \\retry = 3
+        \\allow_failure = true
+        \\tags = ["integration", "slow"]
+        \\max_concurrent = 5
+        \\max_cpu = 80
+        \\max_memory = 512
+        \\
+        \\[tasks.dep1]
+        \\cmd = "echo dep1"
+        \\
+        \\[tasks.dep2]
+        \\cmd = "echo dep2"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, complex_show_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "show", "complex" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show task name or description
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "complex") != null or std.mem.indexOf(u8, result.stdout, "Complex task") != null);
+}
+
+test "138: export with toolchain paths and custom env" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toolchain_export_toml =
+        \\[tasks.node-app]
+        \\cmd = "node app.js"
+        \\env = { NODE_ENV = "production" }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toolchain_export_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "node-app", "--shell", "bash" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should include env vars
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "NODE_ENV") != null or std.mem.indexOf(u8, result.stdout, "production") != null);
+}
+
+test "139: history with filtering and different formats" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task to create history
+    {
+        var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+    }
+
+    // Test plain history
+    {
+        var hist_result = try runZr(allocator, &.{ "history" }, tmp_path);
+        defer hist_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), hist_result.exit_code);
+        try std.testing.expect(hist_result.stdout.len > 0);
+    }
+
+    // Test JSON history
+    {
+        var json_result = try runZr(allocator, &.{ "history", "--format=json" }, tmp_path);
+        defer json_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), json_result.exit_code);
+        // JSON output may be empty array or have content
+        try std.testing.expect(json_result.stdout.len > 0);
+    }
+}
+
+test "140: clean command with selective cleanup" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task to create cache and history
+    {
+        var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+    }
+
+    // Test clean with different options
+    {
+        var clean_result = try runZr(allocator, &.{ "clean", "--cache", "--dry-run" }, tmp_path);
+        defer clean_result.deinit();
+        // Dry-run should show what would be cleaned
+        try std.testing.expect(clean_result.exit_code == 0 or clean_result.exit_code == 1);
+    }
+}
