@@ -542,7 +542,15 @@ fn shouldSkip(basename: []const u8) bool {
 test "native watcher compiles" {
     // This test just ensures the backend compiles for the current platform
     const allocator = std.testing.allocator;
-    const paths = [_][]const u8{"."};
+
+    // Create a temp dir instead of watching the entire project
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const paths = [_][]const u8{tmp_path};
 
     var watcher = try NativeWatcher.init(allocator, &paths);
     defer watcher.deinit();

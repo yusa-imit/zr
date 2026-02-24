@@ -267,7 +267,15 @@ fn shouldSkip(basename: []const u8) bool {
 
 test "watcher native mode compiles and initializes" {
     const allocator = std.testing.allocator;
-    const watch_paths = [_][]const u8{"."};
+
+    // Create a temp dir instead of watching the entire project
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const watch_paths = [_][]const u8{tmp_path};
 
     var watcher = try Watcher.init(allocator, &watch_paths, .native, 500);
     defer watcher.deinit();
