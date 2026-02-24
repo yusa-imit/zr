@@ -204,61 +204,33 @@ fn getProcessUsageMacOS(pid: std.posix.pid_t) ?ResourceUsage {
     return usage;
 }
 
-/// Windows-specific resource usage via GetProcessMemoryInfo and GetProcessTimes
+/// Windows-specific resource usage via Zig stdlib Windows APIs
 fn getProcessUsageWindows(handle: std.os.windows.HANDLE) ?ResourceUsage {
     const windows = std.os.windows;
-    const PROCESS_MEMORY_COUNTERS = extern struct {
-        cb: windows.DWORD,
-        PageFaultCount: windows.DWORD,
-        PeakWorkingSetSize: windows.SIZE_T,
-        WorkingSetSize: windows.SIZE_T,
-        QuotaPeakPagedPoolUsage: windows.SIZE_T,
-        QuotaPagedPoolUsage: windows.SIZE_T,
-        QuotaPeakNonPagedPoolUsage: windows.SIZE_T,
-        QuotaNonPagedPoolUsage: windows.SIZE_T,
-        PagefileUsage: windows.SIZE_T,
-        PeakPagefileUsage: windows.SIZE_T,
-    };
 
-    const FILETIME = extern struct {
-        dwLowDateTime: windows.DWORD,
-        dwHighDateTime: windows.DWORD,
-    };
+    // Get memory info using Zig's stdlib wrapper (uses NtQueryInformationProcess)
+    const vmc = windows.GetProcessMemoryInfo(handle) catch return null;
 
-    const GetProcessMemoryInfo = @extern(*const fn (
-        windows.HANDLE,
-        *PROCESS_MEMORY_COUNTERS,
-        windows.DWORD,
-    ) callconv(.c) windows.BOOL, .{ .name = "GetProcessMemoryInfo" });
-
+    // Declare GetProcessTimes from kernel32.dll
     const GetProcessTimes = @extern(*const fn (
         windows.HANDLE,
-        *FILETIME,
-        *FILETIME,
-        *FILETIME,
-        *FILETIME,
-    ) callconv(.c) windows.BOOL, .{ .name = "GetProcessTimes" });
+        *windows.FILETIME,
+        *windows.FILETIME,
+        *windows.FILETIME,
+        *windows.FILETIME,
+    ) callconv(.c) windows.BOOL, .{ .name = "GetProcessTimes", .library_name = "kernel32" });
 
-    var mem_counters: PROCESS_MEMORY_COUNTERS = undefined;
-    mem_counters.cb = @sizeOf(PROCESS_MEMORY_COUNTERS);
-
-    // Get memory info
-    if (GetProcessMemoryInfo(handle, &mem_counters, @sizeOf(PROCESS_MEMORY_COUNTERS)) == 0) {
-        return null;
-    }
-
-    // Get CPU times
-    var creation_time: FILETIME = undefined;
-    var exit_time: FILETIME = undefined;
-    var kernel_time: FILETIME = undefined;
-    var user_time: FILETIME = undefined;
+    var creation_time: windows.FILETIME = undefined;
+    var exit_time: windows.FILETIME = undefined;
+    var kernel_time: windows.FILETIME = undefined;
+    var user_time: windows.FILETIME = undefined;
 
     if (GetProcessTimes(handle, &creation_time, &exit_time, &kernel_time, &user_time) == 0) {
         return null;
     }
 
     var usage = ResourceUsage{};
-    usage.rss_bytes = mem_counters.WorkingSetSize;
+    usage.rss_bytes = vmc.WorkingSetSize;
 
     // Convert FILETIME (100ns intervals since 1601) to nanoseconds
     const user_ns = (@as(u64, user_time.dwHighDateTime) << 32 | user_time.dwLowDateTime) * 100;
