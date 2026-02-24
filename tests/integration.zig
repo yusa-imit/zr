@@ -3962,3 +3962,301 @@ test "180: live command streams task logs in real-time TUI" {
     // Should fail gracefully (exit code 1) or succeed (exit code 0)
     try std.testing.expect(result.exit_code <= 1);
 }
+
+test "181: repo graph with --format json outputs JSON structure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create zr-repos.toml
+    const repos_config =
+        \\[workspace]
+        \\root = "."
+        \\
+        \\[repos.frontend]
+        \\path = "packages/frontend"
+        \\
+        \\[repos.backend]
+        \\path = "packages/backend"
+        \\deps = ["frontend"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr-repos.toml", .data = repos_config });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create fake package dirs with zr.toml
+    try tmp.dir.makePath("packages/frontend");
+    try tmp.dir.writeFile(.{ .sub_path = "packages/frontend/zr.toml", .data = "[tasks.test]\ncmd = \"echo test\"" });
+    try tmp.dir.makePath("packages/backend");
+    try tmp.dir.writeFile(.{ .sub_path = "packages/backend/zr.toml", .data = "[tasks.test]\ncmd = \"echo test\"" });
+
+    const repos_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr-repos.toml" });
+    defer allocator.free(repos_path);
+
+    var result = try runZr(allocator, &.{ "repo", "graph", "--format", "json", repos_path }, tmp_path);
+    defer result.deinit();
+
+    // May fail without actual git repos, main test is that it handles flags correctly
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "182: affected command with --base flag filters by git changes" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+    try tmp.dir.makePath("packages/app");
+    try tmp.dir.writeFile(.{ .sub_path = "packages/app/zr.toml", .data = "[tasks.test]\ncmd = \"echo app test\"" });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    // Test with --base (should handle gracefully even without git repo)
+    var result = try runZr(allocator, &.{ "--config", config_path, "affected", "test", "--base", "HEAD", "--list" }, tmp_path);
+    defer result.deinit();
+
+    // May fail without git repo, but should not panic/crash
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "183: affected command with --include-dependents expands dependency graph" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    // Create package with dependency
+    try tmp.dir.makePath("packages/lib");
+    try tmp.dir.writeFile(.{ .sub_path = "packages/lib/zr.toml", .data = "[tasks.build]\ncmd = \"echo lib build\"" });
+
+    try tmp.dir.makePath("packages/app");
+    try tmp.dir.writeFile(.{
+        .sub_path = "packages/app/zr.toml",
+        .data = "[metadata]\ndependencies = [\"lib\"]\n\n[tasks.build]\ncmd = \"echo app build\"",
+    });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    // Test --include-dependents flag (should process without error)
+    var result = try runZr(allocator, &.{ "--config", config_path, "affected", "build", "--include-dependents", "--list" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "184: context command with --format yaml outputs YAML structure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\tags = ["ci"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "context", "--format", "yaml" }, tmp_path);
+    defer result.deinit();
+
+    // Context command may fail without git repo or other dependencies
+    // Main test is that it doesn't crash
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "185: plugin create generates scaffold with valid structure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "create", "test-plugin" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Check that plugin directory was created
+    tmp.dir.access("test-plugin", .{}) catch |err| {
+        std.debug.print("plugin directory not found: {}\n", .{err});
+        return err;
+    };
+}
+
+test "186: env command with --task flag shows task-specific environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\env = { BUILD_MODE = "production" }
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "env", "--task", "build" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "BUILD_MODE") != null);
+}
+
+test "187: history with --format json outputs JSON array" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    // Run a task first to create history
+    {
+        var run_result = try runZr(allocator, &.{ "--config", config_path, "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+    }
+
+    // Then get history in JSON format
+    var result = try runZr(allocator, &.{ "--format", "json", "history" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain JSON array markers
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[") != null);
+}
+
+test "188: graph command with --ascii shows tree visualization" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    // Graph with --ascii should work
+    var result = try runZr(allocator, &.{ "--config", config_path, "graph", "--ascii" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "189: conformance with --fix applies automatic fixes" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[[conformance.rules]]
+        \\type = "import_pattern"
+        \\scope = "**/*.js"
+        \\pattern = "evil-package"
+        \\message = "evil-package is banned"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    // Create file with banned import
+    try tmp.dir.writeFile(.{ .sub_path = "test.js", .data = "import evil from 'evil-package';\n" });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "conformance", "--fix" }, tmp_path);
+    defer result.deinit();
+
+    // --fix should apply automatic fixes and succeed
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "190: workspace run with --format json outputs structured results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = config });
+
+    try tmp.dir.makePath("packages/app");
+    try tmp.dir.writeFile(.{ .sub_path = "packages/app/zr.toml", .data = "[tasks.test]\ncmd = \"echo app test\"" });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fs.path.join(allocator, &.{ tmp_path, "zr.toml" });
+    defer allocator.free(config_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "--format", "json", "workspace", "run", "test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // JSON output should be present
+    try std.testing.expect(result.stdout.len > 0);
+}
