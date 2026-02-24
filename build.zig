@@ -55,7 +55,11 @@ pub fn build(b: *std.Build) void {
     });
     int_tests.root_module.addOptions("build_options", opts);
 
-    const run_int_tests = b.addRunArtifact(int_tests);
+    // Run integration tests without --listen=- protocol (same as unit tests).
+    // Integration tests spawn zr binary and capture output, which can interfere with protocol.
+    const run_int_tests = std.Build.Step.Run.create(b, "run integration tests");
+    run_int_tests.addArtifactArg(int_tests);
+    run_int_tests.has_side_effects = true;
     run_int_tests.step.dependOn(b.getInstallStep()); // ensures zr binary is built first
 
     const integration_step = b.step("integration-test", "Run integration tests");
