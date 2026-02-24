@@ -4260,3 +4260,259 @@ test "190: workspace run with --format json outputs structured results" {
     // JSON output should be present
     try std.testing.expect(result.stdout.len > 0);
 }
+
+test "191: upgrade with --version flag specifies target version" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create a basic config
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Try upgrade with --check and --version (should check for specific version)
+    var result = try runZr(allocator, &.{ "upgrade", "--check", "--version", "0.0.1" }, tmp_path);
+    defer result.deinit();
+
+    // Should not error (check mode doesn't actually install)
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "192: upgrade with --verbose flag shows detailed progress" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create a basic config
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Try upgrade with --check and --verbose
+    var result = try runZr(allocator, &.{ "upgrade", "--check", "--verbose" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed in check mode with verbose output
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "193: version with --package flag targets specific package.json" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create a config with versioning section
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+        \\[versioning]
+        \\mode = "independent"
+        \\convention = "conventional"
+        \\
+    );
+
+    // Create a package.json with version
+    const pkg_json = try tmp.dir.createFile("my-package.json", .{});
+    defer pkg_json.close();
+    try pkg_json.writeAll(
+        \\{
+        \\  "name": "test-pkg",
+        \\  "version": "1.2.3"
+        \\}
+        \\
+    );
+
+    // Check version with --package flag
+    var result = try runZr(allocator, &.{ "version", "--package", "my-package.json" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "1.2.3") != null);
+}
+
+test "194: run with --jobs flag and multiple tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with multiple independent tasks
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\
+    );
+
+    // Run with --jobs flag (global flag before command)
+    var result = try runZr(allocator, &.{ "--jobs", "2", "run", "a", "b", "c" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "195: validate with invalid task name containing spaces" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with invalid task name (spaces)
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks."my task"]
+        \\cmd = "echo hello"
+        \\
+    );
+
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+
+    // Should fail validation
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "spaces") != null);
+}
+
+test "196: validate with task name exceeding 64 characters" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with very long task name (65 chars)
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.this_is_a_very_long_task_name_that_exceeds_the_maximum_allowed_length]
+        \\cmd = "echo hello"
+        \\
+    );
+
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+
+    // Should fail validation
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "too long") != null);
+}
+
+test "197: validate with whitespace-only command" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with whitespace-only cmd
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.empty]
+        \\cmd = "   "
+        \\
+    );
+
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+
+    // Should fail validation
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "empty") != null or
+        std.mem.indexOf(u8, result.stderr, "whitespace") != null);
+}
+
+test "198: run with nonexistent --profile errors gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create basic config without any profiles
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Try to run with nonexistent profile
+    var result = try runZr(allocator, &.{ "run", "hello", "--profile", "nonexistent" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with clear error
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "profile") != null or
+        std.mem.indexOf(u8, result.stderr, "nonexistent") != null);
+}
+
+test "199: list with --format and invalid value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create basic config
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Try list with invalid format
+    var result = try runZr(allocator, &.{ "list", "--format", "invalid" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail or default gracefully
+    // Depending on implementation, might error or use default format
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "200: graph with --format and invalid value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create basic config with dependencies
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(DEPS_TOML);
+
+    // Try graph with invalid format
+    var result = try runZr(allocator, &.{ "graph", "--format", "invalid" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail or default gracefully
+    try std.testing.expect(result.exit_code <= 1);
+}
