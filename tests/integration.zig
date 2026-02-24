@@ -769,3 +769,82 @@ test "40: codeowners shows code ownership" {
     // May fail if no CODEOWNERS file, but should not crash
     _ = result.exit_code;
 }
+
+test "41: workflow runs workflow stages" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workflow_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+        \\[tasks.world]
+        \\cmd = "echo world"
+        \\
+        \\[workflows.test]
+        \\
+        \\[[workflows.test.stages]]
+        \\tasks = ["hello"]
+        \\
+        \\[[workflows.test.stages]]
+        \\tasks = ["world"]
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, workflow_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "test" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "42: bench measures task performance" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "hello", "--iterations=1", "--warmup=0" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "43: version shows version information" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{"version"}, tmp_path);
+    defer result.deinit();
+    // May fail without package.json, but should not crash
+    _ = result.exit_code;
+}
+
+test "44: publish --dry-run simulates publish" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "publish", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    // May fail without git, but should not crash
+    _ = result.exit_code;
+}
