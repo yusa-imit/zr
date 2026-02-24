@@ -49,6 +49,12 @@ Record solutions to tricky bugs here. Future agents will check this before debug
 - Fix: Add `inherit_stdio: bool = true` to ProcessConfig; tests use `inherit_stdio: false` (`.Pipe` for stdout/stderr); production uses `inherit_stdio: true`
 - Prevention: Never use `.Inherit` stdio in test contexts; use `.Pipe` for stdout/stderr in tests (safe for small output < 64KB pipe buffer)
 
+### [Integration tests hang with addRunArtifact() in build.zig]
+- Symptom: `zig build integration-test` hangs indefinitely, no test output
+- Cause: `addRunArtifact()` uses `--listen=-` protocol where test binary communicates with build system over stdin/stdout pipe; integration tests spawn `zr` binary as child process which also captures stdout/stderr, corrupting the protocol and causing deadlock
+- Fix: Use `std.Build.Step.Run.create()` for integration tests (same as unit tests) to bypass `--listen=-` mode
+- Prevention: ALWAYS use `Run.create()` for tests that spawn child processes or capture stdout/stderr (6666d24)
+
 ### [ArrayList.deinit does NOT zero items slice - errdefer double-free]
 - Symptom: Segfault at 0xaaaaaaaaaaaaaaaa in errdefer loop after deinit
 - Cause: After `list.deinit(allocator)`, the `items` field still points to freed memory with non-zero len — Zig fills freed memory with 0xaa in debug builds. Errdefer that iterates `items` then accesses freed memory.
