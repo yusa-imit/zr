@@ -10,8 +10,8 @@
 
 ## Test Status (2026-02-26)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **425/425 passing** (100% success rate) — comprehensive CLI coverage
-- **Latest**: Added 10 new tests for advanced features (af97911) — remote cache config, all optional fields, workspace flag combos, plugin errors, matrix 3D, dry-run+matrix, empty history, workflow circular deps, bench timeout, graph non-git
+- **Integration tests**: **435/435 passing** (100% success rate) — comprehensive CLI coverage
+- **Latest**: Added 10 new tests for edge cases and boundary conditions (0654a62) — very long task names, self-referencing deps, --jobs=0, --format=dot, profile special chars, --warmup=0, deeply nested deps (30 levels), --format=csv, special char task names, workspace affected same refs
 
 ## Current Phase
 
