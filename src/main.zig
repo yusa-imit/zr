@@ -635,10 +635,28 @@ fn run(
         return alias_cmd.cmdAlias(allocator, alias_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "estimate")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "Usage: zr estimate <task>\n", .{});
+            try color.printError(ew, effective_color, "Usage: zr estimate <task> [--format=json]\n", .{});
+            try effective_w.writeAll("\n");
+            try color.printBold(effective_w, effective_color, "Description:\n", .{});
+            try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
+            try color.printBold(effective_w, effective_color, "Options:\n", .{});
+            try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
+            try effective_w.writeAll("  --help, -h        Show this help message\n");
             return 1;
         }
         const task_name = effective_args[2];
+
+        // Check for --help flag
+        if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
+            try effective_w.writeAll("Usage: zr estimate <task> [--format=json]\n\n");
+            try color.printBold(effective_w, effective_color, "Description:\n", .{});
+            try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
+            try color.printBold(effective_w, effective_color, "Options:\n", .{});
+            try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
+            try effective_w.writeAll("  --help, -h        Show this help message\n");
+            return 0;
+        }
+
         const limit: usize = 20; // Default to last 20 runs
 
         // Convert json_output to estimate's OutputFormat
@@ -648,9 +666,25 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "show")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "Usage: zr show <task>\n", .{});
+            try effective_w.writeAll("\n");
+            try color.printBold(effective_w, effective_color, "Description:\n", .{});
+            try effective_w.writeAll("  Display detailed information about a task\n\n");
+            try color.printBold(effective_w, effective_color, "Options:\n", .{});
+            try effective_w.writeAll("  --help, -h        Show this help message\n");
             return 1;
         }
         const task_name = effective_args[2];
+
+        // Check for --help flag
+        if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
+            try effective_w.writeAll("Usage: zr show <task>\n\n");
+            try color.printBold(effective_w, effective_color, "Description:\n", .{});
+            try effective_w.writeAll("  Display detailed information about a task\n\n");
+            try color.printBold(effective_w, effective_color, "Options:\n", .{});
+            try effective_w.writeAll("  --help, -h        Show this help message\n");
+            return 0;
+        }
+
         return show_cmd.cmdShow(allocator, task_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "schedule")) {
         const schedule_args = if (effective_args.len > 2) effective_args[2..] else &[_][]const u8{};

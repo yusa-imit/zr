@@ -10178,3 +10178,89 @@ test "370: version command with no arguments shows current version" {
     // Should display version 2.5.3 or error message
     try std.testing.expect(output.len > 0);
 }
+
+test "371: estimate command with --help flag displays help message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test --help flag
+    var result = try runZr(allocator, &.{ "estimate", "--help" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage: zr estimate") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Estimate task duration") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Options:") != null);
+}
+
+test "372: estimate command with -h flag displays help message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test -h flag
+    var result = try runZr(allocator, &.{ "estimate", "-h" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage: zr estimate") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Estimate task duration") != null);
+}
+
+test "373: show command with --help flag displays help message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test --help flag
+    var result = try runZr(allocator, &.{ "show", "--help" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage: zr show") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Display detailed information") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Options:") != null);
+}
+
+test "374: show command with -h flag displays help message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test -h flag
+    var result = try runZr(allocator, &.{ "show", "-h" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage: zr show") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Display detailed information") != null);
+}
