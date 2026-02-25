@@ -913,6 +913,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_matrix_raw = null;
 
             in_workspace = false;
+            in_cache = false;
+            in_cache_remote = false;
             const start = "[tasks.".len;
             const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
             // Non-owning slice into content
