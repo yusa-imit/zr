@@ -1,6 +1,7 @@
 /// ANSI color/style codes for terminal output.
 /// Automatically disabled when stdout is not a TTY (e.g., pipes, CI).
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// ANSI escape codes
 pub const Code = struct {
@@ -24,10 +25,52 @@ pub const Code = struct {
     pub const bright_white = "\x1b[97m";
 };
 
-/// Returns true if the given file descriptor appears to be a TTY.
-/// Used to decide whether to emit ANSI codes.
+/// Enables Windows Virtual Terminal Processing for ANSI color support.
+/// On Windows, this must be called before using ANSI codes.
+/// Returns true if ANSI codes are supported (always true on non-Windows).
+fn enableWindowsAnsiSupport(file: std.fs.File) bool {
+    if (comptime builtin.os.tag != .windows) {
+        return true;
+    }
+
+    // Windows-specific code to enable Virtual Terminal Processing
+    const windows = std.os.windows;
+    const handle = file.handle;
+
+    // Get current console mode
+    var mode: windows.DWORD = 0;
+    if (windows.kernel32.GetConsoleMode(handle, &mode) == 0) {
+        // Not a console or failed to get mode
+        return false;
+    }
+
+    // ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+    const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
+    // Enable Virtual Terminal Processing
+    mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (windows.kernel32.SetConsoleMode(handle, mode) == 0) {
+        // Failed to set mode
+        return false;
+    }
+
+    return true;
+}
+
+/// Returns true if the given file descriptor appears to be a TTY
+/// and supports ANSI color codes.
+/// On Windows, this also enables Virtual Terminal Processing.
 pub fn isTty(file: std.fs.File) bool {
-    return file.isTty();
+    if (!file.isTty()) {
+        return false;
+    }
+
+    // On Windows, check if we can enable ANSI support
+    if (comptime builtin.os.tag == .windows) {
+        return enableWindowsAnsiSupport(file);
+    }
+
+    return true;
 }
 
 /// Semantic print helpers. Pass `use_color = isTty(stdout)` from caller.
