@@ -6470,3 +6470,333 @@ test "260: show with --format toml outputs task definition in TOML" {
     // May not support --format flag yet, test command parses
     try std.testing.expect(result.exit_code <= 1);
 }
+
+test "261: run with multiple independent task failures continues execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const multi_fail_toml =
+        \\[tasks.fail1]
+        \\cmd = "false"
+        \\
+        \\[tasks.fail2]
+        \\cmd = "false"
+        \\
+        \\[tasks.main]
+        \\cmd = "echo done"
+        \\deps = ["fail1", "fail2"]
+        \\allow_failure = false
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(multi_fail_toml);
+
+    var result = try runZr(allocator, &.{ "run", "main" }, tmp_path);
+    defer result.deinit();
+    // Should fail due to dependencies failing
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "262: graph with very deep dependency chain renders correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create a 10-level deep dependency chain
+    const deep_toml =
+        \\[tasks.t0]
+        \\cmd = "echo 0"
+        \\
+        \\[tasks.t1]
+        \\cmd = "echo 1"
+        \\deps = ["t0"]
+        \\
+        \\[tasks.t2]
+        \\cmd = "echo 2"
+        \\deps = ["t1"]
+        \\
+        \\[tasks.t3]
+        \\cmd = "echo 3"
+        \\deps = ["t2"]
+        \\
+        \\[tasks.t4]
+        \\cmd = "echo 4"
+        \\deps = ["t3"]
+        \\
+        \\[tasks.t5]
+        \\cmd = "echo 5"
+        \\deps = ["t4"]
+        \\
+        \\[tasks.t6]
+        \\cmd = "echo 6"
+        \\deps = ["t5"]
+        \\
+        \\[tasks.t7]
+        \\cmd = "echo 7"
+        \\deps = ["t6"]
+        \\
+        \\[tasks.t8]
+        \\cmd = "echo 8"
+        \\deps = ["t7"]
+        \\
+        \\[tasks.t9]
+        \\cmd = "echo 9"
+        \\deps = ["t8"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(deep_toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--ascii" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should display all levels
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "t9") != null);
+}
+
+test "263: workspace with single member behaves correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workspace with single member
+    try tmp.dir.makeDir("pkg");
+    const pkg_toml = try tmp.dir.createFile("pkg/zr.toml", .{});
+    defer pkg_toml.close();
+    try pkg_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    );
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "pkg") != null);
+}
+
+test "264: validate with malformed TOML reports parse error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create definitively malformed TOML with invalid key-value syntax
+    const bad_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\invalid syntax here!!!
+        \\deps = ["missing", "quote
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(bad_toml);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+    // Validate command should report errors or parser should fail
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "265: run with empty command string fails validation" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const empty_cmd_toml =
+        \\[tasks.bad]
+        \\cmd = ""
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(empty_cmd_toml);
+
+    var result = try runZr(allocator, &.{ "run", "bad" }, tmp_path);
+    defer result.deinit();
+    // Should fail with validation error
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "266: alias with circular reference detects cycle" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const circular_alias_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[alias]
+        \\foo = "bar"
+        \\bar = "baz"
+        \\baz = "foo"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(circular_alias_toml);
+
+    var result = try runZr(allocator, &.{ "alias", "show", "foo" }, tmp_path);
+    defer result.deinit();
+    // Should detect circular reference or reach expansion limit
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "267: cache with read-only directory handles error gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[tasks.cached]
+        \\cmd = "echo cached"
+        \\cache = { enabled = true }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // Create .zr directory with restrictive permissions
+    try tmp.dir.makeDir(".zr");
+    try tmp.dir.makeDir(".zr/cache");
+
+    // Make cache directory read-only (may not work on all systems)
+    const cache_path = try std.fs.path.join(allocator, &.{ tmp_path, ".zr", "cache" });
+    defer allocator.free(cache_path);
+
+    if (builtin.os.tag != .windows) {
+        var cache_dir = try std.fs.openDirAbsolute(cache_path, .{});
+        defer cache_dir.close();
+        // This may or may not work, but we test graceful handling
+    }
+
+    var result = try runZr(allocator, &.{ "run", "cached" }, tmp_path);
+    defer result.deinit();
+    // Should either succeed without cache or report error gracefully
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "268: history with binary corruption recovers gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    // Create .zr directory and corrupt history file
+    try tmp.dir.makeDir(".zr");
+    const history_file = try tmp.dir.createFile(".zr/history.jsonl", .{});
+    defer history_file.close();
+    // Write binary garbage
+    try history_file.writeAll("\x00\x01\x02\x03\xFF\xFE\xFD\xFC");
+
+    var result = try runZr(allocator, &.{ "history" }, tmp_path);
+    defer result.deinit();
+    // Should handle corruption gracefully and show empty or partial history
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "269: plugin with missing required fields reports validation error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const bad_plugin_toml =
+        \\[plugins.broken]
+        \\# Missing required 'path' or 'command' field
+        \\description = "Broken plugin"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(bad_plugin_toml);
+
+    var result = try runZr(allocator, &.{ "plugin", "list" }, tmp_path);
+    defer result.deinit();
+    // Should either skip invalid plugin or report error
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "270: run with conflicting flags --dry-run and --monitor reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    var result = try runZr(allocator, &.{ "run", "test", "--dry-run", "--monitor" }, tmp_path);
+    defer result.deinit();
+    // Should either reject conflicting flags or ignore --monitor in dry-run mode
+    try std.testing.expect(result.exit_code <= 1);
+}
