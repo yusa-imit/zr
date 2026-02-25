@@ -201,10 +201,10 @@ fn cmdScheduleRemove(
         return 1;
     }
 
-    // Remove the entry - must get pointer to deinit before removing
-    if (schedules.getPtr(name)) |entry_ptr| {
-        entry_ptr.deinit(allocator);
-        _ = schedules.remove(name);
+    // Remove the entry using fetchRemove to avoid use-after-free
+    // Note: kv.key is the same pointer as kv.value.name, so deinit() will free it
+    if (schedules.fetchRemove(name)) |kv| {
+        kv.value.deinit(allocator);
     }
 
     try saveSchedules(allocator, schedule_data, &schedules);
