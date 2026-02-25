@@ -8,6 +8,11 @@
 - **Goal**: Language/ecosystem-agnostic, single binary, C-level performance, user-friendly CLI
 - **Config format**: TOML + built-in expression engine (Option D from PRD)
 
+## Test Status (2026-02-26)
+- **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
+- **Integration tests**: **370/370 passing** (100% success rate) — comprehensive CLI coverage
+- **Latest**: Added 10 new tests for untested features (a7b84a3) — workspace affected, analytics --output/--json, version --package, upgrade --check/--version, run --affected, workspace run --affected
+
 ## Current Phase
 
 ### Phase 1 - Foundation (MVP) — **COMPLETE**
