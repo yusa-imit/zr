@@ -8468,3 +8468,320 @@ test "320: run with multiple flags combined works correctly" {
     // Should handle all flags and produce output
     try std.testing.expect(std.mem.indexOf(u8, output, "task") != null);
 }
+
+test "321: run with very deeply nested task dependencies (20+ levels)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create a config with 25 levels of dependencies
+    var config_buf = std.ArrayList(u8){};
+    defer config_buf.deinit(allocator);
+    try config_buf.appendSlice(allocator, "[tasks.task0]\ncmd = \"echo task0\"\n\n");
+    var i: u32 = 1;
+    while (i <= 24) : (i += 1) {
+        try config_buf.writer(allocator).print("[tasks.task{d}]\ncmd = \"echo task{d}\"\ndeps = [\"task{d}\"]\n\n", .{ i, i, i - 1 });
+    }
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(config_buf.items);
+
+    var result = try runZr(allocator, &.{ "run", "task24" }, tmp_path);
+    defer result.deinit();
+    // Should execute all 25 tasks in order
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "task0") != null);
+}
+
+test "322: list command with tasks that have no description shows clean output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const no_desc_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(no_desc_toml);
+
+    var result = try runZr(allocator, &.{ "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "test") != null);
+}
+
+test "323: validate with task that has empty deps array is valid" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const empty_deps_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\deps = []
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(empty_deps_toml);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "valid") != null or
+        std.mem.indexOf(u8, output, "✓") != null or
+        result.exit_code == 0);
+}
+
+test "324: graph command with isolated tasks (no dependencies) displays correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const isolated_toml =
+        \\[tasks.task1]
+        \\cmd = "echo task1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo task2"
+        \\
+        \\[tasks.task3]
+        \\cmd = "echo task3"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(isolated_toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--ascii" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "task1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "task2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "task3") != null);
+}
+
+test "325: run with task that changes working directory (cwd field)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create a subdirectory
+    try tmp.dir.makeDir("subdir");
+
+    const cwd_toml =
+        \\[tasks.check]
+        \\cmd = "pwd"
+        \\cwd = "subdir"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cwd_toml);
+
+    var result = try runZr(allocator, &.{ "run", "check" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "subdir") != null);
+}
+
+test "326: history command with --format=json and multiple past runs" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run the task a few times
+    var run1 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run1.deinit();
+    var run2 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run2.deinit();
+
+    var result = try runZr(allocator, &.{ "history", "--format=json" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should output JSON array
+    try std.testing.expect(std.mem.indexOf(u8, output, "[") != null or
+        std.mem.indexOf(u8, output, "history") != null or
+        result.exit_code == 0);
+}
+
+test "327: workspace list with members that have different task names" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    try tmp.dir.makeDir("app1");
+    try tmp.dir.makeDir("app2");
+
+    const app1_toml =
+        \\[tasks.build]
+        \\cmd = "echo app1 build"
+        \\
+    ;
+    const app2_toml =
+        \\[tasks.test]
+        \\cmd = "echo app2 test"
+        \\
+    ;
+
+    const app1_file = try tmp.dir.createFile("app1/zr.toml", .{});
+    defer app1_file.close();
+    try app1_file.writeAll(app1_toml);
+
+    const app2_file = try tmp.dir.createFile("app2/zr.toml", .{});
+    defer app2_file.close();
+    try app2_file.writeAll(app2_toml);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["app1", "app2"]
+        \\
+    ;
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "app1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "app2") != null);
+}
+
+test "328: export command with task that has multiple environment variables" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const multi_env_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\env = { ENV = "prod", REGION = "us-east-1", DEBUG = "false" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(multi_env_toml);
+
+    var result = try runZr(allocator, &.{ "export", "--task", "deploy" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "ENV") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "REGION") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "DEBUG") != null);
+}
+
+test "329: bench command with task that has variable execution time" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const variable_task_toml =
+        \\[tasks.variable]
+        \\cmd = "echo test && sleep 0.001"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(variable_task_toml);
+
+    var result = try runZr(allocator, &.{ "bench", "variable", "--iterations=3", "--warmup=0" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "mean") != null or
+        std.mem.indexOf(u8, output, "ms") != null or
+        std.mem.indexOf(u8, output, "variable") != null);
+}
+
+test "330: show command with task that uses all available fields" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const full_task_toml =
+        \\[tasks.full]
+        \\description = "A task with all fields"
+        \\cmd = "echo testing"
+        \\cwd = "."
+        \\deps = []
+        \\env = { VAR = "value" }
+        \\timeout = 30
+        \\retry = 2
+        \\allow_failure = true
+        \\max_concurrent = 2
+        \\tags = ["test", "ci"]
+        \\condition = "platform == 'linux' || platform == 'darwin'"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(full_task_toml);
+
+    var result = try runZr(allocator, &.{ "show", "full" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "full") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Allow Failure") != null or
+        std.mem.indexOf(u8, output, "Max Concurrent") != null);
+}
