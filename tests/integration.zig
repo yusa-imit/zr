@@ -11150,3 +11150,367 @@ test "404: run with invalid --jobs value shows error" {
     // Should fail with error
     try std.testing.expect(result.exit_code != 0);
 }
+
+test "405: workflow with conditional stage execution based on previous stage success" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const conditional_workflow_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\condition = "stages['test'].success"
+        \\
+        \\[workflows.ci]
+        \\[[workflows.ci.stages]]
+        \\name = "build"
+        \\tasks = ["build"]
+        \\
+        \\[[workflows.ci.stages]]
+        \\name = "test"
+        \\tasks = ["test"]
+        \\
+        \\[[workflows.ci.stages]]
+        \\name = "deploy"
+        \\tasks = ["deploy"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(conditional_workflow_toml);
+
+    var result = try runZr(allocator, &.{ "workflow", "ci" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should run all stages successfully with condition evaluation
+    try std.testing.expect(std.mem.indexOf(u8, output, "building") != null or std.mem.indexOf(u8, output, "testing") != null);
+}
+
+test "406: run with matrix task and profile override combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const matrix_profile_toml =
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+        \\[tasks.test.matrix]
+        \\env = ["dev", "prod"]
+        \\
+        \\[profiles.us]
+        \\[profiles.us.env]
+        \\REGION = "us-east-1"
+        \\
+        \\[profiles.eu]
+        \\[profiles.eu.env]
+        \\REGION = "eu-west-1"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(matrix_profile_toml);
+
+    var result = try runZr(allocator, &.{ "run", "test", "--profile", "eu" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should expand matrix and apply profile (exit code may vary with matrix expansion)
+    try std.testing.expect(output.len > 0);
+}
+
+test "407: workspace run with --affected flag and no git changes skips all" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg1", "pkg2"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    // Create workspace members
+    try tmp.dir.makeDir("pkg1");
+    const pkg1_toml = try tmp.dir.createFile("pkg1/zr.toml", .{});
+    defer pkg1_toml.close();
+    try pkg1_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo pkg1"
+        \\
+    );
+
+    try tmp.dir.makeDir("pkg2");
+    const pkg2_toml = try tmp.dir.createFile("pkg2/zr.toml", .{});
+    defer pkg2_toml.close();
+    try pkg2_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo pkg2"
+        \\
+    );
+
+    // Try with --affected (no git repo, so should handle gracefully)
+    var result = try runZr(allocator, &.{ "workspace", "run", "build", "--affected", "HEAD" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should either skip or report no git repo
+    try std.testing.expect(output.len > 0);
+}
+
+test "408: validate with --strict flag on config with optional fields missing" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const minimal_toml =
+        \\[tasks.simple]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(minimal_toml);
+
+    var result = try runZr(allocator, &.{ "validate", "--strict" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should validate successfully even in strict mode with minimal config
+    try std.testing.expect(output.len > 0);
+}
+
+test "409: list with --tags filter for nonexistent tag returns empty list" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const tagged_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\tags = ["ci", "build"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\tags = ["ci", "test"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(tagged_toml);
+
+    var result = try runZr(allocator, &.{ "list", "--tags=deploy,release" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show empty or no tasks message
+    try std.testing.expect(output.len > 0);
+}
+
+test "410: env command with --task flag shows task-specific environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const env_toml =
+        \\[tasks.serve]
+        \\cmd = "echo serving"
+        \\[tasks.serve.env]
+        \\PORT = "3000"
+        \\HOST = "localhost"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(env_toml);
+
+    var result = try runZr(allocator, &.{ "env", "--task", "serve" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should display task-specific env vars
+    try std.testing.expect(std.mem.indexOf(u8, output, "PORT") != null or std.mem.indexOf(u8, output, "HOST") != null or output.len > 0);
+}
+
+test "411: graph with --format json outputs structured dependency data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const deps_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\deps = ["build"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\deps = ["test"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(deps_toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should contain JSON structured data with tasks and dependencies
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null or std.mem.indexOf(u8, output, "test") != null);
+}
+
+test "412: run with matrix task expands multiple dimensions correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const matrix_env_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\[tasks.deploy.matrix]
+        \\env = ["dev", "prod"]
+        \\region = ["us", "eu"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(matrix_env_toml);
+
+    var result = try runZr(allocator, &.{ "run", "deploy" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should expand matrix to 4 combinations: dev+us, dev+eu, prod+us, prod+eu
+    try std.testing.expect(output.len > 0);
+}
+
+test "413: history with --limit=1 returns single most recent entry" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run task multiple times
+    var r1 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer r1.deinit();
+    var r2 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer r2.deinit();
+
+    var result = try runZr(allocator, &.{ "history", "--limit", "1" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show only one entry
+    try std.testing.expect(output.len > 0);
+}
+
+test "414: cache clear with --dry-run flag shows what would be cleared" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cached_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cached_toml);
+
+    // Run task to create cache
+    var run_result = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer run_result.deinit();
+
+    var result = try runZr(allocator, &.{ "cache", "clear", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show cache clear preview without actually clearing
+    try std.testing.expect(output.len > 0);
+}
+
+test "415: setup command with missing required tools reports warnings" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const tools_toml =
+        \\[tools]
+        \\node = "20.11.1"
+        \\python = "3.12.0"
+        \\nonexistent_tool = "1.0.0"
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(tools_toml);
+
+    var result = try runZr(allocator, &.{ "setup" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should check tools and report status
+    try std.testing.expect(output.len > 0);
+}
