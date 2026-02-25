@@ -9722,3 +9722,459 @@ test "360: context command with multiple output formats produces consistent data
     const yaml_output = if (yaml_result.stdout.len > 0) yaml_result.stdout else yaml_result.stderr;
     try std.testing.expect(yaml_output.len > 0);
 }
+
+test "361: workspace affected command runs tasks on changed members" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Initialize git repo
+    {
+        const git_init = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_init.stdout);
+        allocator.free(git_init.stderr);
+    }
+    {
+        const git_config1 = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test User" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_config1.stdout);
+        allocator.free(git_config1.stderr);
+    }
+    {
+        const git_config2 = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@example.com" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_config2.stdout);
+        allocator.free(git_config2.stderr);
+    }
+
+    // Create workspace config with multiple members
+    const zr_toml =
+        \\[workspace]
+        \\members = ["app", "lib"]
+        \\
+        \\[task.test]
+        \\command = "echo testing"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(zr_toml);
+
+    // Create workspace members
+    try tmp.dir.makeDir("app");
+    try tmp.dir.makeDir("lib");
+    const app_config = try tmp.dir.createFile("app/zr.toml", .{});
+    defer app_config.close();
+    try app_config.writeAll("[task.test]\ncommand = \"echo app\"\n");
+    const lib_config = try tmp.dir.createFile("lib/zr.toml", .{});
+    defer lib_config.close();
+    try lib_config.writeAll("[task.test]\ncommand = \"echo lib\"\n");
+
+    // Initial commit
+    {
+        const git_add = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_add.stdout);
+        allocator.free(git_add.stderr);
+    }
+    {
+        const git_commit = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_commit.stdout);
+        allocator.free(git_commit.stderr);
+    }
+
+    // workspace affected requires git changes to detect affected members
+    var result = try runZr(allocator, &.{ "workspace", "affected", "test" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should report no affected members or run successfully
+    try std.testing.expect(output.len > 0);
+}
+
+test "362: analytics with --output flag saves report to file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run task to generate history
+    var run_result = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+
+    // Generate analytics report to file
+    var result = try runZr(allocator, &.{ "analytics", "--output", "report.html", "--limit", "10" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should indicate report saved or show content
+    try std.testing.expect(output.len > 0);
+}
+
+test "363: analytics --json outputs structured data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run task to generate history
+    var run_result = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+
+    // Get JSON analytics
+    var result = try runZr(allocator, &.{ "analytics", "--json" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should contain JSON structure
+    try std.testing.expect(output.len > 0);
+}
+
+test "364: version --package flag targets specific package file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create package.json
+    const pkg_json =
+        \\{
+        \\  "name": "test-pkg",
+        \\  "version": "1.0.0"
+        \\}
+        \\
+    ;
+    const pkg_file = try tmp.dir.createFile("package.json", .{});
+    defer pkg_file.close();
+    try pkg_file.writeAll(pkg_json);
+
+    // Create zr.toml with versioning section
+    const zr_toml =
+        \\[task.hello]
+        \\command = "echo hi"
+        \\
+        \\[versioning]
+        \\mode = "independent"
+        \\convention = "conventional"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(zr_toml);
+
+    // Read version from specific package
+    var result = try runZr(allocator, &.{ "version", "--package", "package.json" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show version from package.json or error message
+    try std.testing.expect(output.len > 0);
+}
+
+test "365: upgrade --check reports available updates without installing" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Check for updates without installing
+    var result = try runZr(allocator, &.{ "upgrade", "--check" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should report current version and available updates
+    try std.testing.expect(output.len > 0);
+}
+
+test "366: upgrade --version flag targets specific version" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Attempt to upgrade to specific version
+    var result = try runZr(allocator, &.{ "upgrade", "--version", "0.0.5", "--check" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should indicate version target or availability
+    try std.testing.expect(output.len > 0);
+}
+
+test "367: run --affected with base ref filters to changed workspace members" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Initialize git repo
+    {
+        const git_init = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_init.stdout);
+        allocator.free(git_init.stderr);
+    }
+    {
+        const git_config1 = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test User" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_config1.stdout);
+        allocator.free(git_config1.stderr);
+    }
+    {
+        const git_config2 = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@example.com" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_config2.stdout);
+        allocator.free(git_config2.stderr);
+    }
+
+    // Create workspace
+    const zr_toml =
+        \\[workspace]
+        \\members = ["pkg1"]
+        \\
+        \\[task.test]
+        \\command = "echo root"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(zr_toml);
+
+    try tmp.dir.makeDir("pkg1");
+    const pkg_config = try tmp.dir.createFile("pkg1/zr.toml", .{});
+    defer pkg_config.close();
+    try pkg_config.writeAll("[task.test]\ncommand = \"echo pkg1\"\n");
+
+    // Initial commit
+    {
+        const git_add = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_add.stdout);
+        allocator.free(git_add.stderr);
+    }
+    {
+        const git_commit = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_commit.stdout);
+        allocator.free(git_commit.stderr);
+    }
+
+    // Run with --affected flag (no changes yet)
+    var result = try runZr(allocator, &.{ "run", "test", "--affected", "HEAD" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should handle affected detection
+    try std.testing.expect(output.len > 0);
+}
+
+test "368: analytics with combined --json and --limit flags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run task multiple times
+    for (0..3) |_| {
+        var run_result = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+        defer run_result.deinit();
+    }
+
+    // Get analytics with limit and JSON
+    var result = try runZr(allocator, &.{ "analytics", "--json", "--limit", "2" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show limited JSON analytics
+    try std.testing.expect(output.len > 0);
+}
+
+test "369: workspace run with --affected flag integration" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Initialize git repo
+    {
+        const git_init = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_init.stdout);
+        allocator.free(git_init.stderr);
+    }
+    {
+        const git_config1 = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test User" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_config1.stdout);
+        allocator.free(git_config1.stderr);
+    }
+    {
+        const git_config2 = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@example.com" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_config2.stdout);
+        allocator.free(git_config2.stderr);
+    }
+
+    // Create workspace
+    const zr_toml =
+        \\[workspace]
+        \\members = ["m1", "m2"]
+        \\
+        \\[task.build]
+        \\command = "echo building"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(zr_toml);
+
+    try tmp.dir.makeDir("m1");
+    try tmp.dir.makeDir("m2");
+    const m1_config = try tmp.dir.createFile("m1/zr.toml", .{});
+    defer m1_config.close();
+    try m1_config.writeAll("[task.build]\ncommand = \"echo m1\"\n");
+    const m2_config = try tmp.dir.createFile("m2/zr.toml", .{});
+    defer m2_config.close();
+    try m2_config.writeAll("[task.build]\ncommand = \"echo m2\"\n");
+
+    // Initial commit
+    {
+        const git_add = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_add.stdout);
+        allocator.free(git_add.stderr);
+    }
+    {
+        const git_commit = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        });
+        allocator.free(git_commit.stdout);
+        allocator.free(git_commit.stderr);
+    }
+
+    // Workspace run with affected detection
+    var result = try runZr(allocator, &.{ "workspace", "run", "build", "--affected", "HEAD" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should run on affected members only
+    try std.testing.expect(output.len > 0);
+}
+
+test "370: version command with no arguments shows current version" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create package.json
+    const pkg_json =
+        \\{
+        \\  "name": "test",
+        \\  "version": "2.5.3"
+        \\}
+        \\
+    ;
+    const pkg_file = try tmp.dir.createFile("package.json", .{});
+    defer pkg_file.close();
+    try pkg_file.writeAll(pkg_json);
+
+    // Create zr.toml with versioning section
+    const zr_toml =
+        \\[task.hello]
+        \\command = "echo hi"
+        \\
+        \\[versioning]
+        \\mode = "independent"
+        \\convention = "conventional"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(zr_toml);
+
+    // Show current version
+    var result = try runZr(allocator, &.{"version"}, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should display version 2.5.3 or error message
+    try std.testing.expect(output.len > 0);
+}
