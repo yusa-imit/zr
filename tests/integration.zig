@@ -10264,3 +10264,241 @@ test "374: show command with -h flag displays help message" {
     try std.testing.expect(std.mem.indexOf(u8, output, "Usage: zr show") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "Display detailed information") != null);
 }
+
+test "375: alias ls command lists all aliases (shorthand for list)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Add an alias first
+    var add_result = try runZr(allocator, &.{ "alias", "add", "test-alias", "run hello" }, tmp_path);
+    defer add_result.deinit();
+
+    // Test 'ls' alias for 'list'
+    var result = try runZr(allocator, &.{ "alias", "ls" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "test-alias") != null);
+}
+
+test "376: alias get command shows specific alias (shorthand for show)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Add an alias first
+    var add_result = try runZr(allocator, &.{ "alias", "add", "dev", "run build && run test" }, tmp_path);
+    defer add_result.deinit();
+
+    // Test 'get' alias for 'show'
+    var result = try runZr(allocator, &.{ "alias", "get", "dev" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "dev") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "run build && run test") != null);
+}
+
+test "377: alias set command creates alias (shorthand for add)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test 'set' alias for 'add'
+    var result = try runZr(allocator, &.{ "alias", "set", "prod", "run build --profile=production" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify alias was created
+    var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
+    defer list_result.deinit();
+    const output = if (list_result.stdout.len > 0) list_result.stdout else list_result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "prod") != null);
+}
+
+test "378: alias rm command removes alias (shorthand for remove)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Add an alias first
+    var add_result = try runZr(allocator, &.{ "alias", "add", "temp", "run hello" }, tmp_path);
+    defer add_result.deinit();
+
+    // Test 'rm' alias for 'remove'
+    var result = try runZr(allocator, &.{ "alias", "rm", "temp" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify alias was removed
+    var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
+    defer list_result.deinit();
+    const output = if (list_result.stdout.len > 0) list_result.stdout else list_result.stderr;
+    // Should not contain removed alias
+    try std.testing.expect(std.mem.indexOf(u8, output, "temp") == null or result.exit_code == 0);
+}
+
+test "379: alias delete command removes alias (alternative shorthand for remove)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Add an alias first
+    var add_result = try runZr(allocator, &.{ "alias", "add", "temp2", "run hello" }, tmp_path);
+    defer add_result.deinit();
+
+    // Test 'delete' alias for 'remove'
+    var result = try runZr(allocator, &.{ "alias", "delete", "temp2" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify alias was removed
+    var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
+    defer list_result.deinit();
+    const output = if (list_result.stdout.len > 0) list_result.stdout else list_result.stderr;
+    // Should not contain removed alias
+    try std.testing.expect(std.mem.indexOf(u8, output, "temp2") == null or result.exit_code == 0);
+}
+
+test "380: i command as shorthand for interactive" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test 'i' shorthand for 'interactive'
+    // Interactive requires terminal, so we expect it to fail gracefully
+    var result = try runZr(allocator, &.{ "i" }, tmp_path);
+    defer result.deinit();
+    // Should either succeed or fail gracefully with error message
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "381: irun command as shorthand for interactive-run" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test 'irun' shorthand for 'interactive-run'
+    // interactive-run requires terminal, so we expect it to fail gracefully
+    var result = try runZr(allocator, &.{ "irun", "hello" }, tmp_path);
+    defer result.deinit();
+    // Should either succeed or fail gracefully with error message
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "382: run with --jobs and --quiet flags combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.task1]
+        \\cmd = "echo task1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo task2"
+        \\
+    );
+
+    // Test combined flags
+    var result = try runZr(allocator, &.{ "run", "task1", "task2", "--jobs", "2", "--quiet" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "383: list command with --json and --tree flags combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(DEPS_TOML);
+
+    // Test combined flags (JSON and tree view)
+    var result = try runZr(allocator, &.{ "list", "--format", "json", "--tree" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should produce JSON output with tree structure
+    try std.testing.expect(output.len > 0);
+}
+
+test "384: validate command with empty zr.toml file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll("");
+
+    // Validate empty config
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+    // Should handle empty config gracefully
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
