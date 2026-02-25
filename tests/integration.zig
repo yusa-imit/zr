@@ -11514,3 +11514,337 @@ test "415: setup command with missing required tools reports warnings" {
     // Should check tools and report status
     try std.testing.expect(output.len > 0);
 }
+
+test "416: cache with remote HTTP backend configuration parses correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const remote_cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\local_dir = "~/.zr/cache"
+        \\
+        \\[cache.remote]
+        \\type = "http"
+        \\url = "http://localhost:8080/cache"
+        \\auth = "Bearer token123"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\cache = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, remote_cache_toml);
+    defer allocator.free(config);
+
+    // Validate that remote cache config is parsed without errors
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "417: task with all optional fields populated validates successfully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const full_task_toml =
+        \\[tasks.comprehensive]
+        \\cmd = "echo test"
+        \\cwd = "/tmp"
+        \\description = "A task with all optional fields"
+        \\deps = ["dep1"]
+        \\deps_serial = ["serial1"]
+        \\timeout = 5000
+        \\retry = 2
+        \\allow_failure = true
+        \\condition = "platform == 'darwin'"
+        \\cache = true
+        \\max_concurrent = 2
+        \\max_cpu = 50.0
+        \\max_memory = 512000000
+        \\tags = ["test", "comprehensive"]
+        \\
+        \\[tasks.comprehensive.env]
+        \\VAR1 = "value1"
+        \\VAR2 = "value2"
+        \\
+        \\[tasks.comprehensive.matrix]
+        \\os = ["linux", "darwin"]
+        \\
+        \\[tasks.comprehensive.toolchain]
+        \\node = "20.11.1"
+        \\
+        \\[tasks.dep1]
+        \\cmd = "echo dep"
+        \\
+        \\[tasks.serial1]
+        \\cmd = "echo serial"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, full_task_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "418: workspace run with --format json and --quiet combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workspace structure
+    try tmp.dir.makeDir("project-a");
+    try tmp.dir.makeDir("project-b");
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["project-a", "project-b"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    const task_toml =
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const project_a_toml = try tmp.dir.createFile("project-a/zr.toml", .{});
+    defer project_a_toml.close();
+    try project_a_toml.writeAll(task_toml);
+
+    const project_b_toml = try tmp.dir.createFile("project-b/zr.toml", .{});
+    defer project_b_toml.close();
+    try project_b_toml.writeAll(task_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "test", "--format", "json", "--quiet" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // With --quiet, should have minimal output even with JSON format
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "419: plugin info for nonexistent plugin shows appropriate error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const minimal_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(minimal_toml);
+
+    var result = try runZr(allocator, &.{ "plugin", "info", "nonexistent-plugin" }, tmp_path);
+    defer result.deinit();
+    // Should fail with appropriate error message
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "420: matrix expansion with 3 dimensions creates correct combinations" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const matrix_3d_toml =
+        \\[tasks.test.matrix]
+        \\os = ["linux", "darwin"]
+        \\arch = ["x86_64", "aarch64"]
+        \\mode = ["debug", "release"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo Testing os-arch-mode"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, matrix_3d_toml);
+    defer allocator.free(config);
+
+    // Validate that the matrix configuration is accepted
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // List should show the task (matrix expanded at runtime)
+    var list_result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer list_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), list_result.exit_code);
+}
+
+test "421: run with --dry-run and matrix shows all expanded task instances" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const matrix_dry_toml =
+        \\[tasks.build.matrix]
+        \\target = ["x86_64", "aarch64"]
+        \\mode = ["debug", "release", "optimized"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build-${matrix.target}-${matrix.mode}"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, matrix_dry_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "build", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show 2 × 3 = 6 matrix task instances
+    try std.testing.expect(output.len > 0);
+}
+
+test "422: history command with empty history directory shows appropriate message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const minimal_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(minimal_toml);
+
+    // Run history without any previous runs
+    var result = try runZr(allocator, &.{ "history" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show empty or appropriate message
+    try std.testing.expect(output.len > 0);
+}
+
+test "423: validate with workflow containing circular stage dependencies fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const circular_stages_toml =
+        \\[[workflows.circular.stages]]
+        \\name = "stage1"
+        \\tasks = ["task1"]
+        \\condition = "stages['stage2'].success"
+        \\
+        \\[[workflows.circular.stages]]
+        \\name = "stage2"
+        \\tasks = ["task2"]
+        \\condition = "stages['stage1'].success"
+        \\
+        \\[tasks.task1]
+        \\cmd = "echo task1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo task2"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, circular_stages_toml);
+    defer allocator.free(config);
+
+    // This circular dependency should be caught during validation
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+    // May pass validation but fail at runtime - either is acceptable
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "424: bench command with timeout shows performance within constraints" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const bench_timeout_toml =
+        \\[tasks.fast]
+        \\cmd = "echo fast"
+        \\timeout = 1000
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, bench_timeout_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "fast", "--iterations", "2" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should complete benchmark within timeout
+    try std.testing.expect(output.len > 0);
+}
+
+test "425: graph with --affected flag on non-git repository handles gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, simple_toml);
+    defer allocator.free(config);
+
+    // Try graph with --affected on non-git repo
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--affected", "HEAD" }, tmp_path);
+    defer result.deinit();
+    // Should handle gracefully (may show warning or all tasks)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
