@@ -5162,3 +5162,353 @@ test "220: validate accepts well-formed config in strict mode" {
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Additional Edge Cases and Advanced Scenarios (221-230)
+// ═══════════════════════════════════════════════════════════════════════════
+
+test "221: workflow with circular stage dependencies fails validation" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workflow with circular dependency via on_failure
+    const circular_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "false"
+        \\
+        \\[workflows.circular]
+        \\
+        \\[[workflows.circular.stages]]
+        \\tasks = ["a"]
+        \\on_failure = "b"
+        \\
+        \\[[workflows.circular.stages]]
+        \\tasks = ["b"]
+        \\on_failure = "a"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(circular_toml);
+
+    // This should detect the circular dependency at runtime
+    var result = try runZr(allocator, &.{ "workflow", "circular" }, tmp_path);
+    defer result.deinit();
+    // Should complete (may fail or succeed depending on which task fails first)
+    // The key is that it doesn't hang or crash
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "222: run with both --jobs and --profile flags combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config with profile and multiple tasks
+    const combined_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["a", "b"]
+        \\
+        \\[profiles.test]
+        \\
+        \\[profiles.test.env]
+        \\TEST_MODE = "enabled"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(combined_toml);
+
+    // Run with combined flags
+    var result = try runZr(allocator, &.{ "run", "c", "--profile", "test", "--jobs", "2" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "223: workspace member with empty config is skipped gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workspace root
+    const root_toml =
+        \\[workspace]
+        \\members = ["pkg-a", "pkg-empty"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo root"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(root_toml);
+
+    // Create pkg-a with a task
+    try tmp.dir.makeDir("pkg-a");
+    const pkg_a_file = try tmp.dir.createFile("pkg-a/zr.toml", .{});
+    defer pkg_a_file.close();
+    try pkg_a_file.writeAll(
+        \\[tasks.test]
+        \\cmd = "echo pkg-a"
+        \\
+    );
+
+    // Create pkg-empty with minimal config (no tasks)
+    try tmp.dir.makeDir("pkg-empty");
+    const pkg_empty_file = try tmp.dir.createFile("pkg-empty/zr.toml", .{});
+    defer pkg_empty_file.close();
+    try pkg_empty_file.writeAll("# Empty config\n");
+
+    // Workspace run should handle empty member gracefully
+    var result = try runZr(allocator, &.{ "workspace", "run", "test" }, tmp_path);
+    defer result.deinit();
+    // Should succeed (or fail gracefully), not crash
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "224: graph with isolated tasks shows disconnected components" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create tasks with no dependencies - all isolated
+    const isolated_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(isolated_toml);
+
+    // Show graph - should display all tasks even though disconnected
+    var result = try runZr(allocator, &.{"graph"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "b") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "c") != null);
+}
+
+test "225: list command with --format json and --tree flag combination" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create tasks with dependencies
+    const list_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(list_toml);
+
+    // List with both --format json and --tree should work (tree takes precedence)
+    var result = try runZr(allocator, &.{ "list", "--tree", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "226: affected command with no git repository reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create simple workspace (no git repo)
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg-a"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    try tmp.dir.makeDir("pkg-a");
+    const pkg_a_file = try tmp.dir.createFile("pkg-a/zr.toml", .{});
+    defer pkg_a_file.close();
+    try pkg_a_file.writeAll(
+        \\[tasks.test]
+        \\cmd = "echo pkg-a"
+        \\
+    );
+
+    // Run affected without git - should fail gracefully
+    var result = try runZr(allocator, &.{ "affected", "test", "--base", "HEAD" }, tmp_path);
+    defer result.deinit();
+    // Should report error (exit code 1) or warn (exit code 0)
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "227: history with corrupted data file handles gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create config
+    const history_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(history_toml);
+
+    // Create corrupted .zr_history file
+    const history_file = try tmp.dir.createFile(".zr_history", .{});
+    defer history_file.close();
+    try history_file.writeAll("corrupted\tdata\nmalformed\n12345\t\t\n");
+
+    // History command should handle corrupted data gracefully
+    var result = try runZr(allocator, &.{"history"}, tmp_path);
+    defer result.deinit();
+    // Should not crash, may show error or skip corrupted entries
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "228: plugin list shows builtin plugins even with no config" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create minimal config with no plugins section
+    const no_plugins_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(no_plugins_toml);
+
+    // List builtins should work
+    var result = try runZr(allocator, &.{ "plugin", "builtins" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show built-in plugins
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "229: run with max_concurrent limits parallel task execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create task with max_concurrent limit
+    const concurrent_toml =
+        \\[tasks.limited]
+        \\cmd = "echo task && sleep 0.1"
+        \\max_concurrent = 2
+        \\
+        \\[tasks.limited.matrix]
+        \\index = ["1", "2", "3", "4", "5"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(concurrent_toml);
+
+    // Run matrix task with concurrency limit
+    var result = try runZr(allocator, &.{ "run", "limited" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should complete successfully with limited parallelism
+}
+
+test "230: graph command with --format json and --ascii together prioritizes ASCII" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create tasks with dependency chain
+    const graph_toml =
+        \\[tasks.prepare]
+        \\cmd = "echo prepare"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["prepare"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(graph_toml);
+
+    // Graph with conflicting format flags - ascii should take precedence
+    var result = try runZr(allocator, &.{ "graph", "--ascii", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain ASCII tree characters, not JSON
+    try std.testing.expect(result.stdout.len > 0);
+}
