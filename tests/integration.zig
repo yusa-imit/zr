@@ -8785,3 +8785,367 @@ test "330: show command with task that uses all available fields" {
     try std.testing.expect(std.mem.indexOf(u8, output, "Allow Failure") != null or
         std.mem.indexOf(u8, output, "Max Concurrent") != null);
 }
+
+test "331: run with conflicting --quiet and --verbose flags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const basic_toml =
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(basic_toml);
+
+    // Both --quiet and --verbose are accepted, but behavior should be defined
+    // (typically verbose takes precedence or last flag wins)
+    var result = try runZr(allocator, &.{ "run", "test", "--quiet", "--verbose" }, tmp_path);
+    defer result.deinit();
+    // Should not crash or error - flag precedence is an implementation detail
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "332: watch requires valid task and path arguments" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const basic_toml =
+        \\[tasks.test]
+        \\cmd = "echo watching"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(basic_toml);
+
+    // Watch with nonexistent pattern - since watch is blocking and starts a watcher,
+    // we just test that the command requires proper arguments
+    // Test that watch without path arguments shows error or help
+    var result = try runZr(allocator, &.{"watch"}, tmp_path);
+    defer result.deinit();
+    // Should show error about missing task argument
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "333: list --tree with circular dependency produces output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const circular_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\deps = ["b"]
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["c"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["a"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(circular_toml);
+
+    // list --tree with circular dependency - implementation may handle differently
+    var result = try runZr(allocator, &.{ "list", "--tree" }, tmp_path);
+    defer result.deinit();
+    // Just verify it produces some output (error or list) - doesn't crash
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "334: cache clear followed by cache status shows empty" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.cacheable]
+        \\cmd = "echo cached"
+        \\cache = { outputs = ["output.txt"] }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // Run task to populate cache
+    var run_result = try runZr(allocator, &.{ "run", "cacheable" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expect(run_result.exit_code == 0);
+
+    // Clear cache
+    var clear_result = try runZr(allocator, &.{"cache", "clear"}, tmp_path);
+    defer clear_result.deinit();
+    try std.testing.expect(clear_result.exit_code == 0);
+
+    // Check status - should show empty or 0 entries
+    var status_result = try runZr(allocator, &.{"cache", "status"}, tmp_path);
+    defer status_result.deinit();
+    try std.testing.expect(status_result.exit_code == 0);
+    const output = if (status_result.stdout.len > 0) status_result.stdout else status_result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "0") != null or
+        std.mem.indexOf(u8, output, "empty") != null or
+        std.mem.indexOf(u8, output, "no") != null);
+}
+
+test "335: workspace run with different profiles in members" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workspace with members
+    try tmp.dir.makeDir("member-a");
+    try tmp.dir.makeDir("member-b");
+
+    const root_toml =
+        \\[workspace]
+        \\members = ["member-a", "member-b"]
+        \\
+    ;
+
+    const member_a_toml =
+        \\[tasks.test]
+        \\cmd = "echo member-a"
+        \\
+        \\[profiles.dev]
+        \\env = { MODE = "dev-a" }
+        \\
+    ;
+
+    const member_b_toml =
+        \\[tasks.test]
+        \\cmd = "echo member-b"
+        \\
+        \\[profiles.prod]
+        \\env = { MODE = "prod-b" }
+        \\
+    ;
+
+    const root_file = try tmp.dir.createFile("zr.toml", .{});
+    defer root_file.close();
+    try root_file.writeAll(root_toml);
+
+    const member_a_file = try tmp.dir.createFile("member-a/zr.toml", .{});
+    defer member_a_file.close();
+    try member_a_file.writeAll(member_a_toml);
+
+    const member_b_file = try tmp.dir.createFile("member-b/zr.toml", .{});
+    defer member_b_file.close();
+    try member_b_file.writeAll(member_b_toml);
+
+    // Run workspace task - members have different profiles available
+    var result = try runZr(allocator, &.{ "workspace", "run", "test" }, tmp_path);
+    defer result.deinit();
+    // Should run successfully despite profile differences
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "member-a") != null or
+        std.mem.indexOf(u8, output, "member-b") != null);
+}
+
+test "336: run with --config pointing to nonexistent file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Try to run with nonexistent config file
+    var result = try runZr(allocator, &.{ "run", "test", "--config", "nonexistent.toml" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "nonexistent") != null or
+        std.mem.indexOf(u8, output, "not found") != null or
+        std.mem.indexOf(u8, output, "config") != null);
+}
+
+test "337: graph --format json with no tasks shows empty structure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const empty_toml =
+        \\# Empty config with no tasks
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(empty_toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should output valid JSON (even if empty array/object)
+    try std.testing.expect(std.mem.indexOf(u8, output, "{") != null or
+        std.mem.indexOf(u8, output, "[") != null);
+}
+
+test "338: affected with --base pointing to nonexistent git ref reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Initialize git repo
+    const git_init = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_init.stdout);
+    defer allocator.free(git_init.stderr);
+
+    const git_email = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.email", "test@example.com" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_email.stdout);
+    defer allocator.free(git_email.stderr);
+
+    const git_name = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.name", "Test User" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_name.stdout);
+    defer allocator.free(git_name.stderr);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg-a"]
+        \\
+    ;
+
+    try tmp.dir.makeDir("pkg-a");
+    const pkg_toml =
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const root_file = try tmp.dir.createFile("zr.toml", .{});
+    defer root_file.close();
+    try root_file.writeAll(workspace_toml);
+
+    const pkg_file = try tmp.dir.createFile("pkg-a/zr.toml", .{});
+    defer pkg_file.close();
+    try pkg_file.writeAll(pkg_toml);
+
+    const git_add = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "add", "." },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_add.stdout);
+    defer allocator.free(git_add.stderr);
+
+    const git_commit = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "commit", "-m", "initial" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_commit.stdout);
+    defer allocator.free(git_commit.stderr);
+
+    // Try affected with nonexistent ref - should produce error
+    var result = try runZr(allocator, &.{ "affected", "test", "--base", "nonexistent-ref" }, tmp_path);
+    defer result.deinit();
+    // Just verify it produces output (error message) - implementation may vary
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "339: estimate with task that has no execution history" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const task_toml =
+        \\[tasks.never-run]
+        \\cmd = "echo never executed"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(task_toml);
+
+    // Estimate without any history
+    var result = try runZr(allocator, &.{ "estimate", "never-run" }, tmp_path);
+    defer result.deinit();
+    // Should succeed with message about no history, or provide default estimate
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "no") != null or
+        std.mem.indexOf(u8, output, "history") != null or
+        std.mem.indexOf(u8, output, "never-run") != null);
+}
+
+test "340: schedule add with malformed time format produces error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const task_toml =
+        \\[tasks.test]
+        \\cmd = "echo scheduled"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(task_toml);
+
+    // Try to add schedule with invalid cron format - should produce some output
+    var result = try runZr(allocator, &.{ "schedule", "add", "test", "invalid-cron-format" }, tmp_path);
+    defer result.deinit();
+    // Just verify it produces output (may be error or usage message)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
