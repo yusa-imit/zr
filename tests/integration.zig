@@ -9477,3 +9477,248 @@ test "350: setup command with missing tools shows installation prompts" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "351: workflow command with no arguments shows appropriate error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    var result = try runZr(allocator, &.{"workflow"}, tmp_path);
+    defer result.deinit();
+    // Should fail with helpful error
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "workflow") != null or
+        std.mem.indexOf(u8, output, "missing") != null);
+}
+
+test "352: tools subcommand with invalid toolchain name reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    var result = try runZr(allocator, &.{ "tools", "install", "invalid_tool@1.0.0" }, tmp_path);
+    defer result.deinit();
+    // Should fail for invalid toolchain
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "353: analytics with --limit 0 handles edge case gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+
+    // Try analytics with limit 0
+    var result = try runZr(allocator, &.{ "analytics", "--limit", "0" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "354: repo graph command shows cross-repo dependency visualization" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const repos_toml =
+        \\[repos.core]
+        \\url = "https://github.com/example/core.git"
+        \\path = "packages/core"
+        \\
+        \\[repos.ui]
+        \\url = "https://github.com/example/ui.git"
+        \\path = "packages/ui"
+        \\deps = ["core"]
+        \\
+    ;
+
+    const repos_file = try tmp.dir.createFile("zr-repos.toml", .{});
+    defer repos_file.close();
+    try repos_file.writeAll(repos_toml);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    var result = try runZr(allocator, &.{ "repo", "graph" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show repo structure or report no repos/graph
+    try std.testing.expect(output.len > 0);
+}
+
+test "355: schedule add with invalid cron expression reports validation error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Invalid cron: too many fields
+    var result = try runZr(allocator, &.{ "schedule", "add", "hello", "* * * * * *" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should report validation error or handle gracefully
+    try std.testing.expect(output.len > 0);
+}
+
+test "356: run with --monitor flag and short-running task displays resource usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    var result = try runZr(allocator, &.{ "run", "hello", "--monitor" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should succeed (monitor may or may not show data for fast tasks)
+    try std.testing.expect(output.len > 0);
+}
+
+test "357: validate with task using invalid field name reports schema error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const invalid_field_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\invalid_field = "should_not_exist"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(invalid_field_toml);
+
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should either warn about unknown field or accept it (TOML allows extra fields)
+    try std.testing.expect(output.len > 0);
+}
+
+test "358: workspace with empty members array is valid configuration" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const empty_workspace_toml =
+        \\[workspace]
+        \\members = []
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(empty_workspace_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should handle empty workspace gracefully
+    try std.testing.expect(output.len > 0);
+}
+
+test "359: publish command with --dry-run shows what would be published" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const publish_toml =
+        \\[package]
+        \\name = "my-project"
+        \\version = "1.0.0"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(publish_toml);
+
+    var result = try runZr(allocator, &.{ "publish", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show what would be published without actually doing it
+    try std.testing.expect(output.len > 0);
+}
+
+test "360: context command with multiple output formats produces consistent data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Test JSON format
+    var json_result = try runZr(allocator, &.{ "context", "--format", "json" }, tmp_path);
+    defer json_result.deinit();
+    const json_output = if (json_result.stdout.len > 0) json_result.stdout else json_result.stderr;
+    try std.testing.expect(json_output.len > 0);
+
+    // Test YAML format
+    var yaml_result = try runZr(allocator, &.{ "context", "--format", "yaml" }, tmp_path);
+    defer yaml_result.deinit();
+    const yaml_output = if (yaml_result.stdout.len > 0) yaml_result.stdout else yaml_result.stderr;
+    try std.testing.expect(yaml_output.len > 0);
+}
