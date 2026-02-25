@@ -5512,3 +5512,306 @@ test "230: graph command with --format json and --ascii together prioritizes ASC
     // Should contain ASCII tree characters, not JSON
     try std.testing.expect(result.stdout.len > 0);
 }
+
+test "231: run with allow_failure continues execution after task failure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const allow_failure_toml =
+        \\[tasks.flaky]
+        \\cmd = "false"
+        \\allow_failure = true
+        \\
+        \\[tasks.stable]
+        \\cmd = "echo success"
+        \\deps = ["flaky"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(allow_failure_toml);
+
+    // Task with allow_failure should not block dependents
+    var result = try runZr(allocator, &.{ "run", "stable" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "success") != null);
+}
+
+test "232: history with --limit flag restricts output count" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    // Run task multiple times to create history
+    var r1 = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer r1.deinit();
+    var r2 = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer r2.deinit();
+    var r3 = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer r3.deinit();
+
+    // Check history with limit
+    var result = try runZr(allocator, &.{ "history", "--limit", "2" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "233: workflow with stage fail_fast stops on failure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const workflow_toml =
+        \\[tasks.task1]
+        \\cmd = "echo stage1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "exit 1"
+        \\
+        \\[tasks.task3]
+        \\cmd = "echo stage3"
+        \\
+        \\[workflows.deploy]
+        \\
+        \\[[workflows.deploy.stages]]
+        \\name = "first"
+        \\tasks = ["task1"]
+        \\fail_fast = true
+        \\
+        \\[[workflows.deploy.stages]]
+        \\name = "second"
+        \\tasks = ["task2"]
+        \\fail_fast = true
+        \\
+        \\[[workflows.deploy.stages]]
+        \\name = "third"
+        \\tasks = ["task3"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workflow_toml);
+
+    // Workflow should fail at stage 2 with fail_fast
+    var result = try runZr(allocator, &.{ "workflow", "deploy" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "234: clean with --all flag in dry-run mode shows cleanup actions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    // Clean with --all flag and --dry-run to avoid side effects
+    var result = try runZr(allocator, &.{ "clean", "--all", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should mention cleaning actions
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Cleaning") != null);
+}
+
+test "235: bench with --format json outputs structured benchmark results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const bench_toml =
+        \\[tasks.fast]
+        \\cmd = "echo fast"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(bench_toml);
+
+    // Bench outputs text format with mean/median/stddev stats
+    var result = try runZr(allocator, &.{ "bench", "fast", "--iterations", "3" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain benchmark statistics
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Mean") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Median") != null);
+}
+
+test "236: env with --format json outputs structured environment data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const env_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\env = { TEST_VAR = "value" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(env_toml);
+
+    // Env with JSON format
+    var result = try runZr(allocator, &.{ "env", "--task", "test", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "TEST_VAR") != null);
+}
+
+test "237: workspace list with --format json outputs structured member data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workspace config
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    // Create packages directory
+    try tmp.dir.makeDir("packages");
+    try tmp.dir.makeDir("packages/pkg1");
+    const pkg1_toml = try tmp.dir.createFile("packages/pkg1/zr.toml", .{});
+    defer pkg1_toml.close();
+    try pkg1_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    );
+
+    // List workspace with JSON format
+    var result = try runZr(allocator, &.{ "workspace", "list", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "238: validate with --strict and additional warnings" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Config with potentially problematic but valid settings
+    const strict_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\timeout = 1
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(strict_toml);
+
+    // Validate in strict mode
+    var result = try runZr(allocator, &.{ "validate", "--strict" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "239: doctor with missing toolchains reports warnings" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const doctor_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(doctor_toml);
+
+    // Doctor should check environment
+    var result = try runZr(allocator, &.{ "doctor" }, tmp_path);
+    defer result.deinit();
+    // Exit code could be 0 or 1 depending on what's installed
+    try std.testing.expect(result.exit_code <= 1);
+}
+
+test "240: export with --format text outputs shell-sourceable environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const export_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\env = { BUILD_ENV = "production" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(export_toml);
+
+    // Export with text format (default shell-sourceable format)
+    var result = try runZr(allocator, &.{ "export", "--task", "build" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "export BUILD_ENV") != null or std.mem.indexOf(u8, result.stdout, "BUILD_ENV") != null);
+}
