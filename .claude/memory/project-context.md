@@ -10,8 +10,8 @@
 
 ## Test Status (2026-02-26)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **394/394 passing** (100% success rate) — comprehensive CLI coverage
-- **Latest**: Added 10 new tests for edge cases (18b2dc8) — mixed success/failure, workspace partial failures, concurrent execution, YAML/CSV formats, empty lists
+- **Integration tests**: **425/425 passing** (100% success rate) — comprehensive CLI coverage
+- **Latest**: Added 10 new tests for advanced features (af97911) — remote cache config, all optional fields, workspace flag combos, plugin errors, matrix 3D, dry-run+matrix, empty history, workflow circular deps, bench timeout, graph non-git
 
 ## Current Phase
 
