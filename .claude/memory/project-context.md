@@ -10,8 +10,8 @@
 
 ## Test Status (2026-02-26)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **384/384 passing** (100% success rate) — comprehensive CLI coverage
-- **Latest**: Added 10 new tests for command aliases (cae3bc3) — alias ls/get/set/rm/delete, i/irun shortcuts, combined flags (--jobs+--quiet, --json+--tree), empty config validation
+- **Integration tests**: **394/394 passing** (100% success rate) — comprehensive CLI coverage
+- **Latest**: Added 10 new tests for edge cases (18b2dc8) — mixed success/failure, workspace partial failures, concurrent execution, YAML/CSV formats, empty lists
 
 ## Current Phase
 
