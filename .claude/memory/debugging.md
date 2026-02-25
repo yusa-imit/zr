@@ -1,3 +1,23 @@
+## Schedule Remove Command Bug (2026-02-25, commit 61f0c26)
+**Symptom**: `schedule remove` command returned exit code 255 (crash), integration tests 83 and 176 failing
+**Root cause**:
+- Line 205: `var entry = schedules.get(name).?;` returns a COPY of the hashmap entry
+- Line 206: `entry.deinit(allocator);` frees memory from the COPY, not the original entry in hashmap
+- Line 207: `_ = schedules.remove(name);` removes entry from hashmap without calling deinit on the original
+- Result: Original entry's allocated strings are never freed (memory leak) + potential use-after-free crash
+
+**Fix**: Use `getPtr()` instead of `get()` to get a pointer to the actual hashmap entry:
+```zig
+if (schedules.getPtr(name)) |entry_ptr| {
+    entry_ptr.deinit(allocator);
+    _ = schedules.remove(name);
+}
+```
+
+**Lesson**: HashMap.get() returns a VALUE (copy), not a pointer. For structs with allocated fields, ALWAYS use getPtr() to get a pointer before calling deinit().
+
+---
+
 ## Schedule Command Bugs (2026-02-24, commit e3b8d1d)
 **Symptom**: Schedule commands had memory leaks AND schedule persistence didn't work
 **Root causes**:
