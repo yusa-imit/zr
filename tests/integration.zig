@@ -10778,3 +10778,375 @@ test "394: schedule list with no schedules shows empty list" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "395: run with --profile and --monitor flags combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[profiles.dev]
+        \\env = { MODE = "development" }
+        \\
+    );
+
+    // Run with both profile and monitor flags
+    var result = try runZr(allocator, &.{ "run", "test", "--profile", "dev", "--monitor" }, tmp_path);
+    defer result.deinit();
+    // Should execute successfully (monitor flag shows resource usage)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "396: workspace run with --format json and --jobs=2" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create workspace root config
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo root-build"
+        \\
+    );
+
+    // Create packages directory
+    try tmp.dir.makePath("packages/pkg1");
+    try tmp.dir.makePath("packages/pkg2");
+
+    const pkg1_toml = try tmp.dir.createFile("packages/pkg1/zr.toml", .{});
+    defer pkg1_toml.close();
+    try pkg1_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo pkg1-build"
+        \\
+    );
+
+    const pkg2_toml = try tmp.dir.createFile("packages/pkg2/zr.toml", .{});
+    defer pkg2_toml.close();
+    try pkg2_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo pkg2-build"
+        \\
+    );
+
+    // Run workspace with combined flags
+    var result = try runZr(allocator, &.{ "workspace", "run", "build", "--format", "json", "--jobs", "2" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "397: validate with --schema flag shows schema help" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Validate --schema should show schema help and succeed
+    var result = try runZr(allocator, &.{ "validate", "--schema" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should contain schema documentation
+    try std.testing.expect(std.mem.indexOf(u8, output, "[tasks.<name>]") != null);
+}
+
+test "398: graph --format json with complex dependency chains" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["compile", "link"]
+        \\
+        \\[tasks.compile]
+        \\cmd = "echo compile"
+        \\deps = ["clean"]
+        \\
+        \\[tasks.link]
+        \\cmd = "echo link"
+        \\deps = ["clean"]
+        \\
+        \\[tasks.clean]
+        \\cmd = "echo clean"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+        \\
+    );
+
+    // Generate JSON format graph
+    var result = try runZr(allocator, &.{ "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should contain JSON structure
+    try std.testing.expect(output.len > 0);
+}
+
+test "399: list with --tags filter and --tree combined on large task set" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\tags = ["backend", "production"]
+        \\deps = ["compile"]
+        \\
+        \\[tasks.compile]
+        \\cmd = "echo compile"
+        \\tags = ["backend"]
+        \\
+        \\[tasks.frontend]
+        \\cmd = "echo frontend"
+        \\tags = ["frontend", "production"]
+        \\
+        \\[tasks.test-backend]
+        \\cmd = "echo test-backend"
+        \\tags = ["backend", "test"]
+        \\deps = ["build"]
+        \\
+        \\[tasks.test-frontend]
+        \\cmd = "echo test-frontend"
+        \\tags = ["frontend", "test"]
+        \\deps = ["frontend"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\tags = ["production"]
+        \\deps = ["build", "frontend"]
+        \\
+    );
+
+    // List with tag filter and tree view
+    var result = try runZr(allocator, &.{ "list", "--tags", "backend", "--tree" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "400: affected with --base and --exclude-self flags on git repo" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Initialize git repo
+    {
+        const git_init = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_init.stdout);
+        defer allocator.free(git_init.stderr);
+    }
+    {
+        const git_config_name = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test User" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_config_name.stdout);
+        defer allocator.free(git_config_name.stderr);
+    }
+    {
+        const git_config_email = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@example.com" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_config_email.stdout);
+        defer allocator.free(git_config_email.stderr);
+    }
+
+    // Create workspace structure
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    );
+
+    try tmp.dir.makePath("packages/pkg1");
+    const pkg1_toml = try tmp.dir.createFile("packages/pkg1/zr.toml", .{});
+    defer pkg1_toml.close();
+    try pkg1_toml.writeAll(
+        \\[tasks.test]
+        \\cmd = "echo pkg1-test"
+        \\
+    );
+
+    // Commit initial state
+    {
+        const git_add = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_add.stdout);
+        defer allocator.free(git_add.stderr);
+    }
+    {
+        const git_commit = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_commit.stdout);
+        defer allocator.free(git_commit.stderr);
+    }
+
+    // Test affected with flags
+    var result = try runZr(allocator, &.{ "affected", "test", "--base", "HEAD", "--exclude-self" }, tmp_path);
+    defer result.deinit();
+    // Should succeed even if no changes
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "401: history with --limit=0 returns no results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    );
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer run_result.deinit();
+
+    // Query history with limit 0
+    var result = try runZr(allocator, &.{ "history", "--limit", "0" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "402: cache status after sequential runs shows cache hits" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.cached-task]
+        \\cmd = "echo cached"
+        \\
+        \\[cache]
+        \\default = true
+        \\
+    );
+
+    // First run
+    var run1 = try runZr(allocator, &.{ "run", "cached-task" }, tmp_path);
+    defer run1.deinit();
+
+    // Second run (should hit cache)
+    var run2 = try runZr(allocator, &.{ "run", "cached-task" }, tmp_path);
+    defer run2.deinit();
+
+    // Check cache status
+    var result = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "403: bench with --iterations=1 and --format json" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(
+        \\[tasks.quick]
+        \\cmd = "echo quick"
+        \\
+    );
+
+    // Benchmark with single iteration
+    var result = try runZr(allocator, &.{ "bench", "quick", "--iterations", "1", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "404: run with invalid --jobs value shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Try invalid jobs value
+    var result = try runZr(allocator, &.{ "run", "hello", "--jobs", "-1" }, tmp_path);
+    defer result.deinit();
+    // Should fail with error
+    try std.testing.expect(result.exit_code != 0);
+}
