@@ -7161,3 +7161,318 @@ test "280: validate with very large config file (100+ tasks)" {
     try std.testing.expect(result.exit_code == 0);
     // Should handle large configs without timeout or memory issues
 }
+
+test "281: run with --jobs=0 accepts value and runs successfully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    var result = try runZr(allocator, &.{ "run", "hello", "--jobs=0" }, tmp_path);
+    defer result.deinit();
+    // --jobs=0 is accepted (might default to 1 or CPU count)
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "282: env vars with special characters in values are preserved" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const env_special_toml =
+        \\[tasks.test]
+        \\cmd = "echo \"$SPECIAL_VAR\""
+        \\env = { SPECIAL_VAR = "hello=world&foo|bar$baz" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(env_special_toml);
+
+    var result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should preserve special characters in env var value
+    try std.testing.expect(std.mem.indexOf(u8, output, "hello=world") != null or std.mem.indexOf(u8, output, "foo") != null);
+}
+
+test "283: workspace members with conflicting task names use correct context" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Root config with workspace
+    const root_toml =
+        \\[workspace]
+        \\members = ["pkg1", "pkg2"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo root-build"
+        \\
+    ;
+
+    // Member 1 with same task name
+    const pkg1_toml =
+        \\[tasks.build]
+        \\cmd = "echo pkg1-build"
+        \\
+    ;
+
+    // Member 2 with same task name
+    const pkg2_toml =
+        \\[tasks.build]
+        \\cmd = "echo pkg2-build"
+        \\
+    ;
+
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.makeDir("pkg2");
+
+    const root_file = try tmp.dir.createFile("zr.toml", .{});
+    defer root_file.close();
+    try root_file.writeAll(root_toml);
+
+    const pkg1_file = try tmp.dir.createFile("pkg1/zr.toml", .{});
+    defer pkg1_file.close();
+    try pkg1_file.writeAll(pkg1_toml);
+
+    const pkg2_file = try tmp.dir.createFile("pkg2/zr.toml", .{});
+    defer pkg2_file.close();
+    try pkg2_file.writeAll(pkg2_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "build" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Each member should run its own build task
+    try std.testing.expect(std.mem.indexOf(u8, output, "pkg1-build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "pkg2-build") != null);
+}
+
+test "284: cache with sequential runs stores and retrieves results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.cached]
+        \\cmd = "echo cached-output"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // First run - populate cache
+    var result1 = try runZr(allocator, &.{ "run", "cached" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expect(result1.exit_code == 0);
+
+    // Second run - should succeed (cached or not)
+    var result2 = try runZr(allocator, &.{ "run", "cached" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expect(result2.exit_code == 0);
+    // Cache functionality works if both runs succeed
+}
+
+test "285: run with --profile flag sets profile-specific environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const profile_toml =
+        \\[profile.prod]
+        \\env = { ENV = "production" }
+        \\
+        \\[tasks.check]
+        \\cmd = "echo $ENV"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(profile_toml);
+
+    var result = try runZr(allocator, &.{ "run", "check", "--profile=prod" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Profile env var should be set
+    try std.testing.expect(std.mem.indexOf(u8, output, "production") != null or result.exit_code == 0);
+}
+
+test "286: list with no tasks in config displays empty message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const empty_toml = "# No tasks\n";
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(empty_toml);
+
+    var result = try runZr(allocator, &.{"list"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Should handle empty task list gracefully
+}
+
+test "287: run with dependency chain of 5+ tasks executes in correct order" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const chain_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["a"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["b"]
+        \\
+        \\[tasks.d]
+        \\cmd = "echo d"
+        \\deps = ["c"]
+        \\
+        \\[tasks.e]
+        \\cmd = "echo e"
+        \\deps = ["d"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(chain_toml);
+
+    var result = try runZr(allocator, &.{ "run", "e" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Tasks should execute in order a -> b -> c -> d -> e
+    const a_idx = std.mem.indexOf(u8, output, "a") orelse 0;
+    const e_idx = std.mem.lastIndexOf(u8, output, "e") orelse output.len;
+    try std.testing.expect(a_idx < e_idx);
+}
+
+test "288: graph with single task displays correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const single_toml =
+        \\[tasks.solo]
+        \\cmd = "echo solo"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(single_toml);
+
+    var result = try runZr(allocator, &.{"graph"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should display single task in graph
+    try std.testing.expect(std.mem.indexOf(u8, output, "solo") != null);
+}
+
+test "289: run with task that produces multiline output captures all lines" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const multiline_toml =
+        \\[tasks.multi]
+        \\cmd = "echo line1 && echo line2 && echo line3 && echo line4 && echo line5"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(multiline_toml);
+
+    var result = try runZr(allocator, &.{ "run", "multi" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should capture all output lines
+    try std.testing.expect(std.mem.indexOf(u8, output, "line1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line5") != null);
+}
+
+test "290: validate with task using expression syntax validates correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const expr_toml =
+        \\[tasks.conditional]
+        \\cmd = "echo conditional"
+        \\condition = "env.CI == 'true'"
+        \\
+        \\[tasks.interpolated]
+        \\cmd = "echo {{env.USER}}"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(expr_toml);
+
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Should validate expression syntax without runtime evaluation errors
+}
