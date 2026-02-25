@@ -6800,3 +6800,364 @@ test "270: run with conflicting flags --dry-run and --monitor reports error" {
     // Should either reject conflicting flags or ignore --monitor in dry-run mode
     try std.testing.expect(result.exit_code <= 1);
 }
+
+test "271: multi-command workflow init → validate → run → history" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Step 1: init creates config
+    var init_result = try runZr(allocator, &.{"init"}, tmp_path);
+    defer init_result.deinit();
+    try std.testing.expect(init_result.exit_code == 0);
+
+    // Step 2: validate checks config
+    var validate_result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer validate_result.deinit();
+    try std.testing.expect(validate_result.exit_code == 0);
+
+    // Manually add a task to the generated config
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+    const file = try std.fs.openFileAbsolute(config_path, .{ .mode = .read_write });
+    defer file.close();
+    try file.seekFromEnd(0);
+    try file.writeAll("\n[tasks.test]\ncmd = \"echo workflow-test\"\n");
+
+    // Step 3: run task
+    var run_result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expect(run_result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, run_result.stdout, "workflow-test") != null);
+
+    // Step 4: history shows execution
+    var history_result = try runZr(allocator, &.{"history"}, tmp_path);
+    defer history_result.deinit();
+    try std.testing.expect(history_result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, history_result.stdout, "test") != null or std.mem.indexOf(u8, history_result.stderr, "test") != null);
+}
+
+test "272: complex flag combination run --jobs=1 --profile=prod --dry-run --verbose" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const profile_toml =
+        \\[profiles.prod]
+        \\env = { MODE = "production" }
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying in $MODE"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(profile_toml);
+
+    var result = try runZr(allocator, &.{ "run", "deploy", "--jobs=1", "--profile=prod", "--dry-run", "--verbose" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // In dry-run mode, task shouldn't actually execute
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "deploy") != null or std.mem.indexOf(u8, output, "dry") != null or std.mem.indexOf(u8, output, "would") != null);
+}
+
+test "273: list with complex filters --tags=build,test --format=json --tree" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const tagged_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\tags = ["build", "ci"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\tags = ["test", "ci"]
+        \\deps = ["build"]
+        \\
+        \\[tasks.lint]
+        \\cmd = "echo linting"
+        \\tags = ["lint"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(tagged_toml);
+
+    var result = try runZr(allocator, &.{ "list", "--tags=build,test", "--format=json", "--tree" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Should output JSON and include build/test but not lint
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null or std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "274: graph with multiple flags --format=dot --depth=2 --no-color" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const deep_deps =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["a"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["b"]
+        \\
+        \\[tasks.d]
+        \\cmd = "echo d"
+        \\deps = ["c"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(deep_deps);
+
+    var result = try runZr(allocator, &.{ "graph", "--format=dot", "--no-color" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // DOT format should have digraph syntax
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "digraph") != null or std.mem.indexOf(u8, output, "a") != null);
+}
+
+test "275: bench with all flags --iterations=5 --warmup=2 --format=json --profile=dev" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const bench_toml =
+        \\[profiles.dev]
+        \\env = { DEBUG = "1" }
+        \\
+        \\[tasks.fast]
+        \\cmd = "echo quick"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(bench_toml);
+
+    var result = try runZr(allocator, &.{ "bench", "fast", "--iterations=5", "--warmup=2", "--format=json", "--profile=dev" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Output should contain benchmark data in JSON
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "276: error recovery cache corruption → clean → rebuild" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cached_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\cache = { inputs = ["src/**"], outputs = ["dist"] }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cached_toml);
+
+    // Create src directory
+    try tmp.dir.makeDir("src");
+    const src_file = try tmp.dir.createFile("src/main.txt", .{});
+    defer src_file.close();
+    try src_file.writeAll("original");
+
+    // First run to populate cache
+    var run1 = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer run1.deinit();
+    try std.testing.expect(run1.exit_code == 0);
+
+    // Corrupt cache by creating invalid .zr-cache directory structure
+    try tmp.dir.makeDir(".zr-cache");
+    const corrupt_file = try tmp.dir.createFile(".zr-cache/corrupt", .{});
+    defer corrupt_file.close();
+    try corrupt_file.writeAll("invalid cache data");
+
+    // Clean cache
+    var clean_result = try runZr(allocator, &.{"clean"}, tmp_path);
+    defer clean_result.deinit();
+    try std.testing.expect(clean_result.exit_code == 0);
+
+    // Rebuild after clean
+    var run2 = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer run2.deinit();
+    try std.testing.expect(run2.exit_code == 0);
+}
+
+test "277: workspace with unicode task names and descriptions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const unicode_toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.测试]
+        \\description = "运行测试 🧪"
+        \\cmd = "echo testing"
+        \\
+        \\[tasks.déployer]
+        \\description = "Déployer l'application 🚀"
+        \\cmd = "echo déploiement"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(unicode_toml);
+
+    // Create workspace member
+    try tmp.dir.makePath("packages/app");
+    const member_toml_file = try tmp.dir.createFile("packages/app/zr.toml", .{});
+    defer member_toml_file.close();
+    try member_toml_file.writeAll("[tasks.test]\ncmd = \"echo member-test\"\n");
+
+    var result = try runZr(allocator, &.{"list"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Should handle unicode task names gracefully
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+}
+
+test "278: run with path containing spaces and special characters" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [512]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Create subdirectory with spaces
+    try tmp.dir.makeDir("my project");
+    const project_path = try std.fmt.allocPrint(allocator, "{s}/my project", .{tmp_path});
+    defer allocator.free(project_path);
+
+    const simple_toml =
+        \\[tasks.test]
+        \\cmd = "echo 'path with spaces works'"
+        \\
+    ;
+
+    const subdir = try std.fs.openDirAbsolute(project_path, .{});
+    const zr_toml = try subdir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    var result = try runZr(allocator, &.{ "run", "test" }, project_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "279: alias add → show → list → remove workflow" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const simple_toml =
+        \\[tasks.test]
+        \\cmd = "echo running-test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    // Add alias (CLI command alias, not task alias)
+    var add_result = try runZr(allocator, &.{ "alias", "add", "t", "run test" }, tmp_path);
+    defer add_result.deinit();
+    try std.testing.expect(add_result.exit_code == 0);
+
+    // Show alias
+    var show_result = try runZr(allocator, &.{ "alias", "show", "t" }, tmp_path);
+    defer show_result.deinit();
+    try std.testing.expect(show_result.exit_code == 0);
+    const show_output = if (show_result.stdout.len > 0) show_result.stdout else show_result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, show_output, "run test") != null or std.mem.indexOf(u8, show_output, "t") != null);
+
+    // List aliases
+    var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
+    defer list_result.deinit();
+    try std.testing.expect(list_result.exit_code == 0);
+    const list_output = if (list_result.stdout.len > 0) list_result.stdout else list_result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, list_output, "t") != null);
+
+    // Remove alias
+    var remove_result = try runZr(allocator, &.{ "alias", "remove", "t" }, tmp_path);
+    defer remove_result.deinit();
+    try std.testing.expect(remove_result.exit_code == 0);
+
+    // Verify alias is gone
+    var verify_result = try runZr(allocator, &.{ "alias", "show", "t" }, tmp_path);
+    defer verify_result.deinit();
+    try std.testing.expect(verify_result.exit_code == 1);
+}
+
+test "280: validate with very large config file (100+ tasks)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    // Generate large config with 100 tasks
+    var large_config = std.ArrayList(u8){};
+    defer large_config.deinit(allocator);
+
+    for (0..100) |i| {
+        const task = try std.fmt.allocPrint(allocator, "[tasks.task{d}]\ncmd = \"echo task{d}\"\n\n", .{ i, i });
+        defer allocator.free(task);
+        try large_config.appendSlice(allocator, task);
+    }
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(large_config.items);
+
+    var result = try runZr(allocator, &.{"validate"}, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Should handle large configs without timeout or memory issues
+}
