@@ -10,8 +10,8 @@
 
 ## Test Status (2026-02-26)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **370/370 passing** (100% success rate) — comprehensive CLI coverage
-- **Latest**: Added 10 new tests for untested features (a7b84a3) — workspace affected, analytics --output/--json, version --package, upgrade --check/--version, run --affected, workspace run --affected
+- **Integration tests**: **384/384 passing** (100% success rate) — comprehensive CLI coverage
+- **Latest**: Added 10 new tests for command aliases (cae3bc3) — alias ls/get/set/rm/delete, i/irun shortcuts, combined flags (--jobs+--quiet, --json+--tree), empty config validation
 
 ## Current Phase
 
