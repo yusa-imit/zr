@@ -201,10 +201,11 @@ fn cmdScheduleRemove(
         return 1;
     }
 
-    // Remove the entry
-    var entry = schedules.get(name).?;
-    entry.deinit(allocator);
-    _ = schedules.remove(name);
+    // Remove the entry - must get pointer to deinit before removing
+    if (schedules.getPtr(name)) |entry_ptr| {
+        entry_ptr.deinit(allocator);
+        _ = schedules.remove(name);
+    }
 
     try saveSchedules(allocator, schedule_data, &schedules);
 
