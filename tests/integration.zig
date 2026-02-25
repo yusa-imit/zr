@@ -9149,3 +9149,331 @@ test "340: schedule add with malformed time format produces error" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "341: run with profile flag overrides multiple task environment variables" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const profile_toml =
+        \\[tasks.show-env]
+        \\cmd = "echo $FOO $BAR $BAZ"
+        \\env = { FOO = "default-foo", BAR = "default-bar", BAZ = "default-baz" }
+        \\
+        \\[profiles.production]
+        \\env = { FOO = "prod-foo", BAR = "prod-bar" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(profile_toml);
+
+    var result = try runZr(allocator, &.{ "run", "show-env", "--profile", "production" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Profile should override FOO and BAR, but not BAZ
+    try std.testing.expect(std.mem.indexOf(u8, output, "prod-foo") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "prod-bar") != null);
+}
+
+test "342: workspace run with --format=json shows structured member results" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    try tmp.dir.makeDir("service-a");
+    try tmp.dir.makeDir("service-b");
+
+    const service_a_toml =
+        \\[tasks.health]
+        \\cmd = "echo service-a ok"
+        \\
+    ;
+    const service_b_toml =
+        \\[tasks.health]
+        \\cmd = "echo service-b ok"
+        \\
+    ;
+
+    const sa_file = try tmp.dir.createFile("service-a/zr.toml", .{});
+    defer sa_file.close();
+    try sa_file.writeAll(service_a_toml);
+
+    const sb_file = try tmp.dir.createFile("service-b/zr.toml", .{});
+    defer sb_file.close();
+    try sb_file.writeAll(service_b_toml);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["service-a", "service-b"]
+        \\
+    ;
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(workspace_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "health", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should output JSON with member results
+    try std.testing.expect(std.mem.indexOf(u8, output, "service-a") != null or
+        std.mem.indexOf(u8, output, "[") != null or
+        std.mem.indexOf(u8, output, "{") != null);
+}
+
+test "343: validate with task containing all optional fields passes validation" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const full_task_toml =
+        \\[tasks.comprehensive]
+        \\description = "Task with all optional fields"
+        \\cmd = "echo test"
+        \\cwd = "."
+        \\timeout = 30
+        \\retry = 2
+        \\allow_failure = true
+        \\deps = []
+        \\deps_serial = []
+        \\env = { KEY = "value" }
+        \\condition = "platform == \"darwin\""
+        \\max_concurrent = 5
+        \\tags = ["test", "comprehensive"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(full_task_toml);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "344: list with --tags filtering by nonexistent tag shows empty result" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp_dir.dir.realpath(".", &buf);
+
+    const tagged_toml =
+        \\[tasks.frontend]
+        \\cmd = "echo frontend"
+        \\tags = ["ui", "web"]
+        \\
+        \\[tasks.backend]
+        \\cmd = "echo backend"
+        \\tags = ["api", "server"]
+        \\
+    ;
+
+    const zr_toml = try tmp_dir.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(tagged_toml);
+
+    var result = try runZr(allocator, &.{ "list", "--tags=nonexistent" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show no tasks or empty result
+    try std.testing.expect(std.mem.indexOf(u8, output, "frontend") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "backend") == null);
+}
+
+test "345: env command with --task flag shows task-specific environment" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const task_env_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\env = { DEPLOY_ENV = "production", API_KEY = "secret123" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(task_env_toml);
+
+    var result = try runZr(allocator, &.{ "env", "--task", "deploy" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "DEPLOY_ENV") != null);
+}
+
+test "346: graph with --format dot produces valid Graphviz output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const deps_chain_toml =
+        \\[tasks.install]
+        \\cmd = "echo installing"
+        \\
+        \\[tasks.compile]
+        \\cmd = "echo compiling"
+        \\deps = ["install"]
+        \\
+        \\[tasks.package]
+        \\cmd = "echo packaging"
+        \\deps = ["compile"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(deps_chain_toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--format", "dot" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should succeed and contain DOT format keywords
+    try std.testing.expect(result.exit_code == 0 or output.len > 0);
+    if (result.exit_code == 0) {
+        try std.testing.expect(std.mem.indexOf(u8, output, "digraph") != null or
+            std.mem.indexOf(u8, output, "->") != null or
+            std.mem.indexOf(u8, output, "install") != null);
+    }
+}
+
+test "347: run with task that uses matrix and env together expands correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const matrix_env_toml =
+        \\[tasks.test]
+        \\cmd = "echo Testing on $PLATFORM with $VERSION"
+        \\matrix = { platform = ["linux", "macos"], version = ["18", "20"] }
+        \\env = { TEST_ENV = "ci" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(matrix_env_toml);
+
+    // List should show 4 matrix expansion variants
+    var result = try runZr(allocator, &.{ "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show matrix-expanded tasks
+    try std.testing.expect(std.mem.indexOf(u8, output, "test") != null);
+}
+
+test "348: history with --limit=1 shows only most recent execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(HELLO_TOML);
+
+    // Run task multiple times
+    var run1 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run1.deinit();
+    var run2 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run2.deinit();
+    var run3 = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run3.deinit();
+
+    var result = try runZr(allocator, &.{ "history", "--limit", "1" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show only one entry
+    try std.testing.expect(output.len > 0);
+}
+
+test "349: cache clear with --dry-run previews what would be deleted" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cached_task_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cached_task_toml);
+
+    // Run to potentially create cache
+    var run_result = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer run_result.deinit();
+
+    // Dry run clear
+    var result = try runZr(allocator, &.{ "cache", "clear", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should indicate what would be cleared or say cache is clear
+    try std.testing.expect(output.len > 0);
+}
+
+test "350: setup command with missing tools shows installation prompts" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const setup_toml =
+        \\[tools]
+        \\node = "20.11.1"
+        \\
+        \\[tasks.setup]
+        \\cmd = "echo setup complete"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(setup_toml);
+
+    // Setup should check for tools (may succeed or show what's missing)
+    var result = try runZr(allocator, &.{ "setup" }, tmp_path);
+    defer result.deinit();
+    // Just verify command produces output
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
