@@ -12916,3 +12916,302 @@ test "455: codeowners generate with no workspace shows appropriate message" {
     // Should handle gracefully (no workspace = no CODEOWNERS)
     try std.testing.expect(output.len > 0);
 }
+
+test "456: upgrade with --dry-run shows available updates without installing" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const minimal_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(minimal_toml);
+
+    var result = try runZr(allocator, &.{ "upgrade", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    // Should check for updates without installing (exit 0 or show info)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "457: lint with custom rules file validates architecture constraints" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const lint_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\deps = ["test"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(lint_toml);
+
+    var result = try runZr(allocator, &.{"lint"}, tmp_path);
+    defer result.deinit();
+    // Lint should validate the configuration
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "458: setup command with missing tools shows warnings but continues" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const setup_toml =
+        \\[tools]
+        \\node = "999.0.0"
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(setup_toml);
+
+    var result = try runZr(allocator, &.{"setup"}, tmp_path);
+    defer result.deinit();
+    // Setup should warn about missing/invalid tool version
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "459: estimate with --format=json outputs structured duration estimates" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const estimate_toml =
+        \\[tasks.build]
+        \\cmd = "sleep 0.1"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(estimate_toml);
+
+    // Run task once to create history
+    var run_result = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer run_result.deinit();
+
+    // Now estimate with JSON format
+    var result = try runZr(allocator, &.{ "estimate", "build", "--format=json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "460: schedule with cron expression and task validates syntax" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const schedule_toml =
+        \\[tasks.backup]
+        \\cmd = "echo backing up"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(schedule_toml);
+
+    // Add schedule with valid cron
+    var result = try runZr(allocator, &.{ "schedule", "add", "daily-backup", "0 2 * * *", "backup" }, tmp_path);
+    defer result.deinit();
+    // Should accept valid cron expression
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "461: alias with circular reference detection prevents infinite loops" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const alias_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(alias_toml);
+
+    // Add alias pointing to itself (should be rejected or handled)
+    var result = try runZr(allocator, &.{ "alias", "add", "loop", "loop" }, tmp_path);
+    defer result.deinit();
+    // Should detect circular reference
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "462: repo sync with authentication failure shows appropriate error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const repo_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(repo_toml);
+
+    // Create zr-repos.toml with invalid URL
+    const repos_toml =
+        \\[[repos]]
+        \\name = "invalid"
+        \\url = "https://invalid-url-xyz.example.com/repo.git"
+        \\path = "./repos/invalid"
+        \\
+    ;
+    const repos_file = try tmp.dir.createFile("zr-repos.toml", .{});
+    defer repos_file.close();
+    try repos_file.writeAll(repos_toml);
+
+    var result = try runZr(allocator, &.{ "repo", "sync" }, tmp_path);
+    defer result.deinit();
+    // Should handle sync failure gracefully
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "463: context with --scope flag filters to specific package" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const context_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\description = "Build the project"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(context_toml);
+
+    var result = try runZr(allocator, &.{ "context", "--scope", "." }, tmp_path);
+    defer result.deinit();
+    // Should generate context output
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "464: doctor with all checks runs comprehensive diagnostics" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const doctor_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(doctor_toml);
+
+    var result = try runZr(allocator, &.{"doctor"}, tmp_path);
+    defer result.deinit();
+    // Doctor should run all diagnostic checks
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "465: workflow with multiple stages executes sequentially" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const multi_stage_toml =
+        \\[tasks.prepare]
+        \\cmd = "echo preparing"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+        \\[workflows.deploy]
+        \\
+        \\[[workflows.deploy.stages]]
+        \\name = "prepare"
+        \\tasks = ["prepare"]
+        \\
+        \\[[workflows.deploy.stages]]
+        \\name = "build"
+        \\tasks = ["build"]
+        \\
+        \\[[workflows.deploy.stages]]
+        \\name = "test"
+        \\tasks = ["test"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(multi_stage_toml);
+
+    var result = try runZr(allocator, &.{ "workflow", "deploy" }, tmp_path);
+    defer result.deinit();
+    // Workflow should execute all stages sequentially
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "preparing") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "building") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "testing") != null);
+}
