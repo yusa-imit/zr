@@ -18796,9 +18796,21 @@ test "638: publish with --tag and --changelog generates both artifacts" {
     defer allocator.free(tmp_path);
 
     // Initialize git repo
-    _ = try runCmd(allocator, &.{ "git", "init" }, tmp_path);
-    _ = try runCmd(allocator, &.{ "git", "config", "user.name", "test" }, tmp_path);
-    _ = try runCmd(allocator, &.{ "git", "config", "user.email", "test@test.com" }, tmp_path);
+    {
+        var init_child = std.process.Child.init(&.{ "git", "init" }, allocator);
+        init_child.cwd = tmp_path;
+        _ = try init_child.wait();
+    }
+    {
+        var config_name = std.process.Child.init(&.{ "git", "config", "user.name", "test" }, allocator);
+        config_name.cwd = tmp_path;
+        _ = try config_name.wait();
+    }
+    {
+        var config_email = std.process.Child.init(&.{ "git", "config", "user.email", "test@test.com" }, allocator);
+        config_email.cwd = tmp_path;
+        _ = try config_email.wait();
+    }
 
     // Create package.json
     const package_json =
@@ -18821,8 +18833,16 @@ test "638: publish with --tag and --changelog generates both artifacts" {
     defer allocator.free(config);
 
     // Commit initial files
-    _ = try runCmd(allocator, &.{ "git", "add", "." }, tmp_path);
-    _ = try runCmd(allocator, &.{ "git", "commit", "-m", "feat: initial" }, tmp_path);
+    {
+        var add_child = std.process.Child.init(&.{ "git", "add", "." }, allocator);
+        add_child.cwd = tmp_path;
+        _ = try add_child.wait();
+    }
+    {
+        var commit_child = std.process.Child.init(&.{ "git", "commit", "-m", "feat: initial" }, allocator);
+        commit_child.cwd = tmp_path;
+        _ = try commit_child.wait();
+    }
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--tag", "--changelog", "--dry-run" }, tmp_path);
     defer result.deinit();
