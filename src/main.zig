@@ -635,11 +635,12 @@ fn run(
         return alias_cmd.cmdAlias(allocator, alias_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "estimate")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "Usage: zr estimate <task> [--format=json]\n", .{});
+            try color.printError(ew, effective_color, "Usage: zr estimate <task> [--limit N] [--format json]\n", .{});
             try effective_w.writeAll("\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
             try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
+            try effective_w.writeAll("  --limit N         Limit history sample to last N executions (default: 20)\n");
             try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
             try effective_w.writeAll("  --help, -h        Show this help message\n");
             return 1;
@@ -648,16 +649,37 @@ fn run(
 
         // Check for --help flag
         if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
-            try effective_w.writeAll("Usage: zr estimate <task> [--format=json]\n\n");
+            try effective_w.writeAll("Usage: zr estimate <task> [--limit N] [--format json]\n\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
             try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
+            try effective_w.writeAll("  --limit N         Limit history sample to last N executions (default: 20)\n");
             try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
             try effective_w.writeAll("  --help, -h        Show this help message\n");
             return 0;
         }
 
-        const limit: usize = 20; // Default to last 20 runs
+        // Parse --limit flag from remaining args
+        var limit: usize = 20; // Default to last 20 runs
+        var i: usize = 3;
+        while (i < effective_args.len) : (i += 1) {
+            const arg = effective_args[i];
+            if (std.mem.eql(u8, arg, "--limit")) {
+                i += 1;
+                if (i >= effective_args.len) {
+                    try color.printError(ew, effective_color, "error: --limit requires a number\n", .{});
+                    return 1;
+                }
+                limit = std.fmt.parseInt(usize, effective_args[i], 10) catch {
+                    try color.printError(ew, effective_color, "error: invalid limit value: {s}\n", .{effective_args[i]});
+                    return 1;
+                };
+                if (limit == 0) {
+                    try color.printError(ew, effective_color, "error: --limit must be greater than 0\n", .{});
+                    return 1;
+                }
+            }
+        }
 
         // Convert json_output to estimate's OutputFormat
         const estimate_format: estimate_cmd.OutputFormat = if (json_output) .json else .text;
