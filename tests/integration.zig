@@ -16660,7 +16660,8 @@ test "566: publish with --since flag filters commits by date" {
     defer allocator.free(config);
 
     // Initialize git repo
-    _ = try runZr(allocator, &.{ "run", "--help" }, tmp_path); // dummy
+    var dummy = try runZr(allocator, &.{ "run", "--help" }, tmp_path);
+    defer dummy.deinit();
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--since=2024-01-01", "--dry-run" }, tmp_path);
     defer result.deinit();
