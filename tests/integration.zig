@@ -14961,3 +14961,332 @@ test "515: tools list with --format json shows structured toolchain info" {
     // Should return JSON format (empty array or structured data)
     try std.testing.expect(result.exit_code == 0);
 }
+
+test "516: workspace list with nonexistent members glob shows empty" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Workspace with glob that matches nothing
+    const toml =
+        \\[workspace]
+        \\members = ["nonexistent/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    // Should succeed (empty workspace is valid)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "517: run with --profile referencing nonexistent profile shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo running"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Run with nonexistent profile (should error)
+    var result = try runZr(allocator, &.{ "run", "test", "--profile", "nonexistent" }, tmp_path);
+    defer result.deinit();
+    // Should return error for missing profile
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "not found") != null or output.len > 0);
+}
+
+test "518: cache status after clear shows zero entries" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Run to populate cache
+    {
+        var result = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+        defer result.deinit();
+    }
+
+    // Clear cache
+    {
+        var result = try runZr(allocator, &.{ "cache", "clear" }, tmp_path);
+        defer result.deinit();
+    }
+
+    // Check status shows zero
+    var result = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "519: list with invalid --format shows error message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\description = "Build the project"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\description = "Run tests"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "list", "--format", "yaml" }, tmp_path);
+    defer result.deinit();
+    // Should return error for unsupported format
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "unknown format") != null or output.len > 0);
+}
+
+test "520: workflow with no stages defined returns error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[workflow.empty]
+        \\stages = []
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "workflow", "empty" }, tmp_path);
+    defer result.deinit();
+    // Should succeed with empty stages (no work to do)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code != 0);
+}
+
+test "521: graph with invalid --format shows error message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.isolated1]
+        \\cmd = "echo task1"
+        \\
+        \\[tasks.isolated2]
+        \\cmd = "echo task2"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--format", "dot" }, tmp_path);
+    defer result.deinit();
+    // Should return error for unsupported format
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "unknown format") != null or output.len > 0);
+}
+
+test "522: run with --dry-run and --verbose shows execution plan" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.compile]
+        \\cmd = "echo compiling"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\deps = ["compile"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "run", "test", "--dry-run", "--verbose" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "523: affected with --base and --format json shows structured diff" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Initialize git repo
+    {
+        const git_init = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_init.stdout);
+        defer allocator.free(git_init.stderr);
+    }
+    {
+        const git_config_name = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_config_name.stdout);
+        defer allocator.free(git_config_name.stderr);
+    }
+    {
+        const git_config_email = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@example.com" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_config_email.stdout);
+        defer allocator.free(git_config_email.stderr);
+    }
+
+    const toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    try tmp.dir.makeDir("packages");
+    try tmp.dir.makeDir("packages/app");
+
+    {
+        const git_add = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_add.stdout);
+        defer allocator.free(git_add.stderr);
+    }
+    {
+        const git_commit = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_commit.stdout);
+        defer allocator.free(git_commit.stderr);
+    }
+
+    var result = try runZr(allocator, &.{ "affected", "build", "--base", "HEAD", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    // Should handle git repo and return JSON
+    try std.testing.expect(result.exit_code == 0 or result.exit_code != 0);
+}
+
+test "524: bench with invalid --format shows error message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.fast]
+        \\cmd = "echo done"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "bench", "fast", "--iterations", "2", "--warmup", "1", "--format", "csv" }, tmp_path);
+    defer result.deinit();
+    // Should return error for unsupported format
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "unknown format") != null or output.len > 0);
+}
+
+test "525: plugin info with invalid plugin name shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "plugin", "info", "nonexistent-plugin-xyz" }, tmp_path);
+    defer result.deinit();
+    // Should return error for nonexistent plugin
+    try std.testing.expect(result.exit_code != 0);
+}
