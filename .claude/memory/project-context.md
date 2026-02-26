@@ -10,8 +10,10 @@
 
 ## Test Status (2026-02-26)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **455/455 passing** (100% success rate) — comprehensive CLI coverage
-- **Latest**: Added install scripts and triggered v0.0.5 release (5eb67c9) — resolved GitHub issue #7
+- **Integration tests**: **465/465 passing** (100% success rate) — comprehensive CLI coverage
+- **Latest commits**:
+  - 5abbc08: Added 10 new integration tests for comprehensive command coverage (455→465, +2.2%)
+  - 5eb67c9: Added install scripts for macOS/Linux/Windows — resolved GitHub issue #7
 - **Release v0.0.5**: ✅ Live on GitHub with all 6 binaries + checksums (x86_64/aarch64 for linux/macos/windows)
 
 ## Current Phase
