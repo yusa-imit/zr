@@ -9835,7 +9835,7 @@ test "362: analytics with --output flag saves report to file" {
     defer run_result.deinit();
 
     // Generate analytics report to file
-    var result = try runZr(allocator, &.{ "analytics", "--output", "report.html", "--limit", "10" }, tmp_path);
+    var result = try runZr(allocator, &.{ "analytics", "--output", "report.html", "--limit", "10", "--no-open" }, tmp_path);
     defer result.deinit();
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     // Should indicate report saved or show content
@@ -16784,7 +16784,7 @@ test "570: analytics with --output and --limit flags combined" {
     run_result.deinit();
 
     const output_file = "analytics-report.html";
-    var result = try runZr(allocator, &.{ "--config", config, "analytics", "-o", output_file, "--limit", "5" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "-o", output_file, "--limit", "5", "--no-open" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 

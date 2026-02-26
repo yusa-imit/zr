@@ -9,6 +9,7 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8) !u8 
     var json_output = false;
     var output_path: ?[]const u8 = null;
     var limit: ?usize = null;
+    var no_open = false;
 
     // Parse flags
     var i: usize = 0;
@@ -16,6 +17,8 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8) !u8 
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--json")) {
             json_output = true;
+        } else if (std.mem.eql(u8, arg, "--no-open")) {
+            no_open = true;
         } else if (std.mem.eql(u8, arg, "--output") or std.mem.eql(u8, arg, "-o")) {
             i += 1;
             if (i >= args.len) {
@@ -84,8 +87,8 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8) !u8 
 
         std.debug.print("✓ Report saved to {s}\n", .{path});
 
-        // Open in browser if HTML
-        if (!json_output) {
+        // Open in browser if HTML (unless --no-open)
+        if (!json_output and !no_open) {
             try openInBrowser(path);
         }
     } else if (json_output) {
@@ -109,7 +112,9 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8) !u8 
         };
 
         std.debug.print("✓ Report generated: {s}\n", .{temp_path});
-        try openInBrowser(temp_path);
+        if (!no_open) {
+            try openInBrowser(temp_path);
+        }
     }
 
     return 0;
@@ -152,6 +157,7 @@ fn printHelp() !void {
         \\  --json              Output JSON format instead of HTML
         \\  -o, --output <path> Save report to file (default: open in browser)
         \\  -n, --limit <N>     Analyze only the last N executions
+        \\  --no-open           Do not open the report in browser
         \\  -h, --help          Show this help message
         \\
         \\Examples:
