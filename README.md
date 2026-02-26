@@ -31,8 +31,18 @@
 **macOS / Linux** (prebuilt binaries):
 
 ```bash
-curl -fsSL https://zr.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/yusa-imit/zr/main/install.sh | sh
 ```
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/yusa-imit/zr/main/install.ps1 | iex
+```
+
+**Manual download**:
+
+Download prebuilt binaries from [Releases](https://github.com/yusa-imit/zr/releases) and add to PATH.
 
 **From source** (requires Zig 0.15.2):
 
@@ -42,10 +52,6 @@ cd zr
 zig build -Doptimize=ReleaseSafe
 # Binary at ./zig-out/bin/zr
 ```
-
-**Windows**:
-
-Download from [Releases](https://github.com/yusa-imit/zr/releases) and add to PATH.
 
 ### Your First Task
 
