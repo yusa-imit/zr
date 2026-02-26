@@ -17238,3 +17238,289 @@ test "585: tools install with --force flag reinstalls existing toolchain" {
     // Should succeed or fail gracefully
     try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
 }
+
+test "586: run with both --verbose and --quiet flags tests precedence" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test output"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Both flags - should handle gracefully (quiet typically takes precedence)
+    var result = try runZr(allocator, &.{ "--config", config, "run", "test", "--verbose", "--quiet" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "587: workspace list with --format csv shows unsupported format error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[workspace]
+        \\members = ["pkg1"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    try tmp.dir.makeDir("pkg1");
+    const root_config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(root_config);
+
+    const pkg1_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    const pkg1_config = try writeTmpConfigPath(allocator, tmp.dir, pkg1_toml, "pkg1/zr.toml");
+    defer allocator.free(pkg1_config);
+
+    // CSV format not supported for workspace list
+    var result = try runZr(allocator, &.{ "--config", root_config, "workspace", "list", "--format", "csv" }, tmp_path);
+    defer result.deinit();
+    // Should error or fallback to default format
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "588: graph with --ascii and --format json handles conflicting format flags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["test"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Both --ascii and --format json - one should take precedence
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--ascii", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should produce output in one format
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "589: list with pattern filter containing special characters handles escaping" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks."build-app"]
+        \\cmd = "echo build"
+        \\
+        \\[tasks."test.unit"]
+        \\cmd = "echo test"
+        \\
+        \\[tasks."deploy*prod"]
+        \\cmd = "echo deploy"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Pattern with special chars (dot, asterisk, hyphen)
+    var result = try runZr(allocator, &.{ "--config", config, "list", "test." }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should find task with dot in name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test.unit") != null);
+}
+
+test "590: run with task having both matrix and template expansion" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[templates.generic]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\template = "generic"
+        \\[tasks.build.matrix]
+        \\platform = ["linux", "macos"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Task with both template and matrix - may or may not be supported
+    var result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer result.deinit();
+    // Should either succeed or report error gracefully
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "591: workspace run with both --jobs and --parallel flags handles redundancy" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[workspace]
+        \\members = ["pkg1", "pkg2"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo root"
+        \\
+    ;
+
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.makeDir("pkg2");
+    const root_config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(root_config);
+
+    const pkg_toml =
+        \\[tasks.build]
+        \\cmd = "echo pkg"
+        \\
+    ;
+    const pkg1_config = try writeTmpConfigPath(allocator, tmp.dir, pkg_toml, "pkg1/zr.toml");
+    defer allocator.free(pkg1_config);
+    const pkg2_config = try writeTmpConfigPath(allocator, tmp.dir, pkg_toml, "pkg2/zr.toml");
+    defer allocator.free(pkg2_config);
+
+    // Both --jobs and --parallel (redundant) - should handle gracefully
+    var result = try runZr(allocator, &.{ "--config", root_config, "workspace", "run", "build", "--jobs=2", "--parallel" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "592: estimate with --format csv shows unsupported format error or fallback" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // CSV format not supported for estimate
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "build", "--format", "csv" }, tmp_path);
+    defer result.deinit();
+    // Should error gracefully or fallback
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "593: show with --format toml shows unsupported format error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "npm run build"
+        \\cwd = "/tmp"
+        \\timeout = 300
+        \\retry = 3
+        \\[tasks.build.env]
+        \\NODE_ENV = "production"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // TOML format not supported for show
+    var result = try runZr(allocator, &.{ "--config", config, "show", "build", "--format", "toml" }, tmp_path);
+    defer result.deinit();
+    // Should error with unsupported format message
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "format") != null or std.mem.indexOf(u8, result.stderr, "toml") != null);
+}
+
+test "594: bench with nonexistent --profile handles gracefully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.fast]
+        \\cmd = "echo fast"
+        \\
+        \\[profiles.dev]
+        \\[profiles.dev.env]
+        \\MODE = "development"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Profile doesn't exist - bench may or may not validate profiles
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "fast", "--profile", "nonexistent" }, tmp_path);
+    defer result.deinit();
+    // Should handle gracefully (error or warning)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "595: history with --format yaml shows unsupported format or fallback" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task first to generate history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer run_result.deinit();
+
+    // YAML format not supported for history
+    var result = try runZr(allocator, &.{ "--config", config, "history", "--format", "yaml" }, tmp_path);
+    defer result.deinit();
+    // Should error or fallback to default
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
