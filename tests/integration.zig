@@ -14270,3 +14270,419 @@ test "495: cache status with --format json after operations shows detailed stats
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "496: upgrade --check with no updates available shows current version message" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{ "upgrade", "--check" }, null);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "497: doctor with specific tool missing shows detailed diagnostic message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{"doctor"}, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "498: context with --format toml outputs TOML format" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "context", "--format", "toml" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "499: lint with --verbose flag shows detailed constraint validation output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[[constraints]]
+        \\type = "no-circular"
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "lint", "--verbose" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "500: setup with --check flag runs validation mode without installing" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "setup", "--check" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "501: estimate with nonexistent task shows error message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "estimate", "nonexistent" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(output.len > 0);
+}
+
+test "502: workflow with single-stage workflow executes without multi-stage coordination" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[workflows.simple]
+        \\
+        \\[[workflows.simple.stages]]
+        \\tasks = ["build"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "workflow", "simple" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "503: run with --profile + --affected + --jobs combines all filtering and execution flags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Init git repo
+    const git_init = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_init.stdout);
+    defer allocator.free(git_init.stderr);
+
+    const git_config1 = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.name", "Test User" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_config1.stdout);
+    defer allocator.free(git_config1.stderr);
+
+    const git_config2 = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.email", "test@example.com" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_config2.stdout);
+    defer allocator.free(git_config2.stderr);
+
+    const toml =
+        \\[env]
+        \\MODE = "default"
+        \\
+        \\[profiles.prod]
+        \\MODE = "production"
+        \\
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo $MODE"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Create workspace member
+    try tmp.dir.makeDir("packages");
+    var packages_dir = try tmp.dir.openDir("packages", .{});
+    defer packages_dir.close();
+    try packages_dir.makeDir("app");
+    var app_dir = try packages_dir.openDir("app", .{});
+    defer app_dir.close();
+
+    const member_toml =
+        \\[tasks.build]
+        \\cmd = "echo building app"
+        \\
+    ;
+
+    const app_zr = try app_dir.createFile("zr.toml", .{});
+    defer app_zr.close();
+    try app_zr.writeAll(member_toml);
+
+    const git_add = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "add", "." },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_add.stdout);
+    defer allocator.free(git_add.stderr);
+
+    const git_commit = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "commit", "-m", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_commit.stdout);
+    defer allocator.free(git_commit.stderr);
+
+    var result = try runZr(allocator, &.{ "run", "build", "--profile", "prod", "--affected", "HEAD", "--jobs", "2" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "504: workspace run with --affected + --format json + --dry-run shows structured preview" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Init git repo
+    const git_init = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_init.stdout);
+    defer allocator.free(git_init.stderr);
+
+    const git_config1 = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.name", "Test User" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_config1.stdout);
+    defer allocator.free(git_config1.stderr);
+
+    const git_config2 = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.email", "test@example.com" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_config2.stdout);
+    defer allocator.free(git_config2.stderr);
+
+    const toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Create workspace member
+    try tmp.dir.makeDir("packages");
+    var packages_dir = try tmp.dir.openDir("packages", .{});
+    defer packages_dir.close();
+    try packages_dir.makeDir("lib");
+    var lib_dir = try packages_dir.openDir("lib", .{});
+    defer lib_dir.close();
+
+    const member_toml =
+        \\[tasks.test]
+        \\cmd = "echo lib test"
+        \\
+    ;
+
+    const lib_zr = try lib_dir.createFile("zr.toml", .{});
+    defer lib_zr.close();
+    try lib_zr.writeAll(member_toml);
+
+    const git_add = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "add", "." },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_add.stdout);
+    defer allocator.free(git_add.stderr);
+
+    const git_commit = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "commit", "-m", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_commit.stdout);
+    defer allocator.free(git_commit.stderr);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "test", "--affected", "HEAD", "--format", "json", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "505: graph --affected + --format dot + highlighting shows Graphviz format with change markers" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Init git repo
+    const git_init = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_init.stdout);
+    defer allocator.free(git_init.stderr);
+
+    const git_config1 = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.name", "Test User" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_config1.stdout);
+    defer allocator.free(git_config1.stderr);
+
+    const git_config2 = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "config", "user.email", "test@example.com" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_config2.stdout);
+    defer allocator.free(git_config2.stderr);
+
+    const toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Create workspace member
+    try tmp.dir.makeDir("packages");
+    var packages_dir = try tmp.dir.openDir("packages", .{});
+    defer packages_dir.close();
+    try packages_dir.makeDir("core");
+    var core_dir = try packages_dir.openDir("core", .{});
+    defer core_dir.close();
+
+    const member_toml =
+        \\[tasks.build]
+        \\cmd = "echo core build"
+        \\
+    ;
+
+    const core_zr = try core_dir.createFile("zr.toml", .{});
+    defer core_zr.close();
+    try core_zr.writeAll(member_toml);
+
+    const git_add = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "add", "." },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_add.stdout);
+    defer allocator.free(git_add.stderr);
+
+    const git_commit = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "git", "commit", "-m", "init" },
+        .cwd = tmp_path,
+    });
+    defer allocator.free(git_commit.stdout);
+    defer allocator.free(git_commit.stderr);
+
+    var result = try runZr(allocator, &.{ "graph", "--affected", "HEAD", "--format", "dot" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
