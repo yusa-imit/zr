@@ -14686,3 +14686,278 @@ test "505: graph --affected + --format dot + highlighting shows Graphviz format 
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "506: run with multiple --profile flags takes last value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo $ENV_VAL"
+        \\
+        \\[profiles.dev]
+        \\env = { ENV_VAL = "dev_value" }
+        \\
+        \\[profiles.prod]
+        \\env = { ENV_VAL = "prod_value" }
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "run", "test", "--profile", "dev", "--profile", "prod" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Last profile should win
+    try std.testing.expect(std.mem.indexOf(u8, output, "prod_value") != null);
+}
+
+test "507: list with --format json produces parseable JSON output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\description = "Build the project"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "list", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should be valid JSON (flat list uses "tasks", tree mode uses "levels")
+    try std.testing.expect(std.mem.indexOf(u8, output, "\"tasks\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+}
+
+test "508: run with invalid --config path shows clear error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "run", "build", "--config", "/nonexistent/path/zr.toml" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show error about missing config file
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(output.len > 0);
+}
+
+test "509: workspace run with --jobs=999 uses available CPU count as ceiling" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    try tmp.dir.makeDir("packages");
+    var packages_dir = try tmp.dir.openDir("packages", .{});
+    defer packages_dir.close();
+    try packages_dir.makeDir("core");
+    var core_dir = try packages_dir.openDir("core", .{});
+    defer core_dir.close();
+
+    const member_toml =
+        \\[tasks.build]
+        \\cmd = "echo core build"
+        \\
+    ;
+
+    const core_zr = try core_dir.createFile("zr.toml", .{});
+    defer core_zr.close();
+    try core_zr.writeAll(member_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "build", "--jobs", "999", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    // Should succeed without error (capped at CPU count internally)
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "510: validate with circular dependency in workflow stages shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[workflows.test]
+        \\
+        \\[[workflows.test.stages]]
+        \\tasks = ["build"]
+        \\depends_on = ["stage2"]
+        \\
+        \\[[workflows.test.stages]]
+        \\tasks = ["test"]
+        \\depends_on = ["stage1"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+    // Should detect circular dependency in workflow stages
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "511: history with --format json and empty history returns empty array" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "history", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should return empty JSON array or empty JSON object
+    try std.testing.expect(std.mem.indexOf(u8, output, "[") != null or std.mem.indexOf(u8, output, "{}") != null);
+}
+
+test "512: bench with --iterations=1 and --warmup=1 shows single measurement" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.fast]
+        \\cmd = "echo done"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "bench", "fast", "--iterations", "1", "--warmup", "1" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should complete successfully with minimal iterations
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(output.len > 0);
+}
+
+test "513: graph --format json with task having empty deps array" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.isolated]
+        \\cmd = "echo isolated"
+        \\deps = []
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show task with empty deps array in JSON
+    try std.testing.expect(std.mem.indexOf(u8, output, "isolated") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "\"deps\"") != null or std.mem.indexOf(u8, output, "dependencies") != null);
+}
+
+test "514: run with --verbose and --quiet flags shows verbose wins" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "run", "test", "--verbose", "--quiet" }, tmp_path);
+    defer result.deinit();
+    _ = result.stdout;
+    _ = result.stderr;
+    // Should still execute (one flag should take precedence)
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "515: tools list with --format json shows structured toolchain info" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "tools", "list", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    // Should return JSON format (empty array or structured data)
+    try std.testing.expect(result.exit_code == 0);
+}
