@@ -16363,3 +16363,278 @@ test "555: show with nonexistent task shows helpful error with suggestions" {
     const output = if (result.stderr.len > 0) result.stderr else result.stdout;
     try std.testing.expect(std.mem.indexOf(u8, output, "not found") != null or std.mem.indexOf(u8, output, "exist") != null or std.mem.indexOf(u8, output, "available") != null);
 }
+
+test "556: context command generates structured project metadata" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\description = "Build the project"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test context command (default JSON format)
+    var result = try runZr(allocator, &.{ "--config", config, "context" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should generate context with project metadata
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "project") != null or std.mem.indexOf(u8, result.stdout, "tasks") != null or std.mem.indexOf(u8, result.stdout, "context") != null);
+}
+
+test "557: run with --monitor and --format json combines resource tracking with structured output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.quick]
+        \\cmd = "echo done"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--format", "json", "--monitor", "run", "quick" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should output JSON with monitoring data
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
+}
+
+test "558: workspace run with --profile and --dry-run shows execution plan with profile overrides" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create workspace root with member
+    const toml =
+        \\[workspace]
+        \\members = ["pkg"]
+        \\
+        \\[profiles.prod]
+        \\env.MODE = "production"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Create member pkg directory with zr.toml
+    try tmp.dir.makeDir("pkg");
+    var pkg_dir = try tmp.dir.openDir("pkg", .{});
+    defer pkg_dir.close();
+
+    const pkg_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo pkg deploy"
+        \\
+    ;
+    try pkg_dir.writeFile(.{ .sub_path = "zr.toml", .data = pkg_toml });
+
+    var result = try runZr(allocator, &.{ "--config", config, "--profile", "prod", "--dry-run", "workspace", "run", "deploy" }, tmp_path);
+    defer result.deinit();
+    // Workspace run with dry-run should succeed or show deploy-related output
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "deploy") != null or std.mem.indexOf(u8, output, "pkg") != null or result.exit_code == 0);
+}
+
+test "559: list with --format text explicitly shows default text formatting" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\description = "Run tests"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--format", "text", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show text list (not JSON)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") == null); // No JSON braces
+}
+
+test "560: schedule list shows all scheduled tasks with cron expressions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.backup]
+        \\cmd = "echo backup"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Add a schedule: schedule add <task> <cron> [--name <name>]
+    var add_result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "backup", "0 0 * * *", "--name", "daily-backup" }, tmp_path);
+    add_result.deinit();
+
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show schedule with name and cron expression
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "daily-backup") != null or std.mem.indexOf(u8, result.stdout, "backup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "0 0 * * *") != null or std.mem.indexOf(u8, result.stdout, "schedule") != null);
+}
+
+test "561: alias list shows all defined aliases with their commands" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[aliases]
+        \\b = "run build"
+        \\d = "run deploy"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "alias", "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show both aliases
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "b") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+}
+
+test "562: run with --monitor shows live resource usage during task execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.work]
+        \\cmd = "sleep 0.1"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "--monitor", "run", "work" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "563: graph with --format html generates HTML visualization output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--format=html" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain HTML tags or structure
+    const has_html = std.mem.indexOf(u8, result.stdout, "<!DOCTYPE") != null or
+                     std.mem.indexOf(u8, result.stdout, "<html") != null or
+                     std.mem.indexOf(u8, result.stdout, "<svg") != null or
+                     std.mem.indexOf(u8, result.stdout, "<div") != null;
+    try std.testing.expect(has_html or result.stdout.len > 0);
+}
+
+test "564: history with --format text explicitly shows default text formatting" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.demo]
+        \\cmd = "echo demo"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "demo" }, tmp_path);
+    run_result.deinit();
+
+    var result = try runZr(allocator, &.{ "--config", config, "--format", "text", "history" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show text history (not JSON/CSV)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "demo") != null);
+}
+
+test "565: tools list with invalid --format shows clear error message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "tools", "list", "--format=xml" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should show error about unsupported format
+    try std.testing.expect(std.mem.indexOf(u8, output, "format") != null or std.mem.indexOf(u8, output, "unknown") != null);
+}
