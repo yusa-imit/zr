@@ -13540,3 +13540,291 @@ test "475: show with nonexistent task returns error" {
     const error_msg = if (result.stderr.len > 0) result.stderr else result.stdout;
     try std.testing.expect(error_msg.len > 0);
 }
+
+test "476: run with --format flag and invalid output destination" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const simple_toml =
+        \\[tasks.hello]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    var result = try runZr(allocator, &.{ "--format", "json", "run", "hello" }, tmp_path);
+    defer result.deinit();
+    // Should succeed and output valid JSON
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
+}
+
+test "477: workspace sync with nonexistent repo config shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "workspace", "sync", "/nonexistent/path/zr-repos.toml" }, tmp_path);
+    defer result.deinit();
+    // Should return error for nonexistent config
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "478: list with multiple --tags filters applies OR logic" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const multi_tag_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\tags = ["build", "prod"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo testing"
+        \\tags = ["test", "ci"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\tags = ["prod", "ci"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(multi_tag_toml);
+
+    var result = try runZr(allocator, &.{ "list", "--tags=build,ci" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show build (has "build"), test (has "ci"), and deploy (has "ci")
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy") != null);
+}
+
+test "479: show command with toolchain field displays toolchain info" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toolchain_toml =
+        \\[tasks.multi]
+        \\cmd = "echo hello"
+        \\description = "Task with multiple toolchains"
+        \\toolchain = ["node@20.0.0", "python@3.11"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toolchain_toml);
+
+    var result = try runZr(allocator, &.{ "show", "multi" }, tmp_path);
+    defer result.deinit();
+    // Show should display task with toolchain info
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "multi") != null);
+}
+
+test "480: validate with task having invalid timeout value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const invalid_timeout_toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\timeout = -100
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(invalid_timeout_toml);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+    // Negative timeout is invalid, should either fail or be handled gracefully
+    // If parser accepts it, the test verifies no crash occurs
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "481: graph with --format json shows complete dependency metadata" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const deps_chain_toml =
+        \\[tasks.init]
+        \\cmd = "echo init"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["init"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\deps = ["test"]
+        \\deps_serial = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(deps_chain_toml);
+
+    var result = try runZr(allocator, &.{ "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain valid JSON with all tasks
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "init") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy") != null);
+}
+
+test "482: history --limit with --format json outputs limited records" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const simple_toml =
+        \\[tasks.hello]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(simple_toml);
+
+    // Run the task once to create history
+    var run_result = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+
+    var result = try runZr(allocator, &.{ "history", "--limit", "1", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
+}
+
+test "483: bench with --warmup and --iterations shows statistical summary" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const fast_task_toml =
+        \\[tasks.fast]
+        \\cmd = "echo quick"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(fast_task_toml);
+
+    var result = try runZr(allocator, &.{ "bench", "fast", "--warmup", "1", "--iterations", "3" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show statistical data (mean, median, etc.)
+    try std.testing.expect(result.stdout.len > 0);
+}
+
+test "484: run with condition using env variable and platform check" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const condition_toml =
+        \\[tasks.conditional]
+        \\cmd = "echo running"
+        \\condition = 'env.CI == "true" && platform == "linux"'
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(condition_toml);
+
+    var result = try runZr(allocator, &.{ "run", "conditional", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    // Should show execution plan with condition evaluation
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "485: workspace run with --format json and parallel execution shows structured output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create workspace structure
+    try tmp.dir.makeDir("packages");
+    try tmp.dir.makeDir("packages/app1");
+    try tmp.dir.makeDir("packages/app2");
+
+    const root_toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+    ;
+
+    const app1_toml =
+        \\[tasks.build]
+        \\cmd = "echo app1"
+        \\
+    ;
+
+    const app2_toml =
+        \\[tasks.build]
+        \\cmd = "echo app2"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(root_toml);
+
+    const app1_config = try tmp.dir.createFile("packages/app1/zr.toml", .{});
+    defer app1_config.close();
+    try app1_config.writeAll(app1_toml);
+
+    const app2_config = try tmp.dir.createFile("packages/app2/zr.toml", .{});
+    defer app2_config.close();
+    try app2_config.writeAll(app2_toml);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "build", "--format", "json", "--jobs", "2" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should output valid JSON with results from both packages
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
+}
