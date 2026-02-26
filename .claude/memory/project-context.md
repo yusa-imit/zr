@@ -10,10 +10,11 @@
 
 ## Test Status (2026-02-26)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **525/525 passing** (100% success rate) — comprehensive CLI coverage
+- **Integration tests**: **555/555 passing** (100% success rate) — comprehensive CLI coverage
 - **Latest commits**:
-  - 5b9ee99: Added 10 new integration tests for format validation and edge cases (515→525, +1.9%)
-  - 3a7f817: Added 10 new integration tests for edge cases and multi-flag combinations (505→515, +2.0%)
+  - acb9e05: Added 10 new integration tests for comprehensive CLI coverage (545→555, +1.8%)
+  - 2d1bb4d: Added 10 new integration tests for advanced scenarios (535→545, +1.9%)
+  - 7c7811c: Added 10 new integration tests for underrepresented commands (525→535, +1.9%)
 - **Release v0.0.5**: ✅ Live on GitHub with all 6 binaries + checksums (x86_64/aarch64 for linux/macos/windows)
 
 ## Current Phase
