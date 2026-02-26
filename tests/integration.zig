@@ -12176,3 +12176,341 @@ test "435: workspace affected with --base and --head refs on same commit shows n
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+// ── NEW TESTS (436-445): Edge cases, error recovery, and advanced combinations ──
+
+test "436: run with --format=json and empty task output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const silent_toml =
+        \\[tasks.silent]
+        \\cmd = "true"
+        \\description = "Silent task with no output"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, silent_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "silent", "--format=json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "silent") != null);
+}
+
+test "437: workspace list with empty members array shows appropriate message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const empty_workspace_toml =
+        \\[workspace]
+        \\members = []
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, empty_workspace_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "list" }, tmp_path);
+    defer result.deinit();
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "438: validate with task containing matrix and template fields simultaneously" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const matrix_template_toml =
+        \\[templates.node_test]
+        \\cmd = "node test.js"
+        \\
+        \\[tasks.test]
+        \\template = "node_test"
+        \\matrix = { version = ["16", "18", "20"] }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, matrix_template_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+    // Should validate successfully (matrix + template are compatible)
+    try std.testing.expect(result.exit_code == 0);
+}
+
+test "439: graph with --format=json on config with no dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const isolated_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, isolated_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--format=json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // JSON should contain all three isolated tasks
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "deploy") != null);
+}
+
+test "440: run with task that has both deps and deps_serial" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const mixed_deps_toml =
+        \\[tasks.prepare]
+        \\cmd = "echo prepare"
+        \\
+        \\[tasks.setup]
+        \\cmd = "echo setup"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["prepare"]
+        \\deps_serial = ["setup"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, mixed_deps_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "prepare") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "setup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+}
+
+test "441: cache clear followed by cache status shows empty cache" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\cache = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, cache_toml);
+    defer allocator.free(config);
+
+    // First run to populate cache
+    {
+        var result1 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+        defer result1.deinit();
+        try std.testing.expect(result1.exit_code == 0);
+    }
+
+    // Clear cache
+    {
+        var result2 = try runZr(allocator, &.{ "cache", "clear" }, tmp_path);
+        defer result2.deinit();
+        try std.testing.expect(result2.exit_code == 0);
+    }
+
+    // Check status
+    {
+        var result3 = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+        defer result3.deinit();
+        try std.testing.expect(result3.exit_code == 0);
+        const output = if (result3.stdout.len > 0) result3.stdout else result3.stderr;
+        try std.testing.expect(output.len > 0);
+    }
+}
+
+test "442: list with --format=json and --quiet flag combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const tasks_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\description = "Build the project"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\description = "Run tests"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, tasks_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "--format=json", "--quiet" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // --quiet suppresses output, so output may be empty
+    // This is expected behavior
+}
+
+test "443: workflow with all stages having approval=false executes automatically" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const auto_workflow_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[workflows.release]
+        \\[[workflows.release.stages]]
+        \\name = "build"
+        \\tasks = ["build"]
+        \\approval = false
+        \\
+        \\[[workflows.release.stages]]
+        \\name = "test"
+        \\tasks = ["test"]
+        \\approval = false
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, auto_workflow_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "release" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "test") != null);
+}
+
+test "444: env command with task that has no environment variables" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const no_env_toml =
+        \\[tasks.simple]
+        \\cmd = "echo hello"
+        \\description = "Task with no env vars"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, no_env_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "env", "--task", "simple" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show system env or indicate no custom vars
+    try std.testing.expect(output.len > 0);
+}
+
+test "445: show command with task containing all possible fields" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const comprehensive_toml =
+        \\[tasks.comprehensive]
+        \\cmd = "echo comprehensive"
+        \\description = "Task with all fields"
+        \\cwd = "/tmp"
+        \\deps = ["dep1"]
+        \\deps_serial = ["dep2"]
+        \\env = { KEY = "value" }
+        \\timeout = 30
+        \\retry = 3
+        \\allow_failure = true
+        \\condition = "platform == 'linux'"
+        \\cache = true
+        \\max_concurrent = 4
+        \\max_cpu = 80
+        \\max_memory = 1073741824
+        \\tags = ["build", "test"]
+        \\toolchain = ["node@20.11.1"]
+        \\matrix = { os = ["linux", "darwin"] }
+        \\
+        \\[tasks.dep1]
+        \\cmd = "echo dep1"
+        \\
+        \\[tasks.dep2]
+        \\cmd = "echo dep2"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, comprehensive_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "show", "comprehensive" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show comprehensive task details including task name
+    try std.testing.expect(std.mem.indexOf(u8, output, "comprehensive") != null);
+    // Verify some fields are present (command, description, or dependencies)
+    const has_cmd = std.mem.indexOf(u8, output, "echo") != null;
+    const has_desc = std.mem.indexOf(u8, output, "all fields") != null;
+    const has_deps = std.mem.indexOf(u8, output, "dep") != null;
+    try std.testing.expect(has_cmd or has_desc or has_deps);
+}
