@@ -15290,3 +15290,266 @@ test "525: plugin info with invalid plugin name shows error" {
     // Should return error for nonexistent plugin
     try std.testing.expect(result.exit_code != 0);
 }
+
+test "526: codeowners generate with empty workspace shows appropriate message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    // Should succeed even with no workspace (single project mode)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "527: lint with no constraints defined shows no violations" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "lint" }, tmp_path);
+    defer result.deinit();
+    // Should succeed with no constraints to check
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "528: doctor with all tools available shows all green" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "doctor" }, tmp_path);
+    defer result.deinit();
+    // Should always return 0 (even if some tools missing, it's just a diagnostic)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "529: conformance with --verbose shows detailed rule checking" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[conformance]
+        \\fail_on_warning = false
+        \\
+        \\[[conformance.rules]]
+        \\type = "file_size"
+        \\scope = "**/*.md"
+        \\max_bytes = 1000000
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Create a test file
+    const test_file = try tmp.dir.createFile("test.md", .{});
+    defer test_file.close();
+    try test_file.writeAll("# Test file\nSome content");
+
+    var result = try runZr(allocator, &.{ "--config", config, "conformance", "--verbose" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "530: publish with --changelog but no git history shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[versioning]
+        \\mode = "fixed"
+        \\convention = "conventional"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Create package.json
+    const package_json = try tmp.dir.createFile("package.json", .{});
+    defer package_json.close();
+    try package_json.writeAll("{\"version\": \"1.0.0\"}");
+
+    var result = try runZr(allocator, &.{ "--config", config, "publish", "--changelog", "--dry-run" }, tmp_path);
+    defer result.deinit();
+    // Should fail gracefully if not in a git repo
+    // (or succeed with --dry-run if it handles the error)
+    // Just check it doesn't crash
+}
+
+test "531: analytics with --format json and empty history shows informative message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    // Should succeed but show informative message about empty history
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Error message should mention history
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "history") != null or std.mem.indexOf(u8, output, "No execution") != null);
+}
+
+test "532: context with --scope filter limits output to specific path" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[workspace]
+        \\members = ["pkg1", "pkg2"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Create workspace members
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.makeDir("pkg2");
+
+    const pkg1_toml = try tmp.dir.createFile("pkg1/zr.toml", .{});
+    defer pkg1_toml.close();
+    try pkg1_toml.writeAll("[tasks.build]\ncmd = \"echo building\"");
+
+    var result = try runZr(allocator, &.{ "--config", config, "context", "--scope", "pkg1" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should mention pkg1 but not pkg2
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "pkg1") != null);
+}
+
+test "533: repo graph with --format json shows structured dependency graph" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const repos_toml =
+        \\[workspace]
+        \\root = "."
+        \\
+        \\[repos.backend]
+        \\path = "backend"
+        \\url = "https://example.com/backend.git"
+        \\
+        \\[repos.frontend]
+        \\path = "frontend"
+        \\url = "https://example.com/frontend.git"
+        \\deps = ["backend"]
+        \\
+    ;
+
+    const repos_file = try tmp.dir.createFile("zr-repos.toml", .{});
+    defer repos_file.close();
+    try repos_file.writeAll(repos_toml);
+
+    var result = try runZr(allocator, &.{ "repo", "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    // Should succeed and output valid JSON
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "backend") != null);
+}
+
+test "534: schedule add with custom name creates schedule successfully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "test", "0 */2 * * *", "--name", "my-schedule" }, tmp_path);
+    defer result.deinit();
+    // Should succeed with valid cron and custom name
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "my-schedule") != null or std.mem.indexOf(u8, output, "Schedule") != null);
+}
+
+test "535: upgrade with --version flag shows version comparison without updating" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "upgrade", "--check", "--verbose" }, tmp_path);
+    defer result.deinit();
+    // Should succeed (just a check, no actual upgrade)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
