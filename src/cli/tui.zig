@@ -226,6 +226,7 @@ fn cmdInteractiveInner(
 
     // Initial draw.
     try drawScreen(w, items.items, selected, use_color);
+    try w.flush();
 
     // Main event loop.
     while (true) {
@@ -239,6 +240,7 @@ fn cmdInteractiveInner(
                     selected -= 1;
                 }
                 try drawScreen(w, items.items, selected, use_color);
+                try w.flush();
             },
 
             'j' => {
@@ -246,10 +248,12 @@ fn cmdInteractiveInner(
                     selected += 1;
                 }
                 try drawScreen(w, items.items, selected, use_color);
+                try w.flush();
             },
 
             'r', 'R' => {
                 try drawScreen(w, items.items, selected, use_color);
+                try w.flush();
             },
 
             // ESC sequence: check for arrow keys (\x1b[A / \x1b[B).
@@ -261,10 +265,12 @@ fn cmdInteractiveInner(
                         'A' => { // Up arrow
                             if (item_count > 0 and selected > 0) selected -= 1;
                             try drawScreen(w, items.items, selected, use_color);
+                            try w.flush();
                         },
                         'B' => { // Down arrow
                             if (item_count > 0 and selected + 1 < item_count) selected += 1;
                             try drawScreen(w, items.items, selected, use_color);
+                            try w.flush();
                         },
                         else => {},
                     }
@@ -280,6 +286,7 @@ fn cmdInteractiveInner(
                 // Clear screen before running.
                 try w.writeAll("\x1b[2J\x1b[H");
                 try w.print("Running: {s}\n\n", .{sel_item.name});
+                try w.flush();
 
                 // Leave raw mode while the task runs so its output is visible.
                 leaveRawMode(original_termios);
@@ -303,9 +310,11 @@ fn cmdInteractiveInner(
                 _ = enterRawMode() catch {};
 
                 try w.writeAll("\n--- Press any key to return ---");
+                try w.flush();
                 _ = readByte();
 
                 try drawScreen(w, items.items, selected, use_color);
+                try w.flush();
             },
 
             else => {},
@@ -314,6 +323,7 @@ fn cmdInteractiveInner(
 
     // Clear screen on exit.
     try w.writeAll("\x1b[2J\x1b[H");
+    try w.flush();
 
     return 0;
 }
