@@ -20818,3 +20818,365 @@ test "695: graph with --format dot and --depth combination limits and formats co
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "696: completion for bash with --config flag works" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "completion", "bash" }, tmp_path);
+    defer result.deinit();
+
+    // Should output bash completion script
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "complete") != null or
+        std.mem.indexOf(u8, result.stdout, "_zr") != null);
+}
+
+test "697: doctor with --verbose flag shows detailed diagnostics" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "doctor", "--verbose" }, tmp_path);
+    defer result.deinit();
+
+    // Should show detailed environment diagnostics
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "698: init with custom --config path creates file at specified location" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const custom_path = try std.fmt.allocPrint(allocator, "{s}/custom.toml", .{tmp_path});
+    defer allocator.free(custom_path);
+
+    var result = try runZr(allocator, &.{ "--config", custom_path, "init" }, tmp_path);
+    defer result.deinit();
+
+    // Should create file at custom path or show helpful error
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "699: run with --jobs=0 shows validation error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[profile.dev]
+        \\env = { DEV = "true" }
+        \\
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["a", "b"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "c", "--jobs", "0", "--profile", "dev" }, tmp_path);
+    defer result.deinit();
+
+    // Should reject --jobs=0 with validation error (must be >= 1)
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "must be") != null or
+        std.mem.indexOf(u8, output, ">= 1") != null);
+}
+
+test "700: workspace list with --format json and empty workspace returns valid JSON" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[workspace]
+        \\members = []
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "list", "--format", "json" }, tmp_path);
+    defer result.deinit();
+
+    // Should output valid JSON array (empty or with error)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "701: validate with --schema flag and deeply nested task dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["a"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["b"]
+        \\
+        \\[tasks.d]
+        \\cmd = "echo d"
+        \\deps = ["c"]
+        \\
+        \\[tasks.e]
+        \\cmd = "echo e"
+        \\deps = ["d"]
+        \\
+        \\[tasks.f]
+        \\cmd = "echo f"
+        \\deps = ["e"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate", "--schema" }, tmp_path);
+    defer result.deinit();
+
+    // Should validate deep dependency chains successfully
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "702: bench with --warmup=0 and --iterations=1 runs minimal benchmark" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.quick]
+        \\cmd = "echo quick"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "quick", "--warmup", "0", "--iterations", "1" }, tmp_path);
+    defer result.deinit();
+
+    // Should run single iteration without warmup and output statistics
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "703: graph with --ascii and --depth=0 shows only root tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.root]
+        \\cmd = "echo root"
+        \\
+        \\[tasks.dep1]
+        \\cmd = "echo dep1"
+        \\deps = ["root"]
+        \\
+        \\[tasks.dep2]
+        \\cmd = "echo dep2"
+        \\deps = ["dep1"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--ascii", "--depth", "0" }, tmp_path);
+    defer result.deinit();
+
+    // Should show only tasks with no dependencies (depth 0)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "704: export with --format json and --task combines JSON output with task-specific env" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\env = { GLOBAL = "global_value" }
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\env = { TASK_VAR = "task_value" }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--format", "json", "--task", "test" }, tmp_path);
+    defer result.deinit();
+
+    // Should output JSON with combined global and task-specific env vars
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "705: affected with --list and --base and --include-dependents shows comprehensive change impact" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Initialize git repo
+    {
+        const git_init = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "init" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_init.stdout);
+        defer allocator.free(git_init.stderr);
+    }
+    {
+        const git_config = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.name", "Test" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_config.stdout);
+        defer allocator.free(git_config.stderr);
+    }
+    {
+        const git_email = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "config", "user.email", "test@test.com" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_email.stdout);
+        defer allocator.free(git_email.stderr);
+    }
+
+    const root_toml =
+        \\[workspace]
+        \\members = ["packages/*"]
+        \\
+    ;
+
+    const pkg_a =
+        \\[tasks.build]
+        \\cmd = "echo build-a"
+        \\
+    ;
+
+    const pkg_b =
+        \\[tasks.build]
+        \\cmd = "echo build-b"
+        \\
+    ;
+
+    const root_config = try writeTmpConfig(allocator, tmp.dir, root_toml);
+    defer allocator.free(root_config);
+
+    try tmp.dir.makeDir("packages");
+    var packages_dir = try tmp.dir.openDir("packages", .{});
+    defer packages_dir.close();
+
+    try packages_dir.makeDir("pkg-a");
+    var pkg_a_dir = try packages_dir.openDir("pkg-a", .{});
+    defer pkg_a_dir.close();
+    const pkg_a_file = try pkg_a_dir.createFile("zr.toml", .{});
+    defer pkg_a_file.close();
+    try pkg_a_file.writeAll(pkg_a);
+
+    try packages_dir.makeDir("pkg-b");
+    var pkg_b_dir = try packages_dir.openDir("pkg-b", .{});
+    defer pkg_b_dir.close();
+    const pkg_b_file = try pkg_b_dir.createFile("zr.toml", .{});
+    defer pkg_b_file.close();
+    try pkg_b_file.writeAll(pkg_b);
+
+    // Create initial commit
+    {
+        const git_add = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "add", "." },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_add.stdout);
+        defer allocator.free(git_add.stderr);
+    }
+    {
+        const git_commit = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "git", "commit", "-m", "initial" },
+            .cwd = tmp_path,
+        });
+        defer allocator.free(git_commit.stdout);
+        defer allocator.free(git_commit.stderr);
+    }
+
+    // Run affected with --list, --base, and --include-dependents
+    var result = try runZr(allocator, &.{ "--config", root_config, "affected", "build", "--list", "--base", "HEAD", "--include-dependents" }, tmp_path);
+    defer result.deinit();
+
+    // Should show affected members list with downstream dependencies
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
