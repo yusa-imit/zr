@@ -10,11 +10,12 @@
 
 ## Test Status (2026-02-27)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **655/655 passing** (100% success rate) — comprehensive CLI coverage + edge cases
-- **Latest commits**:
-  - 812e3e0: Added 10 new integration tests for edge cases and robustness (645→655, +1.5%) — large output buffering, concurrent cache access, config modification, recursive execution, env var special chars, plugin validation, empty workflow stages, duplicate deps, self-loops, corrupted history
-  - 256fd1c: Fixed 4 failing integration tests to match current implementation (bugfix #13)
-  - d30fd4e: Added 10 new integration tests for comprehensive coverage (635→645, +1.6%)
+- **Integration tests**: **730/730 passing** (100% success rate) — comprehensive CLI coverage + edge cases
+- **Latest commits** (Stabilization Cycle):
+  - 8758ac3: Added 6 integration tests for `doctor` command (724→730, +0.8%)
+  - 21fcb13: Fixed `version` command stderr buffering + 9 integration tests (715→724, +1.3%)
+  - 7ea2cd4: Implemented LanguageProvider interface (Phase 9A foundation)
+  - c178465: Split integration tests into per-command files (715 tests total)
 - **Release v0.0.5**: ✅ Live on GitHub with all 6 binaries + checksums (x86_64/aarch64 for linux/macos/windows)
 
 ## Current Phase
