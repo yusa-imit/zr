@@ -26,17 +26,20 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
         if (std.mem.eql(u8, arg, "--bump") or std.mem.eql(u8, arg, "-b")) {
             if (i + 1 >= args.len) {
                 try stderr_writer.interface.print("Error: --bump requires a value (major|minor|patch)\n", .{});
+                try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
             i += 1;
             bump_type = versioning_types.BumpType.fromString(args[i]);
             if (bump_type == null) {
                 try stderr_writer.interface.print("Error: invalid bump type '{s}' (must be major|minor|patch)\n", .{args[i]});
+                try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "--package") or std.mem.eql(u8, arg, "-p")) {
             if (i + 1 >= args.len) {
                 try stderr_writer.interface.print("Error: --package requires a path\n", .{});
+                try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
             i += 1;
@@ -44,6 +47,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
         } else if (std.mem.eql(u8, arg, "--config") or std.mem.eql(u8, arg, "-c")) {
             if (i + 1 >= args.len) {
                 try stderr_writer.interface.print("Error: --config requires a path\n", .{});
+                try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
             i += 1;
@@ -54,6 +58,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
         } else {
             try stderr_writer.interface.print("Error: unknown argument '{s}'\n", .{arg});
             try printHelp(&stderr_writer.interface);
+            try stderr_writer.interface.flush();
             std.process.exit(1);
         }
     }
@@ -61,6 +66,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
     // Load config
     var config = config_loader.loadFromFile(allocator, config_path) catch |err| {
         try stderr_writer.interface.print("Error loading config: {}\n", .{err});
+        try stderr_writer.interface.flush();
         std.process.exit(1);
     };
     defer config.deinit();
@@ -72,6 +78,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
         try stderr_writer.interface.print("[versioning]\n", .{});
         try stderr_writer.interface.print("mode = \"independent\"  # or \"fixed\"\n", .{});
         try stderr_writer.interface.print("convention = \"conventional\"  # or \"manual\"\n", .{});
+        try stderr_writer.interface.flush();
         std.process.exit(1);
     }
 
@@ -86,6 +93,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
         if (err == error.FileNotFound) {
             try stderr_writer.interface.print("Error: {s} not found\n", .{pkg_path});
             try stderr_writer.interface.print("Hint: Use --package to specify a different file\n", .{});
+            try stderr_writer.interface.flush();
             std.process.exit(1);
         }
         return err;
