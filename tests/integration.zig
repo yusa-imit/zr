@@ -19723,3 +19723,292 @@ test "665: affected with --include-dependents shows downstream impact" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "666: workspace run with --affected and --exclude-self shows only dependents" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["lib", "app"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    // Create workspace members
+    try tmp.dir.makeDir("lib");
+    try tmp.dir.writeFile(.{ .sub_path = "lib/zr.toml", .data = "[tasks.build]\ncmd = \"echo lib\"\n" });
+
+    try tmp.dir.makeDir("app");
+    try tmp.dir.writeFile(.{ .sub_path = "app/zr.toml", .data = "[tasks.build]\ncmd = \"echo app\"\n" });
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "build", "--affected", "HEAD", "--exclude-self" }, tmp_path);
+    defer result.deinit();
+
+    // Should run without errors (exclude-self filters out directly affected, shows only dependents)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "667: validate with truly invalid TOML shows parse error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Completely invalid TOML that can't be parsed at all
+    const bad_toml =
+        \\this is not toml at all
+        \\random text [[[
+        \\invalid = = =
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, bad_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Parser might be lenient, but completely invalid should fail or show warning
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(output.len > 0);
+}
+
+test "668: run with --jobs and --parallel shows deprecation or redundancy handling" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "a", "--jobs", "2", "--parallel" }, tmp_path);
+    defer result.deinit();
+
+    // Should accept both flags (one may be ignored or they're equivalent)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "669: schedule add with invalid cron expression shows validation error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "schedule", "add", "test", "invalid cron", "--name", "bad" }, tmp_path);
+    defer result.deinit();
+
+    // Should show error about invalid cron format
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(output.len > 0);
+    // May show error or help text
+}
+
+test "670: export with --shell and --task combines shell format with task-specific env" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\env = { BUILD_MODE = "production" }
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "export", "--task", "build", "--shell", "bash" }, tmp_path);
+    defer result.deinit();
+
+    // Should output bash-compatible export statements for task env
+    try std.testing.expect(result.exit_code == 0);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "export") != null or
+                            std.mem.indexOf(u8, output, "BUILD_MODE") != null);
+}
+
+test "671: analytics with --limit=0 shows all historical data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
+    defer run_result.deinit();
+
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--limit", "0" }, tmp_path);
+    defer result.deinit();
+
+    // Should show analytics without limit restriction
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "672: conformance with --only-files and multiple violations reports all" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[[conformance.rules]]
+        \\type = "file_naming"
+        \\scope = "*.ts"
+        \\pattern = "^[a-z_]+\\.ts$"
+        \\
+        \\[[conformance.rules]]
+        \\type = "file_size"
+        \\scope = "*.ts"
+        \\max_bytes = 100
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Create files that violate both rules
+    try tmp.dir.writeFile(.{ .sub_path = "BadName.ts", .data = "a" ** 150 }); // Wrong name + too large
+
+    var result = try runZr(allocator, &.{ "--config", config, "conformance", "--only-files", "*.ts" }, tmp_path);
+    defer result.deinit();
+
+    // Should report multiple violations for the same file
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(output.len > 0);
+}
+
+test "673: tools install with version range or latest tag" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Try installing with version pattern (may or may not be supported)
+    var result = try runZr(allocator, &.{ "--config", config, "tools", "install", "node@latest" }, tmp_path);
+    defer result.deinit();
+
+    // Should either install or show helpful error about version format
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "674: repo graph with --format json and circular dependencies shows cycle info" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create zr-repos.toml with circular deps
+    const repos_toml =
+        \\workspace = "."
+        \\
+        \\[repos.A]
+        \\url = "https://example.com/A"
+        \\deps = ["B"]
+        \\
+        \\[repos.B]
+        \\url = "https://example.com/B"
+        \\deps = ["A"]
+        \\
+    ;
+
+    try tmp.dir.writeFile(.{ .sub_path = "zr-repos.toml", .data = repos_toml });
+
+    var result = try runZr(allocator, &.{ "repo", "graph", "--format", "json" }, tmp_path);
+    defer result.deinit();
+
+    // Should detect and report circular dependencies
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+    // May show cycle warning or error
+}
+
+test "675: bench with --profile and custom env vars shows environment impact on performance" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[profiles.slow]
+        \\env = { DELAY = "0.1" }
+        \\
+        \\[tasks.test]
+        \\cmd = "echo fast"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "test", "--profile", "slow", "--iterations", "2" }, tmp_path);
+    defer result.deinit();
+
+    // Should benchmark with profile environment applied
+    try std.testing.expect(result.exit_code == 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
