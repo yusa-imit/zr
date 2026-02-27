@@ -24,18 +24,16 @@ pub const Transport = struct {
     writer: std.io.AnyWriter,
     mode: FramingMode,
 
-    /// Initialize transport with stdin/stdout
-    pub fn init(allocator: std.mem.Allocator, mode: FramingMode) Transport {
-        const stdin = std.io.getStdIn().reader().any();
-        const stdout = std.io.getStdOut().writer().any();
-
+    /// Initialize transport with given reader/writer (typically stdin/stdout)
+    pub fn init(allocator: std.mem.Allocator, rdr: std.io.AnyReader, wtr: std.io.AnyWriter, mode: FramingMode) Transport {
         return .{
             .allocator = allocator,
-            .reader = stdin,
-            .writer = stdout,
+            .reader = rdr,
+            .writer = wtr,
             .mode = mode,
         };
     }
+
 
     /// Read a JSON-RPC message from the transport
     pub fn readMessage(self: *Transport) !Message {
@@ -113,13 +111,13 @@ pub const Transport = struct {
     // ──── Newline-delimited framing ────
 
     fn readNewlineDelimited(self: *Transport) ![]const u8 {
-        var line_buf = std.ArrayList(u8).init(self.allocator);
-        defer line_buf.deinit();
+        var line_buf = std.ArrayList(u8){};
+        defer line_buf.deinit(self.allocator);
 
         // Read until newline
-        try self.reader.streamUntilDelimiter(line_buf.writer(), '\n', null);
+        try self.reader.streamUntilDelimiter(line_buf.writer(self.allocator), '\n', null);
 
-        return try line_buf.toOwnedSlice();
+        return try line_buf.toOwnedSlice(self.allocator);
     }
 
     fn writeNewlineDelimited(self: *Transport, json_text: []const u8) !void {

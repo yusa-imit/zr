@@ -55,6 +55,7 @@ const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
+const mcp_server = @import("mcp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
 const schedule_cmd = @import("cli/schedule.zig");
@@ -640,6 +641,19 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "context")) {
         const context_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return context_cmd.cmdContext(allocator, context_args);
+    } else if (std.mem.eql(u8, cmd, "mcp")) {
+        // MCP server: zr mcp serve
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "mcp: missing subcommand\n\n  Hint: zr mcp serve\n", .{});
+            return 1;
+        }
+        const subcmd = effective_args[2];
+        if (std.mem.eql(u8, subcmd, "serve")) {
+            return mcp_server.serve(allocator);
+        } else {
+            try color.printError(ew, effective_color, "mcp: unknown subcommand '{s}'\n\n  Hint: zr mcp serve\n", .{subcmd});
+            return 1;
+        }
     } else if (std.mem.eql(u8, cmd, "conformance")) {
         const conformance_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return conformance_cmd.cmdConformance(allocator, conformance_args);

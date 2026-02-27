@@ -48,7 +48,8 @@ pub fn parseMessage(allocator: std.mem.Allocator, json_text: []const u8) !Messag
             // Success response - store result as JSON string
             var result_str = std.ArrayList(u8).init(allocator);
             defer result_str.deinit();
-            try std.json.stringify(obj.get("result").?, .{}, result_str.writer());
+            var jw = std.json.writeStream(result_str.writer(), .{});
+            try jw.write(obj.get("result").?);
 
             return Message{
                 .response = Response{
@@ -79,7 +80,8 @@ pub fn parseMessage(allocator: std.mem.Allocator, json_text: []const u8) !Messag
         const params = if (obj.get("params")) |p| blk: {
             var params_str = std.ArrayList(u8).init(allocator);
             defer params_str.deinit();
-            try std.json.stringify(p, .{}, params_str.writer());
+            var jw = std.json.writeStream(params_str.writer(), .{});
+            try jw.write(p);
             break :blk try params_str.toOwnedSlice();
         } else null;
         errdefer if (params) |par| allocator.free(par);
@@ -136,7 +138,8 @@ fn parseErrorObject(allocator: std.mem.Allocator, value: std.json.Value) !ErrorO
     const data = if (obj.get("data")) |d| blk: {
         var data_str = std.ArrayList(u8).init(allocator);
         defer data_str.deinit();
-        try std.json.stringify(d, .{}, data_str.writer());
+        var jw = std.json.writeStream(data_str.writer(), .{});
+        try jw.write(d);
         break :blk try data_str.toOwnedSlice();
     } else null;
 
