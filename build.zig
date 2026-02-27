@@ -8,6 +8,8 @@ const std = @import("std");
 //   zig build release                   # Optimized release (1.2MB, stripped)
 //   zig build test                      # Run unit tests
 //   zig build integration-test          # Run integration tests
+//   zig build fuzz-toml                 # Run TOML parser fuzz test (runs indefinitely until Ctrl+C)
+//   zig build fuzz-expr                 # Run expression engine fuzz test (runs indefinitely until Ctrl+C)
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -97,4 +99,45 @@ pub fn build(b: *std.Build) void {
     const install_release = b.addInstallArtifact(release_exe, .{});
     const release_step = b.step("release", "Build optimized release binary (ReleaseSmall + strip)");
     release_step.dependOn(&install_release.step);
+
+    // --- Fuzz Tests ---
+    // Create zr module for fuzz tests to import
+    const zr_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = if (target.result.os.tag != .windows) true else null,
+    });
+
+    // TOML parser fuzzer
+    const fuzz_toml = b.addExecutable(.{
+        .name = "fuzz_toml",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fuzz_toml.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = if (target.result.os.tag != .windows) true else null,
+        }),
+    });
+    fuzz_toml.root_module.addImport("zr", zr_module);
+
+    const run_fuzz_toml = b.addRunArtifact(fuzz_toml);
+    const fuzz_toml_step = b.step("fuzz-toml", "Run TOML parser fuzz test (runs until Ctrl+C)");
+    fuzz_toml_step.dependOn(&run_fuzz_toml.step);
+
+    // Expression engine fuzzer
+    const fuzz_expr = b.addExecutable(.{
+        .name = "fuzz_expr",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fuzz_expr.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = if (target.result.os.tag != .windows) true else null,
+        }),
+    });
+    fuzz_expr.root_module.addImport("zr", zr_module);
+
+    const run_fuzz_expr = b.addRunArtifact(fuzz_expr);
+    const fuzz_expr_step = b.step("fuzz-expr", "Run expression engine fuzz test (runs until Ctrl+C)");
+    fuzz_expr_step.dependOn(&run_fuzz_expr.step);
 }

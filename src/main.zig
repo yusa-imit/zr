@@ -81,6 +81,11 @@ const codeowners_generator = @import("codeowners/generator.zig");
 const aliases = @import("config/aliases.zig");
 const levenshtein = @import("util/levenshtein.zig");
 
+// Public exports for fuzz tests and external tools
+// Use different names to avoid shadowing internal const declarations
+pub const config_parser = parser;
+pub const config_expr = expr;
+
 // Ensure tests in all imported modules are included in test binary
 comptime {
     _ = aliases;
