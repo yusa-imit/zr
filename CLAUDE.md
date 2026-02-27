@@ -394,7 +394,7 @@ sailor가 v0.1.0을 릴리즈하면 status가 READY로 변경된다.
 - [ ] 기존 테스트 전체 통과 확인 (unit + integration)
 - [ ] 커밋: `refactor: migrate arg parsing and color to sailor v0.1.0`
 
-### v0.2.0 — progress (status: PENDING)
+### v0.2.0 — progress (status: READY))
 
 **작업 내용**:
 - [ ] `src/output/progress.zig` → `sailor.progress` 래퍼로 전환
