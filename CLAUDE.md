@@ -323,3 +323,52 @@ rm -rf zig-out .zig-cache
 10. **No scope creep** — 현재 Phase 체크리스트 범위를 벗어나는 작업 금지
 11. **Respect CI** — CI 파이프라인이 존재하면 `ci.yml` 호환성 유지
 12. **Never force push** — 파괴적 git 명령어 금지, `main` 브랜치 직접 수정 금지
+
+---
+
+## Sailor Migration
+
+zr은 `sailor` 라이브러리(https://github.com/yusa-imit/sailor)를 점진적으로 도입한다.
+각 버전이 READY 상태가 되면, 해당 세션에서 마이그레이션을 수행한다.
+
+### 마이그레이션 프로토콜
+
+1. 세션 시작 시 이 섹션을 확인한다
+2. `status: READY`인 미완료 마이그레이션이 있으면, 현재 작업보다 **우선** 수행한다
+3. 마이그레이션 완료 후 `status: DONE`으로 변경하고 커밋한다
+4. `zig build test && zig build integration-test` 통과 확인 필수
+
+### v0.1.0 — arg, color (status: PENDING)
+
+sailor가 v0.1.0을 릴리즈하면 status가 READY로 변경된다.
+
+**작업 내용**:
+- [ ] `build.zig.zon`에 sailor 의존성 추가
+- [ ] `build.zig`에서 sailor 모듈 import 설정
+- [ ] `src/main.zig`의 hand-rolled arg parsing (284-365줄) → `sailor.arg` 교체
+- [ ] `src/output/color.zig` → `sailor.color` 래퍼로 전환 (내부적으로 sailor 호출)
+- [ ] 기존 테스트 전체 통과 확인 (unit + integration)
+- [ ] 커밋: `refactor: migrate arg parsing and color to sailor v0.1.0`
+
+### v0.2.0 — progress (status: PENDING)
+
+**작업 내용**:
+- [ ] `src/output/progress.zig` → `sailor.progress` 래퍼로 전환
+- [ ] 기존 테스트 전체 통과 확인
+- [ ] 커밋: `refactor: migrate progress to sailor v0.2.0`
+
+### v0.3.0 — fmt (status: PENDING)
+
+**작업 내용**:
+- [ ] `--format json` 출력 로직 → `sailor.fmt.json` 활용
+- [ ] 기존 테스트 전체 통과 확인
+- [ ] 커밋: `refactor: migrate JSON output to sailor v0.3.0`
+
+### v0.4.0 — tui (status: PENDING)
+
+**작업 내용**:
+- [ ] `src/cli/tui.zig` → `sailor.tui` 위젯 기반으로 재작성
+- [ ] `src/cli/tui_runner.zig` → `sailor.tui` 레이아웃 + List/Paragraph/StatusBar
+- [ ] interactive-run, live 커맨드 sailor.tui 기반으로 전환
+- [ ] 기존 테스트 전체 통과 확인
+- [ ] 커밋: `refactor: migrate TUI to sailor v0.4.0`
