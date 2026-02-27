@@ -55,6 +55,7 @@ const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
+const ai_cmd = @import("cli/ai.zig");
 const mcp_server = @import("mcp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
@@ -422,7 +423,7 @@ fn run(
         "context",    "conformance", "bench",      "doctor",
         "setup",      "env",        "export",     "affected",
         "clean",      "upgrade",    "alias",      "estimate",
-        "show",       "schedule",
+        "show",       "schedule",   "ai",         "mcp",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -770,6 +771,29 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "schedule")) {
         const schedule_args = if (effective_args.len > 2) effective_args[2..] else &[_][]const u8{};
         return schedule_cmd.cmdSchedule(allocator, schedule_args, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "ai")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "ai: missing natural language query\n\n  Hint: zr ai \"build and test\"\n", .{});
+            return 1;
+        }
+        // Join all remaining arguments as the query
+        var query_buf = std.ArrayList(u8){};
+        defer query_buf.deinit(allocator);
+        for (effective_args[2..], 0..) |arg, i| {
+            if (i > 0) try query_buf.append(allocator, ' ');
+            try query_buf.appendSlice(allocator, arg);
+        }
+        const query = try query_buf.toOwnedSlice(allocator);
+        defer allocator.free(query);
+        return ai_cmd.cmdAi(allocator, query, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "mcp")) {
+        const mcp_sub = if (effective_args.len >= 3) effective_args[2] else "";
+        if (std.mem.eql(u8, mcp_sub, "serve")) {
+            return mcp_server.serve(allocator);
+        } else {
+            try color.printError(ew, effective_color, "mcp: unknown subcommand '{s}'\n\n  Hint: zr mcp serve\n", .{mcp_sub});
+            return 1;
+        }
     }
 
     // This should never be reached due to alias expansion logic above
@@ -836,6 +860,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  estimate <task>        Estimate task duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
     try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
+    try w.print("  ai \"<query>\"           Natural language interface (e.g., \"build and test\")\n", .{});
+    try w.print("  mcp serve              Start MCP server for Claude Code/Cursor integration\n", .{});
     try w.print("  <alias>                Run a user-defined alias (e.g., 'zr dev' if 'dev' is defined)\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
     try w.print("  --help, -h            Show this help message\n", .{});

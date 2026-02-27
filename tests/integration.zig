@@ -3,6 +3,7 @@ const std = @import("std");
 comptime {
     _ = @import("helpers.zig");
     _ = @import("affected_test.zig");
+    _ = @import("ai_test.zig");
     _ = @import("alias_test.zig");
     _ = @import("analytics_test.zig");
     _ = @import("bench_test.zig");
