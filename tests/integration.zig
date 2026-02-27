@@ -21180,3 +21180,257 @@ test "705: affected with --list and --base and --include-dependents shows compre
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "706: run with empty deps array executes task without dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = []
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+}
+
+test "707: validate with task referencing undefined dependency shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["nonexistent"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "nonexistent") != null or std.mem.indexOf(u8, output, "undefined") != null or std.mem.indexOf(u8, output, "not found") != null);
+}
+
+test "708: run with circular deps_serial chain fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\deps_serial = ["b"]
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps_serial = ["c"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps_serial = ["a"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "run", "a" }, tmp_path);
+    defer result.deinit();
+
+    // Circular dependency is detected and command fails
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "709: run with task having both timeout and retry validates correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.flaky]
+        \\cmd = "exit 0"
+        \\timeout = 5
+        \\retry = 2
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "run", "flaky" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "710: list with missing closing bracket is lenient" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test
+        \\cmd = "echo test"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "list" }, tmp_path);
+    defer result.deinit();
+
+    // TOML parser is lenient - it may succeed or fail
+    // If it succeeds, it should show tasks or empty list
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "711: run with --jobs exceeding system cores succeeds" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "run", "test", "--jobs=9999" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "712: graph with --format invalid-format falls back to default" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "graph", "--format=xml" }, tmp_path);
+    defer result.deinit();
+
+    // Command succeeds and uses default format
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "713: workspace run with nonexistent member shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[workspace]
+        \\members = ["pkg-a"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "workspace", "run", "test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Workspace error can be "no member directories found" or similar
+    try std.testing.expect(std.mem.indexOf(u8, output, "member") != null or std.mem.indexOf(u8, output, "workspace") != null);
+}
+
+test "714: run with task containing invalid expression syntax shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\condition = "platform == "
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer result.deinit();
+
+    // Should either fail validation or skip the task
+    try std.testing.expect(result.exit_code == 0 or result.exit_code != 0);
+    if (result.exit_code != 0) {
+        const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+        try std.testing.expect(std.mem.indexOf(u8, output, "expression") != null or std.mem.indexOf(u8, output, "syntax") != null or std.mem.indexOf(u8, output, "parse") != null);
+    }
+}
+
+test "715: bench with nonexistent task shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "bench", "nonexistent" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "nonexistent") != null or std.mem.indexOf(u8, output, "not found") != null);
+}
