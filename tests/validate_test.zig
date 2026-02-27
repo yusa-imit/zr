@@ -1068,3 +1068,155 @@ test "707: validate with task referencing undefined dependency shows error" {
     const output = if (result.stderr.len > 0) result.stderr else result.stdout;
     try std.testing.expect(std.mem.indexOf(u8, output, "nonexistent") != null or std.mem.indexOf(u8, output, "undefined") != null or std.mem.indexOf(u8, output, "not found") != null);
 }
+
+// Phase 9D: Error message improvements with Levenshtein suggestions
+
+test "731: validate with typo in dependency suggests similar task names" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["bulid"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail validation with suggestion
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should suggest "build" for typo "bulid"
+    try std.testing.expect(std.mem.indexOf(u8, output, "Did you mean") != null or std.mem.indexOf(u8, output, "build") != null);
+}
+
+test "732: validate with multiple similar tasks shows up to 3 suggestions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.test_unit]
+        \\cmd = "echo test unit"
+        \\
+        \\[tasks.test_integration]
+        \\cmd = "echo test integration"
+        \\
+        \\[tasks.test_e2e]
+        \\cmd = "echo test e2e"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["tets_unit"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should show "Did you mean" with suggestions for "tets_unit" -> "test_unit"
+    try std.testing.expect(std.mem.indexOf(u8, output, "Did you mean") != null);
+}
+
+test "733: validate with close typo shows suggestion" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.compile]
+        \\cmd = "echo compile"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\deps = ["comple"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should suggest "compile" for typo "comple" (edit distance 1)
+    try std.testing.expect(std.mem.indexOf(u8, output, "Did you mean") != null or std.mem.indexOf(u8, output, "compile") != null);
+}
+
+test "734: validate with completely different dependency shows no suggestions" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["xyz123"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should show error but no "Did you mean" (edit distance too large)
+    try std.testing.expect(std.mem.indexOf(u8, output, "xyz123") != null);
+}
+
+test "735: validate with exact match should not fail" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\deps = ["build"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should pass validation
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}

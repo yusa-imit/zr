@@ -5,6 +5,7 @@ const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
 const graph = @import("../graph/dag.zig");
+const levenshtein = @import("../util/levenshtein.zig");
 
 pub const ValidateOptions = struct {
     /// Enable strict mode (warn about unused tasks, missing descriptions)
@@ -99,10 +100,42 @@ pub fn cmdValidate(
         // Validate dependency references
         for (task.deps) |dep_name| {
             if (config.tasks.get(dep_name) == null) {
+                // Missing dependency - suggest similar task names
+                var all_task_names_list = std.ArrayList([]const u8){};
+                defer all_task_names_list.deinit(allocator);
+
+                var dep_names_iter = config.tasks.iterator();
+                while (dep_names_iter.next()) |dep_entry| {
+                    try all_task_names_list.append(allocator, dep_entry.key_ptr.*);
+                }
+
+                const suggestions = try levenshtein.findClosestMatches(
+                    allocator,
+                    dep_name,
+                    all_task_names_list.items,
+                    3, // max edit distance
+                    3, // max suggestions
+                );
+                defer allocator.free(suggestions);
+
                 try color.printError(err_writer, use_color,
-                    "✗ Task '{s}': dependency '{s}' not found\n  Hint: Check task name spelling or add the missing task\n\n",
+                    "✗ Task '{s}': dependency '{s}' not found\n",
                     .{ task_name, dep_name },
                 );
+
+                if (suggestions.len > 0) {
+                    try err_writer.writeAll("  Did you mean: ");
+                    for (suggestions, 0..) |sug, i| {
+                        if (i > 0) try err_writer.writeAll(", ");
+                        if (use_color) try err_writer.writeAll(color.Code.cyan);
+                        try err_writer.writeAll(sug.name);
+                        if (use_color) try err_writer.writeAll(color.Code.reset);
+                    }
+                    try err_writer.writeAll("?\n\n");
+                } else {
+                    try color.printDim(err_writer, use_color, "  Hint: Check task name spelling or add the missing task\n\n", .{});
+                }
+
                 error_count += 1;
             }
         }
@@ -140,10 +173,42 @@ pub fn cmdValidate(
 
             for (stage.tasks) |task_name| {
                 if (config.tasks.get(task_name) == null) {
+                    // Missing task in workflow - suggest similar task names
+                    var all_task_names_list = std.ArrayList([]const u8){};
+                    defer all_task_names_list.deinit(allocator);
+
+                    var wf_task_iter = config.tasks.iterator();
+                    while (wf_task_iter.next()) |wf_entry| {
+                        try all_task_names_list.append(allocator, wf_entry.key_ptr.*);
+                    }
+
+                    const suggestions = try levenshtein.findClosestMatches(
+                        allocator,
+                        task_name,
+                        all_task_names_list.items,
+                        3, // max edit distance
+                        3, // max suggestions
+                    );
+                    defer allocator.free(suggestions);
+
                     try color.printError(err_writer, use_color,
-                        "✗ Workflow '{s}', stage {d}: task '{s}' not found\n  Hint: Check task name spelling or add the missing task\n\n",
+                        "✗ Workflow '{s}', stage {d}: task '{s}' not found\n",
                         .{ workflow_name, i, task_name },
                     );
+
+                    if (suggestions.len > 0) {
+                        try err_writer.writeAll("  Did you mean: ");
+                        for (suggestions, 0..) |sug, idx| {
+                            if (idx > 0) try err_writer.writeAll(", ");
+                            if (use_color) try err_writer.writeAll(color.Code.cyan);
+                            try err_writer.writeAll(sug.name);
+                            if (use_color) try err_writer.writeAll(color.Code.reset);
+                        }
+                        try err_writer.writeAll("?\n\n");
+                    } else {
+                        try color.printDim(err_writer, use_color, "  Hint: Check task name spelling or add the missing task\n\n", .{});
+                    }
+
                     error_count += 1;
                 }
 
