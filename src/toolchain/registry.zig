@@ -2,20 +2,13 @@ const std = @import("std");
 const types = @import("types.zig");
 const ToolKind = types.ToolKind;
 const ToolVersion = types.ToolVersion;
+const lang_registry = @import("../lang/registry.zig");
 
 /// Fetch the latest stable version for a given toolchain from its official registry.
-/// Returns an allocated string that the caller must free.
+/// Now delegates to the LanguageProvider system
 pub fn fetchLatestVersion(allocator: std.mem.Allocator, kind: ToolKind) !ToolVersion {
-    return switch (kind) {
-        .node => fetchNodeLatest(allocator),
-        .python => fetchPythonLatest(allocator),
-        .zig => fetchZigLatest(allocator),
-        .go => fetchGoLatest(allocator),
-        .rust => fetchRustLatest(allocator),
-        .deno => fetchDenoLatest(allocator),
-        .bun => fetchBunLatest(allocator),
-        .java => fetchJavaLatest(allocator),
-    };
+    const provider = lang_registry.getProvider(kind);
+    return try provider.fetchLatestVersion(allocator);
 }
 
 /// Fetch latest Node.js LTS version from nodejs.org/dist/index.json
