@@ -531,7 +531,14 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "history")) {
         return run_cmd.cmdHistory(allocator, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
-        return init.cmdInit(std.fs.cwd(), effective_w, ew, effective_color);
+        // Parse init options
+        var detect_mode = false;
+        for (effective_args[2..]) |arg| {
+            if (std.mem.eql(u8, arg, "--detect")) {
+                detect_mode = true;
+            }
+        }
+        return init.cmdInit(allocator, std.fs.cwd(), detect_mode, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "validate")) {
         // Parse validate options
         var strict = false;
