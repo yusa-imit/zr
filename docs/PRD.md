@@ -2,9 +2,9 @@
 
 > **zr (zig-runner) — 개발자 플랫폼: 태스크 러닝 + 툴체인 관리 + 모노/멀티레포 인텔리전스**
 >
-> Version: 2.0 Draft
+> Version: 3.0 Draft
 > Author: Yusa × Claude
-> Date: 2026-02-20
+> Date: 2026-02-27
 
 ### Version History
 
@@ -12,6 +12,17 @@
 |------|------|------|------|
 | **v1.0** | 2026-02-16 | Phase 1–4 | 태스크 러너 & 워크플로우 매니저 (MVP → 플러그인) |
 | **v2.0** | 2026-02-20 | Phase 5–8 | 개발자 플랫폼 확장 (모노레포·툴체인·멀티레포·엔터프라이즈) |
+| **v3.0** | 2026-02-27 | Phase 9–13 | v1.0 릴리스 (AI 통합·LSP·DX·성능·언어 확장성) |
+
+**v3.0에서 추가/변경된 항목**:
+- Section 1: Executive Summary에 AI 통합·LSP·DX 축 추가
+- Section 3: Persona G (AI-Native Developer) `v3.0`
+- Section 5: 5.11 LanguageProvider, 5.12 MCP Server, 5.13 LSP Server, 5.14 자연어 인터페이스, 5.15 DX 개선 `v3.0`
+- Section 9: Phase 9–13 `v3.0`
+- Section 10: 10.3 Phase 9–13 성공 지표 `v3.0`
+- Section 11: AI/LSP 관련 리스크 추가 `v3.0`
+- Section 12: MCP/LSP 기능 비교 반영 `v3.0`
+- Appendix B: Phase 9+ CLI 예시 `v3.0`
 
 **v2.0에서 추가/변경된 항목**:
 - Section 1: Executive Summary 확장 (Run/Manage/Scale 3축, 점진적 확장 포지셔닝)
@@ -28,11 +39,12 @@
 
 **zr**은 Zig로 작성된 **개발자 플랫폼(Developer Platform)** 이다. nvm/pyenv/asdf 같은 툴체인 매니저, make/just/task 같은 태스크 러너, Nx/Turborepo 같은 모노레포 도구를 **단일 바이너리** 하나로 대체한다.
 
-세 개의 핵심 축으로 구성된다:
+네 개의 핵심 축으로 구성된다:
 
 - **Run** — 태스크 정의, 의존성 그래프 기반 병렬 실행, 워크플로우 파이프라인
 - **Manage** — 프로젝트별 툴체인 버전 관리, 환경 변수 레이어링, 원커맨드 프로젝트 셋업
 - **Scale** — 모노레포 affected 감지, 콘텐츠 해시 캐싱, 멀티레포 오케스트레이션, 아키텍처 거버넌스
+- **Integrate** `v3.0` — MCP Server로 AI 에이전트 연동, LSP Server로 에디터 통합, 자연어 인터페이스
 
 레포지토리 구조(모노레포, 멀티레포, 단일 프로젝트)에 구애받지 않고, 어떤 언어·빌드 시스템·스크립트 환경에서든 동작하며, 개인 프로젝트의 간단한 태스크 러너에서 엔터프라이즈 모노레포의 빌드 시스템까지 **점진적으로 확장(progressive unlock)** 되는 도구를 지향한다. 이름 자체가 2글자로, 타이핑 최소화를 통한 빠른 CLI 사용을 지향한다.
 
@@ -44,6 +56,8 @@
 - **유저 친화적 CLI**: 컬러풀한 출력, 프로그레스 표시, 인터랙티브 모드, 에러 메시지의 가독성
 - **점진적 확장**: 개인 프로젝트에서 `zr run build` 한 줄로 시작 → 팀이 커지면 캐싱·affected·툴체인 관리를 하나씩 활성화. 설정 복잡도가 프로젝트 규모에 비례
 - **벤더 락인 없음**: 자체 호스팅 원격 캐시(S3/GCS/HTTP), 오픈 설정 포맷(TOML), 플러그인 확장
+- **AI 네이티브** `v3.0`: MCP Server로 Claude Code/Cursor에서 직접 태스크 실행, LSP Server로 zr.toml 실시간 자동완성·에러 진단
+- **언어 확장성** `v3.0`: LanguageProvider 인터페이스로 새 프로그래밍 언어 추가가 단일 파일 작성으로 완료
 
 ---
 
@@ -151,6 +165,13 @@
 - README의 "Getting Started"가 항상 outdated
 - 현재 mise/asdf + make + .env.example 조합으로 관리
 - 원하는 것: `git clone && zr setup` 한 줄로 전체 개발 환경 구축, 버전 불일치 자동 감지
+
+**Persona G — "AI-Native Developer"** `v3.0`
+- Claude Code, Cursor 등 AI 코딩 도구를 일상적으로 사용하는 개발자
+- AI 에이전트가 빌드·테스트·배포를 직접 실행하길 원하지만, 현재 도구는 CLI 파싱이 필요
+- 새 프로젝트마다 zr.toml을 처음부터 작성하는 것이 번거로움
+- VS Code에서 zr.toml 편집 시 자동완성이나 에러 표시가 없어 오타를 발견하기 어려움
+- 원하는 것: MCP Server로 AI가 직접 태스크 호출, `zr init --detect`로 프로젝트 자동 감지 → 설정 생성, LSP로 에디터 내 실시간 피드백
 
 ---
 
@@ -1121,6 +1142,174 @@ zr context --scope=packages/api  # 특정 패키지 스코프
 
 AI 에이전트가 이 출력을 컨텍스트로 소비하여, 프로젝트 구조를 파악하고 적절한 파일을 수정할 수 있다.
 
+### 5.11 LanguageProvider 인터페이스 `v3.0`
+
+현재 8개 언어(Node/Python/Zig/Go/Rust/Deno/Bun/Java)가 `downloader.zig`, `registry.zig`, `path.zig`, `tools.zig` 등 6개 이상의 파일에 걸쳐 switch문으로 하드코딩되어 있다. 새 언어 추가 시 최소 6파일을 수정해야 하며, 누락 시 런타임 에러 발생.
+
+**해결**: 각 언어를 단일 구조체(`LanguageProvider`)로 캡슐화하고, 레지스트리 패턴으로 컴파일타임에 등록한다.
+
+```zig
+pub const LanguageProvider = struct {
+    name: []const u8,                          // "ruby"
+    display_name: []const u8,                  // "Ruby"
+    detect_files: []const []const u8,          // &.{"Gemfile", ".ruby-version"}
+
+    // 툴체인
+    resolveDownloadUrl: *const fn(version, platform, arch) DownloadSpec,
+    fetchLatestVersion: *const fn(allocator) ?ToolVersion,
+    getBinDir: *const fn(install_dir) []const u8,
+    getEnvVars: *const fn(install_dir) []EnvVar,
+
+    // 프로젝트 감지 & 태스크 추출
+    detectProject: *const fn(dir) bool,
+    extractTasks: *const fn(allocator, dir) []TaskTemplate,
+    generateConfig: *const fn(allocator, dir) []const u8,
+};
+```
+
+**결과**:
+- 새 언어 추가 = `src/lang/<name>.zig` 1파일 작성 + `registry.zig`에 1줄 등록
+- `detectProject()` + `extractTasks()` → `zr init --detect` 기능의 핵심 엔진
+- `generateConfig()` → MCP `generate_config` 도구에서 재사용
+
+### 5.12 MCP Server `v3.0`
+
+zr을 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 서버로 노출하여 Claude Code, Cursor 등 AI 에이전트에서 직접 태스크를 실행한다.
+
+```bash
+zr mcp serve                  # MCP 서버 시작 (JSON-RPC over stdio)
+```
+
+**MCP 도구 목록**:
+
+| Tool | 매핑 대상 | 설명 |
+|------|----------|------|
+| `run_task` | `cmdRun()` | 태스크 실행 |
+| `list_tasks` | `cmdList()` | 태스크 목록 조회 |
+| `show_task` | `cmdShow()` | 태스크 상세 정보 |
+| `validate_config` | `cmdValidate()` | 설정 파일 검증 |
+| `show_graph` | `cmdGraph()` | 의존성 그래프 조회 |
+| `run_workflow` | `cmdWorkflow()` | 워크플로우 실행 |
+| `task_history` | `cmdHistory()` | 실행 이력 조회 |
+| `estimate_duration` | `cmdEstimate()` | 소요시간 추정 |
+| `generate_config` | LanguageProvider | zr.toml 자동생성 |
+
+**핵심 설계**:
+- 기존 CLI 함수들이 모두 `*std.Io.Writer`를 받으므로, MCP 핸들러는 in-memory writer를 전달하여 결과를 캡처. 비즈니스 로직 중복 없음
+- JSON-RPC 2.0 over stdio 프로토콜 (LSP와 트랜스포트 레이어 공유)
+- MCP capability 협상 (tools, resources)
+
+**사용 예시** (Claude Code `claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "zr": {
+      "command": "zr",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+### 5.13 LSP Server `v3.0`
+
+zr.toml 편집을 위한 [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) 서버. VS Code, Neovim 등에서 실시간 피드백을 제공한다.
+
+```bash
+zr lsp                        # LSP 서버 시작 (JSON-RPC over stdio, Content-Length 프레이밍)
+```
+
+**지원 기능**:
+
+#### 5.13.1 실시간 진단 (Diagnostics)
+- TOML 구문 에러 (줄/열 번호 포함)
+- 알 수 없는 필드명 (+ "Did you mean?" 제안)
+- 필수 필드 누락 (`cmd` 없는 태스크)
+- 존재하지 않는 태스크 참조 (`deps`)
+- 순환 의존성 감지 (`src/graph/cycle_detect.zig` 재사용)
+- 잘못된 expression 구문 (`src/config/expr.zig` 재사용)
+
+#### 5.13.2 자동완성 (Completion)
+- `[tasks.` 뒤 → 기존 태스크 이름
+- 태스크 섹션 내 → 필드명 (`cmd`, `deps`, `env`, `timeout` 등)
+- `deps = ["` 뒤 → 설정 내 모든 태스크 이름
+- `condition = "` 뒤 → 표현식 키워드
+- `[tools]` 섹션 → LanguageProvider의 지원 언어 목록
+- 불리언 필드 → `true` / `false`
+
+#### 5.13.3 Hover 문서 + Go-to-Definition
+- 필드에 마우스를 올리면 설명·타입·기본값 표시
+- `deps` 내 태스크 이름 클릭 → 해당 태스크 정의로 이동
+
+**핵심 설계**: JSON-RPC 트랜스포트는 MCP Server와 공유. Content-Length 프레이밍(LSP) + 줄바꿈 구분(MCP) 모두 지원하는 단일 트랜스포트.
+
+### 5.14 자연어 인터페이스 `v3.0`
+
+패턴 기반 자연어 → zr 명령어 매핑. LLM API 의존 없이 키워드 매칭으로 동작한다.
+
+```bash
+zr ai "빌드하고 테스트해줘"      # → zr run build && zr run test
+zr ai "프론트엔드 배포"          # → zr run deploy-frontend
+zr ai "어제 실패한 태스크"       # → zr history --status=failed --since=1d
+```
+
+MCP 환경에서는 Claude가 이미 자연어를 이해하므로, 이 기능은 주로 CLI 단독 사용 시 편의를 위한 것이다.
+
+### 5.15 DX 개선 `v3.0`
+
+#### 5.15.1 "Did you mean?" 제안
+Levenshtein 편집 거리 기반으로 오타 시 가까운 명령어/태스크를 제안한다.
+
+```bash
+$ zr rn build
+✗ Unknown command: rn
+
+  Did you mean 'run'?
+
+$ zr run biuld
+✗ Unknown task: biuld
+
+  Did you mean 'build'?
+
+  Available tasks: build, build-frontend, build-backend
+```
+
+명령어와 태스크 이름 모두에 적용. 편집 거리 ≤ 3인 후보만 제안.
+
+#### 5.15.2 에러 메시지 강화
+- TOML 파싱 에러에 정확한 줄번호/열 번호 표시
+- 존재하지 않는 `deps` 참조 시 가까운 태스크 이름 제안
+- 설정 검증 에러에 수정 힌트 포함
+
+```
+✗ Task 'deploy': dependency 'biuld' not found (line 15, col 9)
+
+  deps = ["biuld"]
+          ^^^^^^^
+
+  Did you mean 'build'?
+```
+
+#### 5.15.3 대화형 init
+
+```bash
+zr init --detect              # 프로젝트 자동 감지 → zr.toml 생성
+```
+
+LanguageProvider의 `detectProject()` + `extractTasks()` + `generateConfig()`를 활용하여 프로젝트의 언어·스크립트를 자동 감지하고 설정 파일을 생성한다.
+
+```
+$ zr init --detect
+✓ Detected: Node.js (package.json)
+  Found 5 npm scripts: build, test, lint, start, dev
+
+  Generated zr.toml with 5 tasks
+
+  Hint: Run 'zr list' to see your tasks
+```
+
+복수 언어 감지 지원: monorepo에서 Node + Python + Go 동시 감지 가능.
+
 ---
 
 ## 6. 설정 파일 전체 스키마
@@ -1306,11 +1495,42 @@ src/
 ├── history/
 │   ├── store.zig           # 실행 이력 저장 (SQLite or 파일)
 │   └── query.zig           # 이력 조회
+├── lang/                      # LanguageProvider (Phase 9A) `v3.0`
+│   ├── provider.zig           # LanguageProvider 인터페이스 정의
+│   ├── registry.zig           # 컴파일타임 provider 등록
+│   ├── node.zig               # Node.js provider
+│   ├── python.zig             # Python provider
+│   ├── zig_lang.zig           # Zig provider
+│   ├── go.zig                 # Go provider
+│   ├── rust.zig               # Rust provider
+│   ├── deno.zig               # Deno provider
+│   ├── bun.zig                # Bun provider
+│   └── java.zig               # Java provider
+├── jsonrpc/                   # JSON-RPC 공유 인프라 (Phase 9B) `v3.0`
+│   ├── types.zig              # Request, Response, Notification, Error 타입
+│   ├── parser.zig             # JSON-RPC 메시지 파싱
+│   ├── writer.zig             # JSON-RPC 직렬화
+│   ├── transport.zig          # Stdio 트랜스포트
+│   └── json.zig               # JSON 빌더/파서 유틸리티
+├── mcp/                       # MCP Server (Phase 10A) `v3.0`
+│   ├── server.zig             # MCP 서버 메인 루프, capability 협상
+│   ├── handlers.zig           # 도구 호출 핸들러
+│   └── tools.zig              # 도구 정의 (이름, 설명, JSON Schema)
+├── lsp/                       # LSP Server (Phase 11) `v3.0`
+│   ├── server.zig             # LSP 서버 메인 루프
+│   ├── handlers.zig           # LSP 메서드 핸들러
+│   ├── document.zig           # 열린 문서 상태 관리
+│   ├── diagnostics.zig        # 검증 에러 → LSP Diagnostic 변환
+│   ├── completion.zig         # 컨텍스트별 자동완성
+│   ├── hover.zig              # Hover 문서
+│   ├── definition.zig         # Go-to-Definition
+│   └── position.zig           # 줄/열 위치 추적
 └── util/
     ├── glob.zig            # Glob 패턴 매칭
     ├── duration.zig        # 시간 파싱 ("5m", "30s")
     ├── semver.zig          # 시맨틱 버전 파싱
-    └── hash.zig            # 파일 해시
+    ├── hash.zig            # 파일 해시
+    └── levenshtein.zig     # 편집 거리 계산 (Phase 9C) `v3.0`
 ```
 
 ### 7.3 Zig 기술 선택 근거
@@ -1443,6 +1663,71 @@ src/
 - AI 친화적 메타데이터 생성 (`zr context`)
 - Conformance 규칙 엔진 (고급 아키텍처 거버넌스)
 
+### Phase 9 — 기반 인프라 + DX 퀵윈 `v3.0`
+**목표: v1.0 릴리스를 위한 기반 인프라 구축과 즉각적인 DX 개선**
+
+- **9A LanguageProvider 인터페이스**: 8개 언어를 단일 구조체로 캡슐화, 레지스트리 패턴으로 등록. 새 언어 추가 = 파일 1개
+- **9B JSON-RPC 공유 인프라**: MCP와 LSP가 공유하는 JSON-RPC 2.0 트랜스포트 레이어 (Content-Length + newline-delimited 모두 지원)
+- **9C "Did you mean?" 제안**: Levenshtein 편집 거리 기반 명령어/태스크 이름 오타 제안
+- **9D 에러 메시지 개선**: 파싱 에러에 줄/열 번호, 미존재 deps에 유사 이름 제안
+
+**의존성**: 9A, 9B, 9C 병렬 개발 가능. 9D는 9C(Levenshtein)에 의존.
+
+### Phase 10 — MCP Server + AI 통합 `v3.0`
+**목표: AI 에이전트에서 zr을 직접 호출할 수 있는 MCP 서버**
+
+- **10A MCP Server 코어**: JSON-RPC 기반 MCP 서버, 9개 도구 노출 (run_task, list_tasks, validate_config 등)
+- **10B zr.toml 자동생성**: `zr init --detect` — LanguageProvider 기반 프로젝트 감지 및 설정 생성
+- **10C 자연어 인터페이스**: `zr ai "빌드하고 테스트해줘"` — 키워드 패턴 매핑 (LLM API 의존 X)
+
+**의존성**: 10A는 9B(JSON-RPC)에 의존. 10B는 9A(LanguageProvider)에 의존. 10A와 10B 병렬 가능.
+
+### Phase 11 — Full LSP Server `v3.0`
+**목표: VS Code/Neovim에서 zr.toml 편집 시 실시간 자동완성·에러 진단**
+
+- **11A LSP 코어 + 진단**: LSP 서버 메인 루프, 열린 문서 관리, TOML 파싱 에러·스키마 검증 → Diagnostic 변환
+- **11B 자동완성**: 컨텍스트별 완성 (태스크명, 필드명, deps, 표현식 키워드, 도구 목록)
+- **11C Hover 문서 + Go-to-Definition**: 필드 hover 시 문서 표시, deps 내 태스크 → 정의로 이동
+
+**의존성**: 11A는 9B(JSON-RPC)에 의존. 11B, 11C는 11A에 의존.
+
+### Phase 12 — 성능 & 안정성 `v3.0`
+**목표: v1.0 품질 기준 달성 — 바이너리 최적화, 퍼징, 벤치마크**
+
+- **12A 바이너리 최적화**: `build.zig`에 ReleaseSmall + strip 옵션 추가 (~2.9MB → ~1.5-2MB)
+- **12B Fuzz Testing**: TOML 파서, 표현식 엔진, JSON-RPC 파서 퍼징 (10분+ 크래시 없음)
+- **12C 벤치마크 대시보드**: Make, Just, Task(go-task) 대비 성능 비교 스크립트 + 결과 문서
+
+**의존성**: 12A, 12B, 12C 모두 독립 — 언제든 병렬 가능.
+
+### Phase 13 — v1.0 릴리스 `v3.0`
+**목표: 공식 v1.0 릴리스 — 문서, 마이그레이션, README 리뉴얼**
+
+- **13A 문서 사이트**: getting-started, configuration, commands, mcp-integration, lsp-setup, adding-language 가이드
+- **13B 마이그레이션 가이드 + 자동 변환**: `zr init --from-make`, `--from-just`, `--from-task` 자동 변환
+- **13C README 리뉴얼 + v1.0 태그**: 전면 개편된 README, 릴리스 노트, 태그
+
+**의존성**: Phase 9–12 완료 후.
+
+**Phase 9-13 의존성 그래프**:
+```
+Phase 9 (기반):
+  9A LanguageProvider ──┐
+  9B JSON-RPC ─────┐   │
+  9C Levenshtein ──┤   │
+                   ▼   │
+  9D 에러 개선 ←─(9C)  │
+                       │
+Phase 10 (AI):         │         Phase 11 (LSP):
+  10A MCP ←── 9B       │          11A LSP Core ←── 9B
+  10B 자동생성 ←── 9A ─┘          11B 자동완성 ←── 11A (+9A)
+  10C 자연어 ←── 10A              11C Hover/Goto ←── 11A
+
+Phase 12 (성능): 독립, 언제든 병렬 가능
+
+Phase 13 (릴리스): Phase 9-12 완료 후
+```
+
 ---
 
 ## 10. Success Metrics
@@ -1471,6 +1756,24 @@ src/
 | AI 에이전트 연동 | — | — | — | Claude Code, Cursor |
 | GitHub Stars | 3000+ | 5000+ | 7000+ | 10000+ |
 
+### 10.3 Phase 9–13 (v1.0 Release) `v3.0`
+
+| 지표 | Phase 9 | Phase 10 | Phase 11 | Phase 12 | Phase 13 |
+|------|---------|----------|----------|----------|----------|
+| 새 언어 추가 소요 파일 수 | 1파일 | — | — | — | — |
+| MCP 도구 수 | — | 9+ 도구 | — | — | — |
+| MCP 연동 검증 | — | Claude Code, Cursor | — | — | — |
+| `zr init --detect` 지원 언어 | — | 8+ 언어 | — | — | — |
+| LSP 진단 항목 수 | — | — | 6+ 종류 | — | — |
+| LSP 자동완성 컨텍스트 | — | — | 6+ 유형 | — | — |
+| VS Code 연동 검증 | — | — | 실시간 에러·완성 | — | — |
+| 바이너리 크기 | — | — | — | ≤ 2MB | — |
+| 퍼징 (크래시 없음) | — | — | — | 10분+ | — |
+| 벤치마크 vs Make/Just/Task | — | — | — | 문서화 | — |
+| 문서 사이트 페이지 수 | — | — | — | — | 10+ |
+| 마이그레이션 지원 도구 | — | — | — | — | Make, Just, Task |
+| GitHub Stars | — | — | — | — | 15000+ |
+
 ---
 
 ## 11. Risks & Mitigations
@@ -1486,6 +1789,11 @@ src/
 | 툴체인 관리의 OS별 차이 | macOS/Linux/Windows 각각 다른 설치 경로·바이너리 포맷 | mise의 검증된 패턴 참고, 코어 툴체인 먼저 안정화 후 확장 |
 | 원격 캐시 보안·신뢰성 | 캐시 오염(poisoning), 네트워크 장애 시 빌드 실패 | 캐시 무결성 검증(해시 비교), 원격 캐시 실패 시 로컬 폴백 |
 | 멀티레포 환경의 복잡도 | 레포 간 버전 동기화, 인증 관리 등 예상 못한 엣지 케이스 | 점진적 기능 공개, 모노레포 먼저 안정화 후 멀티레포 지원 |
+| MCP/LSP 프로토콜 구현 복잡도 `v3.0` | JSON-RPC, 프로토콜 스펙 준수에 많은 엣지 케이스 | JSON-RPC 공유 인프라로 중복 최소화, MCP 먼저 구현 후 LSP 확장 |
+| MCP 스펙 변경 `v3.0` | MCP가 아직 초기 단계라 스펙이 변경될 수 있음 | 최소 도구 세트부터 시작, 추상화 레이어로 스펙 변경 격리 |
+| LSP 에디터 호환성 `v3.0` | VS Code, Neovim, Emacs 등 에디터마다 LSP 구현 차이 | VS Code 우선 개발 및 검증, 표준 LSP 스펙 엄격 준수 |
+| LanguageProvider 리팩토링 범위 `v3.0` | 기존 6개+ 파일 수정 필요, 리그레션 위험 | 기존 테스트 활용, 점진적 마이그레이션 (하나의 언어씩) |
+| 자연어 인터페이스 정확도 `v3.0` | 패턴 매칭 기반이라 복잡한 자연어 이해 불가 | 명확한 한계 문서화, MCP 환경에서는 LLM이 직접 처리하도록 안내 |
 
 ---
 
@@ -1535,6 +1843,11 @@ zr의 포지셔닝은 **"폴리글랏 개발자 플랫폼 — 벤더 락인 없�
 | **폴리글랏** | ✓ | △ | △ | △ | ✓ | ✓ |
 | **바이너리 크기** | ~3MB | ~200MB+ | ~50MB+ | ~15MB | ~20MB | ~100MB+ |
 | **벤더 락인** | 없음 | Nx Cloud | Vercel | 없음 | 없음 | 없음 |
+| **MCP Server** `v3.0` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| **LSP Server** `v3.0` | ✓ | △ | ✗ | ✗ | ✗ | △ |
+| **프로젝트 자동 감지** `v3.0` | ✓ | ✓ | △ | ✓ | △ | ✗ |
+| **설정 자동 생성** `v3.0` | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| **마이그레이션 도구** `v3.0` | ✓ (Make/Just/Task) | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 ✓ = 완전 지원, △ = 부분 지원, ✗ = 미지원
 
@@ -1545,6 +1858,9 @@ zr의 포지셔닝은 **"폴리글랏 개발자 플랫폼 — 벤더 락인 없�
 3. **벤더 락인 없음**: 원격 캐시를 자체 S3/GCS/HTTP에 호스팅 — SaaS 종속 없음
 4. **점진적 채택**: `zr init`으로 시작 → 필요할 때 캐싱·affected·툴체인 하나씩 활성화
 5. **제로 런타임**: Node.js, Python, JVM 없이 단일 바이너리로 동작
+6. **AI 네이티브** `v3.0`: MCP Server로 Claude Code/Cursor에서 직접 태스크 실행 — 빌드 도구 중 최초의 MCP 지원
+7. **에디터 통합** `v3.0`: 전용 LSP Server로 zr.toml 실시간 자동완성·에러 진단 — VS Code 확장 불필요
+8. **언어 확장성** `v3.0`: LanguageProvider 인터페이스로 새 언어 추가가 파일 1개 작성으로 완료
 
 ---
 
@@ -1764,4 +2080,25 @@ zr publish --dry-run                 # 퍼블리시 대상 미리보기
 # AI 메타데이터
 zr context                           # 프로젝트 맵 JSON 출력
 zr context --format=yaml             # YAML 포맷
+
+# ─── Phase 9+: AI 통합 & DX ───
+
+# MCP Server
+zr mcp serve                         # MCP 서버 시작 (Claude Code/Cursor 연동)
+
+# LSP Server
+zr lsp                               # LSP 서버 시작 (VS Code/Neovim 연동)
+
+# 자연어 인터페이스
+zr ai "빌드하고 테스트해줘"             # → zr run build && zr run test
+zr ai "프론트엔드 배포"                # → zr run deploy-frontend
+zr ai "어제 실패한 태스크"              # → zr history --status=failed --since=1d
+
+# 프로젝트 자동 감지 & 설정 생성
+zr init --detect                     # 프로젝트 언어/스크립트 자동 감지 → zr.toml 생성
+
+# 마이그레이션 (다른 도구에서 이전)
+zr init --from-make                  # Makefile → zr.toml 변환
+zr init --from-just                  # Justfile → zr.toml 변환
+zr init --from-task                  # Taskfile.yml → zr.toml 변환
 ```
