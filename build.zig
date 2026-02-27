@@ -1,5 +1,14 @@
 const std = @import("std");
 
+// Build steps:
+//   zig build                           # Debug build (7.3MB, with symbols)
+//   zig build -Doptimize=ReleaseFast    # Fast release (2.3MB)
+//   zig build -Doptimize=ReleaseSafe    # Safe release (1.9MB)
+//   zig build -Doptimize=ReleaseSmall   # Small release (1.2MB)
+//   zig build release                   # Optimized release (1.2MB, stripped)
+//   zig build test                      # Run unit tests
+//   zig build integration-test          # Run integration tests
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -15,6 +24,13 @@ pub fn build(b: *std.Build) void {
             .link_libc = if (target.result.os.tag != .windows) true else null,
         }),
     });
+
+    // Strip debug symbols in release builds for smaller binary size
+    // Only keep symbols in Debug mode for easier debugging
+    exe.root_module.strip = switch (optimize) {
+        .Debug => false,
+        else => true,
+    };
 
     b.installArtifact(exe);
 
@@ -64,4 +80,21 @@ pub fn build(b: *std.Build) void {
 
     const integration_step = b.step("integration-test", "Run integration tests");
     integration_step.dependOn(&run_int_tests.step);
+
+    // --- Release Build ---
+    // Optimized release build with ReleaseSmall + strip for minimal binary size
+    const release_exe = b.addExecutable(.{
+        .name = "zr",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = .ReleaseSmall,
+            .link_libc = if (target.result.os.tag != .windows) true else null,
+        }),
+    });
+    release_exe.root_module.strip = true;
+
+    const install_release = b.addInstallArtifact(release_exe, .{});
+    const release_step = b.step("release", "Build optimized release binary (ReleaseSmall + strip)");
+    release_step.dependOn(&install_release.step);
 }
