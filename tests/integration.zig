@@ -8,6 +8,7 @@ comptime {
     _ = @import("bench_test.zig");
     _ = @import("cache_test.zig");
     _ = @import("clean_test.zig");
+    _ = @import("completion_test.zig");
     _ = @import("conformance_test.zig");
     _ = @import("context_test.zig");
     _ = @import("doctor_test.zig");
