@@ -8,13 +8,13 @@
 - **Goal**: Language/ecosystem-agnostic, single binary, C-level performance, user-friendly CLI
 - **Config format**: TOML + built-in expression engine (Option D from PRD)
 
-## Test Status (2026-02-26)
+## Test Status (2026-02-27)
 - **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **555/555 passing** (100% success rate) — comprehensive CLI coverage
+- **Integration tests**: **655/655 passing** (100% success rate) — comprehensive CLI coverage + edge cases
 - **Latest commits**:
-  - acb9e05: Added 10 new integration tests for comprehensive CLI coverage (545→555, +1.8%)
-  - 2d1bb4d: Added 10 new integration tests for advanced scenarios (535→545, +1.9%)
-  - 7c7811c: Added 10 new integration tests for underrepresented commands (525→535, +1.9%)
+  - 812e3e0: Added 10 new integration tests for edge cases and robustness (645→655, +1.5%) — large output buffering, concurrent cache access, config modification, recursive execution, env var special chars, plugin validation, empty workflow stages, duplicate deps, self-loops, corrupted history
+  - 256fd1c: Fixed 4 failing integration tests to match current implementation (bugfix #13)
+  - d30fd4e: Added 10 new integration tests for comprehensive coverage (635→645, +1.6%)
 - **Release v0.0.5**: ✅ Live on GitHub with all 6 binaries + checksums (x86_64/aarch64 for linux/macos/windows)
 
 ## Current Phase
