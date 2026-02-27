@@ -79,6 +79,7 @@ const multirepo_synthetic = @import("multirepo/synthetic.zig");
 const codeowners_types = @import("codeowners/types.zig");
 const codeowners_generator = @import("codeowners/generator.zig");
 const aliases = @import("config/aliases.zig");
+const levenshtein = @import("util/levenshtein.zig");
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
@@ -186,6 +187,7 @@ comptime {
     _ = alias_cmd;
     _ = estimate_cmd;
     _ = show_cmd;
+    _ = @import("util/levenshtein.zig");
 }
 
 pub fn main() !void {
@@ -215,6 +217,33 @@ pub fn main() !void {
         if (exit_code != 0) std.process.exit(exit_code);
     } else |err| {
         return err;
+    }
+}
+
+/// Suggest similar commands using Levenshtein distance.
+/// Prints "Did you mean?" suggestions to the error writer if close matches are found.
+fn suggestSimilarCommands(
+    allocator: std.mem.Allocator,
+    unknown_cmd: []const u8,
+    known_commands: []const []const u8,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !void {
+    const suggestions = try levenshtein.findClosestMatches(
+        allocator,
+        unknown_cmd,
+        known_commands,
+        3, // max distance: allow up to 3 edits
+        3, // max suggestions: show at most 3 alternatives
+    );
+    defer allocator.free(suggestions);
+
+    if (suggestions.len > 0) {
+        try ew.print("\n", .{});
+        try color.printInfo(ew, use_color, "Did you mean?\n", .{});
+        for (suggestions) |suggestion| {
+            try ew.print("    {s}\n", .{suggestion.name});
+        }
     }
 }
 
@@ -404,7 +433,9 @@ fn run(
             if (err != error.FileNotFound) {
                 try color.printError(ew, effective_color, "Failed to load aliases: {}\n", .{err});
             }
-            try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
+            try color.printError(ew, effective_color, "Unknown command: {s}\n", .{cmd});
+            try suggestSimilarCommands(allocator, cmd, &known_commands, ew, effective_color);
+            try ew.print("\n", .{});
             try printHelp(effective_w, effective_color);
             return 1;
         };
@@ -435,7 +466,9 @@ fn run(
             return try run(allocator, expanded_args.items, w, ew, use_color);
         } else {
             // Not a builtin and not an alias
-            try color.printError(ew, effective_color, "Unknown command: {s}\n\n", .{cmd});
+            try color.printError(ew, effective_color, "Unknown command: {s}\n", .{cmd});
+            try suggestSimilarCommands(allocator, cmd, &known_commands, ew, effective_color);
+            try ew.print("\n", .{});
             try printHelp(effective_w, effective_color);
             return 1;
         }
