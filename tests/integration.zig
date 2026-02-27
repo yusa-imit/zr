@@ -18,6 +18,7 @@ comptime {
     _ = @import("graph_test.zig");
     _ = @import("history_test.zig");
     _ = @import("init_test.zig");
+    _ = @import("lint_test.zig");
     _ = @import("list_test.zig");
     _ = @import("misc_test.zig");
     _ = @import("plugin_test.zig");
