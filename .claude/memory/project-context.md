@@ -8,14 +8,14 @@
 - **Goal**: Language/ecosystem-agnostic, single binary, C-level performance, user-friendly CLI
 - **Config format**: TOML + built-in expression engine (Option D from PRD)
 
-## Test Status (2026-02-27)
-- **Unit tests**: 597/605 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **730/730 passing** (100% success rate) — comprehensive CLI coverage + edge cases
+## Test Status (2026-02-28)
+- **Unit tests**: 613/621 passing (8 skipped, 0 failed, **0 memory leaks**)
+- **Integration tests**: **786/786 passing** (100% success rate) — comprehensive CLI coverage + edge cases
 - **Latest commits** (Stabilization Cycle):
+  - b7b0233: Added integration tests for 5 untested commands: codeowners, setup, publish, live, interactive-run (730→786, +7.7%)
   - 8758ac3: Added 6 integration tests for `doctor` command (724→730, +0.8%)
   - 21fcb13: Fixed `version` command stderr buffering + 9 integration tests (715→724, +1.3%)
   - 7ea2cd4: Implemented LanguageProvider interface (Phase 9A foundation)
-  - c178465: Split integration tests into per-command files (715 tests total)
 - **Release v0.0.5**: ✅ Live on GitHub with all 6 binaries + checksums (x86_64/aarch64 for linux/macos/windows)
 
 ## Current Phase
