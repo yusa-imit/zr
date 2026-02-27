@@ -26,6 +26,7 @@ comptime {
     _ = @import("schedule_test.zig");
     _ = @import("show_test.zig");
     _ = @import("tools_test.zig");
+    _ = @import("upgrade_test.zig");
     _ = @import("validate_test.zig");
     _ = @import("version_test.zig");
     _ = @import("workflow_test.zig");
