@@ -13,87 +13,80 @@ const MessageId = types.MessageId;
 
 /// Serialize a JSON-RPC message to a string
 pub fn serializeMessage(allocator: std.mem.Allocator, message: Message) ![]const u8 {
-    var string = std.ArrayList(u8).init(allocator);
-    defer string.deinit();
-
-    var jw = std.json.writeStream(string.writer(), .{});
-
-    switch (message) {
-        .request => |req| try writeRequest(&jw, req),
-        .notification => |notif| try writeNotification(&jw, notif),
-        .response => |resp| try writeResponse(&jw, resp),
-        .error_response => |err| try writeErrorResponse(&jw, err),
-    }
-
-    return try string.toOwnedSlice();
+    // TODO(Zig 0.15): std.json.writeStream doesn't exist
+    // Manually build JSON strings for now
+    return switch (message) {
+        .request => |req| try buildRequestJson(allocator, req),
+        .notification => |notif| try buildNotificationJson(allocator, notif),
+        .response => |resp| try buildResponseJson(allocator, resp),
+        .error_response => |err| try buildErrorResponseJson(allocator, err),
+    };
 }
 
-fn writeRequest(jw: anytype, req: Request) !void {
-    try jw.beginObject();
-    try jw.objectField("jsonrpc");
-    try jw.write(req.jsonrpc);
-    try jw.objectField("id");
-    try writeMessageId(jw, req.id);
-    try jw.objectField("method");
-    try jw.write(req.method);
+fn buildRequestJson(allocator: std.mem.Allocator, req: Request) ![]const u8 {
+    const id_str = switch (req.id) {
+        .string => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+        .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+        .null_id => try allocator.dupe(u8, "null"),
+    };
+    defer allocator.free(id_str);
+
     if (req.params) |params| {
-        try jw.objectField("params");
-        try jw.print("{s}", .{params}); // params is already JSON
+        return try std.fmt.allocPrint(allocator,
+            \\{{"jsonrpc":"{s}","id":{s},"method":"{s}","params":{s}}}
+        , .{ req.jsonrpc, id_str, req.method, params });
+    } else {
+        return try std.fmt.allocPrint(allocator,
+            \\{{"jsonrpc":"{s}","id":{s},"method":"{s}"}}
+        , .{ req.jsonrpc, id_str, req.method });
     }
-    try jw.endObject();
 }
 
-fn writeNotification(jw: anytype, notif: Notification) !void {
-    try jw.beginObject();
-    try jw.objectField("jsonrpc");
-    try jw.write(notif.jsonrpc);
-    try jw.objectField("method");
-    try jw.write(notif.method);
+fn buildNotificationJson(allocator: std.mem.Allocator, notif: Notification) ![]const u8 {
     if (notif.params) |params| {
-        try jw.objectField("params");
-        try jw.print("{s}", .{params}); // params is already JSON
+        return try std.fmt.allocPrint(allocator,
+            \\{{"jsonrpc":"{s}","method":"{s}","params":{s}}}
+        , .{ notif.jsonrpc, notif.method, params });
+    } else {
+        return try std.fmt.allocPrint(allocator,
+            \\{{"jsonrpc":"{s}","method":"{s}"}}
+        , .{ notif.jsonrpc, notif.method });
     }
-    try jw.endObject();
 }
 
-fn writeResponse(jw: anytype, resp: Response) !void {
-    try jw.beginObject();
-    try jw.objectField("jsonrpc");
-    try jw.write(resp.jsonrpc);
-    try jw.objectField("id");
-    try writeMessageId(jw, resp.id);
-    try jw.objectField("result");
-    try jw.print("{s}", .{resp.result}); // result is already JSON
-    try jw.endObject();
+fn buildResponseJson(allocator: std.mem.Allocator, resp: Response) ![]const u8 {
+    const id_str = switch (resp.id) {
+        .string => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+        .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+        .null_id => try allocator.dupe(u8, "null"),
+    };
+    defer allocator.free(id_str);
+
+    return try std.fmt.allocPrint(allocator,
+        \\{{"jsonrpc":"{s}","id":{s},"result":{s}}}
+    , .{ resp.jsonrpc, id_str, resp.result });
 }
 
-fn writeErrorResponse(jw: anytype, err: ErrorResponse) !void {
-    try jw.beginObject();
-    try jw.objectField("jsonrpc");
-    try jw.write(err.jsonrpc);
-    try jw.objectField("id");
-    try writeMessageId(jw, err.id);
-    try jw.objectField("error");
-    try jw.beginObject();
-    try jw.objectField("code");
-    try jw.write(@intFromEnum(err.@"error".code));
-    try jw.objectField("message");
-    try jw.write(err.@"error".message);
+fn buildErrorResponseJson(allocator: std.mem.Allocator, err: ErrorResponse) ![]const u8 {
+    const id_str = switch (err.id) {
+        .string => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+        .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+        .null_id => try allocator.dupe(u8, "null"),
+    };
+    defer allocator.free(id_str);
+
     if (err.@"error".data) |data| {
-        try jw.objectField("data");
-        try jw.print("{s}", .{data}); // data is already JSON
+        return try std.fmt.allocPrint(allocator,
+            \\{{"jsonrpc":"{s}","id":{s},"error":{{"code":{d},"message":"{s}","data":{s}}}}}
+        , .{ err.jsonrpc, id_str, @intFromEnum(err.@"error".code), err.@"error".message, data });
+    } else {
+        return try std.fmt.allocPrint(allocator,
+            \\{{"jsonrpc":"{s}","id":{s},"error":{{"code":{d},"message":"{s}"}}}}
+        , .{ err.jsonrpc, id_str, @intFromEnum(err.@"error".code), err.@"error".message });
     }
-    try jw.endObject();
-    try jw.endObject();
 }
 
-fn writeMessageId(jw: anytype, id: MessageId) !void {
-    switch (id) {
-        .string => |s| try jw.write(s),
-        .number => |n| try jw.write(n),
-        .null_id => try jw.write(null),
-    }
-}
+// Deprecated write functions - removed for Zig 0.15 compatibility
 
 /// Create a success response
 pub fn createResponse(allocator: std.mem.Allocator, id: MessageId, result: []const u8) !Response {
