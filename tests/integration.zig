@@ -8,6 +8,7 @@ comptime {
     _ = @import("bench_test.zig");
     _ = @import("cache_test.zig");
     _ = @import("clean_test.zig");
+    _ = @import("codeowners_test.zig");
     _ = @import("completion_test.zig");
     _ = @import("conformance_test.zig");
     _ = @import("context_test.zig");
@@ -18,13 +19,17 @@ comptime {
     _ = @import("graph_test.zig");
     _ = @import("history_test.zig");
     _ = @import("init_test.zig");
+    _ = @import("interactive_run_test.zig");
     _ = @import("lint_test.zig");
     _ = @import("list_test.zig");
+    _ = @import("live_test.zig");
     _ = @import("misc_test.zig");
     _ = @import("plugin_test.zig");
+    _ = @import("publish_test.zig");
     _ = @import("repo_test.zig");
     _ = @import("run_test.zig");
     _ = @import("schedule_test.zig");
+    _ = @import("setup_test.zig");
     _ = @import("show_test.zig");
     _ = @import("tools_test.zig");
     _ = @import("upgrade_test.zig");
