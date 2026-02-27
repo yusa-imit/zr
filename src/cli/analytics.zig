@@ -5,8 +5,8 @@ const html_gen = @import("../analytics/html.zig");
 const json_gen = @import("../analytics/json.zig");
 const platform = @import("../util/platform.zig");
 
-pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
-    var json_output = false;
+pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, global_json: bool) !u8 {
+    var json_output = global_json;
     var output_path: ?[]const u8 = null;
     var limit: ?usize = null;
     var no_open = false;
@@ -15,8 +15,15 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8) !u8 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "--json")) {
+        if (std.mem.eql(u8, arg, "--json") or std.mem.eql(u8, arg, "--format=json")) {
             json_output = true;
+        } else if (std.mem.startsWith(u8, arg, "--format=")) {
+            // other --format values: ignore (default to HTML)
+        } else if (std.mem.eql(u8, arg, "--format")) {
+            i += 1;
+            if (i < args.len and std.mem.eql(u8, args[i], "json")) {
+                json_output = true;
+            }
         } else if (std.mem.eql(u8, arg, "--no-open")) {
             no_open = true;
         } else if (std.mem.eql(u8, arg, "--output") or std.mem.eql(u8, arg, "-o")) {
@@ -177,6 +184,6 @@ fn printHelp() !void {
 }
 
 test "cmdAnalytics help" {
-    const result = try cmdAnalytics(std.testing.allocator, &.{"--help"});
+    const result = try cmdAnalytics(std.testing.allocator, &.{"--help"}, false);
     try std.testing.expectEqual(@as(u8, 0), result);
 }

@@ -628,7 +628,7 @@ test "34: analytics shows analytics report" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var result = try runZr(allocator, &.{"analytics"}, tmp_path);
+    var result = try runZr(allocator, &.{ "analytics", "--no-open" }, tmp_path);
     defer result.deinit();
     // Should succeed even with no history
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -9542,7 +9542,7 @@ test "353: analytics with --limit 0 handles edge case gracefully" {
     defer run_result.deinit();
 
     // Try analytics with limit 0
-    var result = try runZr(allocator, &.{ "analytics", "--limit", "0" }, tmp_path);
+    var result = try runZr(allocator, &.{ "analytics", "--limit", "0", "--no-open" }, tmp_path);
     defer result.deinit();
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
@@ -19883,7 +19883,7 @@ test "671: analytics with --limit=0 shows all historical data" {
     var run_result = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
     defer run_result.deinit();
 
-    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--limit", "0" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--limit", "0", "--no-open" }, tmp_path);
     defer result.deinit();
 
     // Should show analytics without limit restriction

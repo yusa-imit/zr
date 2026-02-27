@@ -591,7 +591,7 @@ fn run(
         return 0;
     } else if (std.mem.eql(u8, cmd, "analytics")) {
         const analytics_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return analytics_cmd.cmdAnalytics(allocator, analytics_args);
+        return analytics_cmd.cmdAnalytics(allocator, analytics_args, json_output);
     } else if (std.mem.eql(u8, cmd, "context")) {
         const context_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return context_cmd.cmdContext(allocator, context_args);
