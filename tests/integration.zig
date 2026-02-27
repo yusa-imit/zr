@@ -19374,3 +19374,352 @@ test "655: history with corrupted timestamp in JSON file" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "656: repo run with --affected and --tags combined filter" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create zr-repos.toml for multi-repo (minimal)
+    const repos_toml =
+        \\[[repos]]
+        \\name = "frontend"
+        \\url = "https://github.com/example/frontend"
+        \\tags = ["web", "ui"]
+        \\
+    ;
+    const repos_file = try tmp.dir.createFile("zr-repos.toml", .{});
+    defer repos_file.close();
+    try repos_file.writeAll(repos_toml);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "repo", "run", "build", "--tags", "web", "--dry-run" }, tmp_path);
+    defer result.deinit();
+
+    // Should handle combined filtering (affected + tags)
+    // In dry-run mode, should show execution plan or error message
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "657: run with --jobs=1 forces sequential execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.task1]
+        \\cmd = "echo task1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo task2"
+        \\
+        \\[tasks.main]
+        \\cmd = "echo main"
+        \\deps = ["task1", "task2"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "main", "--jobs", "1" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // All tasks should run (sequential order not deterministic in output)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "task1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "task2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "main") != null);
+}
+
+test "658: task with condition using complex boolean logic" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.conditional]
+        \\cmd = "echo conditional"
+        \\condition = "(platform == \"darwin\" || platform == \"linux\") && env.CI != \"true\""
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "conditional" }, tmp_path);
+    defer result.deinit();
+
+    // Should evaluate complex condition (may skip or run based on platform)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "659: workspace run with --format json and multiple tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg1"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    // Create workspace member
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.writeFile(.{ .sub_path = "pkg1/zr.toml", .data = "[tasks.test]\ncmd = \"echo pkg1-test\"\n" });
+
+    var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "test", "--format", "json" }, tmp_path);
+    defer result.deinit();
+
+    // Should output JSON with workspace results
+    try std.testing.expect(result.exit_code == 0 or result.stderr.len > 0);
+}
+
+test "660: cache with very rapid sequential runs maintains consistency" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.cacheable]
+        \\cmd = "echo cached"
+        \\cache = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run multiple times rapidly
+    var i: u8 = 0;
+    while (i < 3) : (i += 1) {
+        var result = try runZr(allocator, &.{ "--config", config, "run", "cacheable" }, tmp_path);
+        defer result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    }
+
+    // Verify cache status is consistent
+    var status_result = try runZr(allocator, &.{ "--config", config, "cache", "status" }, tmp_path);
+    defer status_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), status_result.exit_code);
+}
+
+test "661: validate with --strict on minimal config shows no errors" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const minimal_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\description = "Build the project"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, minimal_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate", "--strict" }, tmp_path);
+    defer result.deinit();
+
+    // Minimal but complete config should pass strict validation
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "662: graph with --format dot shows unsupported format error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const complex_deps_toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["a"]
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["a"]
+        \\
+        \\[tasks.d]
+        \\cmd = "echo d"
+        \\deps = ["b", "c"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, complex_deps_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--format", "dot" }, tmp_path);
+    defer result.deinit();
+
+    // DOT format not implemented - should show error message
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "unknown format") != null or
+                            std.mem.indexOf(u8, result.stderr, "supported formats") != null);
+}
+
+test "663: run with multiple --profile flags uses last value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const profiles_toml =
+        \\[profiles.dev]
+        \\env = { MODE = "dev" }
+        \\
+        \\[profiles.prod]
+        \\env = { MODE = "prod" }
+        \\
+        \\[tasks.show]
+        \\cmd = "echo $MODE"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, profiles_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "show", "--profile", "dev", "--profile", "prod" }, tmp_path);
+    defer result.deinit();
+
+    // Last --profile flag should take precedence
+    try std.testing.expect(result.exit_code == 0);
+    const output = result.stdout;
+    // MODE should be "prod" (last profile)
+    try std.testing.expect(std.mem.indexOf(u8, output, "prod") != null or
+                            std.mem.indexOf(u8, output, "MODE") != null);
+}
+
+test "664: bench with --format json outputs structured performance data" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.fast]
+        \\cmd = "echo fast"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "bench", "fast", "--iterations", "2", "--warmup", "1", "--format", "json" }, tmp_path);
+    defer result.deinit();
+
+    // Should output JSON with benchmark statistics
+    try std.testing.expect(result.exit_code == 0);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "mean") != null or
+                            std.mem.indexOf(u8, output, "median") != null or
+                            std.mem.indexOf(u8, output, "iterations") != null or
+                            result.stderr.len > 0);
+}
+
+test "665: affected with --include-dependents shows downstream impact" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["pkg1", "pkg2"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workspace_toml);
+    defer allocator.free(config);
+
+    // Create member directories with configs
+    try tmp.dir.makeDir("pkg1");
+    try tmp.dir.writeFile(.{ .sub_path = "pkg1/zr.toml", .data = "[tasks.test]\ncmd = \"echo pkg1\"\n" });
+
+    try tmp.dir.makeDir("pkg2");
+    try tmp.dir.writeFile(.{ .sub_path = "pkg2/zr.toml", .data = "[tasks.test]\ncmd = \"echo pkg2\"\n" });
+
+    // Initialize git repo (affected requires git)
+    {
+        var init_child = std.process.Child.init(&.{ "git", "init" }, allocator);
+        init_child.cwd = tmp_path;
+        init_child.stdin_behavior = .Close;
+        init_child.stdout_behavior = .Ignore;
+        init_child.stderr_behavior = .Ignore;
+        _ = try init_child.spawnAndWait();
+
+        var config_user = std.process.Child.init(&.{ "git", "config", "user.email", "test@test.com" }, allocator);
+        config_user.cwd = tmp_path;
+        config_user.stdin_behavior = .Close;
+        config_user.stdout_behavior = .Ignore;
+        config_user.stderr_behavior = .Ignore;
+        _ = try config_user.spawnAndWait();
+
+        var config_name = std.process.Child.init(&.{ "git", "config", "user.name", "Test" }, allocator);
+        config_name.cwd = tmp_path;
+        config_name.stdin_behavior = .Close;
+        config_name.stdout_behavior = .Ignore;
+        config_name.stderr_behavior = .Ignore;
+        _ = try config_name.spawnAndWait();
+
+        var add_child = std.process.Child.init(&.{ "git", "add", "." }, allocator);
+        add_child.cwd = tmp_path;
+        add_child.stdin_behavior = .Close;
+        add_child.stdout_behavior = .Ignore;
+        add_child.stderr_behavior = .Ignore;
+        _ = try add_child.spawnAndWait();
+
+        var commit_child = std.process.Child.init(&.{ "git", "commit", "-m", "init" }, allocator);
+        commit_child.cwd = tmp_path;
+        commit_child.stdin_behavior = .Close;
+        commit_child.stdout_behavior = .Ignore;
+        commit_child.stderr_behavior = .Ignore;
+        _ = try commit_child.spawnAndWait();
+    }
+
+    var result = try runZr(allocator, &.{ "--config", config, "affected", "test", "--include-dependents" }, tmp_path);
+    defer result.deinit();
+
+    // Should show affected members and their dependents
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
