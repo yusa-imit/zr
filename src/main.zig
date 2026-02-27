@@ -57,6 +57,7 @@ const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
 const ai_cmd = @import("cli/ai.zig");
 const mcp_server = @import("mcp/server.zig");
+const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
 const schedule_cmd = @import("cli/schedule.zig");
@@ -195,6 +196,12 @@ comptime {
     _ = estimate_cmd;
     _ = show_cmd;
     _ = @import("util/levenshtein.zig");
+    _ = ai_cmd;
+    _ = @import("lsp/position.zig");
+    _ = @import("lsp/document.zig");
+    _ = @import("lsp/diagnostics.zig");
+    _ = @import("lsp/handlers.zig");
+    _ = @import("lsp/server.zig");
 }
 
 pub fn main() !void {
@@ -424,6 +431,7 @@ fn run(
         "setup",      "env",        "export",     "affected",
         "clean",      "upgrade",    "alias",      "estimate",
         "show",       "schedule",   "ai",         "mcp",
+        "lsp",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -655,6 +663,9 @@ fn run(
             try color.printError(ew, effective_color, "mcp: unknown subcommand '{s}'\n\n  Hint: zr mcp serve\n", .{subcmd});
             return 1;
         }
+    } else if (std.mem.eql(u8, cmd, "lsp")) {
+        // LSP server: zr lsp
+        return lsp_server.serve(allocator);
     } else if (std.mem.eql(u8, cmd, "conformance")) {
         const conformance_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return conformance_cmd.cmdConformance(allocator, conformance_args);
