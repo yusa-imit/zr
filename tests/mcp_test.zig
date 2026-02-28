@@ -37,7 +37,8 @@ test "mcp serve: responds to initialize request" {
         \\cmd = "echo test"
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send an initialize request via stdin
     const initialize_request =
@@ -73,7 +74,8 @@ test "mcp serve: lists available tools" {
         \\cmd = "echo testing"
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send initialize + tools/list requests
     const requests =
@@ -104,7 +106,8 @@ test "mcp serve: run_task tool executes task" {
         \\cmd = "echo hello"
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send initialize + tools/call request
     const requests =

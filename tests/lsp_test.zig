@@ -15,7 +15,8 @@ test "lsp: responds to initialize request" {
         \\cmd = "echo test"
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send LSP initialize request with Content-Length header
     const initialize_json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"rootUri\":null,\"capabilities\":{}}}";
@@ -48,7 +49,8 @@ test "lsp: provides diagnostics for invalid config" {
         \\deps = ["nonexistent"]
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send initialize + didOpen
     const initialize_json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"rootUri\":null,\"capabilities\":{}}}";
@@ -113,7 +115,8 @@ test "lsp: provides completion for task names" {
         \\deps = [""]
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send initialize + didOpen + completion request
     const initialize_json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"rootUri\":null,\"capabilities\":{\"textDocument\":{\"completion\":{}}}}}";
@@ -186,7 +189,8 @@ test "lsp: handles shutdown gracefully" {
         \\cmd = "echo test"
         \\
     ;
-    _ = try writeTmpConfig(allocator, tmp.dir, config_content);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
 
     // Send initialize + shutdown + exit
     const initialize_json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"rootUri\":null,\"capabilities\":{}}}";
