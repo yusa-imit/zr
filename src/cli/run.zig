@@ -7,6 +7,7 @@ const history = @import("../history/store.zig");
 const watcher = @import("../watch/watcher.zig");
 const progress = @import("../output/progress.zig");
 const tui_runner = @import("tui_runner.zig");
+const levenshtein = @import("../util/levenshtein.zig");
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,
@@ -26,10 +27,38 @@ pub fn cmdRun(
     defer config.deinit();
 
     if (config.tasks.get(task_name) == null) {
+        // Build list of available task names for suggestions
+        var task_names_list = std.ArrayList([]const u8){};
+        defer task_names_list.deinit(allocator);
+        var task_iter = config.tasks.iterator();
+        while (task_iter.next()) |entry| {
+            try task_names_list.append(allocator, entry.key_ptr.*);
+        }
+
+        // Find similar task names using Levenshtein distance
+        const suggestions = try levenshtein.findClosestMatches(
+            allocator,
+            task_name,
+            task_names_list.items,
+            3, // max distance
+            3, // max suggestions
+        );
+        defer allocator.free(suggestions);
+
         try color.printError(err_writer, use_color,
-            "run: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
+            "run: Task '{s}' not found\n",
             .{task_name},
         );
+
+        if (suggestions.len > 0) {
+            try err_writer.print("\n  Did you mean?\n", .{});
+            for (suggestions) |suggestion| {
+                try err_writer.print("    {s}\n", .{suggestion.name});
+            }
+            try err_writer.print("\n", .{});
+        } else {
+            try err_writer.print("\n  Hint: Run 'zr list' to see available tasks\n", .{});
+        }
         return 1;
     }
 
