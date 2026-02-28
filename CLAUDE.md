@@ -127,6 +127,25 @@ Leader (orchestrator)
 - 사이클당 하나의 집중 작업만 수행
 - 이전 세션의 미완료 작업이 있으면 먼저 완료
 
+**v1.0.0 릴리스 프로토콜**:
+- v1.0.0 릴리스는 sailor#3 (Windows cross-compile 버그) 해결 후 수행한다
+- 세션 시작 시 `gh issue view 3 --repo yusa-imit/sailor --json state -q '.state'`로 이슈 상태를 확인한다
+- 이슈가 `CLOSED`이면:
+  1. sailor 의존성 업데이트: `zig fetch --save git+https://github.com/yusa-imit/sailor` (latest)
+  2. Windows cross-compile 검증: `zig build -Dtarget=x86_64-windows-msvc -Doptimize=ReleaseSafe`
+  3. 전체 테스트 통과 확인
+  4. `git tag v1.0.0 && git push origin v1.0.0`
+  5. GitHub release 생성 (RELEASE_NOTES_v1.0.0.md 사용)
+  6. 메모리 업데이트
+- 이슈가 `OPEN`이면: v1.0.0 릴리스 스킵, 프로젝트 폴리싱 작업 수행
+
+**폴리싱 작업 (v1.0.0 대기 중)**:
+- README 개선: 오타, 불명확한 설명, 누락된 기능 문서화
+- 코드 품질: 미사용 코드 제거, 일관성 개선, 에러 메시지 개선
+- 테스트 커버리지: 미커버된 엣지 케이스 추가
+- 문서: docs/guides/ 보강, 예제 추가
+- 성능: 불필요한 할당 제거, 핫 패스 최적화
+
 **세션 요약 템플릿**:
 
     ## Session Summary
