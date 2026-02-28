@@ -14,7 +14,7 @@ pub const BunProvider: LanguageProvider = .{
     .getBinaryPath = getBinaryPath,
     .getEnvironmentVars = null,
     .detectProject = detectProject,
-    .extractTasks = null,
+    .extractTasks = extractTasks,
 };
 
 fn resolveDownloadUrl(allocator: std.mem.Allocator, version: ToolVersion, platform: PlatformInfo) !DownloadSpec {
@@ -122,4 +122,52 @@ fn detectProject(allocator: std.mem.Allocator, dir_path: []const u8) !ProjectInf
         .confidence = @min(confidence, 100),
         .files_found = try files.toOwnedSlice(allocator),
     };
+}
+
+/// Extract npm scripts from package.json (like Node, but using bun commands)
+fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageProvider.TaskSuggestion {
+    var dir = std.fs.openDirAbsolute(dir_path, .{}) catch return &.{};
+    defer dir.close();
+
+    const file = dir.openFile("package.json", .{}) catch return &.{};
+    defer file.close();
+
+    const content = try file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+    defer allocator.free(content);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, content, .{});
+    defer parsed.deinit();
+
+    const root = parsed.value;
+    if (root != .object) return &.{};
+
+    const scripts_obj = root.object.get("scripts") orelse return &.{};
+    if (scripts_obj != .object) return &.{};
+
+    var tasks = std.ArrayList(LanguageProvider.TaskSuggestion){};
+    errdefer {
+        for (tasks.items) |task| {
+            allocator.free(task.name);
+            allocator.free(task.command);
+            allocator.free(task.description);
+        }
+        tasks.deinit(allocator);
+    }
+
+    var iter = scripts_obj.object.iterator();
+    while (iter.next()) |entry| {
+        if (entry.value_ptr.* != .string) continue;
+
+        const name = try allocator.dupe(u8, entry.key_ptr.*);
+        const cmd = try std.fmt.allocPrint(allocator, "bun run {s}", .{entry.key_ptr.*});
+        const desc = try std.fmt.allocPrint(allocator, "Run bun script: {s}", .{entry.value_ptr.string});
+
+        try tasks.append(allocator, .{
+            .name = name,
+            .command = cmd,
+            .description = desc,
+        });
+    }
+
+    return try tasks.toOwnedSlice(allocator);
 }

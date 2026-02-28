@@ -14,7 +14,7 @@ pub const RustProvider: LanguageProvider = .{
     .getBinaryPath = getBinaryPath,
     .getEnvironmentVars = null,
     .detectProject = detectProject,
-    .extractTasks = null,
+    .extractTasks = extractTasks,
 };
 
 fn resolveDownloadUrl(allocator: std.mem.Allocator, version: ToolVersion, platform: PlatformInfo) !DownloadSpec {
@@ -95,4 +95,88 @@ fn detectProject(allocator: std.mem.Allocator, dir_path: []const u8) !ProjectInf
         .confidence = @min(confidence, 100),
         .files_found = try files.toOwnedSlice(allocator),
     };
+}
+
+/// Extract common Rust/Cargo tasks
+fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageProvider.TaskSuggestion {
+    _ = dir_path;
+
+    var tasks = std.ArrayList(LanguageProvider.TaskSuggestion){};
+    errdefer {
+        for (tasks.items) |task| {
+            allocator.free(task.name);
+            allocator.free(task.command);
+            allocator.free(task.description);
+        }
+        tasks.deinit(allocator);
+    }
+
+    // Common Cargo tasks
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "build"),
+        .command = try allocator.dupe(u8, "cargo build"),
+        .description = try allocator.dupe(u8, "Build the project"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "build-release"),
+        .command = try allocator.dupe(u8, "cargo build --release"),
+        .description = try allocator.dupe(u8, "Build with optimizations"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "test"),
+        .command = try allocator.dupe(u8, "cargo test"),
+        .description = try allocator.dupe(u8, "Run all tests"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "test-verbose"),
+        .command = try allocator.dupe(u8, "cargo test -- --nocapture"),
+        .description = try allocator.dupe(u8, "Run tests with output"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "check"),
+        .command = try allocator.dupe(u8, "cargo check"),
+        .description = try allocator.dupe(u8, "Check for errors without building"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "clippy"),
+        .command = try allocator.dupe(u8, "cargo clippy"),
+        .description = try allocator.dupe(u8, "Run Clippy linter"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "fmt"),
+        .command = try allocator.dupe(u8, "cargo fmt"),
+        .description = try allocator.dupe(u8, "Format code with rustfmt"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "fmt-check"),
+        .command = try allocator.dupe(u8, "cargo fmt --check"),
+        .description = try allocator.dupe(u8, "Check formatting without changing files"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "doc"),
+        .command = try allocator.dupe(u8, "cargo doc --no-deps"),
+        .description = try allocator.dupe(u8, "Build documentation"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "run"),
+        .command = try allocator.dupe(u8, "cargo run"),
+        .description = try allocator.dupe(u8, "Build and run the project"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "clean"),
+        .command = try allocator.dupe(u8, "cargo clean"),
+        .description = try allocator.dupe(u8, "Remove build artifacts"),
+    });
+
+    return try tasks.toOwnedSlice(allocator);
 }

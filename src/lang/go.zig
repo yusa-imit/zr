@@ -14,7 +14,7 @@ pub const GoProvider: LanguageProvider = .{
     .getBinaryPath = getBinaryPath,
     .getEnvironmentVars = getEnvironmentVars,
     .detectProject = detectProject,
-    .extractTasks = null,
+    .extractTasks = extractTasks,
 };
 
 fn resolveDownloadUrl(allocator: std.mem.Allocator, version: ToolVersion, platform: PlatformInfo) !DownloadSpec {
@@ -112,4 +112,114 @@ fn detectProject(allocator: std.mem.Allocator, dir_path: []const u8) !ProjectInf
         .confidence = @min(confidence, 100),
         .files_found = try files.toOwnedSlice(allocator),
     };
+}
+
+/// Extract common Go tasks (build, test, run, etc.)
+fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageProvider.TaskSuggestion {
+    var dir = std.fs.openDirAbsolute(dir_path, .{}) catch return &.{};
+    defer dir.close();
+
+    var tasks = std.ArrayList(LanguageProvider.TaskSuggestion){};
+    errdefer {
+        for (tasks.items) |task| {
+            allocator.free(task.name);
+            allocator.free(task.command);
+            allocator.free(task.description);
+        }
+        tasks.deinit(allocator);
+    }
+
+    // Check if go.mod exists to determine module name
+    var module_name: ?[]const u8 = null;
+    defer if (module_name) |name| allocator.free(name);
+
+    if (dir.openFile("go.mod", .{})) |file| {
+        defer file.close();
+        if (file.readToEndAlloc(allocator, 1024 * 1024)) |content| {
+            defer allocator.free(content);
+            module_name = try extractModuleName(allocator, content);
+        } else |_| {}
+    } else |_| {}
+
+    // Common Go tasks
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "build"),
+        .command = try allocator.dupe(u8, "go build ./..."),
+        .description = try allocator.dupe(u8, "Build all Go packages"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "test"),
+        .command = try allocator.dupe(u8, "go test ./..."),
+        .description = try allocator.dupe(u8, "Run all tests"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "test-verbose"),
+        .command = try allocator.dupe(u8, "go test -v ./..."),
+        .description = try allocator.dupe(u8, "Run tests with verbose output"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "test-coverage"),
+        .command = try allocator.dupe(u8, "go test -cover ./..."),
+        .description = try allocator.dupe(u8, "Run tests with coverage"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "vet"),
+        .command = try allocator.dupe(u8, "go vet ./..."),
+        .description = try allocator.dupe(u8, "Run go vet for suspicious code"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "fmt"),
+        .command = try allocator.dupe(u8, "go fmt ./..."),
+        .description = try allocator.dupe(u8, "Format all Go code"),
+    });
+
+    try tasks.append(allocator, .{
+        .name = try allocator.dupe(u8, "mod-tidy"),
+        .command = try allocator.dupe(u8, "go mod tidy"),
+        .description = try allocator.dupe(u8, "Tidy go.mod dependencies"),
+    });
+
+    // If there's a main package, add run task
+    if (try hasMainPackage(dir)) {
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "run"),
+            .command = try allocator.dupe(u8, "go run ."),
+            .description = try allocator.dupe(u8, "Run main package"),
+        });
+    }
+
+    return try tasks.toOwnedSlice(allocator);
+}
+
+/// Extract module name from go.mod content
+fn extractModuleName(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
+        if (std.mem.startsWith(u8, trimmed, "module ")) {
+            const module_part = std.mem.trim(u8, trimmed[7..], &std.ascii.whitespace);
+            if (module_part.len > 0) {
+                return try allocator.dupe(u8, module_part);
+            }
+        }
+    }
+    return null;
+}
+
+/// Check if directory contains a main package (main.go with package main)
+fn hasMainPackage(dir: std.fs.Dir) !bool {
+    const file = dir.openFile("main.go", .{}) catch return false;
+    defer file.close();
+
+    // Read first 256 bytes to check for "package main"
+    var buf: [256]u8 = undefined;
+    const bytes_read = try file.readAll(&buf);
+    const content = buf[0..bytes_read];
+
+    return std.mem.indexOf(u8, content, "package main") != null;
 }
