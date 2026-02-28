@@ -401,6 +401,14 @@ gh issue create --repo yusa-imit/sailor \
 - 동일한 이슈가 이미 열려있는지 먼저 확인: `gh issue list --repo yusa-imit/sailor --state open --search "<keyword>"`
 - 이슈 발행 후 현재 작업으로 복귀 (sailor 수정을 직접 하지 않음)
 
+**로컬 워크어라운드 금지 (CRITICAL)**:
+- sailor에 버그가 있으면 **절대로 로컬에서 자체 구현으로 우회하지 않는다**
+- 반드시 sailor repo에 이슈를 발행하고, sailor 에이전트가 수정할 때까지 기다린다
+- sailor 에이전트(cron job)가 `from:*` 라벨 이슈를 최우선으로 처리한다
+- 수정이 릴리스되면 `zig fetch --save`로 sailor 의존성을 업데이트한다
+- 해당 기능이 아직 안 되면 그 기능을 사용하는 코드를 작성하지 않고 다른 작업으로 넘어간다
+- 예시: sailor.tui의 Style.apply()가 Zig 0.15.2에서 컴파일 안 됨 → 이슈 발행 (#5) → 수정될 때까지 Style.apply()를 사용하는 코드 작성하지 않음
+
 ### v0.1.0 — arg, color (status: DONE)
 
 - [x] `build.zig.zon`에 sailor v0.4.0 의존성 추가 (`f09ea11`)
