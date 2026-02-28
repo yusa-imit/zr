@@ -30,10 +30,13 @@ pub const Server = struct {
         const stdin = std.fs.File.stdin();
         const stdout = std.fs.File.stdout();
 
+        // Internal buffer for reading - keeps data available even when pipe closes
+        var internal_buf: [8192]u8 = undefined;
+        var buf_start: usize = 0;
+        var buf_end: usize = 0;
+
         var header_buf = std.ArrayList(u8){};
         defer header_buf.deinit(self.allocator);
-
-        var read_buf: [1]u8 = undefined;
 
         while (!self.shutdown_requested) {
             // Read Content-Length header
@@ -45,13 +48,20 @@ pub const Server = struct {
             var empty_line_count: u8 = 0;
 
             while (true) {
-                const n = stdin.read(&read_buf) catch |err| {
-                    if (err == error.EndOfStream) return;
-                    return err;
-                };
-                if (n == 0) return; // EOF
+                // If buffer is empty, refill it
+                if (buf_start == buf_end) {
+                    const n = stdin.read(&internal_buf) catch |err| {
+                        if (err == error.EndOfStream and buf_start == buf_end) return;
+                        return err;
+                    };
+                    if (n == 0 and buf_start == buf_end) return; // EOF with no buffered data
+                    buf_start = 0;
+                    buf_end = n;
+                }
 
-                const ch = read_buf[0];
+                // Get next byte from buffer
+                const ch = internal_buf[buf_start];
+                buf_start += 1;
                 try header_buf.append(self.allocator, ch);
 
                 // Detect \r\n\r\n (end of headers)
@@ -84,9 +94,21 @@ pub const Server = struct {
 
             var bytes_read: usize = 0;
             while (bytes_read < len) {
-                const n = try stdin.read(json_buf[bytes_read..]);
-                if (n == 0) return; // EOF
-                bytes_read += n;
+                // If buffer is empty, refill it
+                if (buf_start == buf_end) {
+                    const n = try stdin.read(&internal_buf);
+                    if (n == 0) return; // EOF
+                    buf_start = 0;
+                    buf_end = n;
+                }
+
+                // Copy from buffer
+                const available = buf_end - buf_start;
+                const needed = len - bytes_read;
+                const to_copy = @min(available, needed);
+                @memcpy(json_buf[bytes_read..][0..to_copy], internal_buf[buf_start..][0..to_copy]);
+                buf_start += to_copy;
+                bytes_read += to_copy;
             }
 
             // Parse and handle message

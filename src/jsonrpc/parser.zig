@@ -47,7 +47,7 @@ pub fn parseMessage(allocator: std.mem.Allocator, json_text: []const u8) !Messag
         if (has_result) {
             // Success response - store result as JSON string
             const result_value = obj.get("result").?;
-            const result = try std.fmt.allocPrint(allocator, "{any}", .{std.json.fmt(result_value, .{})});
+            const result = try std.fmt.allocPrint(allocator, "{f}", .{std.json.fmt(result_value, .{})});
 
             return Message{
                 .response = Response{
@@ -76,7 +76,7 @@ pub fn parseMessage(allocator: std.mem.Allocator, json_text: []const u8) !Messag
 
         // Store params as JSON string
         const params = if (obj.get("params")) |params_value| blk: {
-            break :blk try std.fmt.allocPrint(allocator, "{any}", .{std.json.fmt(params_value, .{})});
+            break :blk try std.fmt.allocPrint(allocator, "{f}", .{std.json.fmt(params_value, .{})});
         } else null;
         errdefer if (params) |par| allocator.free(par);
 
