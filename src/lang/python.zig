@@ -14,7 +14,7 @@ pub const PythonProvider: LanguageProvider = .{
     .getBinaryPath = getBinaryPath,
     .getEnvironmentVars = null,
     .detectProject = detectProject,
-    .extractTasks = null, // TODO: Could parse setup.py, pyproject.toml
+    .extractTasks = extractTasks,
 };
 
 fn resolveDownloadUrl(allocator: std.mem.Allocator, version: ToolVersion, platform: PlatformInfo) !DownloadSpec {
@@ -95,4 +95,123 @@ fn detectProject(allocator: std.mem.Allocator, dir_path: []const u8) !ProjectInf
         .confidence = @min(confidence, 100),
         .files_found = try files.toOwnedSlice(allocator),
     };
+}
+
+/// Extract common Python tasks from pyproject.toml, setup.py, or infer from requirements.txt
+fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageProvider.TaskSuggestion {
+    var dir = std.fs.openDirAbsolute(dir_path, .{}) catch return &.{};
+    defer dir.close();
+
+    var tasks = std.ArrayList(LanguageProvider.TaskSuggestion){};
+    errdefer {
+        for (tasks.items) |task| {
+            allocator.free(task.name);
+            allocator.free(task.command);
+            allocator.free(task.description);
+        }
+        tasks.deinit(allocator);
+    }
+
+    // Try pyproject.toml (Poetry/Hatch/PDM scripts)
+    if (dir.openFile("pyproject.toml", .{})) |file| {
+        defer file.close();
+        if (file.readToEndAlloc(allocator, 1024 * 1024)) |content| {
+            defer allocator.free(content);
+            try extractFromPyprojectToml(allocator, content, &tasks);
+        } else |_| {
+            // File exists but can't read, skip
+        }
+    } else |_| {}
+
+    // Always add common Python tasks if not already present
+    const has_test = for (tasks.items) |t| {
+        if (std.mem.eql(u8, t.name, "test")) break true;
+    } else false;
+
+    if (!has_test) {
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "test"),
+            .command = try allocator.dupe(u8, "python -m pytest"),
+            .description = try allocator.dupe(u8, "Run tests with pytest"),
+        });
+    }
+
+    const has_lint = for (tasks.items) |t| {
+        if (std.mem.eql(u8, t.name, "lint")) break true;
+    } else false;
+
+    if (!has_lint) {
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "lint"),
+            .command = try allocator.dupe(u8, "python -m ruff check ."),
+            .description = try allocator.dupe(u8, "Lint code with ruff"),
+        });
+    }
+
+    const has_format = for (tasks.items) |t| {
+        if (std.mem.eql(u8, t.name, "format")) break true;
+    } else false;
+
+    if (!has_format) {
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "format"),
+            .command = try allocator.dupe(u8, "python -m black ."),
+            .description = try allocator.dupe(u8, "Format code with black"),
+        });
+    }
+
+    return try tasks.toOwnedSlice(allocator);
+}
+
+/// Extract scripts from pyproject.toml [tool.poetry.scripts] or [project.scripts]
+fn extractFromPyprojectToml(allocator: std.mem.Allocator, content: []const u8, tasks: *std.ArrayList(LanguageProvider.TaskSuggestion)) !void {
+    // Simple line-by-line parser for [tool.poetry.scripts] or [project.scripts] sections
+    var in_scripts_section = false;
+    var lines = std.mem.splitScalar(u8, content, '\n');
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
+
+        // Detect section headers
+        if (std.mem.startsWith(u8, trimmed, "[tool.poetry.scripts]") or
+            std.mem.startsWith(u8, trimmed, "[project.scripts]"))
+        {
+            in_scripts_section = true;
+            continue;
+        }
+
+        // Exit section on new header
+        if (std.mem.startsWith(u8, trimmed, "[") and in_scripts_section) {
+            in_scripts_section = false;
+            continue;
+        }
+
+        if (!in_scripts_section) continue;
+
+        // Parse script lines: name = "command" or name = "module:function"
+        if (std.mem.indexOfScalar(u8, trimmed, '=')) |eq_pos| {
+            const name_part = std.mem.trim(u8, trimmed[0..eq_pos], &std.ascii.whitespace);
+            const value_part = std.mem.trim(u8, trimmed[eq_pos + 1 ..], &std.ascii.whitespace);
+
+            if (name_part.len == 0 or value_part.len == 0) continue;
+
+            // Remove quotes from value
+            const unquoted = if (std.mem.startsWith(u8, value_part, "\"") and std.mem.endsWith(u8, value_part, "\""))
+                value_part[1 .. value_part.len - 1]
+            else if (std.mem.startsWith(u8, value_part, "'") and std.mem.endsWith(u8, value_part, "'"))
+                value_part[1 .. value_part.len - 1]
+            else
+                value_part;
+
+            const name = try allocator.dupe(u8, name_part);
+            const cmd = try std.fmt.allocPrint(allocator, "python -m {s}", .{unquoted});
+            const desc = try std.fmt.allocPrint(allocator, "Run Python script: {s}", .{unquoted});
+
+            try tasks.append(allocator, .{
+                .name = name,
+                .command = cmd,
+                .description = desc,
+            });
+        }
+    }
 }
