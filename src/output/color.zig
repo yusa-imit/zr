@@ -1,9 +1,16 @@
 /// ANSI color/style codes for terminal output.
 /// Automatically disabled when stdout is not a TTY (e.g., pipes, CI).
+///
+/// Backend: sailor.color (https://github.com/yusa-imit/sailor)
+/// This module wraps sailor.color to maintain the existing public API.
 const std = @import("std");
 const builtin = @import("builtin");
+const sailor = @import("sailor");
+const sailor_color = sailor.color;
 
-/// ANSI escape codes
+/// ANSI escape codes — kept as compile-time string constants for
+/// backward compatibility with inline concatenation patterns used
+/// throughout the codebase. These match the codes sailor.color would emit.
 pub const Code = struct {
     pub const reset = "\x1b[0m";
     pub const bold = "\x1b[1m";
@@ -25,6 +32,36 @@ pub const Code = struct {
     pub const bright_white = "\x1b[97m";
 };
 
+// Sailor-based style definitions for semantic print helpers.
+const styles = struct {
+    const success = sailor_color.Style{
+        .fg = .{ .basic = .bright_green },
+    };
+    const err = sailor_color.Style{
+        .fg = .{ .basic = .bright_red },
+    };
+    const info = sailor_color.Style{
+        .fg = .{ .basic = .bright_cyan },
+    };
+    const warn = sailor_color.Style{
+        .fg = .{ .basic = .bright_yellow },
+    };
+    const bold_style = sailor_color.Style{
+        .attrs = .{ .bold = true },
+    };
+    const dim_style = sailor_color.Style{
+        .attrs = .{ .dim = true },
+    };
+    const header = sailor_color.Style{
+        .fg = .{ .basic = .bright_white },
+        .attrs = .{ .bold = true },
+    };
+    const task = sailor_color.Style{
+        .fg = .{ .basic = .blue },
+        .attrs = .{ .bold = true },
+    };
+};
+
 /// Enables Windows Virtual Terminal Processing for ANSI color support.
 /// On Windows, this must be called before using ANSI codes.
 /// Returns true if ANSI codes are supported (always true on non-Windows).
@@ -40,17 +77,13 @@ fn enableWindowsAnsiSupport(file: std.fs.File) bool {
     // Get current console mode
     var mode: windows.DWORD = 0;
     if (windows.kernel32.GetConsoleMode(handle, &mode) == 0) {
-        // Not a console or failed to get mode
         return false;
     }
 
-    // ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
     const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
 
-    // Enable Virtual Terminal Processing
     mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     if (windows.kernel32.SetConsoleMode(handle, mode) == 0) {
-        // Failed to set mode
         return false;
     }
 
@@ -61,11 +94,12 @@ fn enableWindowsAnsiSupport(file: std.fs.File) bool {
 /// and supports ANSI color codes.
 /// On Windows, this also enables Virtual Terminal Processing.
 pub fn isTty(file: std.fs.File) bool {
-    if (!file.isTty()) {
+    // Use sailor.term for cross-platform TTY detection
+    if (!sailor.term.isatty(file.handle)) {
         return false;
     }
 
-    // On Windows, check if we can enable ANSI support
+    // On Windows, enable VT processing for ANSI support
     if (comptime builtin.os.tag == .windows) {
         return enableWindowsAnsiSupport(file);
     }
@@ -77,39 +111,43 @@ pub fn isTty(file: std.fs.File) bool {
 
 pub fn printSuccess(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.bright_green ++ "✓" ++ Code.reset ++ " " ++ fmt, args);
+        try sailor_color.printStyled(w, styles.success, "\xe2\x9c\x93", .{});
+        try w.print(" " ++ fmt, args);
     } else {
-        try w.print("✓ " ++ fmt, args);
+        try w.print("\xe2\x9c\x93 " ++ fmt, args);
     }
 }
 
 pub fn printError(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.bright_red ++ "✗" ++ Code.reset ++ " " ++ fmt, args);
+        try sailor_color.printStyled(w, styles.err, "\xe2\x9c\x97", .{});
+        try w.print(" " ++ fmt, args);
     } else {
-        try w.print("✗ " ++ fmt, args);
+        try w.print("\xe2\x9c\x97 " ++ fmt, args);
     }
 }
 
 pub fn printInfo(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.bright_cyan ++ "→" ++ Code.reset ++ " " ++ fmt, args);
+        try sailor_color.printStyled(w, styles.info, "\xe2\x86\x92", .{});
+        try w.print(" " ++ fmt, args);
     } else {
-        try w.print("→ " ++ fmt, args);
+        try w.print("\xe2\x86\x92 " ++ fmt, args);
     }
 }
 
 pub fn printWarning(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.bright_yellow ++ "⚠" ++ Code.reset ++ " " ++ fmt, args);
+        try sailor_color.printStyled(w, styles.warn, "\xe2\x9a\xa0", .{});
+        try w.print(" " ++ fmt, args);
     } else {
-        try w.print("⚠ " ++ fmt, args);
+        try w.print("\xe2\x9a\xa0 " ++ fmt, args);
     }
 }
 
 pub fn printBold(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.bold ++ fmt ++ Code.reset, args);
+        try sailor_color.printStyled(w, styles.bold_style, fmt, args);
     } else {
         try w.print(fmt, args);
     }
@@ -117,7 +155,7 @@ pub fn printBold(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, a
 
 pub fn printDim(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.dim ++ fmt ++ Code.reset, args);
+        try sailor_color.printStyled(w, styles.dim_style, fmt, args);
     } else {
         try w.print(fmt, args);
     }
@@ -125,7 +163,8 @@ pub fn printDim(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, ar
 
 pub fn printHeader(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
-        try w.print(Code.bold ++ Code.bright_white ++ fmt ++ Code.reset ++ "\n", args);
+        try sailor_color.printStyled(w, styles.header, fmt, args);
+        try w.writeAll("\n");
     } else {
         try w.print(fmt ++ "\n", args);
     }
@@ -133,7 +172,8 @@ pub fn printHeader(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8,
 
 pub fn taskLabel(w: *std.Io.Writer, use_color: bool, name: []const u8) !void {
     if (use_color) {
-        try w.print(Code.bold ++ Code.blue ++ "[{s}]" ++ Code.reset ++ " ", .{name});
+        try sailor_color.printStyled(w, styles.task, "[{s}]", .{name});
+        try w.writeAll(" ");
     } else {
         try w.print("[{s}] ", .{name});
     }
@@ -154,4 +194,16 @@ test "color functions compile and exist" {
     _ = &printDim;
     _ = &printHeader;
     _ = &taskLabel;
+}
+
+test "sailor style definitions are valid" {
+    // Verify sailor-based styles have expected properties
+    try std.testing.expect(styles.success.fg == .basic);
+    try std.testing.expect(styles.err.fg == .basic);
+    try std.testing.expect(styles.info.fg == .basic);
+    try std.testing.expect(styles.warn.fg == .basic);
+    try std.testing.expect(styles.bold_style.attrs.bold);
+    try std.testing.expect(styles.dim_style.attrs.dim);
+    try std.testing.expect(styles.header.attrs.bold);
+    try std.testing.expect(styles.task.attrs.bold);
 }
