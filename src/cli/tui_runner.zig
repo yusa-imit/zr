@@ -1,11 +1,13 @@
 /// TUI live execution — real-time log streaming for running tasks.
 ///
-/// When tasks execute, this module captures their stdout/stderr and displays
-/// them in an interactive TUI with status indicators, progress tracking,
-/// and scrollable log views.
+/// Uses sailor.tui widgets (Buffer, Block, List, Paragraph, layout.split)
+/// for structured rendering. Status icons and log display are composed
+/// into a cell buffer and flushed to the writer with color.Code ANSI codes.
 const std = @import("std");
 const builtin = @import("builtin");
 const color = @import("../output/color.zig");
+const sailor = @import("sailor");
+const stui = sailor.tui;
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -60,7 +62,6 @@ pub const TaskState = struct {
         errdefer self.allocator.free(owned);
 
         if (self.logs.items.len >= MAX_LOG_LINES) {
-            // Discard oldest line.
             const old = self.logs.orderedRemove(0);
             self.allocator.free(old.text);
         }
@@ -146,108 +147,177 @@ pub const TuiRunner = struct {
         }
     }
 
-    /// Render the TUI screen to the writer.
+    /// Build a display label for a task including status icon and duration.
+    fn buildTaskLabel(allocator: std.mem.Allocator, task: *const TaskState) ![]const u8 {
+        const status_str: []const u8 = switch (task.status) {
+            .pending => "\xe2\x8f\xb8 ",
+            .running => "\xe2\x96\xb6 ",
+            .success => "\xe2\x9c\x93 ",
+            .failed => "\xe2\x9c\x97 ",
+            .skipped => "\xe2\x8a\x98 ",
+        };
+
+        if (task.status == .success or task.status == .failed) {
+            return try std.fmt.allocPrint(allocator, "{s}{s} ({d}ms)", .{ status_str, task.name, task.duration_ms });
+        }
+        return try std.fmt.allocPrint(allocator, "{s}{s}", .{ status_str, task.name });
+    }
+
+    /// Render the TUI screen to the writer using sailor.tui widgets.
     pub fn render(self: *TuiRunner, w: anytype, use_color: bool, terminal_height: usize) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Clear screen and move to top-left.
-        try w.writeAll("\x1b[2J\x1b[H");
+        const screen_width: u16 = 80;
+        const screen_height: u16 = @intCast(@min(terminal_height, 50));
 
-        // Header
-        if (use_color) try w.writeAll(color.Code.bold);
-        try w.writeAll("zr Live Execution");
-        if (use_color) try w.writeAll(color.Code.reset);
-        try w.writeAll("  [");
-        if (use_color) try w.writeAll(color.Code.bright_cyan);
-        try w.writeAll("\u{2191}\u{2193}");
-        if (use_color) try w.writeAll(color.Code.reset);
-        try w.writeAll("] Switch Task  [");
-        if (use_color) try w.writeAll(color.Code.bright_cyan);
-        try w.writeAll("PgUp/PgDn");
-        if (use_color) try w.writeAll(color.Code.reset);
-        try w.writeAll("] Scroll  [");
-        if (use_color) try w.writeAll(color.Code.bright_cyan);
-        try w.writeAll("q");
-        if (use_color) try w.writeAll(color.Code.reset);
-        try w.writeAll("] Quit\n\n");
+        var buf = try stui.Buffer.init(self.allocator, screen_width, screen_height);
+        defer buf.deinit();
 
-        // Task list (left column)
-        try w.writeAll("Tasks:\n");
-        for (self.tasks.items, 0..) |*task, i| {
-            const is_selected = (i == self.selected_task);
-            const status_str = switch (task.status) {
-                .pending => "⏸ ",
-                .running => "▶ ",
-                .success => "✓ ",
-                .failed => "✗ ",
-                .skipped => "⊘ ",
-            };
-            const status_color = switch (task.status) {
-                .pending => color.Code.dim,
-                .running => color.Code.bright_cyan,
-                .success => color.Code.bright_green,
-                .failed => color.Code.bright_red,
-                .skipped => color.Code.dim,
-            };
+        // Layout: header (2), task list block, log block
+        const full_area = stui.Rect.new(0, 0, screen_width, screen_height);
+        const task_list_height: u16 = @intCast(@min(self.tasks.items.len + 2, 12));
+        const chunks = try stui.layout.split(
+            self.allocator,
+            .vertical,
+            full_area,
+            &[_]stui.Constraint{
+                .{ .length = 2 },
+                .{ .length = task_list_height },
+                .{ .min = 5 },
+            },
+        );
+        defer self.allocator.free(chunks);
 
-            if (is_selected) {
-                if (use_color) try w.writeAll(color.Code.bright_yellow);
-                try w.writeAll(">");
-                if (use_color) try w.writeAll(color.Code.reset);
-            } else {
-                try w.writeAll(" ");
+        // --- Header ---
+        buf.setString(0, chunks[0].y, "zr Live Execution", stui.Style{ .bold = true });
+        buf.setString(18, chunks[0].y, "  [^v] Switch Task  [PgUp/PgDn] Scroll  [q] Quit",
+            stui.Style{ .fg = .bright_cyan });
+
+        // --- Task list ---
+        if (self.tasks.items.len > 0) {
+            var labels = try self.allocator.alloc([]const u8, self.tasks.items.len);
+            defer {
+                for (labels) |l| self.allocator.free(l);
+                self.allocator.free(labels);
+            }
+            for (self.tasks.items, 0..) |*task, i| {
+                labels[i] = try buildTaskLabel(self.allocator, task);
             }
 
-            if (use_color) try w.writeAll(status_color);
-            try w.writeAll(status_str);
-            if (use_color) try w.writeAll(color.Code.reset);
-            try w.print("{s}", .{task.name});
+            const task_block = stui.widgets.Block.init()
+                .withTitle("Tasks", .top_left)
+                .withTitleStyle(stui.Style{ .bold = true });
 
-            if (task.status == .success or task.status == .failed) {
-                try w.print(" ({d}ms)", .{task.duration_ms});
-            }
-            try w.writeAll("\n");
+            const task_list = stui.widgets.List.init(labels)
+                .withSelected(self.selected_task)
+                .withBlock(task_block)
+                .withSelectedStyle(stui.Style{ .fg = .bright_yellow })
+                .withHighlightSymbol("> ");
+
+            task_list.render(&buf, chunks[1]);
+        } else {
+            buf.setString(2, chunks[1].y, "(no tasks)", stui.Style{ .dim = true });
         }
 
-        // Logs for selected task (right column)
-        try w.writeAll("\n--- Logs ");
+        // --- Logs ---
         if (self.tasks.items.len > 0 and self.selected_task < self.tasks.items.len) {
             const selected = &self.tasks.items[self.selected_task];
-            try w.print("({s})", .{selected.name});
-            try w.writeAll(" ---\n");
+
+            const log_title = try std.fmt.allocPrint(self.allocator, "Logs ({s})", .{selected.name});
+            defer self.allocator.free(log_title);
+
+            const log_block = stui.widgets.Block.init()
+                .withTitle(log_title, .top_left)
+                .withTitleStyle(stui.Style{ .bold = true });
+
+            log_block.render(&buf, chunks[2]);
+            const inner = log_block.inner(chunks[2]);
 
             const log_count = selected.logs.items.len;
-            const display_height = if (terminal_height > 15) terminal_height - 15 else 10;
-
             if (log_count == 0) {
-                try w.writeAll("  (no output yet)\n");
+                buf.setString(inner.x + 1, inner.y, "(no output yet)", stui.Style{ .dim = true });
             } else {
+                const display_height: usize = inner.height;
                 const start_idx = @min(self.scroll_offset, if (log_count > display_height) log_count - display_height else 0);
                 const end_idx = @min(start_idx + display_height, log_count);
 
-                for (selected.logs.items[start_idx..end_idx]) |line| {
-                    if (line.is_stderr and use_color) {
-                        try w.writeAll(color.Code.bright_red);
-                    }
-                    try w.print("{s}\n", .{line.text});
-                    if (line.is_stderr and use_color) {
-                        try w.writeAll(color.Code.reset);
-                    }
+                for (selected.logs.items[start_idx..end_idx], 0..) |line, row| {
+                    const log_style: stui.Style = if (line.is_stderr and use_color)
+                        .{ .fg = .bright_red }
+                    else
+                        .{};
+                    buf.setString(inner.x, inner.y + @as(u16, @intCast(row)), line.text, log_style);
                 }
 
                 if (end_idx < log_count) {
-                    try w.print("\n... ({d} more lines, scroll down) ...\n", .{log_count - end_idx});
+                    const more_msg = try std.fmt.allocPrint(self.allocator, "... ({d} more lines, scroll down) ...", .{log_count - end_idx});
+                    defer self.allocator.free(more_msg);
+                    const msg_y = chunks[2].y + chunks[2].height -| 1;
+                    buf.setString(chunks[2].x + 1, msg_y, more_msg, stui.Style{ .dim = true });
                 }
             }
         } else {
-            try w.writeAll(" ---\n  (no tasks)\n");
+            const no_task_block = stui.widgets.Block.init()
+                .withTitle("Logs", .top_left)
+                .withTitleStyle(stui.Style{ .bold = true });
+            no_task_block.render(&buf, chunks[2]);
+            const inner = no_task_block.inner(chunks[2]);
+            buf.setString(inner.x + 1, inner.y, "(no tasks)", stui.Style{ .dim = true });
+        }
+
+        // --- Flush buffer to writer ---
+        try w.writeAll("\x1b[2J\x1b[H");
+        var y: u16 = 0;
+        while (y < buf.height) : (y += 1) {
+            var x: u16 = 0;
+            while (x < buf.width) : (x += 1) {
+                const cell = buf.getConst(x, y) orelse continue;
+                if (use_color) try emitCellStyle(w, cell.style);
+                var utf8_buf: [4]u8 = undefined;
+                const len = std.unicode.utf8Encode(cell.char, &utf8_buf) catch 1;
+                try w.writeAll(utf8_buf[0..len]);
+                if (use_color and cellHasStyle(cell.style)) {
+                    try w.writeAll(color.Code.reset);
+                }
+            }
+            if (y + 1 < buf.height) {
+                try w.writeAll("\n");
+            }
+        }
+    }
+
+    fn cellHasStyle(s: stui.Style) bool {
+        return s.fg != null or s.bg != null or s.bold or s.dim or
+            s.italic or s.underline;
+    }
+
+    fn emitCellStyle(w: anytype, s: stui.Style) !void {
+        if (s.bold) try w.writeAll(color.Code.bold);
+        if (s.dim) try w.writeAll(color.Code.dim);
+        if (s.fg) |fg| {
+            switch (fg) {
+                .red => try w.writeAll(color.Code.red),
+                .green => try w.writeAll(color.Code.green),
+                .yellow => try w.writeAll(color.Code.yellow),
+                .blue => try w.writeAll(color.Code.blue),
+                .magenta => try w.writeAll(color.Code.magenta),
+                .cyan => try w.writeAll(color.Code.cyan),
+                .white => try w.writeAll(color.Code.white),
+                .bright_red => try w.writeAll(color.Code.bright_red),
+                .bright_green => try w.writeAll(color.Code.bright_green),
+                .bright_yellow => try w.writeAll(color.Code.bright_yellow),
+                .bright_blue => try w.writeAll(color.Code.bright_blue),
+                .bright_cyan => try w.writeAll(color.Code.bright_cyan),
+                .bright_white => try w.writeAll(color.Code.bright_white),
+                else => {},
+            }
         }
     }
 };
 
 // ---------------------------------------------------------------------------
-// Raw terminal mode (POSIX only) — reused from tui.zig
+// Raw terminal mode (POSIX only)
 // ---------------------------------------------------------------------------
 
 fn enterRawMode() !if (IS_POSIX) std.posix.termios else void {
@@ -312,12 +382,12 @@ fn inputThread(runner: *TuiRunner) void {
                 }
             },
 
-            0x1b => { // ESC sequence
+            0x1b => {
                 const b2 = readByte() orelse continue;
                 if (b2 == '[') {
                     const b3 = readByte() orelse continue;
                     switch (b3) {
-                        'A' => { // Up arrow
+                        'A' => {
                             runner.mutex.lock();
                             defer runner.mutex.unlock();
                             if (runner.selected_task > 0) {
@@ -325,7 +395,7 @@ fn inputThread(runner: *TuiRunner) void {
                                 runner.scroll_offset = 0;
                             }
                         },
-                        'B' => { // Down arrow
+                        'B' => {
                             runner.mutex.lock();
                             defer runner.mutex.unlock();
                             if (runner.selected_task + 1 < runner.tasks.items.len) {
@@ -333,8 +403,8 @@ fn inputThread(runner: *TuiRunner) void {
                                 runner.scroll_offset = 0;
                             }
                         },
-                        '5' => { // Page Up
-                            _ = readByte(); // consume '~'
+                        '5' => {
+                            _ = readByte();
                             runner.mutex.lock();
                             defer runner.mutex.unlock();
                             if (runner.scroll_offset >= 10) {
@@ -343,8 +413,8 @@ fn inputThread(runner: *TuiRunner) void {
                                 runner.scroll_offset = 0;
                             }
                         },
-                        '6' => { // Page Down
-                            _ = readByte(); // consume '~'
+                        '6' => {
+                            _ = readByte();
                             runner.mutex.lock();
                             defer runner.mutex.unlock();
                             runner.scroll_offset += 10;
@@ -360,12 +430,10 @@ fn inputThread(runner: *TuiRunner) void {
 }
 
 /// Start the TUI runner with background input handling.
-/// Returns a handle to the runner that should be deinitialized when done.
 pub fn start(allocator: std.mem.Allocator) !*TuiRunner {
     const runner = try allocator.create(TuiRunner);
     runner.* = TuiRunner.init(allocator);
 
-    // Spawn input handling thread.
     const thread = try std.Thread.spawn(.{}, inputThread, .{runner});
     thread.detach();
 
@@ -375,7 +443,6 @@ pub fn start(allocator: std.mem.Allocator) !*TuiRunner {
 /// Stop the TUI runner and clean up.
 pub fn stop(runner: *TuiRunner, allocator: std.mem.Allocator) void {
     runner.should_quit.store(true, .seq_cst);
-    // Give input thread time to exit cleanly.
     std.Thread.sleep(100 * std.time.ns_per_ms);
     runner.deinit();
     allocator.destroy(runner);
@@ -437,7 +504,6 @@ test "TuiRunner: log buffer limit" {
 
     try runner.addTask("spam");
 
-    // Add MAX_LOG_LINES + 100 lines.
     var i: usize = 0;
     while (i < MAX_LOG_LINES + 100) : (i += 1) {
         const line = try std.fmt.allocPrint(allocator, "Line {d}", .{i});
@@ -445,7 +511,6 @@ test "TuiRunner: log buffer limit" {
         try runner.appendTaskLog("spam", line, false);
     }
 
-    // Should cap at MAX_LOG_LINES.
     try std.testing.expectEqual(@as(usize, MAX_LOG_LINES), runner.tasks.items[0].logs.items.len);
 }
 
@@ -455,8 +520,8 @@ test "TuiRunner: render with no tasks" {
     var runner = TuiRunner.init(allocator);
     defer runner.deinit();
 
-    var buf: [2048]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
+    var out_buf: [16384]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
     var w = fbs.writer();
 
     try runner.render(&w, false, 24);
@@ -477,8 +542,8 @@ test "TuiRunner: render with tasks" {
     runner.setTaskStatus("build", .running);
     try runner.appendTaskLog("build", "Compiling...", false);
 
-    var buf: [4096]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
+    var out_buf: [16384]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
     var w = fbs.writer();
 
     try runner.render(&w, false, 24);

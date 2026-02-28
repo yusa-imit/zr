@@ -1,10 +1,13 @@
 /// Interactive TUI for zr — task/workflow picker with raw-mode keyboard input.
+/// Uses sailor.tui widgets (Buffer, List) for layout and composing the screen.
 /// On non-TTY environments (pipes, CI) falls back to a plain text message.
 const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("common.zig");
 const run_cmd = @import("run.zig");
 const color = @import("../output/color.zig");
+const sailor = @import("sailor");
+const stui = sailor.tui;
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -38,7 +41,6 @@ fn enterRawMode() !if (IS_POSIX) std.posix.termios else void {
     raw.lflag.IEXTEN = false;
     raw.iflag.IXON = false;
     raw.iflag.ICRNL = false;
-    // VMIN=1: return after at least 1 byte; VTIME=0: no timeout.
     raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
     raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
 
@@ -74,62 +76,133 @@ fn itemLessThan(_: void, a: Item, b: Item) bool {
 }
 
 // ---------------------------------------------------------------------------
-// Screen-drawing helpers
+// Sailor buffer rendering helper
 // ---------------------------------------------------------------------------
 
-/// Write the full TUI screen to the writer.
+/// Render a sailor Buffer to a writer. Uses color.Code ANSI sequences
+/// to avoid sailor's std.fmt compatibility issues with Io.Writer.
+fn renderBuffer(buf: *stui.Buffer, w: anytype, use_color: bool) !void {
+    try w.writeAll("\x1b[2J\x1b[H");
+
+    var y: u16 = 0;
+    while (y < buf.height) : (y += 1) {
+        var x: u16 = 0;
+        while (x < buf.width) : (x += 1) {
+            const cell = buf.getConst(x, y) orelse continue;
+            if (use_color) {
+                try emitCellStyle(w, cell.style);
+            }
+            var utf8_buf: [4]u8 = undefined;
+            const len = std.unicode.utf8Encode(cell.char, &utf8_buf) catch 1;
+            try w.writeAll(utf8_buf[0..len]);
+            if (use_color and cellHasStyle(cell.style)) {
+                try w.writeAll(color.Code.reset);
+            }
+        }
+        if (y + 1 < buf.height) {
+            try w.writeAll("\n");
+        }
+    }
+}
+
+fn cellHasStyle(s: stui.Style) bool {
+    return s.fg != null or s.bg != null or s.bold or s.dim or
+        s.italic or s.underline;
+}
+
+/// Emit ANSI codes for a sailor style using color.Code string constants.
+fn emitCellStyle(w: anytype, s: stui.Style) !void {
+    if (s.bold) try w.writeAll(color.Code.bold);
+    if (s.dim) try w.writeAll(color.Code.dim);
+    if (s.fg) |fg| {
+        try emitFgColor(w, fg);
+    }
+}
+
+fn emitFgColor(w: anytype, c: stui.Color) !void {
+    switch (c) {
+        .red => try w.writeAll(color.Code.red),
+        .green => try w.writeAll(color.Code.green),
+        .yellow => try w.writeAll(color.Code.yellow),
+        .blue => try w.writeAll(color.Code.blue),
+        .magenta => try w.writeAll(color.Code.magenta),
+        .cyan => try w.writeAll(color.Code.cyan),
+        .white => try w.writeAll(color.Code.white),
+        .bright_red => try w.writeAll(color.Code.bright_red),
+        .bright_green => try w.writeAll(color.Code.bright_green),
+        .bright_yellow => try w.writeAll(color.Code.bright_yellow),
+        .bright_blue => try w.writeAll(color.Code.bright_blue),
+        .bright_cyan => try w.writeAll(color.Code.bright_cyan),
+        .bright_white => try w.writeAll(color.Code.bright_white),
+        else => {},
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Screen-drawing helpers using sailor.tui widgets
+// ---------------------------------------------------------------------------
+
+fn buildItemLabels(allocator: std.mem.Allocator, items: []const Item) ![][]const u8 {
+    const labels = try allocator.alloc([]const u8, items.len);
+    var count: usize = 0;
+    errdefer {
+        for (labels[0..count]) |l| allocator.free(l);
+        allocator.free(labels);
+    }
+    for (items) |item| {
+        const kind_label: []const u8 = switch (item.kind) {
+            .task => "task",
+            .workflow => "wf  ",
+        };
+        labels[count] = try std.fmt.allocPrint(allocator, "{s}  {s}", .{ kind_label, item.name });
+        count += 1;
+    }
+    return labels;
+}
+
+fn freeItemLabels(allocator: std.mem.Allocator, labels: [][]const u8) void {
+    for (labels) |l| allocator.free(l);
+    allocator.free(labels);
+}
+
+/// Write the full TUI screen using sailor.tui List widget for layout.
 fn drawScreen(
+    allocator: std.mem.Allocator,
     w: *std.Io.Writer,
     items: []const Item,
     selected: usize,
     use_color: bool,
 ) !void {
-    // Clear screen and move cursor to top-left.
-    try w.writeAll("\x1b[2J\x1b[H");
+    const screen_width: u16 = 60;
+    const screen_height: u16 = @intCast(@min(@as(usize, 30), items.len + 5));
 
-    if (use_color) {
-        try w.writeAll(color.Code.bold);
-    }
-    try w.writeAll("zr Interactive Mode  ");
-    if (use_color) try w.writeAll(color.Code.reset);
-    try w.writeAll("[");
-    if (use_color) try w.writeAll(color.Code.bright_cyan);
-    try w.writeAll("\u{2191}\u{2193}");
-    if (use_color) try w.writeAll(color.Code.reset);
-    try w.writeAll("] Navigate  [");
-    if (use_color) try w.writeAll(color.Code.bright_cyan);
-    try w.writeAll("Enter");
-    if (use_color) try w.writeAll(color.Code.reset);
-    try w.writeAll("] Run  [");
-    if (use_color) try w.writeAll(color.Code.bright_cyan);
-    try w.writeAll("q");
-    if (use_color) try w.writeAll(color.Code.reset);
-    try w.writeAll("] Quit  [");
-    if (use_color) try w.writeAll(color.Code.bright_cyan);
-    try w.writeAll("r");
-    if (use_color) try w.writeAll(color.Code.reset);
-    try w.writeAll("] Refresh\n\n");
+    var buf = try stui.Buffer.init(allocator, screen_width, screen_height);
+    defer buf.deinit();
+
+    // Header
+    buf.setString(0, 0, "zr Interactive Mode", stui.Style{ .bold = true });
+    buf.setString(0, 1, "[^v] Navigate  [Enter] Run  [q] Quit  [r] Refresh",
+        stui.Style{ .fg = .bright_cyan });
 
     if (items.len == 0) {
-        try w.writeAll("  (no tasks or workflows defined)\n");
+        buf.setString(2, 3, "(no tasks or workflows defined)", .{});
+        try renderBuffer(&buf, w, use_color);
         return;
     }
 
-    for (items, 0..) |item, i| {
-        const is_selected = (i == selected);
-        const kind_label: []const u8 = switch (item.kind) {
-            .task => "task",
-            .workflow => "wf  ",
-        };
+    // Item list using sailor List widget
+    const labels = try buildItemLabels(allocator, items);
+    defer freeItemLabels(allocator, labels);
 
-        if (is_selected) {
-            if (use_color) try w.writeAll(color.Code.bright_cyan);
-            try w.print("> {s}  {s}\n", .{ kind_label, item.name });
-            if (use_color) try w.writeAll(color.Code.reset);
-        } else {
-            try w.print("  {s}  {s}\n", .{ kind_label, item.name });
-        }
-    }
+    const list_area = stui.Rect.new(0, 3, screen_width, screen_height - 3);
+    const list = stui.widgets.List.init(labels)
+        .withSelected(selected)
+        .withSelectedStyle(stui.Style{ .fg = .bright_cyan })
+        .withHighlightSymbol("> ");
+
+    list.render(&buf, list_area);
+
+    try renderBuffer(&buf, w, use_color);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,15 +238,12 @@ fn cmdInteractiveInner(
     use_color: bool,
     is_tty: bool,
 ) !u8 {
-    // --- Load config -----------------------------------------------------------
     var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
     defer config.deinit();
 
-    // --- Build sorted item list ------------------------------------------------
     var items: std.ArrayListUnmanaged(Item) = .empty;
     defer items.deinit(allocator);
 
-    // Collect task names.
     var task_names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer task_names.deinit(allocator);
 
@@ -187,7 +257,6 @@ fn cmdInteractiveInner(
         try items.append(allocator, .{ .name = name, .kind = .task });
     }
 
-    // Collect workflow names.
     var wf_names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer wf_names.deinit(allocator);
 
@@ -201,20 +270,16 @@ fn cmdInteractiveInner(
         try items.append(allocator, .{ .name = name, .kind = .workflow });
     }
 
-    // --- Non-TTY fallback ------------------------------------------------------
     if (!is_tty) {
         try w.writeAll("No TTY detected. Run 'zr list' to see available tasks.\n");
         return 0;
     }
 
-    // --- TTY interactive mode (POSIX only) -------------------------------------
     if (comptime !IS_POSIX) {
-        // Windows: raw mode not supported; fall back gracefully.
         try w.writeAll("No TTY detected. Run 'zr list' to see available tasks.\n");
         return 0;
     }
 
-    // Enter raw mode.
     const original_termios = enterRawMode() catch {
         try w.writeAll("No TTY detected. Run 'zr list' to see available tasks.\n");
         return 0;
@@ -224,11 +289,9 @@ fn cmdInteractiveInner(
     var selected: usize = 0;
     const item_count = items.items.len;
 
-    // Initial draw.
-    try drawScreen(w, items.items, selected, use_color);
+    try drawScreen(allocator, w, items.items, selected, use_color);
     try w.flush();
 
-    // Main event loop.
     while (true) {
         const byte = readByte() orelse break;
 
@@ -236,40 +299,35 @@ fn cmdInteractiveInner(
             'q', 'Q' => break,
 
             'k' => {
-                if (item_count > 0 and selected > 0) {
-                    selected -= 1;
-                }
-                try drawScreen(w, items.items, selected, use_color);
+                if (item_count > 0 and selected > 0) selected -= 1;
+                try drawScreen(allocator, w, items.items, selected, use_color);
                 try w.flush();
             },
 
             'j' => {
-                if (item_count > 0 and selected + 1 < item_count) {
-                    selected += 1;
-                }
-                try drawScreen(w, items.items, selected, use_color);
+                if (item_count > 0 and selected + 1 < item_count) selected += 1;
+                try drawScreen(allocator, w, items.items, selected, use_color);
                 try w.flush();
             },
 
             'r', 'R' => {
-                try drawScreen(w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color);
                 try w.flush();
             },
 
-            // ESC sequence: check for arrow keys (\x1b[A / \x1b[B).
             0x1b => {
                 const b2 = readByte() orelse continue;
                 if (b2 == '[') {
                     const b3 = readByte() orelse continue;
                     switch (b3) {
-                        'A' => { // Up arrow
+                        'A' => {
                             if (item_count > 0 and selected > 0) selected -= 1;
-                            try drawScreen(w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color);
                             try w.flush();
                         },
-                        'B' => { // Down arrow
+                        'B' => {
                             if (item_count > 0 and selected + 1 < item_count) selected += 1;
-                            try drawScreen(w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color);
                             try w.flush();
                         },
                         else => {},
@@ -277,18 +335,15 @@ fn cmdInteractiveInner(
                 }
             },
 
-            // Enter key (CR or LF).
             0x0D, '\n' => {
                 if (item_count == 0) continue;
 
                 const sel_item = items.items[selected];
 
-                // Clear screen before running.
                 try w.writeAll("\x1b[2J\x1b[H");
                 try w.print("Running: {s}\n\n", .{sel_item.name});
                 try w.flush();
 
-                // Leave raw mode while the task runs so its output is visible.
                 leaveRawMode(original_termios);
 
                 _ = run_cmd.cmdRun(
@@ -299,21 +354,20 @@ fn cmdInteractiveInner(
                     0,
                     config_path,
                     false,
-                    false, // monitor
+                    false,
                     w,
                     ew,
                     use_color,
                     null,
                 ) catch {};
 
-                // Re-enter raw mode for the next keypress.
                 _ = enterRawMode() catch {};
 
                 try w.writeAll("\n--- Press any key to return ---");
                 try w.flush();
                 _ = readByte();
 
-                try drawScreen(w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color);
                 try w.flush();
             },
 
@@ -321,7 +375,6 @@ fn cmdInteractiveInner(
         }
     }
 
-    // Clear screen on exit.
     try w.writeAll("\x1b[2J\x1b[H");
     try w.flush();
 
@@ -355,7 +408,6 @@ test "cmdInteractive: missing config returns error code 1" {
 test "cmdInteractive: non-TTY falls back gracefully" {
     const allocator = std.testing.allocator;
 
-    // Create a temp config with a task.
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -379,7 +431,7 @@ test "cmdInteractive: non-TTY falls back gracefully" {
         &out_w,
         &err_w,
         false,
-        false, // is_tty = false → non-interactive path
+        false,
     );
 
     try std.testing.expectEqual(@as(u8, 0), result);
@@ -391,7 +443,6 @@ test "cmdInteractive: non-TTY falls back gracefully" {
 test "cmdInteractive: empty config shows no-TTY message" {
     const allocator = std.testing.allocator;
 
-    // Empty TOML (no tasks, no workflows).
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -414,7 +465,7 @@ test "cmdInteractive: empty config shows no-TTY message" {
         &out_w,
         &err_w,
         false,
-        false, // non-TTY
+        false,
     );
 
     try std.testing.expectEqual(@as(u8, 0), result);
