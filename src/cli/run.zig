@@ -173,10 +173,38 @@ pub fn cmdWatch(
         var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
         defer config.deinit();
         if (config.tasks.get(task_name) == null) {
+            // Build list of available task names for suggestions
+            var task_names_list = std.ArrayList([]const u8){};
+            defer task_names_list.deinit(allocator);
+            var task_iter = config.tasks.iterator();
+            while (task_iter.next()) |entry| {
+                try task_names_list.append(allocator, entry.key_ptr.*);
+            }
+
+            // Find similar task names using Levenshtein distance
+            const suggestions = try levenshtein.findClosestMatches(
+                allocator,
+                task_name,
+                task_names_list.items,
+                3, // max distance
+                3, // max suggestions
+            );
+            defer allocator.free(suggestions);
+
             try color.printError(err_writer, use_color,
-                "watch: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
+                "watch: Task '{s}' not found\n",
                 .{task_name},
             );
+
+            if (suggestions.len > 0) {
+                try err_writer.print("\n  Did you mean?\n", .{});
+                for (suggestions) |suggestion| {
+                    try err_writer.print("    {s}\n", .{suggestion.name});
+                }
+                try err_writer.print("\n", .{});
+            } else {
+                try err_writer.print("\n  Hint: Run 'zr list' to see available tasks\n", .{});
+            }
             return 1;
         }
     }
@@ -283,10 +311,38 @@ pub fn cmdWorkflow(
     defer config.deinit();
 
     const wf = config.workflows.get(wf_name) orelse {
+        // Build list of available workflow names for suggestions
+        var workflow_names_list = std.ArrayList([]const u8){};
+        defer workflow_names_list.deinit(allocator);
+        var wf_iter = config.workflows.iterator();
+        while (wf_iter.next()) |entry| {
+            try workflow_names_list.append(allocator, entry.key_ptr.*);
+        }
+
+        // Find similar workflow names using Levenshtein distance
+        const suggestions = try levenshtein.findClosestMatches(
+            allocator,
+            wf_name,
+            workflow_names_list.items,
+            3, // max distance
+            3, // max suggestions
+        );
+        defer allocator.free(suggestions);
+
         try color.printError(err_writer, use_color,
-            "workflow: '{s}' not found\n\n  Hint: Run 'zr list' to see available workflows\n",
+            "workflow: '{s}' not found\n",
             .{wf_name},
         );
+
+        if (suggestions.len > 0) {
+            try err_writer.print("\n  Did you mean?\n", .{});
+            for (suggestions) |suggestion| {
+                try err_writer.print("    {s}\n", .{suggestion.name});
+            }
+            try err_writer.print("\n", .{});
+        } else {
+            try err_writer.print("\n  Hint: Run 'zr list' to see available workflows\n", .{});
+        }
         return 1;
     };
 
