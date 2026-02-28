@@ -63,7 +63,7 @@ pub fn handleDidOpen(
     doc_store: *document_mod.DocumentStore,
 ) !?[]const u8 {
     // Parse params to extract URI, text, version
-    // Simplified JSON parsing - in production, use proper JSON parser
+    // The params structure is: {"textDocument": {"uri": "...", "text": "...", "version": N}}
     var uri_buf: [512]u8 = undefined;
     var text_buf: [65536]u8 = undefined;
 

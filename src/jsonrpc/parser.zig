@@ -46,10 +46,8 @@ pub fn parseMessage(allocator: std.mem.Allocator, json_text: []const u8) !Messag
 
         if (has_result) {
             // Success response - store result as JSON string
-            // TODO(Zig 0.15): std.json.writeStream doesn't exist
-            // Need to implement custom JSON Value → string serialization
-            // For now, use placeholder to unblock compilation
-            const result = try allocator.dupe(u8, "{}");
+            const result_value = obj.get("result").?;
+            const result = try std.fmt.allocPrint(allocator, "{any}", .{std.json.fmt(result_value, .{})});
 
             return Message{
                 .response = Response{
@@ -77,10 +75,8 @@ pub fn parseMessage(allocator: std.mem.Allocator, json_text: []const u8) !Messag
         errdefer allocator.free(method);
 
         // Store params as JSON string
-        // TODO(Zig 0.15): std.json.writeStream doesn't exist
-        // For now, use placeholder
-        const params = if (obj.get("params")) |_| blk: {
-            break :blk try allocator.dupe(u8, "{}");
+        const params = if (obj.get("params")) |params_value| blk: {
+            break :blk try std.fmt.allocPrint(allocator, "{any}", .{std.json.fmt(params_value, .{})});
         } else null;
         errdefer if (params) |par| allocator.free(par);
 

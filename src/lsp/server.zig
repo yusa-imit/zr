@@ -128,7 +128,8 @@ pub const Server = struct {
 
         try stdout.writeAll(header);
         try stdout.writeAll(json);
-        try stdout.sync(); // Flush to ensure tests can read the output
+        // fsync() may fail on pipes with ENOTSUP - ignore the error
+        stdout.sync() catch {};
     }
 
     /// Handle JSON-RPC request (expects response)
