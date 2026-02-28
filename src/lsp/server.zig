@@ -3,6 +3,7 @@ const jsonrpc_types = @import("../jsonrpc/types.zig");
 const jsonrpc_parser = @import("../jsonrpc/parser.zig");
 const document_mod = @import("document.zig");
 const handlers = @import("handlers.zig");
+const completion_mod = @import("completion.zig");
 
 /// LSP server state
 pub const Server = struct {
@@ -135,6 +136,12 @@ pub const Server = struct {
         } else if (std.mem.eql(u8, request.method, "shutdown")) {
             self.shutdown_requested = true;
             return try handlers.handleShutdown(self.allocator, &request);
+        } else if (std.mem.eql(u8, request.method, "textDocument/completion")) {
+            if (!self.initialized) {
+                return try self.errorResponse(request.id, .server_not_initialized, "Server not initialized");
+            }
+            const params = request.params orelse return try self.errorResponse(request.id, .invalid_params, "Missing params");
+            return try completion_mod.handleCompletion(self.allocator, &request, params, &self.doc_store);
         } else {
             // Unknown method
             if (!self.initialized) {

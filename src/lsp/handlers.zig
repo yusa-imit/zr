@@ -3,17 +3,19 @@ const jsonrpc = @import("../jsonrpc/types.zig");
 const writer = @import("../jsonrpc/writer.zig");
 const document_mod = @import("document.zig");
 const diagnostics_mod = @import("diagnostics.zig");
+const completion_mod = @import("completion.zig");
 const config_parser = @import("../config/parser.zig");
 
 /// LSP server capabilities
 pub const ServerCapabilities = struct {
     textDocumentSync: i32 = 1, // Full sync
     diagnosticProvider: bool = true,
+    completionProvider: bool = true,
 
     pub fn toJson(allocator: std.mem.Allocator) ![]const u8 {
-        return std.fmt.allocPrint(allocator,
-            \\{{"textDocumentSync":1,"diagnosticProvider":true}}
-        , .{});
+        // Return static JSON string (duplicated for consistent memory management)
+        const json_str = "{\"textDocumentSync\":1,\"diagnosticProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\"\\\"\",\"$\",\".\",\"{\"]}}";
+        return allocator.dupe(u8, json_str);
     }
 };
 
