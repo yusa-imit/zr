@@ -1,7 +1,7 @@
 // src/mcp/handlers.zig
 //
 // MCP tool handlers - maps MCP tool calls to existing CLI functions
-// Real implementations for list_tasks and show_task; others are stubs
+// All 9 MCP tools have real implementations
 
 const std = @import("std");
 const list = @import("../cli/list.zig");
@@ -479,35 +479,286 @@ fn handleShowGraph(allocator: std.mem.Allocator, params_json: []const u8) !ToolR
 }
 
 fn handleRunWorkflow(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"run_workflow not yet implemented - use 'zr workflow <name>' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    const workflow_name = parseStringParam(params_json, "workflow", "");
+    const config_path = parseStringParam(params_json, "config_path", "zr.toml");
+
+    if (workflow_name.len == 0) {
+        const error_json = try allocator.dupe(u8,
+            \\{"success":false,"error":"workflow parameter is required"}
+        );
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    }
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    // Call workflow command
+    const exit_code = run.cmdWorkflow(
+        allocator,
+        workflow_name,
+        null,  // profile_name
+        false, // dry_run
+        0,     // max_jobs (0 = use all cores)
+        config_path,
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        try stdout_file.seekTo(0);
+        const output_text = try stdout_file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+        defer allocator.free(output_text);
+
+        // Escape output for JSON
+        var escaped = std.ArrayList(u8){};
+        defer escaped.deinit(allocator);
+        for (output_text) |c| {
+            switch (c) {
+                '"' => try escaped.appendSlice(allocator, "\\\""),
+                '\\' => try escaped.appendSlice(allocator, "\\\\"),
+                '\n' => try escaped.appendSlice(allocator, "\\n"),
+                '\r' => try escaped.appendSlice(allocator, "\\r"),
+                '\t' => try escaped.appendSlice(allocator, "\\t"),
+                else => try escaped.append(allocator, c),
+            }
+        }
+
+        const result_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":true,"workflow":"{s}","output":"{s}"}}
+        , .{ workflow_name, escaped.items });
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        try stderr_file.seekTo(0);
+        const err_output = try stderr_file.readToEndAlloc(allocator, 64 * 1024); // 64KB max
+        defer allocator.free(err_output);
+
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"workflow":"{s}","error":"Workflow execution failed"}}
+        , .{workflow_name});
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 fn handleTaskHistory(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"task_history not yet implemented - use 'zr history' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    _ = params_json; // history doesn't take parameters
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    // Call history command with JSON output
+    const exit_code = run.cmdHistory(
+        allocator,
+        true, // json_output
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        try stdout_file.seekTo(0);
+        const output_text = try stdout_file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+        defer allocator.free(output_text);
+
+        // History already returns JSON, so just wrap it in success envelope
+        const result_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":true,"history":{s}}}
+        , .{output_text});
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        const error_json = try allocator.dupe(u8,
+            \\{"success":false,"error":"Failed to load history"}
+        );
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 fn handleEstimateDuration(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"estimate_duration not yet implemented - use 'zr estimate <task>' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    const task_name = parseStringParam(params_json, "task", "");
+    const config_path = parseStringParam(params_json, "config_path", "zr.toml");
+
+    if (task_name.len == 0) {
+        const error_json = try allocator.dupe(u8,
+            \\{"success":false,"error":"task parameter is required"}
+        );
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    }
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    // Call estimate command with JSON output
+    const exit_code = estimate.cmdEstimate(
+        allocator,
+        task_name,
+        config_path,
+        20, // limit (default from main.zig)
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color
+        .json, // output_format
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        try stdout_file.seekTo(0);
+        const output_text = try stdout_file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+        defer allocator.free(output_text);
+
+        // Estimate already returns JSON, so just wrap it in success envelope
+        const result_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":true,"estimate":{s}}}
+        , .{output_text});
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"Task '{s}' not found or no history available"}}
+        , .{task_name});
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 fn handleGenerateConfig(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"generate_config not yet implemented - use 'zr init --detect' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    _ = params_json; // generate_config uses current directory, no params needed
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    // Call init command with detect mode
+    const exit_code = init_cli.cmdInit(
+        allocator,
+        std.fs.cwd(),
+        true, // detect_mode
+        .none, // migrate_mode
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        try stdout_file.seekTo(0);
+        const output_text = try stdout_file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+        defer allocator.free(output_text);
+
+        // Escape output for JSON
+        var escaped = std.ArrayList(u8){};
+        defer escaped.deinit(allocator);
+        for (output_text) |c| {
+            switch (c) {
+                '"' => try escaped.appendSlice(allocator, "\\\""),
+                '\\' => try escaped.appendSlice(allocator, "\\\\"),
+                '\n' => try escaped.appendSlice(allocator, "\\n"),
+                '\r' => try escaped.appendSlice(allocator, "\\r"),
+                '\t' => try escaped.appendSlice(allocator, "\\t"),
+                else => try escaped.append(allocator, c),
+            }
+        }
+
+        const result_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":true,"message":"Config generated successfully","output":"{s}"}}
+        , .{escaped.items});
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        try stderr_file.seekTo(0);
+        const err_output = try stderr_file.readToEndAlloc(allocator, 64 * 1024); // 64KB max
+        defer allocator.free(err_output);
+
+        const error_json = try allocator.dupe(u8,
+            \\{"success":false,"error":"Failed to generate config"}
+        );
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -546,22 +797,44 @@ test "handleTool: show_task requires task parameter" {
     try std.testing.expect(std.mem.indexOf(u8, result.json, "required") != null);
 }
 
-test "handleTool: unimplemented handlers return error" {
+test "handleTool: all handlers implemented" {
     const allocator = std.testing.allocator;
 
-    // Only test the handlers that are still stubs
-    const unimplemented = [_][]const u8{
+    // All 9 MCP tools should now have real implementations
+    // They may fail due to missing files (expected in test environment),
+    // but they should NOT return "not yet implemented" errors
+    const all_tools = [_][]const u8{
+        "run_task",
+        "list_tasks",
+        "show_task",
+        "validate_config",
+        "show_graph",
         "run_workflow",
         "task_history",
         "estimate_duration",
         "generate_config",
     };
 
-    for (unimplemented) |tool_name| {
-        var result = try handleTool(allocator, tool_name, null);
+    for (all_tools) |tool_name| {
+        // Call handler - it may fail (FileNotFound, etc.) which is expected
+        var result = handleTool(allocator, tool_name, null) catch |err| {
+            // Expected errors in test environment (no zr.toml, no history, etc.)
+            try std.testing.expect(
+                err == error.OutOfMemory or
+                    err == error.FileNotFound or
+                    err == error.AccessDenied or
+                    err == error.InvalidCharacter or
+                    err == error.UnexpectedEndOfJson,
+            );
+            continue;
+        };
         defer result.deinit(allocator);
 
-        try std.testing.expectEqual(@as(u8, 1), result.exit_code);
-        try std.testing.expect(std.mem.indexOf(u8, result.json, "not yet implemented") != null);
+        // If it succeeded, verify it returns proper JSON
+        try std.testing.expect(result.json.len > 0);
+        try std.testing.expect(std.mem.indexOf(u8, result.json, "{") != null);
+
+        // Most importantly: should NOT contain "not yet implemented"
+        try std.testing.expect(std.mem.indexOf(u8, result.json, "not yet implemented") == null);
     }
 }
