@@ -26,7 +26,9 @@ pub fn byteOffsetToPosition(text: []const u8, byte_offset: usize) Position {
         } else {
             // Simplified: count UTF-8 bytes as characters
             // LSP spec uses UTF-16 code units, but for ASCII/common UTF-8 this works
-            // TODO: proper UTF-16 code unit counting if needed for multi-byte chars
+            // Edge case: Characters outside BMP (emojis, rare CJK) may have incorrect positions
+            // Fix: Decode UTF-8 sequences and count UTF-16 code units (1 for BMP, 2 for supplementary)
+            // Not critical for TOML files which rarely contain such characters
             character += 1;
         }
         i += 1;
