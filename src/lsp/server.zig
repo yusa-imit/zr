@@ -128,8 +128,7 @@ pub const Server = struct {
 
         try stdout.writeAll(header);
         try stdout.writeAll(json);
-        // fsync() may fail on pipes with ENOTSUP - ignore the error
-        stdout.sync() catch {};
+        // Don't call sync() - writeAll() is unbuffered and sync() fails on pipes/TTYs
     }
 
     /// Handle JSON-RPC request (expects response)

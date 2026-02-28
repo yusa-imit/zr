@@ -64,12 +64,15 @@ pub fn handleDidOpen(
 ) !?[]const u8 {
     // Parse params to extract URI, text, version
     // The params structure is: {"textDocument": {"uri": "...", "text": "...", "version": N}}
+    // First extract the textDocument object
+    const textDocument = extractJsonObject(params, "textDocument") orelse return null;
+
     var uri_buf: [512]u8 = undefined;
     var text_buf: [65536]u8 = undefined;
 
-    const uri = extractJsonString(params, "uri", &uri_buf) orelse return null;
-    const text = extractJsonString(params, "text", &text_buf) orelse "";
-    const version = extractJsonNumber(params, "version") orelse 1;
+    const uri = extractJsonString(textDocument, "uri", &uri_buf) orelse return null;
+    const text = extractJsonString(textDocument, "text", &text_buf) orelse "";
+    const version = extractJsonNumber(textDocument, "version") orelse 1;
 
     // Open document in store
     try doc_store.open(uri, text, @intCast(version));
@@ -84,11 +87,14 @@ pub fn handleDidChange(
     params: []const u8,
     doc_store: *document_mod.DocumentStore,
 ) !?[]const u8 {
+    // The params structure is: {"textDocument": {"uri": "...", "version": N}, "contentChanges": [...]}
+    const textDocument = extractJsonObject(params, "textDocument") orelse return null;
+
     var uri_buf: [512]u8 = undefined;
     var text_buf: [65536]u8 = undefined;
 
-    const uri = extractJsonString(params, "uri", &uri_buf) orelse return null;
-    const version = extractJsonNumber(params, "version") orelse 1;
+    const uri = extractJsonString(textDocument, "uri", &uri_buf) orelse return null;
+    const version = extractJsonNumber(textDocument, "version") orelse 1;
 
     // Extract new text from contentChanges array
     const text = extractContentChanges(params, &text_buf) orelse "";
@@ -105,8 +111,11 @@ pub fn handleDidClose(
     params: []const u8,
     doc_store: *document_mod.DocumentStore,
 ) !void {
+    // The params structure is: {"textDocument": {"uri": "..."}}
+    const textDocument = extractJsonObject(params, "textDocument") orelse return;
+
     var uri_buf: [512]u8 = undefined;
-    const uri = extractJsonString(params, "uri", &uri_buf) orelse return;
+    const uri = extractJsonString(textDocument, "uri", &uri_buf) orelse return;
 
     doc_store.close(uri);
 }
@@ -157,6 +166,31 @@ fn generateDiagnostics(
     return std.fmt.allocPrint(allocator,
         \\{{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{s}","diagnostics":{s}}}}}
     , .{ uri, diag_json.items });
+}
+
+/// Extract object value from JSON (returns the substring of the object)
+fn extractJsonObject(json: []const u8, key: []const u8) ?[]const u8 {
+    // Find key pattern: "key":{...}
+    const pattern = std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":{{", .{key}) catch return null;
+    defer std.heap.page_allocator.free(pattern);
+
+    const start_idx = std.mem.indexOf(u8, json, pattern) orelse return null;
+    const obj_start = start_idx + pattern.len - 1; // Include the opening brace
+
+    // Find matching closing brace
+    var depth: i32 = 0;
+    var i = obj_start;
+    while (i < json.len) : (i += 1) {
+        if (json[i] == '{') depth += 1;
+        if (json[i] == '}') {
+            depth -= 1;
+            if (depth == 0) {
+                return json[obj_start..i + 1];
+            }
+        }
+    }
+
+    return null;
 }
 
 /// Extract string value from JSON (simplified parser)
