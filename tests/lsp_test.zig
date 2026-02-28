@@ -150,7 +150,8 @@ test "lsp: provides completion for task names" {
 
     // Request completion inside the deps array (after ["")
     // Line 4 is "deps = [""]", position at character 8 (inside the quotes)
-    const completion_json = try std.fmt.bufPrint(&uri_buf,
+    var completion_buf: [512]u8 = undefined;
+    const completion_json = try std.fmt.bufPrint(&completion_buf,
         "{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/completion\",\"params\":{{\"textDocument\":{{\"uri\":\"{s}\"}},\"position\":{{\"line\":4,\"character\":8}}}}}}",
         .{file_uri},
     );
