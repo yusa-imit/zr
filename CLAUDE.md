@@ -491,6 +491,9 @@ gh issue create --repo yusa-imit/sailor \
 
 ### v1.0.0 — production ready (status: READY)
 
+**v1.0.1 패치**: 크로스 컴파일 수정 (API 변경 없음, drop-in replacement)
+
+
 - **첫 안정 릴리즈**: 모든 기능 완성, 종합 문서화 포함
 - [ ] `build.zig.zon`에 sailor v1.0.0 의존성 업데이트
 - [ ] [Getting Started Guide](https://github.com/yusa-imit/sailor/blob/v1.0.0/docs/GUIDE.md) 참조하여 모범 사례 적용
