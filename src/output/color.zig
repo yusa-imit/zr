@@ -94,8 +94,23 @@ fn enableWindowsAnsiSupport(file: std.fs.File) bool {
 /// and supports ANSI color codes.
 /// On Windows, this also enables Virtual Terminal Processing.
 pub fn isTty(file: std.fs.File) bool {
-    // Use sailor.term for cross-platform TTY detection
-    if (!sailor.term.isatty(file.handle)) {
+    // Cross-platform TTY detection (workaround for sailor#3)
+    const is_tty = switch (builtin.os.tag) {
+        .linux, .macos => blk: {
+            const posix = std.posix;
+            break :blk posix.isatty(file.handle);
+        },
+        .windows => blk: {
+            const windows = std.os.windows;
+            // On Windows, file.handle is HANDLE (*anyopaque)
+            // Check if it's a console by calling GetConsoleMode
+            var mode: windows.DWORD = 0;
+            break :blk windows.kernel32.GetConsoleMode(file.handle, &mode) != 0;
+        },
+        else => false,
+    };
+
+    if (!is_tty) {
         return false;
     }
 

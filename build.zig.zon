@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .sailor = .{
-            .url = "git+https://github.com/yusa-imit/sailor?ref=v0.4.0#15bccb339258fef7a46c4a8e81da730228d0d228",
-            .hash = "sailor-0.4.0-53_z3H0VBAC3SSJWvPMbITpGw0ywG0Lu0_z-HLxgCM2R",
+            .url = "git+https://github.com/yusa-imit/sailor#af961abcbad7708eb1ee500d4a11a703912835f7",
+            .hash = "sailor-0.5.0-53_z3EMzBgCc7CTzpIVuvOCGgItJB_EncjMMeVcY2mDu",
         },
     },
     .paths = .{
