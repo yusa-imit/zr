@@ -490,3 +490,13 @@ gh issue create --repo yusa-imit/sailor \
 - [ ] 확인 프롬프트: `Dialog` 위젯으로 `zr clean --all` 안전장치
 - [ ] 알림: `Notification` 위젯으로 빌드 성공/실패 토스트 메시지
 - [ ] 기존 테스트 전체 통과 확인
+
+### v1.0.0 — production ready (status: READY)
+
+- **첫 안정 릴리즈**: 모든 기능 완성, 종합 문서화 포함
+- [ ] `build.zig.zon`에 sailor v1.0.0 의존성 업데이트
+- [ ] [Getting Started Guide](https://github.com/yusa-imit/sailor/blob/v1.0.0/docs/GUIDE.md) 참조하여 모범 사례 적용
+- [ ] [API Reference](https://github.com/yusa-imit/sailor/blob/v1.0.0/docs/API.md) 기반으로 기존 코드 리팩토링
+- [ ] 테마 시스템 활용: 라이트/다크 모드 또는 커스텀 컬러 스킴
+- [ ] 애니메이션 효과 추가 (선택사항): 프로그레스, 로딩 스피너
+- [ ] 기존 테스트 전체 통과 확인
