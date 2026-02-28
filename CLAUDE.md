@@ -408,7 +408,7 @@ sailor가 v0.1.0을 릴리즈하면 status가 READY로 변경된다.
 - [ ] 기존 테스트 전체 통과 확인
 - [ ] 커밋: `refactor: migrate JSON output to sailor v0.3.0`
 
-### v0.4.0 — tui (status: PENDING)
+### v0.4.0 — tui (status: READY)
 
 **작업 내용**:
 - [ ] `src/cli/tui.zig` → `sailor.tui` 위젯 기반으로 재작성
