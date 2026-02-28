@@ -23,6 +23,8 @@ comptime {
     _ = @import("lint_test.zig");
     _ = @import("list_test.zig");
     _ = @import("live_test.zig");
+    _ = @import("lsp_test.zig");
+    _ = @import("mcp_test.zig");
     _ = @import("misc_test.zig");
     _ = @import("plugin_test.zig");
     _ = @import("publish_test.zig");
@@ -35,6 +37,7 @@ comptime {
     _ = @import("upgrade_test.zig");
     _ = @import("validate_test.zig");
     _ = @import("version_test.zig");
+    _ = @import("watch_test.zig");
     _ = @import("workflow_test.zig");
     _ = @import("workspace_test.zig");
 }
