@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
@@ -225,25 +226,28 @@ pub fn renderJson(
     nodes: []const GraphNode,
     _: bool,
 ) !void {
-    try w.writeAll("{\"nodes\":[");
+    const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+    try w.writeAll("{\"nodes\":");
+    var nodes_arr = try JsonArr.init(w);
 
-    for (nodes, 0..) |node, i| {
-        if (i > 0) try w.writeAll(",");
-        try w.writeAll("{\"path\":");
-        try common.writeJsonString(w, node.path);
-        try w.writeAll(",\"dependencies\":[");
-
-        for (node.dependencies, 0..) |dep, j| {
-            if (j > 0) try w.writeAll(",");
-            try common.writeJsonString(w, dep);
+    for (nodes) |node| {
+        var obj = try nodes_arr.beginObject();
+        try obj.addString("path", node.path);
+        // dependencies array (nested)
+        try obj.writer.writeAll(",\"dependencies\":");
+        var deps_arr = try JsonArr.init(w);
+        for (node.dependencies) |dep| {
+            try deps_arr.addString(dep);
         }
-
-        try w.writeAll("],\"affected\":");
-        try w.writeAll(if (node.is_affected) "true" else "false");
-        try w.writeAll("}");
+        try deps_arr.end();
+        // affected bool - write manually after the nested array
+        try obj.writer.writeAll(",\"affected\":");
+        try obj.writer.writeAll(if (node.is_affected) "true" else "false");
+        try obj.end();
     }
 
-    try w.writeAll("]}\n");
+    try nodes_arr.end();
+    try w.writeAll("}\n");
 }
 
 /// Render graph as interactive HTML

@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const cycle_detect = @import("../graph/cycle_detect.zig");
@@ -93,37 +94,43 @@ pub fn cmdList(
             }
         }.lessThan);
 
-        try w.writeAll("{\"tasks\":[");
-        for (names.items, 0..) |name, i| {
-            const task = config.tasks.get(name).?;
-            if (i > 0) try w.writeAll(",");
-            try w.print("{{\"name\":", .{});
-            try common.writeJsonString(w, name);
-            try w.print(",\"cmd\":", .{});
-            try common.writeJsonString(w, task.cmd);
-            if (task.description) |desc| {
-                try w.print(",\"description\":", .{});
-                try common.writeJsonString(w, desc);
-            } else {
-                try w.writeAll(",\"description\":null");
+        const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+        try w.writeAll("{\"tasks\":");
+        {
+            var tasks_arr = try JsonArr.init(w);
+            for (names.items) |name| {
+                const task = config.tasks.get(name).?;
+                var obj = try tasks_arr.beginObject();
+                try obj.addString("name", name);
+                try obj.addString("cmd", task.cmd);
+                if (task.description) |desc| {
+                    try obj.addString("description", desc);
+                } else {
+                    try obj.addNull("description");
+                }
+                try obj.addNumber("deps_count", task.deps.len);
+                try obj.end();
             }
-            try w.print(",\"deps_count\":{d}}}", .{task.deps.len});
+            try tasks_arr.end();
         }
-        try w.writeAll("],\"workflows\":[");
-        for (wf_names.items, 0..) |name, i| {
-            const wf = config.workflows.get(name).?;
-            if (i > 0) try w.writeAll(",");
-            try w.print("{{\"name\":", .{});
-            try common.writeJsonString(w, name);
-            if (wf.description) |desc| {
-                try w.print(",\"description\":", .{});
-                try common.writeJsonString(w, desc);
-            } else {
-                try w.writeAll(",\"description\":null");
+        try w.writeAll(",\"workflows\":");
+        {
+            var wf_arr = try JsonArr.init(w);
+            for (wf_names.items) |name| {
+                const wf = config.workflows.get(name).?;
+                var obj = try wf_arr.beginObject();
+                try obj.addString("name", name);
+                if (wf.description) |desc| {
+                    try obj.addString("description", desc);
+                } else {
+                    try obj.addNull("description");
+                }
+                try obj.addNumber("stages", wf.stages.len);
+                try obj.end();
             }
-            try w.print(",\"stages\":{d}}}", .{wf.stages.len});
+            try wf_arr.end();
         }
-        try w.writeAll("]}\n");
+        try w.writeAll("}\n");
         return 0;
     }
 
@@ -217,11 +224,14 @@ pub fn cmdGraph(
     defer levels.deinit(allocator);
 
     if (json_output) {
+        const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
         // {"levels":[{"index":0,"tasks":[{"name":"t","deps":["a","b"]}]}]}
-        try w.writeAll("{\"levels\":[");
+        try w.writeAll("{\"levels\":");
+        var levels_arr = try JsonArr.init(w);
         for (levels.levels.items, 0..) |level, level_idx| {
-            if (level_idx > 0) try w.writeAll(",");
-            try w.print("{{\"index\":{d},\"tasks\":[", .{level_idx});
+            var level_obj = try levels_arr.beginObject();
+            try level_obj.addNumber("index", level_idx);
+            try level_obj.writer.writeAll(",\"tasks\":");
 
             // Sort for deterministic output
             var sorted_level = std.ArrayList([]const u8){};
@@ -235,21 +245,24 @@ pub fn cmdGraph(
                 }
             }.lessThan);
 
-            for (sorted_level.items, 0..) |name, ti| {
+            var tasks_arr = try JsonArr.init(w);
+            for (sorted_level.items) |name| {
                 const task = config.tasks.get(name) orelse continue;
-                if (ti > 0) try w.writeAll(",");
-                try w.print("{{\"name\":", .{});
-                try common.writeJsonString(w, name);
-                try w.writeAll(",\"deps\":[");
-                for (task.deps, 0..) |dep, di| {
-                    if (di > 0) try w.writeAll(",");
-                    try common.writeJsonString(w, dep);
+                var task_obj = try tasks_arr.beginObject();
+                try task_obj.addString("name", name);
+                try task_obj.writer.writeAll(",\"deps\":");
+                var deps_arr = try JsonArr.init(w);
+                for (task.deps) |dep| {
+                    try deps_arr.addString(dep);
                 }
-                try w.writeAll("]}");
+                try deps_arr.end();
+                try task_obj.end();
             }
-            try w.writeAll("]}");
+            try tasks_arr.end();
+            try level_obj.end();
         }
-        try w.writeAll("]}\n");
+        try levels_arr.end();
+        try w.writeAll("}\n");
         return 0;
     }
 

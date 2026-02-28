@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
@@ -140,14 +141,16 @@ pub fn cmdWorkspaceList(
         defer sw.deinit(allocator);
 
         if (json_output) {
-            try w.writeAll("{\"members\":[");
-            for (sw.members, 0..) |m, i| {
-                if (i > 0) try w.writeAll(",");
-                try w.writeAll("{\"path\":");
-                try common.writeJsonString(w, m);
-                try w.writeAll("}");
+            const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+            try w.writeAll("{\"members\":");
+            var members_arr = try JsonArr.init(w);
+            for (sw.members) |m| {
+                var obj = try members_arr.beginObject();
+                try obj.addString("path", m);
+                try obj.end();
             }
-            try w.writeAll("]}\n");
+            try members_arr.end();
+            try w.writeAll("}\n");
         } else {
             try color.printBold(w, use_color, "Workspace Members ({d}) [synthetic]:\n", .{sw.members.len});
             if (sw.members.len == 0) {
@@ -180,14 +183,16 @@ pub fn cmdWorkspaceList(
     }
 
     if (json_output) {
-        try w.writeAll("{\"members\":[");
-        for (members, 0..) |m, i| {
-            if (i > 0) try w.writeAll(",");
-            try w.writeAll("{\"path\":");
-            try common.writeJsonString(w, m);
-            try w.writeAll("}");
+        const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+        try w.writeAll("{\"members\":");
+        var members_arr = try JsonArr.init(w);
+        for (members) |m| {
+            var obj = try members_arr.beginObject();
+            try obj.addString("path", m);
+            try obj.end();
         }
-        try w.writeAll("]}\n");
+        try members_arr.end();
+        try w.writeAll("}\n");
     } else {
         try color.printBold(w, use_color, "Workspace Members ({d}):\n", .{members.len});
         if (members.len == 0) {
@@ -353,9 +358,10 @@ pub fn cmdWorkspaceRun(
     const effective_json = json_output and !dry_run;
 
     if (effective_json) {
-        try w.writeAll("{\"task\":");
-        try common.writeJsonString(w, task_name);
-        try w.writeAll(",\"members\":[");
+        const JsonObj = sailor.fmt.JsonObject(*std.Io.Writer);
+        var root_obj = try JsonObj.init(w);
+        try root_obj.addString("task", task_name);
+        try root_obj.writer.writeAll(",\"members\":[");
     }
 
     for (filtered_members) |member_path| {
@@ -412,9 +418,11 @@ pub fn cmdWorkspaceRun(
                 "workspace: {s}: failed: {s}\n", .{ member_path, @errorName(err) });
             overall_success = false;
             if (effective_json) {
-                try w.writeAll("{\"path\":");
-                try common.writeJsonString(w, member_path);
-                try w.writeAll(",\"success\":false}");
+                const JsonObj2 = sailor.fmt.JsonObject(*std.Io.Writer);
+                var obj = try JsonObj2.init(w);
+                try obj.addString("path", member_path);
+                try obj.addBool("success", false);
+                try obj.end();
                 json_emitted += 1;
             }
             continue;
@@ -424,10 +432,11 @@ pub fn cmdWorkspaceRun(
         if (!result.total_success) overall_success = false;
 
         if (effective_json) {
-            try w.writeAll("{\"path\":");
-            try common.writeJsonString(w, member_path);
-            try w.print(",\"success\":{s}", .{if (result.total_success) "true" else "false"});
-            try w.writeAll("}");
+            const JsonObj2 = sailor.fmt.JsonObject(*std.Io.Writer);
+            var obj = try JsonObj2.init(w);
+            try obj.addString("path", member_path);
+            try obj.addBool("success", result.total_success);
+            try obj.end();
             json_emitted += 1;
         } else {
             if (result.total_success) {
@@ -496,9 +505,10 @@ pub fn cmdWorkspaceRunFiltered(
     const effective_json = json_output and !dry_run;
 
     if (effective_json) {
-        try w.writeAll("{\"task\":");
-        try common.writeJsonString(w, task_name);
-        try w.writeAll(",\"members\":[");
+        const JsonObj = sailor.fmt.JsonObject(*std.Io.Writer);
+        var root_obj = try JsonObj.init(w);
+        try root_obj.addString("task", task_name);
+        try root_obj.writer.writeAll(",\"members\":[");
     }
 
     for (filtered_members) |member_path| {
@@ -553,9 +563,11 @@ pub fn cmdWorkspaceRunFiltered(
                 "workspace: {s}: failed: {s}\n", .{ member_path, @errorName(err) });
             overall_success = false;
             if (effective_json) {
-                try w.writeAll("{\"path\":");
-                try common.writeJsonString(w, member_path);
-                try w.writeAll(",\"success\":false}");
+                const JsonObj2 = sailor.fmt.JsonObject(*std.Io.Writer);
+                var obj = try JsonObj2.init(w);
+                try obj.addString("path", member_path);
+                try obj.addBool("success", false);
+                try obj.end();
                 json_emitted += 1;
             }
             continue;
@@ -565,10 +577,11 @@ pub fn cmdWorkspaceRunFiltered(
         if (!result.total_success) overall_success = false;
 
         if (effective_json) {
-            try w.writeAll("{\"path\":");
-            try common.writeJsonString(w, member_path);
-            try w.print(",\"success\":{s}", .{if (result.total_success) "true" else "false"});
-            try w.writeAll("}");
+            const JsonObj2 = sailor.fmt.JsonObject(*std.Io.Writer);
+            var obj = try JsonObj2.init(w);
+            try obj.addString("path", member_path);
+            try obj.addBool("success", result.total_success);
+            try obj.end();
             json_emitted += 1;
         } else {
             if (result.total_success) {

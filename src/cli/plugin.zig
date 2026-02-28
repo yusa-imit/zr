@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const plugin_loader = @import("../plugin/loader.zig");
@@ -31,16 +32,17 @@ pub fn cmdPlugin(
         defer config.deinit();
 
         if (json_output) {
-            try w.print("[", .{});
-            for (config.plugins, 0..) |p, i| {
-                if (i > 0) try w.print(",", .{});
-                try w.print("{{\"name\":", .{});
-                try common.writeJsonString(w, p.name);
-                try w.print(",\"source\":", .{});
-                try common.writeJsonString(w, p.source);
-                try w.print(",\"kind\":\"{s}\"}}", .{@tagName(p.kind)});
+            const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+            var arr = try JsonArr.init(w);
+            for (config.plugins) |p| {
+                var obj = try arr.beginObject();
+                try obj.addString("name", p.name);
+                try obj.addString("source", p.source);
+                try obj.addString("kind", @tagName(p.kind));
+                try obj.end();
             }
-            try w.print("]\n", .{});
+            try arr.end();
+            try w.writeAll("\n");
         } else {
             if (config.plugins.len == 0) {
                 try color.printDim(w, use_color, "No plugins configured in {s}\n\n  Hint: Add [plugins.NAME] sections to declare plugins\n", .{config_path});
@@ -223,17 +225,15 @@ pub fn cmdPlugin(
             var meta = meta_val;
             defer meta.deinit();
             if (json_output) {
-                try w.print("{{\"name\":", .{});
-                try common.writeJsonString(w, meta.name);
-                try w.print(",\"version\":", .{});
-                try common.writeJsonString(w, meta.version);
-                try w.print(",\"description\":", .{});
-                try common.writeJsonString(w, meta.description);
-                try w.print(",\"author\":", .{});
-                try common.writeJsonString(w, meta.author);
-                try w.print(",\"path\":", .{});
-                try common.writeJsonString(w, plugin_dir);
-                try w.print("}}\n", .{});
+                const JsonObj = sailor.fmt.JsonObject(*std.Io.Writer);
+                var obj = try JsonObj.init(w);
+                try obj.addString("name", meta.name);
+                try obj.addString("version", meta.version);
+                try obj.addString("description", meta.description);
+                try obj.addString("author", meta.author);
+                try obj.addString("path", plugin_dir);
+                try obj.end();
+                try w.writeAll("\n");
             } else {
                 try color.printBold(w, use_color, "{s}", .{if (meta.name.len > 0) meta.name else plugin_name});
                 if (meta.version.len > 0) try w.print(" v{s}", .{meta.version});
@@ -245,11 +245,12 @@ pub fn cmdPlugin(
         } else {
             // No plugin.toml — show basic info.
             if (json_output) {
-                try w.print("{{\"name\":", .{});
-                try common.writeJsonString(w, plugin_name);
-                try w.print(",\"path\":", .{});
-                try common.writeJsonString(w, plugin_dir);
-                try w.print("}}\n", .{});
+                const JsonObj = sailor.fmt.JsonObject(*std.Io.Writer);
+                var obj = try JsonObj.init(w);
+                try obj.addString("name", plugin_name);
+                try obj.addString("path", plugin_dir);
+                try obj.end();
+                try w.writeAll("\n");
             } else {
                 try color.printBold(w, use_color, "{s}\n", .{plugin_name});
                 try color.printDim(w, use_color, "  Path:   {s}\n", .{plugin_dir});
@@ -341,20 +342,18 @@ pub fn cmdPlugin(
         }
 
         if (json_output) {
-            try w.print("[", .{});
-            for (results, 0..) |r, i| {
-                if (i > 0) try w.print(",", .{});
-                try w.print("{{\"name\":", .{});
-                try common.writeJsonString(w, r.name);
-                try w.print(",\"version\":", .{});
-                try common.writeJsonString(w, r.version);
-                try w.print(",\"description\":", .{});
-                try common.writeJsonString(w, r.description);
-                try w.print(",\"author\":", .{});
-                try common.writeJsonString(w, r.author);
-                try w.print("}}", .{});
+            const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+            var arr = try JsonArr.init(w);
+            for (results) |r| {
+                var obj = try arr.beginObject();
+                try obj.addString("name", r.name);
+                try obj.addString("version", r.version);
+                try obj.addString("description", r.description);
+                try obj.addString("author", r.author);
+                try obj.end();
             }
-            try w.print("]\n", .{});
+            try arr.end();
+            try w.writeAll("\n");
         } else {
             if (results.len == 0) {
                 if (query.len > 0) {

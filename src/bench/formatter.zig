@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const types = @import("types.zig");
 
 const BenchmarkStats = types.BenchmarkStats;
@@ -63,31 +64,30 @@ pub fn printText(writer: anytype, stats: *const BenchmarkStats) !void {
 
 /// Print benchmark results in JSON format.
 pub fn printJson(writer: anytype, stats: *const BenchmarkStats) !void {
-    try writer.print("{{\n", .{});
-    try writer.print("  \"total_runs\": {d},\n", .{stats.total_runs});
-    try writer.print("  \"successful_runs\": {d},\n", .{stats.successful_runs});
-    try writer.print("  \"failed_runs\": {d},\n", .{stats.failed_runs});
-    try writer.print("  \"mean_ns\": {d},\n", .{stats.mean_ns});
-    try writer.print("  \"median_ns\": {d},\n", .{stats.median_ns});
-    try writer.print("  \"min_ns\": {d},\n", .{stats.min_ns});
-    try writer.print("  \"max_ns\": {d},\n", .{stats.max_ns});
-    try writer.print("  \"std_dev_ns\": {d},\n", .{stats.std_dev_ns});
-    try writer.print("  \"runs\": [\n", .{});
-
-    for (stats.runs, 0..) |run, i| {
-        try writer.print("    {{\n", .{});
-        try writer.print("      \"duration_ns\": {d},\n", .{run.duration_ns});
-        try writer.print("      \"exit_code\": {d},\n", .{run.exit_code});
-        try writer.print("      \"timestamp\": {d}\n", .{run.timestamp});
-        if (i < stats.runs.len - 1) {
-            try writer.print("    }},\n", .{});
-        } else {
-            try writer.print("    }}\n", .{});
-        }
+    const WriterType = @TypeOf(writer);
+    const JsonObj = sailor.fmt.JsonObject(WriterType);
+    const JsonArr = sailor.fmt.JsonArray(WriterType);
+    var root = try JsonObj.init(writer);
+    try root.addNumber("total_runs", stats.total_runs);
+    try root.addNumber("successful_runs", stats.successful_runs);
+    try root.addNumber("failed_runs", stats.failed_runs);
+    try root.addNumber("mean_ns", stats.mean_ns);
+    try root.addNumber("median_ns", stats.median_ns);
+    try root.addNumber("min_ns", stats.min_ns);
+    try root.addNumber("max_ns", stats.max_ns);
+    try root.addNumber("std_dev_ns", stats.std_dev_ns);
+    try root.writer.writeAll(",\"runs\":");
+    var runs_arr = try JsonArr.init(writer);
+    for (stats.runs) |run| {
+        var obj = try runs_arr.beginObject();
+        try obj.addNumber("duration_ns", run.duration_ns);
+        try obj.addNumber("exit_code", run.exit_code);
+        try obj.addNumber("timestamp", run.timestamp);
+        try obj.end();
     }
-
-    try writer.print("  ]\n", .{});
-    try writer.print("}}\n", .{});
+    try runs_arr.end();
+    try root.end();
+    try writer.writeAll("\n");
 }
 
 /// Print benchmark results in CSV format.

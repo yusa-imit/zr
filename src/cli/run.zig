@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const scheduler = @import("../exec/scheduler.zig");
@@ -450,19 +451,20 @@ pub fn cmdHistory(
     }
 
     if (json_output) {
-        try w.writeAll("{\"runs\":[");
-        for (records.items, 0..) |rec, i| {
-            if (i > 0) try w.writeAll(",");
-            try w.print("{{\"task\":", .{});
-            try common.writeJsonString(w, rec.task_name);
-            try w.print(",\"success\":{s},\"duration_ms\":{d},\"task_count\":{d},\"timestamp\":{d}}}", .{
-                if (rec.success) "true" else "false",
-                rec.duration_ms,
-                rec.task_count,
-                rec.timestamp,
-            });
+        const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+        try w.writeAll("{\"runs\":");
+        var runs_arr = try JsonArr.init(w);
+        for (records.items) |rec| {
+            var obj = try runs_arr.beginObject();
+            try obj.addString("task", rec.task_name);
+            try obj.addBool("success", rec.success);
+            try obj.addNumber("duration_ms", rec.duration_ms);
+            try obj.addNumber("task_count", rec.task_count);
+            try obj.addNumber("timestamp", rec.timestamp);
+            try obj.end();
         }
-        try w.writeAll("]}\n");
+        try runs_arr.end();
+        try w.writeAll("}\n");
         return 0;
     }
 
@@ -524,22 +526,22 @@ pub fn printRunResultJson(
     total_success: bool,
     elapsed_ms: u64,
 ) !void {
-    try w.print("{{\"success\":{s},\"elapsed_ms\":{d},\"tasks\":[", .{
-        if (total_success) "true" else "false",
-        elapsed_ms,
-    });
-    for (results, 0..) |r, i| {
-        if (i > 0) try w.writeAll(",");
-        try w.print("{{\"name\":", .{});
-        try common.writeJsonString(w, r.task_name);
-        try w.print(",\"success\":{s},\"exit_code\":{d},\"duration_ms\":{d},\"skipped\":{s}}}", .{
-            if (r.success) "true" else "false",
-            r.exit_code,
-            r.duration_ms,
-            if (r.skipped) "true" else "false",
-        });
+    const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+    try w.writeAll("{\"success\":");
+    try w.writeAll(if (total_success) "true" else "false");
+    try w.print(",\"elapsed_ms\":{d},\"tasks\":", .{elapsed_ms});
+    var tasks_arr = try JsonArr.init(w);
+    for (results) |r| {
+        var obj = try tasks_arr.beginObject();
+        try obj.addString("name", r.task_name);
+        try obj.addBool("success", r.success);
+        try obj.addNumber("exit_code", r.exit_code);
+        try obj.addNumber("duration_ms", r.duration_ms);
+        try obj.addBool("skipped", r.skipped);
+        try obj.end();
     }
-    try w.writeAll("]}\n");
+    try tasks_arr.end();
+    try w.writeAll("}\n");
 }
 
 /// Print a formatted dry-run plan showing execution levels and task names.

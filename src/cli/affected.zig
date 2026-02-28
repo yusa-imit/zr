@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const loader = @import("../config/loader.zig");
 const common = @import("common.zig");
 const color = @import("../output/color.zig");
@@ -231,12 +232,14 @@ pub fn cmdAffected(
     // List mode: just print affected projects
     if (list_only) {
         if (json_output) {
-            try w.print("{{\"affected\":[", .{});
-            for (final_projects.items, 0..) |proj, idx| {
-                if (idx > 0) try w.print(",", .{});
-                try w.print("\"{s}\"", .{proj});
+            const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+            try w.writeAll("{\"affected\":");
+            var arr = try JsonArr.init(w);
+            for (final_projects.items) |proj| {
+                try arr.addString(proj);
             }
-            try w.print("]}}\n", .{});
+            try arr.end();
+            try w.writeAll("}\n");
         } else {
             try color.printHeader(w, use_color, "Affected projects ({d}):\n", .{final_projects.items.len});
             for (final_projects.items) |proj| {
