@@ -9,8 +9,8 @@
 - **Config format**: TOML + built-in expression engine (Option D from PRD)
 
 ## Test Status (2026-02-28)
-- **Unit tests**: 613/621 passing (8 skipped, 0 failed, **0 memory leaks**)
-- **Integration tests**: **786/786 passing** (100% success rate) — comprehensive CLI coverage + edge cases
+- **Unit tests**: 675/683 passing (8 skipped, 0 failed, **0 memory leaks**)
+- **Integration tests**: **805/805 passing** (100% success rate) — comprehensive CLI coverage + edge cases
 - **Latest commits** (Stabilization Cycle):
   - b7b0233: Added integration tests for 5 untested commands: codeowners, setup, publish, live, interactive-run (730→786, +7.7%)
   - 8758ac3: Added 6 integration tests for `doctor` command (724→730, +0.8%)
