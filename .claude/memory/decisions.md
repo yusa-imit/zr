@@ -10,6 +10,20 @@ Decisions are logged chronologically. Format:
 
 ---
 
+## [2026-02-28] Defer Sailor Migration to Feature Mode
+- Context: CLAUDE.md lists 4 READY sailor migrations (v0.1.0-v0.4.0) to refactor arg parsing, color, progress, and TUI to use standardized sailor library
+- Decision: Defer all sailor migrations to FEATURE MODE sessions
+- Rationale:
+  - Current session is STABILIZATION MODE (hour 12, divisible by 4)
+  - Stabilization mode prioritizes: CI green (✅), no issues (✅), integration tests (805/805 ✅), bug fixes
+  - Sailor migration is a large refactoring task (arg parser uses comptime defs, color has different API)
+  - Risk of introducing new bugs during stabilization contradicts mode goals
+  - All tests passing with current implementation — no functional need for migration
+  - Sailor migration is code quality improvement, better suited for feature development cycles
+  - Will revisit in next FEATURE MODE session (hours 1-3, 5-7, 9-11, 13-15, 17-19, 21-23)
+
+---
+
 ## [2026-02-16] Project Setup for AI-Driven Development
 - Context: Setting up repository for fully autonomous Claude Code development
 - Decision: Created comprehensive .claude/ directory with agents, commands, and memory system
