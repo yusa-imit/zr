@@ -5,7 +5,7 @@ pub const BASH_COMPLETION =
     \\_zr_completion() {
     \\    local cur="${COMP_WORDS[COMP_CWORD]}"
     \\    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env export upgrade alias estimate show schedule"
+    \\    local commands="run watch workflow list graph history workspace affected cache clean plugin interactive live interactive-run irun init setup validate lint conformance completion tools repo codeowners version publish analytics context bench doctor env export upgrade alias estimate show schedule ai mcp lsp"
     \\    local options="--help --version --profile --dry-run --jobs --no-color --quiet --verbose --config --format --monitor --affected -h -p -n -j -q -v -f -m"
     \\
     \\    case "$prev" in
@@ -115,6 +115,9 @@ pub const ZSH_COMPLETION =
     \\        'estimate:Estimate task duration based on execution history'
     \\        'show:Display detailed information about a task'
     \\        'schedule:Schedule tasks to run at specific times (add|list|remove|show)'
+    \\        'ai:Natural language interface for task execution'
+    \\        'mcp:MCP server for Claude Code/Cursor integration'
+    \\        'lsp:LSP server for VS Code/Neovim integration'
     \\    )
     \\    options=(
     \\        '--help[Show help]'
