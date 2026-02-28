@@ -10,17 +10,17 @@ Download the latest release for your platform:
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/yourusername/zr/releases/latest/download/zr-aarch64-macos -o zr
+curl -L https://github.com/yusa-imit/zr/releases/latest/download/zr-aarch64-macos -o zr
 chmod +x zr
 sudo mv zr /usr/local/bin/
 
 # macOS (Intel)
-curl -L https://github.com/yourusername/zr/releases/latest/download/zr-x86_64-macos -o zr
+curl -L https://github.com/yusa-imit/zr/releases/latest/download/zr-x86_64-macos -o zr
 chmod +x zr
 sudo mv zr /usr/local/bin/
 
 # Linux (x86_64)
-curl -L https://github.com/yourusername/zr/releases/latest/download/zr-x86_64-linux -o zr
+curl -L https://github.com/yusa-imit/zr/releases/latest/download/zr-x86_64-linux -o zr
 chmod +x zr
 sudo mv zr /usr/local/bin/
 
@@ -34,7 +34,7 @@ sudo mv zr /usr/local/bin/
 Requires [Zig 0.15.2](https://ziglang.org/download/):
 
 ```bash
-git clone https://github.com/yourusername/zr.git
+git clone https://github.com/yusa-imit/zr.git
 cd zr
 zig build -Doptimize=ReleaseSafe
 sudo cp zig-out/bin/zr /usr/local/bin/
@@ -44,7 +44,7 @@ sudo cp zig-out/bin/zr /usr/local/bin/
 
 ```bash
 zr --version
-# zr version 3.0.0
+# zr version 1.0.0
 ```
 
 ## Quick Start
@@ -271,5 +271,5 @@ Use `zr history` to see recent task executions and their outputs.
 
 ## Support
 
-- GitHub Issues: https://github.com/yourusername/zr/issues
-- Documentation: https://github.com/yourusername/zr/docs
+- GitHub Issues: https://github.com/yusa-imit/zr/issues
+- Documentation: https://github.com/yusa-imit/zr/docs
