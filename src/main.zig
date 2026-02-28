@@ -56,7 +56,6 @@ const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
-const ai_cmd = @import("cli/ai.zig");
 const mcp_server = @import("mcp/server.zig");
 const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
@@ -471,7 +470,6 @@ fn run(
         "setup",      "env",        "export",     "affected",
         "clean",      "upgrade",    "alias",      "estimate",
         "show",       "schedule",   "mcp",        "lsp",
-        "ai",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -839,9 +837,6 @@ fn run(
         }
     } else if (std.mem.eql(u8, cmd, "lsp")) {
         return lsp_server.serve(allocator);
-    } else if (std.mem.eql(u8, cmd, "ai")) {
-        const ai_args = if (effective_args.len > 2) effective_args[2..] else &[_][]const u8{};
-        return ai_cmd.cmdAi(allocator, ai_args, config_path);
     }
 
     // This should never be reached due to alias expansion logic above
@@ -912,7 +907,6 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  estimate <task>        Estimate task duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
     try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
-    try w.print("  ai \"<query>\"           Natural language interface (e.g., \"build and test\")\n", .{});
     try w.print("  mcp serve              Start MCP server for Claude Code/Cursor integration\n", .{});
     try w.print("  lsp                    Start LSP server for VS Code/Neovim integration\n", .{});
     try w.print("  <alias>                Run a user-defined alias (e.g., 'zr dev' if 'dev' is defined)\n\n", .{});

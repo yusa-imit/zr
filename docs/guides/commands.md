@@ -14,7 +14,7 @@ Complete reference for all `zr` CLI commands.
 - [Repository Commands](#repository-commands)
 - [Publishing Commands](#publishing-commands)
 - [Development Commands](#development-commands)
-- [AI & LSP Commands](#ai--lsp-commands)
+- [MCP & LSP Commands](#mcp--lsp-commands)
 - [Global Options](#global-options)
 
 ---
@@ -895,31 +895,7 @@ zr schedule remove 1
 
 ---
 
-## AI & LSP Commands
-
-### `ai`
-
-Natural language interface for task execution.
-
-```bash
-zr ai "<query>"
-```
-
-**Examples:**
-```bash
-zr ai "build and test"
-# Translates to: zr run build && zr run test
-
-zr ai "show failed tasks from yesterday"
-# Translates to: zr history --status=failed --since=1d
-
-zr ai "deploy to production"
-# Translates to: zr run deploy-prod
-```
-
-Pattern matching supports 10+ command types. Requires quotes for multi-word queries.
-
----
+## MCP & LSP Commands
 
 ### `mcp serve`
 

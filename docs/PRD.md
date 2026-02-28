@@ -12,12 +12,12 @@
 |------|------|------|------|
 | **v1.0** | 2026-02-16 | Phase 1–4 | 태스크 러너 & 워크플로우 매니저 (MVP → 플러그인) |
 | **v2.0** | 2026-02-20 | Phase 5–8 | 개발자 플랫폼 확장 (모노레포·툴체인·멀티레포·엔터프라이즈) |
-| **v3.0** | 2026-02-27 | Phase 9–13 | v1.0 릴리스 (AI 통합·LSP·DX·성능·언어 확장성) |
+| **v3.0** | 2026-02-27 | Phase 9–13 | v1.0 릴리스 (MCP·LSP·DX·성능·언어 확장성) |
 
 **v3.0에서 추가/변경된 항목**:
-- Section 1: Executive Summary에 AI 통합·LSP·DX 축 추가
+- Section 1: Executive Summary에 MCP·LSP·DX 축 추가
 - Section 3: Persona G (AI-Native Developer) `v3.0`
-- Section 5: 5.11 LanguageProvider, 5.12 MCP Server, 5.13 LSP Server, 5.14 자연어 인터페이스, 5.15 DX 개선 `v3.0`
+- Section 5: 5.11 LanguageProvider, 5.12 MCP Server, 5.13 LSP Server, 5.14 DX 개선 `v3.0`
 - Section 9: Phase 9–13 `v3.0`
 - Section 10: 10.3 Phase 9–13 성공 지표 `v3.0`
 - Section 11: AI/LSP 관련 리스크 추가 `v3.0`
@@ -44,7 +44,7 @@
 - **Run** — 태스크 정의, 의존성 그래프 기반 병렬 실행, 워크플로우 파이프라인
 - **Manage** — 프로젝트별 툴체인 버전 관리, 환경 변수 레이어링, 원커맨드 프로젝트 셋업
 - **Scale** — 모노레포 affected 감지, 콘텐츠 해시 캐싱, 멀티레포 오케스트레이션, 아키텍처 거버넌스
-- **Integrate** `v3.0` — MCP Server로 AI 에이전트 연동, LSP Server로 에디터 통합, 자연어 인터페이스
+- **Integrate** `v3.0` — MCP Server로 AI 에이전트 연동, LSP Server로 에디터 통합
 
 레포지토리 구조(모노레포, 멀티레포, 단일 프로젝트)에 구애받지 않고, 어떤 언어·빌드 시스템·스크립트 환경에서든 동작하며, 개인 프로젝트의 간단한 태스크 러너에서 엔터프라이즈 모노레포의 빌드 시스템까지 **점진적으로 확장(progressive unlock)** 되는 도구를 지향한다. 이름 자체가 2글자로, 타이핑 최소화를 통한 빠른 CLI 사용을 지향한다.
 
@@ -1243,21 +1243,9 @@ zr lsp                        # LSP 서버 시작 (JSON-RPC over stdio, Content-
 
 **핵심 설계**: JSON-RPC 트랜스포트는 MCP Server와 공유. Content-Length 프레이밍(LSP) + 줄바꿈 구분(MCP) 모두 지원하는 단일 트랜스포트.
 
-### 5.14 자연어 인터페이스 `v3.0`
+### 5.14 DX 개선 `v3.0`
 
-패턴 기반 자연어 → zr 명령어 매핑. LLM API 의존 없이 키워드 매칭으로 동작한다.
-
-```bash
-zr ai "빌드하고 테스트해줘"      # → zr run build && zr run test
-zr ai "프론트엔드 배포"          # → zr run deploy-frontend
-zr ai "어제 실패한 태스크"       # → zr history --status=failed --since=1d
-```
-
-MCP 환경에서는 Claude가 이미 자연어를 이해하므로, 이 기능은 주로 CLI 단독 사용 시 편의를 위한 것이다.
-
-### 5.15 DX 개선 `v3.0`
-
-#### 5.15.1 "Did you mean?" 제안
+#### 5.14.1 "Did you mean?" 제안
 Levenshtein 편집 거리 기반으로 오타 시 가까운 명령어/태스크를 제안한다.
 
 ```bash
@@ -1276,7 +1264,7 @@ $ zr run biuld
 
 명령어와 태스크 이름 모두에 적용. 편집 거리 ≤ 3인 후보만 제안.
 
-#### 5.15.2 에러 메시지 강화
+#### 5.14.2 에러 메시지 강화
 - TOML 파싱 에러에 정확한 줄번호/열 번호 표시
 - 존재하지 않는 `deps` 참조 시 가까운 태스크 이름 제안
 - 설정 검증 에러에 수정 힌트 포함
@@ -1673,12 +1661,11 @@ src/
 
 **의존성**: 9A, 9B, 9C 병렬 개발 가능. 9D는 9C(Levenshtein)에 의존.
 
-### Phase 10 — MCP Server + AI 통합 `v3.0`
+### Phase 10 — MCP Server `v3.0`
 **목표: AI 에이전트에서 zr을 직접 호출할 수 있는 MCP 서버**
 
 - **10A MCP Server 코어**: JSON-RPC 기반 MCP 서버, 9개 도구 노출 (run_task, list_tasks, validate_config 등)
 - **10B zr.toml 자동생성**: `zr init --detect` — LanguageProvider 기반 프로젝트 감지 및 설정 생성
-- **10C 자연어 인터페이스**: `zr ai "빌드하고 테스트해줘"` — 키워드 패턴 매핑 (LLM API 의존 X)
 
 **의존성**: 10A는 9B(JSON-RPC)에 의존. 10B는 9A(LanguageProvider)에 의존. 10A와 10B 병렬 가능.
 
@@ -1718,10 +1705,10 @@ Phase 9 (기반):
                    ▼   │
   9D 에러 개선 ←─(9C)  │
                        │
-Phase 10 (AI):         │         Phase 11 (LSP):
+Phase 10 (MCP):        │         Phase 11 (LSP):
   10A MCP ←── 9B       │          11A LSP Core ←── 9B
   10B 자동생성 ←── 9A ─┘          11B 자동완성 ←── 11A (+9A)
-  10C 자연어 ←── 10A              11C Hover/Goto ←── 11A
+                                  11C Hover/Goto ←── 11A
 
 Phase 12 (성능): 독립, 언제든 병렬 가능
 
@@ -1793,7 +1780,6 @@ Phase 13 (릴리스): Phase 9-12 완료 후
 | MCP 스펙 변경 `v3.0` | MCP가 아직 초기 단계라 스펙이 변경될 수 있음 | 최소 도구 세트부터 시작, 추상화 레이어로 스펙 변경 격리 |
 | LSP 에디터 호환성 `v3.0` | VS Code, Neovim, Emacs 등 에디터마다 LSP 구현 차이 | VS Code 우선 개발 및 검증, 표준 LSP 스펙 엄격 준수 |
 | LanguageProvider 리팩토링 범위 `v3.0` | 기존 6개+ 파일 수정 필요, 리그레션 위험 | 기존 테스트 활용, 점진적 마이그레이션 (하나의 언어씩) |
-| 자연어 인터페이스 정확도 `v3.0` | 패턴 매칭 기반이라 복잡한 자연어 이해 불가 | 명확한 한계 문서화, MCP 환경에서는 LLM이 직접 처리하도록 안내 |
 
 ---
 
@@ -2088,11 +2074,6 @@ zr mcp serve                         # MCP 서버 시작 (Claude Code/Cursor 연
 
 # LSP Server
 zr lsp                               # LSP 서버 시작 (VS Code/Neovim 연동)
-
-# 자연어 인터페이스
-zr ai "빌드하고 테스트해줘"             # → zr run build && zr run test
-zr ai "프론트엔드 배포"                # → zr run deploy-frontend
-zr ai "어제 실패한 태스크"              # → zr history --status=failed --since=1d
 
 # 프로젝트 자동 감지 & 설정 생성
 zr init --detect                     # 프로젝트 언어/스크립트 자동 감지 → zr.toml 생성

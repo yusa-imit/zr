@@ -17,7 +17,7 @@ zr combines **four core capabilities** in one tool:
 | **Run** | Execute tasks with dependency graphs, parallel execution, workflows | `make`, `just`, `task`, npm scripts |
 | **Manage** | Install & manage toolchains (Node, Python, Zig, Go, Rust, etc.) | `nvm`, `pyenv`, `rbenv`, `asdf`, `mise` |
 | **Scale** | Monorepo/multi-repo intelligence with affected detection, caching | `Nx`, `Turborepo`, `Lerna`, `Rush` |
-| **Integrate** | MCP Server for AI agents, LSP Server for editors, natural language interface | (No equivalent) |
+| **Integrate** | MCP Server for AI agents, LSP Server for editors | (No equivalent) |
 
 **Key differentiators**:
 - **No runtime dependencies** — Single binary, no Node.js/Python/JVM required
@@ -268,15 +268,6 @@ Features:
 - Hover documentation for fields and expressions
 - Go-to-definition for task dependencies
 
-**Natural language interface**:
-```bash
-zr ai "build and test the frontend"
-# → zr run build-frontend && zr run test-frontend
-
-zr ai "show failed tasks from yesterday"
-# → zr history --status=failed --since=1d
-```
-
 ### Performance & Enterprise (Phase 8, 12)
 
 **Benchmarking**:
@@ -471,7 +462,7 @@ All phases complete! zr v1.0 is production-ready.
 - LanguageProvider interface (extensible language support)
 - MCP Server for AI agents (Claude Code, Cursor)
 - LSP Server for editors (VS Code, Neovim, Helix, Emacs)
-- Natural language interface, error improvements
+- Error message improvements
 - Performance optimization (1.2MB binary, fuzz testing)
 - Migration tools (Make/Just/Task → zr)
 - Comprehensive documentation
