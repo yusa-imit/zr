@@ -155,7 +155,7 @@ fn generateDiagnostics(
     try diag_json.appendSlice(allocator, "]");
 
     return std.fmt.allocPrint(allocator,
-        \\{{"method":"textDocument/publishDiagnostics","params":{{"uri":"{s}","diagnostics":{s}}}}}
+        \\{{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{s}","diagnostics":{s}}}}}
     , .{ uri, diag_json.items });
 }
 

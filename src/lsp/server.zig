@@ -128,6 +128,7 @@ pub const Server = struct {
 
         try stdout.writeAll(header);
         try stdout.writeAll(json);
+        try stdout.sync(); // Flush to ensure tests can read the output
     }
 
     /// Handle JSON-RPC request (expects response)
@@ -136,7 +137,7 @@ pub const Server = struct {
             self.initialized = true;
             return try handlers.handleInitialize(self.allocator, &request);
         } else if (std.mem.eql(u8, request.method, "shutdown")) {
-            self.shutdown_requested = true;
+            // Don't set shutdown_requested here - wait for exit notification
             return try handlers.handleShutdown(self.allocator, &request);
         } else if (std.mem.eql(u8, request.method, "textDocument/completion")) {
             if (!self.initialized) {
