@@ -1,4 +1,5 @@
 const std = @import("std");
+const sailor = @import("sailor");
 const loader = @import("config/loader.zig");
 const parser = @import("config/parser.zig");
 const expr = @import("config/expr.zig");
@@ -261,6 +262,61 @@ fn suggestSimilarCommands(
     }
 }
 
+/// Global flag definitions using sailor.arg for compile-time validated, type-safe parsing.
+const global_flags = [_]sailor.arg.FlagDef{
+    .{ .name = "profile", .short = 'p', .type = .string, .help = "Activate a named profile" },
+    .{ .name = "dry-run", .short = 'n', .type = .bool, .help = "Show what would run without executing" },
+    .{ .name = "no-color", .type = .bool, .help = "Disable color output" },
+    .{ .name = "quiet", .short = 'q', .type = .bool, .help = "Suppress non-error output" },
+    .{ .name = "verbose", .short = 'v', .type = .bool, .help = "Verbose output" },
+    .{ .name = "format", .short = 'f', .type = .string, .default = "text", .help = "Output format: text or json" },
+    .{ .name = "jobs", .short = 'j', .type = .int, .help = "Max parallel tasks (default: CPU count)" },
+    .{ .name = "config", .type = .string, .help = "Config file path" },
+    .{ .name = "monitor", .short = 'm', .type = .bool, .help = "Display live resource usage during execution" },
+    .{ .name = "affected", .type = .string, .help = "Run only affected workspace members" },
+};
+
+const GlobalFlagParser = sailor.arg.Parser(&global_flags);
+
+const GlobalFlagInfo = struct {
+    long_name: []const u8,
+    takes_value: bool,
+};
+
+/// Check if an arg token is a known global flag.
+/// Returns flag info if recognized, null otherwise (passed through to subcommand).
+fn isGlobalFlag(arg: []const u8) ?GlobalFlagInfo {
+    if (std.mem.startsWith(u8, arg, "--")) {
+        const name = arg[2..];
+        inline for (global_flags) |flag| {
+            if (std.mem.eql(u8, name, flag.name)) {
+                return .{ .long_name = "--" ++ flag.name, .takes_value = flag.type != .bool };
+            }
+        }
+        return null;
+    }
+    if (std.mem.startsWith(u8, arg, "-") and arg.len == 2) {
+        const ch = arg[1];
+        inline for (global_flags) |flag| {
+            if (flag.short != null and flag.short.? == ch) {
+                return .{ .long_name = "--" ++ flag.name, .takes_value = flag.type != .bool };
+            }
+        }
+        return null;
+    }
+    return null;
+}
+
+/// Custom error hints for missing-value global flags.
+fn globalFlagHint(long_name: []const u8) []const u8 {
+    if (std.mem.eql(u8, long_name, "--profile")) return "--profile: missing profile name\n\n  Hint: zr --profile <name> run <task>";
+    if (std.mem.eql(u8, long_name, "--format")) return "--format: missing value\n\n  Hint: zr --format <text|json> <command>";
+    if (std.mem.eql(u8, long_name, "--jobs")) return "--jobs: missing value\n\n  Hint: zr --jobs <N> run <task>";
+    if (std.mem.eql(u8, long_name, "--config")) return "--config: missing path\n\n  Hint: zr --config <path> run <task>";
+    if (std.mem.eql(u8, long_name, "--affected")) return "--affected: missing base reference\n\n  Hint: zr --affected origin/main workspace run <task>";
+    return "missing flag value";
+}
+
 /// Inner run function that returns an exit code.
 /// Returns 0 for success, non-zero for failure.
 fn run(
@@ -275,104 +331,89 @@ fn run(
         return 0;
     }
 
-    // Parse global flags: --profile <name>, --dry-run, --jobs, --no-color, --quiet, --verbose, --config, --format, --monitor
-    // Scan args for flags; strip them from the args slice before command dispatch.
-    var profile_name: ?[]const u8 = null;
-    var dry_run: bool = false;
-    var max_jobs: u32 = 0;
-    var no_color: bool = false;
-    var quiet: bool = false;
-    var verbose: bool = false;
-    var json_output: bool = false;
-    var config_path: []const u8 = common.CONFIG_FILE;
-    var enable_monitor: bool = false;
-    var affected_base: ?[]const u8 = null;
+    // Parse global flags using sailor.arg — extract known global flags from args,
+    // passing through unknown flags (subcommand-specific) to remaining_args.
     var remaining_args = std.ArrayList([]const u8){};
     defer remaining_args.deinit(allocator);
+    var global_flag_tokens = std.ArrayList([]const u8){};
+    defer global_flag_tokens.deinit(allocator);
+
     {
         var i: usize = 0;
         while (i < args.len) : (i += 1) {
-            if (std.mem.eql(u8, args[i], "--profile") or std.mem.eql(u8, args[i], "-p")) {
-                if (i + 1 < args.len) {
-                    profile_name = args[i + 1];
-                    i += 1; // skip value
-                } else {
-                    try color.printError(ew, use_color, "--profile: missing profile name\n\n  Hint: zr --profile <name> run <task>\n", .{});
-                    return 1;
-                }
-            } else if (std.mem.eql(u8, args[i], "--dry-run") or std.mem.eql(u8, args[i], "-n")) {
-                dry_run = true;
-            } else if (std.mem.eql(u8, args[i], "--no-color")) {
-                no_color = true;
-            } else if (std.mem.eql(u8, args[i], "--quiet") or std.mem.eql(u8, args[i], "-q")) {
-                quiet = true;
-            } else if (std.mem.eql(u8, args[i], "--verbose") or std.mem.eql(u8, args[i], "-v")) {
-                verbose = true;
-            } else if (std.mem.eql(u8, args[i], "--format") or std.mem.eql(u8, args[i], "-f")) {
-                if (i + 1 < args.len) {
-                    const fmt_val = args[i + 1];
-                    if (std.mem.eql(u8, fmt_val, "json")) {
-                        json_output = true;
-                    } else if (std.mem.eql(u8, fmt_val, "text")) {
-                        json_output = false;
+            const arg = args[i];
+            if (isGlobalFlag(arg)) |flag_info| {
+                if (flag_info.takes_value) {
+                    // Emit long form for sailor (normalize short to long)
+                    try global_flag_tokens.append(allocator, flag_info.long_name);
+                    if (i + 1 < args.len) {
+                        try global_flag_tokens.append(allocator, args[i + 1]);
+                        i += 1;
                     } else {
-                        try color.printError(ew, use_color,
-                            "--format: unknown format '{s}'\n\n  Hint: supported formats: text, json\n",
-                            .{fmt_val});
+                        // Missing value — let sailor report MissingValue
+                        // But we need custom error messages, so handle here
+                        const hints = globalFlagHint(flag_info.long_name);
+                        try color.printError(ew, use_color, "{s}\n", .{hints});
                         return 1;
                     }
-                    i += 1; // skip value
                 } else {
-                    try color.printError(ew, use_color,
-                        "--format: missing value\n\n  Hint: zr --format <text|json> <command>\n", .{});
-                    return 1;
-                }
-            } else if (std.mem.eql(u8, args[i], "--jobs") or std.mem.eql(u8, args[i], "-j")) {
-                if (i + 1 < args.len) {
-                    const n = std.fmt.parseInt(u32, args[i + 1], 10) catch {
-                        try color.printError(ew, use_color,
-                            "--jobs: invalid value '{s}' — must be a positive integer\n\n  Hint: zr --jobs 4 run <task>\n",
-                            .{args[i + 1]});
-                        return 1;
-                    };
-                    if (n == 0) {
-                        try color.printError(ew, use_color,
-                            "--jobs: value must be >= 1 (use 1 for sequential execution)\n\n  Hint: zr --jobs 4 run <task>\n", .{});
-                        return 1;
-                    }
-                    max_jobs = n;
-                    i += 1; // skip value
-                } else {
-                    try color.printError(ew, use_color,
-                        "--jobs: missing value\n\n  Hint: zr --jobs <N> run <task>\n", .{});
-                    return 1;
-                }
-            } else if (std.mem.eql(u8, args[i], "--config")) {
-                if (i + 1 < args.len) {
-                    config_path = args[i + 1];
-                    i += 1; // skip value
-                } else {
-                    try color.printError(ew, use_color,
-                        "--config: missing path\n\n  Hint: zr --config <path> run <task>\n", .{});
-                    return 1;
-                }
-            } else if (std.mem.eql(u8, args[i], "--monitor") or std.mem.eql(u8, args[i], "-m")) {
-                enable_monitor = true;
-            } else if (std.mem.eql(u8, args[i], "--affected")) {
-                if (i + 1 < args.len) {
-                    affected_base = args[i + 1];
-                    i += 1; // skip value
-                } else {
-                    try color.printError(ew, use_color,
-                        "--affected: missing base reference\n\n  Hint: zr --affected origin/main workspace run <task>\n", .{});
-                    return 1;
+                    try global_flag_tokens.append(allocator, flag_info.long_name);
                 }
             } else {
-                try remaining_args.append(allocator, args[i]);
+                try remaining_args.append(allocator, arg);
             }
         }
     }
-    // ZR_PROFILE env var is checked inside loadConfig (--profile flag takes precedence).
+
+    var flag_parser = GlobalFlagParser.init(allocator);
+    defer flag_parser.deinit();
+    flag_parser.parse(global_flag_tokens.items) catch |err| switch (err) {
+        error.InvalidValue => {
+            // --jobs had a non-integer value
+            try color.printError(ew, use_color,
+                "--jobs: invalid value — must be a positive integer\n\n  Hint: zr --jobs 4 run <task>\n", .{});
+            return 1;
+        },
+        else => {
+            try color.printError(ew, use_color, "Invalid flag value\n", .{});
+            return 1;
+        },
+    };
+
+    // Extract parsed values with type-safe access
+    const profile_name: ?[]const u8 = if (flag_parser.get("profile")) |v| (v.asString() catch null) else null;
+    const dry_run = flag_parser.getBool("dry-run", false);
+    const no_color = flag_parser.getBool("no-color", false);
+    const quiet = flag_parser.getBool("quiet", false);
+    const verbose = flag_parser.getBool("verbose", false);
+    const enable_monitor = flag_parser.getBool("monitor", false);
+    const config_path = flag_parser.getString("config", common.CONFIG_FILE);
+    const affected_base: ?[]const u8 = if (flag_parser.get("affected")) |v| (v.asString() catch null) else null;
+
+    // --format: custom validation (only "json" or "text")
+    const format_str = flag_parser.getString("format", "text");
+    var json_output: bool = false;
+    if (std.mem.eql(u8, format_str, "json")) {
+        json_output = true;
+    } else if (std.mem.eql(u8, format_str, "text")) {
+        json_output = false;
+    } else {
+        try color.printError(ew, use_color,
+            "--format: unknown format '{s}'\n\n  Hint: supported formats: text, json\n",
+            .{format_str});
+        return 1;
+    }
+
+    // --jobs: if explicitly set, must be >= 1. If not set, default to 0 (auto-detect CPU count).
+    const max_jobs: u32 = if (flag_parser.get("jobs")) |v| blk: {
+        const jobs_val = v.asInt() catch 0;
+        if (jobs_val <= 0 or jobs_val > std.math.maxInt(u32)) {
+            try color.printError(ew, use_color,
+                "--jobs: value must be >= 1 (use 1 for sequential execution)\n\n  Hint: zr --jobs 4 run <task>\n", .{});
+            return 1;
+        }
+        break :blk @intCast(jobs_val);
+    } else 0;
 
     // Apply --no-color override.
     const effective_color = use_color and !no_color;
