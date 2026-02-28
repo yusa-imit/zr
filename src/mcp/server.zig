@@ -165,12 +165,11 @@ fn handleToolCall(
     const tool_name_val = params_obj.get("name") orelse return error.MissingToolName;
     const tool_name = tool_name_val.string;
 
-    // TODO(Phase 10A): Extract and pass arguments to tool handlers
-    // For now, handlers are stubs and don't use params
-    // When implementing real handlers, we'll need to either:
-    // 1. Parse arguments from params_json manually, or
-    // 2. Use std.json.stringify (if available in Zig 0.15+) to convert Value to string
-    const tool_params: ?[]const u8 = null;
+    // Pass the full params_json to handlers
+    // Handlers use parseStringParam() to extract individual arguments
+    // This approach avoids needing to serialize std.json.Value back to JSON
+    // (which would require manual implementation in Zig 0.15)
+    const tool_params: ?[]const u8 = params_json;
 
     // Call the tool handler
     var tool_result = handlers.handleTool(allocator, tool_name, tool_params) catch |err| {
