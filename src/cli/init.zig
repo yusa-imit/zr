@@ -4,6 +4,9 @@ const common = @import("common.zig");
 const registry = @import("../lang/registry.zig");
 const provider = @import("../lang/provider.zig");
 const LanguageProvider = provider.LanguageProvider;
+const makefile_migrate = @import("../migrate/makefile.zig");
+const justfile_migrate = @import("../migrate/justfile.zig");
+const taskfile_migrate = @import("../migrate/taskfile.zig");
 
 /// Generate zr.toml content from detected languages
 fn generateConfigFromDetected(
@@ -102,10 +105,18 @@ pub const INIT_TEMPLATE =
     \\
 ;
 
+pub const MigrateMode = enum {
+    none,
+    makefile,
+    justfile,
+    taskfile,
+};
+
 pub fn cmdInit(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
     detect_mode: bool,
+    migrate_mode: MigrateMode,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -129,7 +140,36 @@ pub fn cmdInit(
     }
 
     // Determine which template to use
-    const template = if (detect_mode) blk: {
+    const template = if (migrate_mode != .none) blk: {
+        // Migration mode
+        const source_file = switch (migrate_mode) {
+            .none => unreachable,
+            .makefile => "Makefile",
+            .justfile => "justfile",
+            .taskfile => "Taskfile.yml",
+        };
+
+        // Check if source file exists
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const source_path = dir.realpath(source_file, &path_buf) catch |err| {
+            try color.printError(err_writer, use_color,
+                "init: {s} not found: {s}\n\n  Hint: Run this command from a directory containing {s}\n",
+                .{ source_file, @errorName(err), source_file });
+            return 1;
+        };
+
+        try color.printInfo(w, use_color, "Migrating from {s}...\n", .{source_file});
+
+        const migrated = switch (migrate_mode) {
+            .none => unreachable,
+            .makefile => try makefile_migrate.parseToZrToml(allocator, source_path),
+            .justfile => try justfile_migrate.parseToZrToml(allocator, source_path),
+            .taskfile => try taskfile_migrate.parseToZrToml(allocator, source_path),
+        };
+
+        try color.printSuccess(w, use_color, "Migration complete!\n\n", .{});
+        break :blk migrated;
+    } else if (detect_mode) blk: {
         try color.printInfo(w, use_color, "Detecting project languages...\n", .{});
 
         // Get current directory path
@@ -170,7 +210,7 @@ pub fn cmdInit(
         break :blk generated;
     } else INIT_TEMPLATE;
 
-    defer if (detect_mode) allocator.free(template);
+    defer if (detect_mode or migrate_mode != .none) allocator.free(template);
 
     // Create the config file exclusively (won't overwrite).
     const file = dir.createFile(common.CONFIG_FILE, .{ .exclusive = true }) catch |cerr| {
@@ -207,8 +247,8 @@ test "cmdInit creates zr.toml in empty directory" {
     const stderr_file = std.fs.File.stderr();
     var err_w = stderr_file.writer(&err_buf);
 
-    // First call: should create the file (no detect mode).
-    const code1 = try cmdInit(std.testing.allocator, tmp.dir, false, &out_w.interface, &err_w.interface, false);
+    // First call: should create the file (no detect mode, no migrate mode).
+    const code1 = try cmdInit(std.testing.allocator, tmp.dir, false, .none, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code1);
 
     // Verify file exists and contains expected content.
@@ -218,6 +258,6 @@ test "cmdInit creates zr.toml in empty directory" {
     try std.testing.expect(std.mem.indexOf(u8, content, "hello") != null);
 
     // Second call: should refuse to overwrite.
-    const code2 = try cmdInit(std.testing.allocator, tmp.dir, false, &out_w.interface, &err_w.interface, false);
+    const code2 = try cmdInit(std.testing.allocator, tmp.dir, false, .none, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code2);
 }

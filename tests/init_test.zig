@@ -235,3 +235,175 @@ test "740: init --detect refuses to overwrite existing config" {
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "already exists") != null);
 }
+
+test "741: init --from-make converts Makefile to zr.toml" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a Makefile with common patterns
+    const makefile_content = ".PHONY: build test clean\n\n" ++
+        "build:\n\tgo build -o app cmd/main.go\n\n" ++
+        "test: build\n\tgo test ./...\n\n" ++
+        "clean:\n\trm -rf app dist/\n";
+    try tmp.dir.writeFile(.{ .sub_path = "Makefile", .data = makefile_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-make" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify zr.toml was created
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    // Check for migrated tasks
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.build]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.test]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.clean]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "go build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "deps = [\"build\"]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "migrated from Makefile") != null);
+}
+
+test "742: init --from-just converts justfile to zr.toml" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a justfile
+    const justfile_content =
+        \\# Justfile example
+        \\
+        \\build:
+        \\    cargo build --release
+        \\
+        \\test: build
+        \\    cargo test
+        \\    cargo clippy
+        \\
+        \\clean:
+        \\    cargo clean
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "justfile", .data = justfile_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-just" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify zr.toml was created
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    // Check for migrated tasks
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.build]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.test]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.clean]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "cargo build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "deps = [\"build\"]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "migrated from justfile") != null);
+}
+
+test "743: init --from-task converts Taskfile.yml to zr.toml" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a Taskfile.yml
+    const taskfile_content =
+        \\version: '3'
+        \\
+        \\tasks:
+        \\  build:
+        \\    desc: Build the application
+        \\    cmds:
+        \\      - npm run build
+        \\
+        \\  test:
+        \\    desc: Run tests
+        \\    deps:
+        \\      - build
+        \\    cmds:
+        \\      - npm test
+        \\
+        \\  clean:
+        \\    desc: Clean build artifacts
+        \\    cmd: rm -rf dist/
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "Taskfile.yml", .data = taskfile_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-task" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify zr.toml was created
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    // Check for migrated tasks
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.build]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.test]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.clean]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "npm run build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "description = \"Build the application\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "deps = [\"build\"]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "migrated from Taskfile.yml") != null);
+}
+
+test "744: init --from-make without Makefile shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "init", "--from-make" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Makefile") != null);
+}
+
+test "745: init --from-just without justfile shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "init", "--from-just" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "justfile") != null);
+}
+
+test "746: init --from-task without Taskfile.yml shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "init", "--from-task" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Taskfile.yml") != null);
+}

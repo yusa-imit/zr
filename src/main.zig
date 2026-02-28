@@ -548,12 +548,19 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "init")) {
         // Parse init options
         var detect_mode = false;
+        var migrate_mode = init.MigrateMode.none;
         for (effective_args[2..]) |arg| {
             if (std.mem.eql(u8, arg, "--detect")) {
                 detect_mode = true;
+            } else if (std.mem.eql(u8, arg, "--from-make")) {
+                migrate_mode = .makefile;
+            } else if (std.mem.eql(u8, arg, "--from-just")) {
+                migrate_mode = .justfile;
+            } else if (std.mem.eql(u8, arg, "--from-task")) {
+                migrate_mode = .taskfile;
             }
         }
-        return init.cmdInit(allocator, std.fs.cwd(), detect_mode, effective_w, ew, effective_color);
+        return init.cmdInit(allocator, std.fs.cwd(), detect_mode, migrate_mode, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "validate")) {
         // Parse validate options
         var strict = false;
@@ -847,6 +854,10 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
+    try w.print("    --detect             Auto-detect project languages and generate tasks\n", .{});
+    try w.print("    --from-make          Migrate from Makefile\n", .{});
+    try w.print("    --from-just          Migrate from justfile\n", .{});
+    try w.print("    --from-task          Migrate from Taskfile.yml\n", .{});
     try w.print("  setup                  Set up project (install tools, run setup tasks)\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  lint                   Validate architecture constraints\n", .{});
