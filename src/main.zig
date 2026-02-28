@@ -843,12 +843,12 @@ fn run(
 }
 
 fn printVersion(w: *std.Io.Writer, use_color: bool) !void {
-    try color.printBold(w, use_color, "zr v0.0.5", .{});
+    try color.printBold(w, use_color, "zr v1.0.0", .{});
     try w.print("\n", .{});
 }
 
 fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
-    try color.printBold(w, use_color, "zr v0.0.5", .{});
+    try color.printBold(w, use_color, "zr v1.0.0", .{});
     try w.print(" - Zig Task Runner\n\n", .{});
     try color.printBold(w, use_color, "Usage:\n", .{});
     try w.print("  zr [options] <command> [arguments]\n\n", .{});

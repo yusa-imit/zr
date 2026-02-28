@@ -72,7 +72,7 @@ pub fn getDownloadUrl(release: Release) ![]const u8 {
         else => return error.UnsupportedArchitecture,
     };
 
-    // Format: https://github.com/ORG/zr/releases/download/v0.0.5/zr-v0.0.5-linux-x86_64.tar.gz
+    // Format: https://github.com/yusa-imit/zr/releases/download/v1.0.0/zr-v1.0.0-linux-x86_64.tar.gz
     _ = os_name;
     _ = arch_name;
     return release.download_url;
