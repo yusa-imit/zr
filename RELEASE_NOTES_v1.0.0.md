@@ -50,7 +50,7 @@ zr is a universal developer platform built with Zig. It replaces:
 ### Integrate — AI & Editor (Phase 10-11)
 - **MCP Server** for AI agents (Claude Code, Cursor)
 - **LSP Server** for editors (VS Code, Neovim, Helix, Emacs)
-- Natural language interface (`zr ai "<query>"`)
+- Sailor library integration (arg, color, progress, fmt, tui)
 - Auto-generate config from existing projects (`zr init --detect`)
 - Migration tools (`--from-make`, `--from-just`, `--from-task`)
 
@@ -71,8 +71,8 @@ zr is a universal developer platform built with Zig. It replaces:
 | **Binary size** | 1.2MB | ≤ 2MB ✅ |
 | **Cold start** | ~5-8ms | < 10ms ✅ |
 | **Memory (idle)** | ~2-3MB | < 10MB ✅ |
-| **Unit tests** | 675/683 (8 skipped) | 100% pass ✅ |
-| **Integration tests** | 805/805 | 100% pass ✅ |
+| **Unit tests** | 669/677 (8 skipped) | 100% pass ✅ |
+| **Integration tests** | 792/792 | 100% pass ✅ |
 | **Memory leaks** | 0 | 0 ✅ |
 
 **Comparison** (cold start):
@@ -95,7 +95,7 @@ zr is a universal developer platform built with Zig. It replaces:
 ### Phase 10 — AI Integration
 - ✅ MCP Server with 9 tools (`run_task`, `list_tasks`, `validate_config`, etc.)
 - ✅ Auto-generate config from detected languages (`zr init --detect`)
-- ✅ Natural language interface (`zr ai "build and test"`)
+- ✅ Sailor library integration for CLI toolkit
 
 ### Phase 11 — LSP Server
 - ✅ Real-time diagnostics for TOML syntax errors
@@ -185,7 +185,7 @@ zig build -Doptimize=ReleaseSmall
 
 ## 🐛 Known Issues
 
-None! All 683 unit tests and 805 integration tests pass with 0 memory leaks.
+None! All 669 unit tests and 792 integration tests pass with 0 memory leaks.
 
 ---
 
