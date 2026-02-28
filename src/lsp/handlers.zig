@@ -11,10 +11,12 @@ pub const ServerCapabilities = struct {
     textDocumentSync: i32 = 1, // Full sync
     diagnosticProvider: bool = true,
     completionProvider: bool = true,
+    hoverProvider: bool = true,
+    definitionProvider: bool = true,
 
     pub fn toJson(allocator: std.mem.Allocator) ![]const u8 {
         // Return static JSON string (duplicated for consistent memory management)
-        const json_str = "{\"textDocumentSync\":1,\"diagnosticProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\"\\\"\",\"$\",\".\",\"{\"]}}";
+        const json_str = "{\"textDocumentSync\":1,\"diagnosticProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\"\\\"\",\"$\",\".\",\"{\"]},\"hoverProvider\":true,\"definitionProvider\":true}";
         return allocator.dupe(u8, json_str);
     }
 };

@@ -4,6 +4,8 @@ const jsonrpc_parser = @import("../jsonrpc/parser.zig");
 const document_mod = @import("document.zig");
 const handlers = @import("handlers.zig");
 const completion_mod = @import("completion.zig");
+const hover_mod = @import("hover.zig");
+const definition_mod = @import("definition.zig");
 
 /// LSP server state
 pub const Server = struct {
@@ -142,6 +144,18 @@ pub const Server = struct {
             }
             const params = request.params orelse return try self.errorResponse(request.id, .invalid_params, "Missing params");
             return try completion_mod.handleCompletion(self.allocator, &request, params, &self.doc_store);
+        } else if (std.mem.eql(u8, request.method, "textDocument/hover")) {
+            if (!self.initialized) {
+                return try self.errorResponse(request.id, .server_not_initialized, "Server not initialized");
+            }
+            const params = request.params orelse return try self.errorResponse(request.id, .invalid_params, "Missing params");
+            return try hover_mod.handleHover(self.allocator, &request, params, &self.doc_store);
+        } else if (std.mem.eql(u8, request.method, "textDocument/definition")) {
+            if (!self.initialized) {
+                return try self.errorResponse(request.id, .server_not_initialized, "Server not initialized");
+            }
+            const params = request.params orelse return try self.errorResponse(request.id, .invalid_params, "Missing params");
+            return try definition_mod.handleDefinition(self.allocator, &request, params, &self.doc_store);
         } else {
             // Unknown method
             if (!self.initialized) {
