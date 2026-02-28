@@ -401,7 +401,7 @@ sailor가 v0.1.0을 릴리즈하면 status가 READY로 변경된다.
 - [ ] 기존 테스트 전체 통과 확인
 - [ ] 커밋: `refactor: migrate progress to sailor v0.2.0`
 
-### v0.3.0 — fmt (status: PENDING)
+### v0.3.0 — fmt (status: READY)
 
 **작업 내용**:
 - [ ] `--format json` 출력 로직 → `sailor.fmt.json` 활용
