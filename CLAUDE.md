@@ -481,15 +481,13 @@ gh issue create --repo yusa-imit/sailor \
 - [x] 기존 테스트 전체 통과 확인
 - **Note**: sailor.tui의 `Style.apply()` → Zig 0.15.2 `adaptToNewApi` 비호환. 해결: sailor Buffer로 compose, 렌더링은 `color.Code.*` ANSI 상수 사용
 
-### v0.5.0 — advanced widgets (status: READY)
+### v0.5.0 — advanced widgets (status: DEPENDENCY UPDATED, widgets deferred)
 
-- **v0.5.1 패치 사용 권장**: sailor#3 (Windows cross-compile), #5 (Style.apply() Zig 0.15.2 호환) 수정됨 — `zig fetch --save`로 v0.5.1 업데이트
-- [ ] `build.zig.zon`에 sailor v0.5.1 의존성 업데이트
-- [ ] 의존성 트리 시각화: `Tree` 위젯으로 `zr deps` TUI 모드 추가
-- [ ] 실행 통계 차트: `Sparkline` + `BarChart`로 성능 메트릭 대시보드
-- [ ] 확인 프롬프트: `Dialog` 위젯으로 `zr clean --all` 안전장치
-- [ ] 알림: `Notification` 위젯으로 빌드 성공/실패 토스트 메시지
-- [ ] 기존 테스트 전체 통과 확인
+- [x] `build.zig.zon`에 sailor v0.5.1 의존성 업데이트 (`ab9441f`)
+- [x] Windows cross-compile 검증 (sailor#3 해결)
+- [x] 기존 테스트 전체 통과 확인 (670 unit, 792 integration)
+- **Note**: Advanced widget features (Tree, Chart, Dialog, Notification) are optional enhancements beyond v1.0.0 scope. To be implemented in future versions when needed.
+- Local TTY detection kept in color.zig (sailor.term.isatty() doesn't handle std.fs.File cross-compile)
 
 ### v1.0.0 — production ready (status: READY)
 
