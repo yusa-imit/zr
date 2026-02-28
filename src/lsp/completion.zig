@@ -89,14 +89,29 @@ pub fn handleCompletion(
     params: []const u8,
     doc_store: *document_mod.DocumentStore,
 ) ![]const u8 {
-    // Extract URI and position from params
-    var uri_buf: [512]u8 = undefined;
-    const uri = extractJsonString(params, "uri", &uri_buf) orelse {
+    // Use arena allocator for all temporary allocations
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    // Extract textDocument and position objects from nested JSON structure
+    // LSP spec: {"textDocument":{"uri":"..."},"position":{"line":...,"character":...}}
+    const textDocument = extractJsonObject(params, "textDocument") orelse {
+        return createEmptyCompletionResponse(allocator, request.id);
+    };
+    const position = extractJsonObject(params, "position") orelse {
         return createEmptyCompletionResponse(allocator, request.id);
     };
 
-    const line = extractJsonNumber(params, "line") orelse return createEmptyCompletionResponse(allocator, request.id);
-    const character = extractJsonNumber(params, "character") orelse return createEmptyCompletionResponse(allocator, request.id);
+    // Extract URI from textDocument object
+    var uri_buf: [512]u8 = undefined;
+    const uri = extractJsonString(textDocument, "uri", &uri_buf) orelse {
+        return createEmptyCompletionResponse(allocator, request.id);
+    };
+
+    // Extract line and character from position object
+    const line = extractJsonNumber(position, "line") orelse return createEmptyCompletionResponse(allocator, request.id);
+    const character = extractJsonNumber(position, "character") orelse return createEmptyCompletionResponse(allocator, request.id);
 
     const pos = position_mod.Position{
         .line = @intCast(line),
@@ -109,22 +124,22 @@ pub fn handleCompletion(
     };
 
     // Determine completion context
-    const context = try determineContext(allocator, doc.content, pos);
+    const context = try determineContext(arena_alloc, doc.content, pos);
 
     // Generate completions based on context
     var items = std.ArrayList(CompletionItem){};
-    defer items.deinit(allocator);
+    defer items.deinit(arena_alloc);
 
     switch (context) {
-        .TaskName => try addTaskNameCompletions(allocator, doc.content, &items),
-        .FieldName => try addFieldNameCompletions(allocator, &items),
-        .Expression => try addExpressionCompletions(allocator, &items),
-        .ToolName => try addToolNameCompletions(allocator, &items),
-        .MatrixValue => try addMatrixValueCompletions(allocator, &items),
+        .TaskName => try addTaskNameCompletions(arena_alloc, doc.content, &items),
+        .FieldName => try addFieldNameCompletions(arena_alloc, &items),
+        .Expression => try addExpressionCompletions(arena_alloc, &items),
+        .ToolName => try addToolNameCompletions(arena_alloc, &items),
+        .MatrixValue => try addMatrixValueCompletions(arena_alloc, &items),
         .Unknown => {}, // No completions
     }
 
-    // Build JSON response
+    // Build JSON response (using parent allocator for the final response)
     return try createCompletionResponse(allocator, request.id, items.items);
 }
 
@@ -239,11 +254,8 @@ fn isInMatrixSection(text: []const u8, offset: usize) bool {
 
 /// Add task name completions by parsing existing tasks
 fn addTaskNameCompletions(allocator: std.mem.Allocator, text: []const u8, items: *std.ArrayList(CompletionItem)) !void {
-    // Parse TOML to find task names
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    const parse_result = config_parser.parseToml(arena.allocator(), text) catch {
+    // Parse TOML to find task names (using the arena allocator from caller)
+    const parse_result = config_parser.parseToml(allocator, text) catch {
         // If parsing fails, fall back to regex-like extraction
         return;
     };
@@ -389,6 +401,31 @@ fn createEmptyCompletionResponse(allocator: std.mem.Allocator, request_id: jsonr
     var response = try writer.createResponse(allocator, request_id, "[]");
     defer response.deinit(allocator);
     return writer.serializeMessage(allocator, .{ .response = response });
+}
+
+/// Extract nested JSON object
+fn extractJsonObject(json: []const u8, key: []const u8) ?[]const u8 {
+    // Find key pattern: "key":{...}
+    const pattern = std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":{{", .{key}) catch return null;
+    defer std.heap.page_allocator.free(pattern);
+
+    const start_idx = std.mem.indexOf(u8, json, pattern) orelse return null;
+    const obj_start = start_idx + pattern.len - 1; // Include the opening brace
+
+    // Find matching closing brace
+    var depth: i32 = 0;
+    var i = obj_start;
+    while (i < json.len) : (i += 1) {
+        if (json[i] == '{') depth += 1;
+        if (json[i] == '}') {
+            depth -= 1;
+            if (depth == 0) {
+                return json[obj_start..i + 1];
+            }
+        }
+    }
+
+    return null;
 }
 
 /// Extract string from JSON (simplified)
