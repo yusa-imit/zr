@@ -3,16 +3,12 @@
 /// Renders a compact progress bar to stderr (or any writer) when a TTY is detected.
 /// Uses ANSI escape codes for in-place updates via carriage return (\r).
 ///
-/// Example output:
-///   [=========>          ] 45%  9/20  build-frontend
-///   [===================>] 100% 20/20  Done
+/// Backed by `sailor.progress.Bar` for bar rendering.
 ///
 /// Thread-safety: `tick()` and `finish()` are NOT thread-safe; call from a
 /// single coordinating thread (e.g., the scheduler's main thread between levels).
 const std = @import("std");
-
-/// Width (in chars) of the bar's fill region (between '[' and ']').
-const BAR_WIDTH: usize = 20;
+const sailor = @import("sailor");
 
 /// A simple single-line progress bar that rewrites itself in place on a TTY.
 pub const ProgressBar = struct {
@@ -24,6 +20,8 @@ pub const ProgressBar = struct {
     label: []const u8,
     /// True if at least one render has been emitted (so we can overwrite).
     started: bool,
+    /// Sailor progress bar used for rendering.
+    bar: sailor.progress.Bar,
 
     /// Create a new progress bar.
     /// `writer` should be stderr (not stdout) when used alongside task output.
@@ -36,6 +34,12 @@ pub const ProgressBar = struct {
             .current = 0,
             .label = "",
             .started = false,
+            .bar = sailor.progress.Bar.init(@intCast(total), .{
+                .width = 20,
+                .show_percent = false,
+                .show_count = false,
+                .use_color = use_color,
+            }),
         };
     }
 
@@ -44,6 +48,7 @@ pub const ProgressBar = struct {
     pub fn tick(self: *ProgressBar, task_label: []const u8) void {
         if (self.current < self.total) self.current += 1;
         self.label = task_label;
+        self.bar.update(@intCast(self.current));
         self.render() catch {};
     }
 
@@ -51,6 +56,7 @@ pub const ProgressBar = struct {
     pub fn finish(self: *ProgressBar) void {
         self.current = self.total;
         self.label = "Done";
+        self.bar.update(@intCast(self.total));
         self.render() catch {};
         // Move to next line so subsequent output doesn't overwrite the bar.
         self.writer.writeAll("\n") catch {};
@@ -60,7 +66,6 @@ pub const ProgressBar = struct {
     /// On first call, no CR is needed; subsequent calls overwrite.
     fn render(self: *ProgressBar) !void {
         const pct: usize = if (self.total == 0) 100 else self.current * 100 / self.total;
-        const filled: usize = if (self.total == 0) BAR_WIDTH else self.current * BAR_WIDTH / self.total;
 
         // Overwrite previous render by returning to start of line.
         if (self.started) {
@@ -68,45 +73,23 @@ pub const ProgressBar = struct {
         }
         self.started = true;
 
+        // Delegate bar rendering to sailor
+        try self.bar.render(self.writer);
+
+        // Append percentage, count, and label (sailor bar has these disabled)
         if (self.use_color) {
-            // Dim bracket
-            try self.writer.writeAll("\x1b[2m[\x1b[0m");
-            // Green fill
-            try self.writer.writeAll("\x1b[32m");
-            var i: usize = 0;
-            while (i < BAR_WIDTH) : (i += 1) {
-                if (i < filled) {
-                    try self.writer.writeAll("=");
-                } else if (i == filled and filled < BAR_WIDTH) {
-                    try self.writer.writeAll(">");
-                } else {
-                    try self.writer.writeAll(" ");
-                }
-            }
-            try self.writer.writeAll("\x1b[0m");
-            // Dim bracket
-            try self.writer.writeAll("\x1b[2m]\x1b[0m");
-            // Percentage — cyan
-            try self.writer.print(" \x1b[36m{d:>3}%\x1b[0m", .{pct});
-            // Count
-            try self.writer.print(" \x1b[2m{d}/{d}\x1b[0m", .{ self.current, self.total });
-            // Label — bold
+            try sailor.color.printStyled(self.writer, .{
+                .fg = .{ .basic = .cyan },
+            }, " {d:>3}%", .{pct});
+            try sailor.color.printStyled(self.writer, .{
+                .attrs = .{ .dim = true },
+            }, " {d}/{d}", .{ self.current, self.total });
             if (self.label.len > 0) {
-                try self.writer.print("  \x1b[1m{s}\x1b[0m", .{self.label});
+                try sailor.color.printStyled(self.writer, .{
+                    .attrs = .{ .bold = true },
+                }, "  {s}", .{self.label});
             }
         } else {
-            try self.writer.writeAll("[");
-            var i: usize = 0;
-            while (i < BAR_WIDTH) : (i += 1) {
-                if (i < filled) {
-                    try self.writer.writeAll("=");
-                } else if (i == filled and filled < BAR_WIDTH) {
-                    try self.writer.writeAll(">");
-                } else {
-                    try self.writer.writeAll(" ");
-                }
-            }
-            try self.writer.writeAll("]");
             try self.writer.print(" {d:>3}% {d}/{d}", .{ pct, self.current, self.total });
             if (self.label.len > 0) {
                 try self.writer.print("  {s}", .{self.label});
@@ -127,19 +110,31 @@ pub fn printSummary(
 ) !void {
     const total = passed + failed + skipped;
     if (use_color) {
-        try writer.print("\x1b[1m{d}\x1b[0m tasks ", .{total});
+        try sailor.color.printStyled(writer, .{
+            .attrs = .{ .bold = true },
+        }, "{d}", .{total});
+        try writer.writeAll(" tasks ");
         if (passed > 0) {
-            try writer.print("\x1b[32m✓ {d} passed\x1b[0m", .{passed});
+            try sailor.color.printStyled(writer, .{
+                .fg = .{ .basic = .green },
+            }, "\xe2\x9c\x93 {d} passed", .{passed});
         }
         if (failed > 0) {
             if (passed > 0) try writer.writeAll("  ");
-            try writer.print("\x1b[31m✗ {d} failed\x1b[0m", .{failed});
+            try sailor.color.printStyled(writer, .{
+                .fg = .{ .basic = .red },
+            }, "\xe2\x9c\x97 {d} failed", .{failed});
         }
         if (skipped > 0) {
             if (passed > 0 or failed > 0) try writer.writeAll("  ");
-            try writer.print("\x1b[33m⊘ {d} skipped\x1b[0m", .{skipped});
+            try sailor.color.printStyled(writer, .{
+                .fg = .{ .basic = .yellow },
+            }, "\xe2\x8a\x98 {d} skipped", .{skipped});
         }
-        try writer.print("  \x1b[2m({d}ms)\x1b[0m\n", .{elapsed_ms});
+        try sailor.color.printStyled(writer, .{
+            .attrs = .{ .dim = true },
+        }, "  ({d}ms)", .{elapsed_ms});
+        try writer.writeAll("\n");
     } else {
         try writer.print("{d} tasks", .{total});
         if (passed > 0) try writer.print("  v {d} passed", .{passed});
