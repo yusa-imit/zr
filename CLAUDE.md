@@ -382,37 +382,27 @@ gh issue create --repo yusa-imit/sailor \
 - 동일한 이슈가 이미 열려있는지 먼저 확인: `gh issue list --repo yusa-imit/sailor --state open --search "<keyword>"`
 - 이슈 발행 후 현재 작업으로 복귀 (sailor 수정을 직접 하지 않음)
 
-### v0.1.0 — arg, color (status: READY)
+### v0.1.0 — arg, color (status: DONE)
 
-sailor가 v0.1.0을 릴리즈하면 status가 READY로 변경된다.
+- [x] `build.zig.zon`에 sailor v0.4.0 의존성 추가 (`f09ea11`)
+- [x] `build.zig`에서 sailor 모듈 import 설정 (`f09ea11`)
+- [x] `src/main.zig`의 hand-rolled arg parsing → `sailor.arg` 교체 (`ac681a2`)
+- [x] `src/output/color.zig` → `sailor.color` 래퍼로 전환 (`6200809`)
+- [x] 기존 테스트 전체 통과 확인 (676 unit + 805 integration)
 
-**작업 내용**:
-- [ ] `build.zig.zon`에 sailor 의존성 추가
-- [ ] `build.zig`에서 sailor 모듈 import 설정
-- [ ] `src/main.zig`의 hand-rolled arg parsing (284-365줄) → `sailor.arg` 교체
-- [ ] `src/output/color.zig` → `sailor.color` 래퍼로 전환 (내부적으로 sailor 호출)
-- [ ] 기존 테스트 전체 통과 확인 (unit + integration)
-- [ ] 커밋: `refactor: migrate arg parsing and color to sailor v0.1.0`
+### v0.2.0 — progress (status: DONE)
 
-### v0.2.0 — progress (status: READY))
+- [x] `src/output/progress.zig` → `sailor.progress` 래퍼로 전환 (`4b9c8cf`)
+- [x] 기존 테스트 전체 통과 확인
 
-**작업 내용**:
-- [ ] `src/output/progress.zig` → `sailor.progress` 래퍼로 전환
-- [ ] 기존 테스트 전체 통과 확인
-- [ ] 커밋: `refactor: migrate progress to sailor v0.2.0`
+### v0.3.0 — fmt (status: DONE)
 
-### v0.3.0 — fmt (status: READY)
+- [x] `--format json` 출력 로직 → `sailor.fmt.json` 활용 (`263ef3b`)
+- [x] 기존 테스트 전체 통과 확인
 
-**작업 내용**:
-- [ ] `--format json` 출력 로직 → `sailor.fmt.json` 활용
-- [ ] 기존 테스트 전체 통과 확인
-- [ ] 커밋: `refactor: migrate JSON output to sailor v0.3.0`
+### v0.4.0 — tui (status: DONE)
 
-### v0.4.0 — tui (status: READY)
-
-**작업 내용**:
-- [ ] `src/cli/tui.zig` → `sailor.tui` 위젯 기반으로 재작성
-- [ ] `src/cli/tui_runner.zig` → `sailor.tui` 레이아웃 + List/Paragraph/StatusBar
-- [ ] interactive-run, live 커맨드 sailor.tui 기반으로 전환
-- [ ] 기존 테스트 전체 통과 확인
-- [ ] 커밋: `refactor: migrate TUI to sailor v0.4.0`
+- [x] `src/cli/tui.zig` → `sailor.tui` 위젯 기반으로 재작성 (`280e26b`)
+- [x] `src/cli/tui_runner.zig` → `sailor.tui` 레이아웃 + List/Block 위젯
+- [x] 기존 테스트 전체 통과 확인
+- **Note**: sailor.tui의 `Style.apply()` → Zig 0.15.2 `adaptToNewApi` 비호환. 해결: sailor Buffer로 compose, 렌더링은 `color.Code.*` ANSI 상수 사용
