@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const sailor_dep = b.dependency("sailor", .{ .target = target, .optimize = optimize });
+
     const exe = b.addExecutable(.{
         .name = "zr",
         .root_module = b.createModule(.{
@@ -26,6 +28,8 @@ pub fn build(b: *std.Build) void {
             .link_libc = if (target.result.os.tag != .windows) true else null,
         }),
     });
+
+    exe.root_module.addImport("sailor", sailor_dep.module("sailor"));
 
     // Strip debug symbols in release builds for smaller binary size
     // Only keep symbols in Debug mode for easier debugging
@@ -95,6 +99,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     release_exe.root_module.strip = true;
+    release_exe.root_module.addImport("sailor", sailor_dep.module("sailor"));
 
     const install_release = b.addInstallArtifact(release_exe, .{});
     const release_step = b.step("release", "Build optimized release binary (ReleaseSmall + strip)");
@@ -108,6 +113,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = if (target.result.os.tag != .windows) true else null,
     });
+    zr_module.addImport("sailor", sailor_dep.module("sailor"));
 
     // TOML parser fuzzer
     const fuzz_toml = b.addExecutable(.{
