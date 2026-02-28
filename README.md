@@ -1,62 +1,58 @@
-# zr — Universal Task Runner
+# zr — Developer Platform
 
-**zr** (zig-runner) is a fast, language-agnostic task runner and workflow manager built with Zig. It combines the simplicity of `make` with modern features like dependency graphs, parallel execution, caching, and an extensible plugin system.
+**zr** (zig-runner) is a universal developer platform built with Zig. It replaces nvm/pyenv/asdf (toolchain managers), make/just/task (task runners), and Nx/Turborepo (monorepo tools) with a single ~1.2MB binary.
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](https://github.com/yusa-imit/zr/releases)
 
 ---
 
-## Features
+## ⚡ What is zr?
 
-- ✨ **Single Binary** — No runtime dependencies (Node.js, Python, etc.)
-- ⚡ **Fast** — Native performance, < 10ms cold start
-- 🔗 **Dependency Graphs** — Automatic task ordering with cycle detection
-- 🚀 **Parallel Execution** — Multi-core task execution with configurable limits
-- 🎯 **Cross-Platform** — Linux, macOS, Windows (x86_64, aarch64)
-- 📦 **Caching** — Skip unchanged tasks with content-based fingerprinting
-- 🔌 **Plugin System** — Extend with native plugins (C/C++/Rust/Zig/Go)
-- 🎨 **Beautiful Output** — Color-coded, progress bars, interactive TUI
-- 🧪 **Monorepo Support** — Run tasks across workspace members
-- 🔄 **Watch Mode** — Re-run tasks on file changes
-- 🌊 **Workflows** — Multi-stage pipelines with conditional execution
-- 📝 **TOML Config** — Simple, readable configuration format
+zr combines **four core capabilities** in one tool:
+
+| Capability | What it does | Replaces |
+|------------|--------------|----------|
+| **Run** | Execute tasks with dependency graphs, parallel execution, workflows | `make`, `just`, `task`, npm scripts |
+| **Manage** | Install & manage toolchains (Node, Python, Zig, Go, Rust, etc.) | `nvm`, `pyenv`, `rbenv`, `asdf`, `mise` |
+| **Scale** | Monorepo/multi-repo intelligence with affected detection, caching | `Nx`, `Turborepo`, `Lerna`, `Rush` |
+| **Integrate** | MCP Server for AI agents, LSP Server for editors, natural language interface | (No equivalent) |
+
+**Key differentiators**:
+- **No runtime dependencies** — Single binary, no Node.js/Python/JVM required
+- **~1.2MB binary** — 10-100x smaller than alternatives
+- **< 10ms cold start** — Instant execution, C-level performance
+- **Language-agnostic** — Works with any language, any build system
+- **No vendor lock-in** — Self-hosted remote cache (S3/GCS/HTTP), open TOML config
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Installation
 
-**macOS / Linux** (prebuilt binaries):
-
+**macOS / Linux**:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yusa-imit/zr/main/install.sh | sh
 ```
 
 **Windows** (PowerShell):
-
 ```powershell
 irm https://raw.githubusercontent.com/yusa-imit/zr/main/install.ps1 | iex
 ```
 
-**Manual download**:
-
-Download prebuilt binaries from [Releases](https://github.com/yusa-imit/zr/releases) and add to PATH.
-
 **From source** (requires Zig 0.15.2):
-
 ```bash
 git clone https://github.com/yusa-imit/zr.git
 cd zr
-zig build -Doptimize=ReleaseSafe
+zig build -Doptimize=ReleaseSmall
 # Binary at ./zig-out/bin/zr
 ```
 
 ### Your First Task
 
 Create `zr.toml`:
-
 ```toml
 [tasks.hello]
 cmd = "echo Hello, World!"
@@ -64,23 +60,32 @@ description = "Print a greeting"
 ```
 
 Run it:
-
 ```bash
 $ zr run hello
 ✓ hello completed (0.01s)
 Hello, World!
 ```
 
+### Auto-generate from Existing Project
+
+Already have a Makefile, Justfile, or Taskfile.yml?
+```bash
+# Detect languages and generate zr.toml from package.json, setup.py, etc.
+zr init --detect
+
+# Or migrate from existing task runner
+zr init --from-make   # Convert Makefile → zr.toml
+zr init --from-just   # Convert Justfile → zr.toml
+zr init --from-task   # Convert Taskfile.yml → zr.toml
+```
+
 ---
 
-## Example `zr.toml`
+## 🎯 Core Features
+
+### Task Runner (Phase 1-3)
 
 ```toml
-# Simple task
-[tasks.build]
-cmd = "cargo build"
-description = "Build the project"
-
 # Task with dependencies
 [tasks.test]
 cmd = "cargo test"
@@ -89,20 +94,11 @@ deps = ["build"]  # Runs build first
 # Parallel dependencies
 [tasks.ci]
 deps = ["lint", "test", "docs"]  # All run in parallel
-description = "Run all checks"
-
-# Task with environment vars
-[tasks.deploy]
-cmd = "deploy.sh"
-cwd = "./scripts"
-env = { ENV = "production", REGION = "us-west-2" }
-deps = ["test"]
 
 # Conditional execution
-[tasks.deploy-staging]
+[tasks.deploy]
 cmd = "deploy.sh"
-condition = "env.BRANCH == 'staging'"
-env = { ENV = "staging" }
+condition = "env.BRANCH == 'main'"
 
 # Cache expensive tasks
 [tasks.build-wasm]
@@ -112,33 +108,31 @@ cache = true  # Skip if unchanged
 # Matrix builds
 [tasks.test-matrix]
 cmd = "cargo test --target ${matrix.target}"
-matrix = { target = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] }
+matrix = { target = ["x86_64-linux", "aarch64-darwin"] }
+
+# Retry on failure
+[tasks.flaky-api-test]
+cmd = "curl https://api.example.com/health"
+retry = { max = 3, delay = "5s", backoff = "exponential" }
 ```
 
----
+**Commands**:
+```bash
+zr run <task>              # Execute a task
+zr list                    # Show all tasks
+zr graph <task>            # Visualize dependency graph
+zr watch <task> [paths]    # Re-run on file changes
+zr interactive             # TUI task picker
+zr --dry-run run <task>    # Preview execution plan
+```
 
-## Core Concepts
+### Workflows (Phase 2)
 
-### Tasks
-
-Tasks are the building blocks. Each task has:
-
-- **cmd**: Command to execute (string or array)
-- **deps**: Tasks that must run first (parallel by default)
-- **deps_serial**: Tasks that run sequentially before this task
-- **env**: Environment variables (key-value pairs)
-- **cwd**: Working directory
-- **timeout**: Max execution time (`"5m"`, `"30s"`)
-- **retry**: Retry on failure (`{ max = 3, delay = "5s", backoff = "exponential" }`)
-- **condition**: Expression to control execution (`"env.VAR == 'value'"`)
-- **cache**: Enable output caching (`true`/`false`)
-
-### Workflows
-
-Multi-stage pipelines for complex build/deploy processes:
+Multi-stage pipelines with conditional execution, approvals, and error handling:
 
 ```toml
 [workflows.release]
+description = "Build, test, and deploy"
 
 [[workflows.release.stages]]
 name = "build"
@@ -152,213 +146,262 @@ fail_fast = true  # Stop if any test fails
 
 [[workflows.release.stages]]
 name = "deploy"
-tasks = ["upload-artifacts", "publish-release"]
+tasks = ["upload-artifacts"]
+requires_approval = true  # Manual approval before deploy
+on_failure = ["rollback", "notify-slack"]
 ```
 
-Run with:
-
+**Commands**:
 ```bash
-zr workflow release
+zr workflow <name>         # Run a workflow
+zr workflow list           # List all workflows
 ```
 
-### Profiles
+### Toolchain Management (Phase 5)
 
-Environment-specific overrides:
+Install and manage language runtimes automatically:
 
 ```toml
-# Base task
-[tasks.deploy]
-cmd = "deploy.sh"
+# Install specific versions per-project
+[toolchain.node]
+version = "20.11.0"
 
-# Production profile
-[profiles.prod]
-env = { ENV = "production" }
+[toolchain.python]
+version = "3.12.1"
 
-[profiles.prod.tasks.deploy]
-cmd = "deploy.sh --region us-west-2"
+[toolchain.go]
+version = "1.22.0"
 ```
 
-Use with:
-
+**Commands**:
 ```bash
-zr --profile prod run deploy
+zr tools install           # Install all toolchains in zr.toml
+zr tools list              # Show installed toolchains
+zr tools outdated          # Check for updates
+zr doctor                  # Diagnose environment issues
+zr run build               # Runs with correct Node/Python/etc. versions
 ```
 
-### Workspaces (Monorepo)
+**Supported toolchains** (8): Node, Python, Zig, Go, Rust, Deno, Bun, Java
+
+### Monorepo Intelligence (Phase 6)
 
 ```toml
 [workspace]
 members = ["packages/*", "apps/*"]
 ```
 
-Run task in all members:
-
+**Affected detection** (Git-based):
 ```bash
-zr workspace run build
-# Runs `zr run build` in each member with zr.toml
+# Only run tasks in projects with changes since last commit
+zr --affected run test
+
+# Compare against specific branch
+zr affected --base=main --head=feature-branch
 ```
 
----
-
-## CLI Usage
-
-```bash
-# Run a task
-zr run <task>
-
-# Run a workflow
-zr workflow <name>
-
-# List all tasks and workflows
-zr list
-
-# Show dependency graph
-zr graph <task>
-
-# Watch mode (re-run on file changes)
-zr watch <task> [paths...]
-
-# Interactive mode (task picker TUI)
-zr interactive
-
-# Dry run (show execution plan)
-zr --dry-run run <task>
-
-# Parallel execution (max 8 jobs)
-zr --jobs 8 run <task>
-
-# Show execution history
-zr history
-
-# Scaffold new config
-zr init
-
-# Shell completions
-zr completion bash > /etc/bash_completion.d/zr
+**Architecture governance**:
+```toml
+# Define module boundaries
+[conformance.rules.no-ui-in-backend]
+source = "apps/backend/**"
+forbidden = "libs/ui/**"
+message = "Backend cannot depend on UI libraries"
 ```
 
-### Global Flags
-
 ```bash
---profile <name>    # Use profile (or ZR_PROFILE env var)
---jobs, -j <N>      # Max parallel tasks (default: CPU cores)
---dry-run, -n       # Show plan without executing
---no-color          # Disable color output
---quiet, -q         # Suppress task output
---verbose, -v       # Show debug info
---config <path>     # Use custom config file
---format json       # JSON output (for list/graph/run/history)
+zr lint  # Enforce architecture rules
 ```
 
----
+**Commands**:
+```bash
+zr workspace run <task>    # Run task in all workspace members
+zr workspace status        # Show workspace structure
+zr workspace graph         # Visualize package dependencies
+zr codeowners generate     # Generate CODEOWNERS from workspace
+```
 
-## Plugins
+### Multi-repo Orchestration (Phase 7)
 
-Extend zr with plugins for notifications, metrics, integrations, and more.
-
-### Built-in Plugins
+Manage multiple repositories as a unified workspace:
 
 ```toml
-# Load .env files
-[plugins.env]
-source = "builtin:env"
+# zr-repos.toml
+[repos.api]
+url = "https://github.com/org/api.git"
+branch = "main"
 
-# Git integration
-[plugins.git]
-source = "builtin:git"
-
-# Webhook notifications (Slack, Discord)
-[plugins.notify]
-source = "builtin:notify"
-config = { webhook = "https://hooks.slack.com/..." }
-
-# Advanced caching with expiration
-[plugins.cache]
-source = "builtin:cache"
-config = { max_age_seconds = 3600 }
+[repos.frontend]
+url = "https://github.com/org/frontend.git"
+depends_on = ["api"]  # Cross-repo dependency
 ```
 
-### Custom Plugins
+**Commands**:
+```bash
+zr repos sync              # Clone/pull all repositories
+zr repos status            # Show sync status
+zr repos graph             # Visualize cross-repo dependencies
+zr repos run test          # Run task across all repos
+```
 
-Create your own plugins in C/C++/Rust/Zig/Go:
+### AI & Editor Integration (Phase 10-11)
+
+**MCP Server** — Let AI agents (Claude Code, Cursor) execute tasks directly:
 
 ```bash
-# Scaffold a new plugin
-zr plugin create my-plugin
-
-# Build and install
-cd my-plugin/
-make
-zr plugin install . my-plugin
+# Add to Claude Code MCP config
+zr mcp serve
 ```
 
-See **[Plugin Guide](docs/PLUGIN_GUIDE.md)** for usage and **[Plugin Development Guide](docs/PLUGIN_DEV_GUIDE.md)** for creating plugins.
+Available tools: `run_task`, `list_tasks`, `show_task`, `validate_config`, `show_graph`, `run_workflow`, `task_history`, `estimate_duration`, `generate_config`
 
----
+**LSP Server** — Real-time autocomplete, diagnostics, hover docs in any editor:
 
-## Documentation
-
-- **[Product Requirements](docs/PRD.md)** — Full specification and design
-- **[Plugin Guide](docs/PLUGIN_GUIDE.md)** — Using and managing plugins
-- **[Plugin Development Guide](docs/PLUGIN_DEV_GUIDE.md)** — Creating custom plugins
-- **[CLAUDE.md](CLAUDE.md)** — Development orchestration (for contributors)
-
----
-
-## Performance
-
-| Metric | Target | Actual |
-|--------|--------|--------|
-| Cold start | < 10ms | ~8ms |
-| 100-task graph | < 5ms | ~3ms |
-| Memory (core) | < 10MB | ~8MB |
-| Binary size | < 5MB | ~2.8MB |
-
-*Benchmarked on M1 MacBook Pro (2021)*
-
----
-
-## Comparison
-
-| Feature | zr | just | task (go-task) | make |
-|---------|----|----|----------------|------|
-| Single binary | ✅ | ✅ | ✅ | ❌ (usually installed) |
-| Cross-platform | ✅ | ✅ | ✅ | ⚠️ (GNU vs BSD) |
-| Config format | TOML | Justfile | YAML | Makefile |
-| Parallel execution | ✅ | ✅ | ✅ | ✅ |
-| Dependency graph | ✅ | ✅ | ✅ | ✅ |
-| Caching | ✅ | ❌ | ⚠️ (limited) | ⚠️ (file-based) |
-| Watch mode | ✅ | ⚠️ (external) | ✅ | ❌ |
-| Plugins | ✅ | ❌ | ❌ | ❌ |
-| Workflows | ✅ | ❌ | ❌ | ❌ |
-| Matrix builds | ✅ | ❌ | ⚠️ (via templates) | ❌ |
-| Interactive TUI | ✅ | ❌ | ❌ | ❌ |
-| Monorepo support | ✅ | ❌ | ❌ | ❌ |
-
----
-
-## Architecture
-
-```
-CLI Interface → Config Engine → Task Graph Engine → Execution Engine → Plugin System
-                     ↓              ↓                      ↓
-                  TOML Parser    DAG + Topo Sort      Worker Pool
-                  Schema Val     Cycle Detection      Process Mgmt
-                  Expr Engine    Level Calculation    Resource Limits
+```bash
+# VS Code, Neovim, Helix, Emacs, Sublime
+zr lsp
 ```
 
-**Key modules**:
+Features:
+- TOML syntax errors with line/column precision
+- Autocomplete for task names, fields, expressions, toolchains
+- Hover documentation for fields and expressions
+- Go-to-definition for task dependencies
 
-- **Config** (`src/config/`) — TOML parsing, schema validation, expression engine
-- **Graph** (`src/graph/`) — DAG, topological sort, cycle detection
-- **Exec** (`src/exec/`) — Scheduler, worker pool, process management
-- **Plugin** (`src/plugin/`) — Dynamic loading, builtin plugins, registry
-- **CLI** (`src/cli/`) — Argument parsing, commands, TUI, completions
-- **Output** (`src/output/`) — Terminal rendering, colors, progress bars
+**Natural language interface**:
+```bash
+zr ai "build and test the frontend"
+# → zr run build-frontend && zr run test-frontend
+
+zr ai "show failed tasks from yesterday"
+# → zr history --status=failed --since=1d
+```
+
+### Performance & Enterprise (Phase 8, 12)
+
+**Benchmarking**:
+```bash
+zr bench run <task>        # Measure execution time
+zr bench compare           # Compare against other runners
+```
+
+**Analytics**:
+```bash
+zr analytics report        # HTML/JSON execution analytics
+zr context                 # Generate AI-friendly project metadata
+```
+
+**Publishing** (semantic versioning):
+```bash
+zr publish                 # Bump version, create changelog, tag
+```
+
+**Remote caching**:
+```toml
+[cache.remote]
+type = "s3"
+bucket = "my-build-cache"
+region = "us-west-2"
+```
 
 ---
 
-## Development
+## 📚 Documentation
+
+Comprehensive guides in `docs/guides/`:
+
+| Guide | What it covers |
+|-------|----------------|
+| [Getting Started](docs/guides/getting-started.md) | Installation, first task, basic config |
+| [Configuration](docs/guides/configuration.md) | Complete TOML schema reference |
+| [Commands](docs/guides/commands.md) | All 50+ CLI commands with examples |
+| [MCP Integration](docs/guides/mcp-integration.md) | Setting up MCP server for Claude Code/Cursor |
+| [LSP Setup](docs/guides/lsp-setup.md) | Configuring LSP for VS Code/Neovim/etc. |
+| [Adding Language](docs/guides/adding-language.md) | How to add a new toolchain |
+
+**Architecture docs**:
+- [Product Requirements](docs/PRD.md) — Full specification and design
+- [CLAUDE.md](CLAUDE.md) — Development orchestration
+
+---
+
+## 🏎️ Performance
+
+| Metric | zr | make | just | task (go-task) | Nx | Turborepo |
+|--------|----|----|------|---------------|-------|-----------|
+| **Binary size** | 1.2MB | 200KB* | 4-6MB | 10-15MB | 200MB+ | 50MB+ |
+| **Cold start** | ~5-8ms | 3-5ms | 15-20ms | 20-30ms | 500ms+ | 300ms+ |
+| **Memory (idle)** | ~2-3MB | ~1MB | ~5MB | ~8MB | ~50MB+ | ~30MB+ |
+| **Runtime deps** | None | None | None | None | Node.js | Node.js |
+
+*make is usually pre-installed
+
+**Benchmark details**: See [benchmarks/README.md](benchmarks/README.md)
+
+---
+
+## 🔄 Migration
+
+Already using make, just, or task? Migrate in seconds:
+
+```bash
+# Makefile → zr.toml
+zr init --from-make
+# ✓ Converted 12 targets to tasks
+
+# Justfile → zr.toml
+zr init --from-just
+# ✓ Converted 8 recipes to tasks
+
+# Taskfile.yml → zr.toml
+zr init --from-task
+# ✓ Converted 15 tasks
+```
+
+Conversion handles:
+- Dependencies between targets/recipes/tasks
+- Multi-line commands
+- Variables and interpolation
+- Comments and descriptions
+
+---
+
+## 🆚 Comparison
+
+### vs Make
+- ✅ TOML instead of tab-sensitive Makefile syntax
+- ✅ Built-in parallel execution with worker pool
+- ✅ Content-based caching (not just file timestamps)
+- ✅ Workflows, retries, conditional execution
+- ✅ Beautiful, color-coded output with progress bars
+
+### vs just/task
+- ✅ Toolchain management built-in
+- ✅ Monorepo/multi-repo support
+- ✅ Remote caching
+- ✅ MCP/LSP integration
+- ✅ Affected detection
+- ✅ 2-10x faster cold start
+
+### vs Nx/Turborepo
+- ✅ No runtime dependencies (works without Node.js)
+- ✅ Language-agnostic (not JS/TS-centric)
+- ✅ No vendor lock-in (self-hosted cache)
+- ✅ 100x smaller binary
+- ✅ 10x faster startup
+- ✅ Simpler config (TOML vs complex JSON/JS)
+
+### vs asdf/mise
+- ✅ Task runner built-in (not just toolchain management)
+- ✅ Full dependency graphs and workflows
+- ✅ Monorepo intelligence
+- ✅ MCP/LSP integration
+
+**See full comparison**: [docs/PRD.md § 12](docs/PRD.md)
+
+---
+
+## 🛠️ Development
 
 ### Building
 
@@ -366,108 +409,106 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 # Debug build
 zig build
 
-# Release build
-zig build -Doptimize=ReleaseSafe
+# Release build (optimized for size)
+zig build release
 
 # Run tests
 zig build test
 
-# Integration tests
+# Integration tests (black-box CLI tests)
 zig build integration-test
+
+# Fuzz testing
+zig build fuzz-toml
+zig build fuzz-expr
 
 # Cross-compile (example)
 zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 ```
 
-### Testing
+### Test Status
 
-```bash
-# Unit tests (244 tests across 33 files)
-zig build test
-
-# Integration tests (black-box CLI tests)
-zig build integration-test
-```
+- **Unit tests**: 675/683 passing (8 skipped)
+- **Integration tests**: 805/805 passing (100%)
+- **CI targets**: 6 (x86_64/aarch64 × linux-gnu/macos-none/windows-msvc)
+- **Memory leaks**: 0
 
 ### Contributing
 
-See **[CLAUDE.md](CLAUDE.md)** for:
+We use Claude Code for autonomous development with AI-assisted teams. See [CLAUDE.md](CLAUDE.md) for:
 
 - Development workflow
-- Coding standards
-- Commit conventions
+- Coding standards (Zig conventions)
+- Commit conventions (conventional commits)
 - PR process
 
-**TL;DR**: We use Claude Code for autonomous development with AI-assisted teams. All changes require tests and follow Zig conventions.
+**Quick guidelines**:
+- Always write tests for new features
+- Run `zig build test && zig build integration-test` before committing
+- Follow Zig naming conventions (camelCase for functions, PascalCase for types)
+- Use explicit error handling (no `catch unreachable` in production code)
+- Prefer arena allocators for request-scoped work
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
-### ✅ Phase 1 — Foundation (Complete)
+All phases complete! zr v1.0 is production-ready.
 
-- TOML config parser
-- Task execution engine
-- Dependency graph (DAG)
-- Parallel execution
-- Cross-platform CI
+### ✅ Phase 1-4 — Task Runner & Extensibility
+- TOML config, dependency graphs, parallel execution
+- Workflows, watch mode, profiles, expression engine
+- Interactive TUI, shell completions, resource limits
+- Plugin system (native + WASM), built-in plugins
 
-### ✅ Phase 2 — Workflows (Complete)
+### ✅ Phase 5-8 — Developer Platform
+- Toolchain management (Node/Python/Zig/Go/Rust/Deno/Bun/Java)
+- Monorepo intelligence (affected detection, architecture governance)
+- Multi-repo orchestration (cross-repo dependencies, sync)
+- Enterprise features (analytics, publishing, CODEOWNERS)
 
-- Workflows with stages
-- Watch mode
-- Execution history
-- Profiles
-- Expression engine
+### ✅ Phase 9-13 — AI Integration & v1.0 Release
+- LanguageProvider interface (extensible language support)
+- MCP Server for AI agents (Claude Code, Cursor)
+- LSP Server for editors (VS Code, Neovim, Helix, Emacs)
+- Natural language interface, error improvements
+- Performance optimization (1.2MB binary, fuzz testing)
+- Migration tools (Make/Just/Task → zr)
+- Comprehensive documentation
 
-### ✅ Phase 3 — UX (Complete)
-
-- Interactive TUI
-- Shell completions
-- Resource limits (`max_concurrent`)
-- JSON output format
-- Workspace/monorepo support
-- Matrix builds
-- Task caching
-
-### 🚧 Phase 4 — Extensibility (In Progress)
-
-- ✅ Plugin system (native .so/.dylib)
-- ✅ Built-in plugins (env, git, notify, cache)
-- ✅ Plugin management CLI
-- ✅ Plugin scaffolding (`zr plugin create`)
-- ✅ Plugin documentation
-- ⏳ WASM plugin sandbox
-- ⏳ Plugin registry index
-- ⏳ Remote cache
+### 🔮 Future (v2.0+)
+- Web dashboard for execution visualization
+- Distributed task execution (Kubernetes/Docker Swarm)
+- GitHub App for PR previews
+- Plugin marketplace
 
 ---
 
-## License
+## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
-Built with:
+**Built with**:
+- [Zig](https://ziglang.org) — Fast, safe, simple systems programming
+- [TOML](https://toml.io) — Human-readable config format
+- [Claude Code](https://claude.com/claude-code) — AI-assisted development
 
-- **Zig** — https://ziglang.org
-- **TOML** — https://toml.io
-- **Claude Code** — https://claude.com/claude-code (AI-assisted development)
-
-Inspired by:
-- **just** (command runner)
-- **task** (go-task)
-- **make** (classic build tool)
+**Inspired by**:
+- make, just, task (task runners)
+- Nx, Turborepo (monorepo tools)
+- asdf, mise (toolchain managers)
+- Bazel, Buck2 (build systems)
 
 ---
 
-## Contact
+## 📞 Contact
 
-- **GitHub Issues**: https://github.com/yusa-imit/zr/issues
-- **Discussions**: https://github.com/yusa-imit/zr/discussions
+- **Issues**: [github.com/yusa-imit/zr/issues](https://github.com/yusa-imit/zr/issues)
+- **Discussions**: [github.com/yusa-imit/zr/discussions](https://github.com/yusa-imit/zr/discussions)
 
 ---
 
