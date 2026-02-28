@@ -436,7 +436,8 @@ gh issue create --repo yusa-imit/sailor \
 
 ### v0.5.0 — advanced widgets (status: READY)
 
-- [ ] `build.zig.zon`에 sailor v0.5.0 의존성 업데이트
+- **v0.5.1 패치 사용 권장**: sailor#3 (Windows cross-compile), #5 (Style.apply() Zig 0.15.2 호환) 수정됨 — `zig fetch --save`로 v0.5.1 업데이트
+- [ ] `build.zig.zon`에 sailor v0.5.1 의존성 업데이트
 - [ ] 의존성 트리 시각화: `Tree` 위젯으로 `zr deps` TUI 모드 추가
 - [ ] 실행 통계 차트: `Sparkline` + `BarChart`로 성능 메트릭 대시보드
 - [ ] 확인 프롬프트: `Dialog` 위젯으로 `zr clean --all` 안전장치
