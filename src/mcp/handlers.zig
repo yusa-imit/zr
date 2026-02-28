@@ -6,6 +6,12 @@
 const std = @import("std");
 const list = @import("../cli/list.zig");
 const show = @import("../cli/show.zig");
+const validate = @import("../cli/validate.zig");
+const graph = @import("../cli/graph.zig");
+const run = @import("../cli/run.zig");
+const workflow = @import("../cli/run.zig"); // workflow is in run.zig
+const estimate = @import("../cli/estimate.zig");
+const init_cli = @import("../cli/init.zig");
 
 /// Tool handler result
 pub const ToolResult = struct {
@@ -236,27 +242,240 @@ fn handleShowTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRe
 // Stub implementations for remaining handlers (to be implemented in future commits)
 
 fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"run_task not yet implemented - use 'zr run <task>' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    const task_name = parseStringParam(params_json, "task", "");
+    const config_path = parseStringParam(params_json, "config_path", "zr.toml");
+
+    if (task_name.len == 0) {
+        const error_json = try allocator.dupe(u8,
+            \\{"success":false,"error":"task parameter is required"}
+        );
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    }
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    // Call run command
+    const exit_code = run.cmdRun(
+        allocator,
+        task_name,
+        null,  // profile_name
+        false, // dry_run
+        0,     // max_jobs (0 = use all cores)
+        config_path,
+        false, // json_output
+        false, // monitor
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color
+        null,  // task_control
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        try stdout_file.seekTo(0);
+        const output_text = try stdout_file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+        defer allocator.free(output_text);
+
+        // Escape output for JSON
+        var escaped = std.ArrayList(u8){};
+        defer escaped.deinit(allocator);
+        for (output_text) |c| {
+            switch (c) {
+                '"' => try escaped.appendSlice(allocator, "\\\""),
+                '\\' => try escaped.appendSlice(allocator, "\\\\"),
+                '\n' => try escaped.appendSlice(allocator, "\\n"),
+                '\r' => try escaped.appendSlice(allocator, "\\r"),
+                '\t' => try escaped.appendSlice(allocator, "\\t"),
+                else => try escaped.append(allocator, c),
+            }
+        }
+
+        const result_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":true,"task":"{s}","output":"{s}"}}
+        , .{ task_name, escaped.items });
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        try stderr_file.seekTo(0);
+        const err_output = try stderr_file.readToEndAlloc(allocator, 64 * 1024); // 64KB max
+        defer allocator.free(err_output);
+
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"task":"{s}","error":"Task execution failed"}}
+        , .{task_name});
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 fn handleValidateConfig(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"validate_config not yet implemented - use 'zr validate' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    const config_path = parseStringParam(params_json, "config_path", "zr.toml");
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    const exit_code = validate.cmdValidate(
+        allocator,
+        config_path,
+        .{ .strict = false, .show_schema = false },
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color = false
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        const result_json = try allocator.dupe(u8,
+            \\{"success":true,"message":"Configuration is valid"}
+        );
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        try stderr_file.seekTo(0);
+        const err_output = try stderr_file.readToEndAlloc(allocator, 64 * 1024); // 64KB max
+        defer allocator.free(err_output);
+
+        // Escape the error output for JSON
+        var escaped = std.ArrayList(u8){};
+        defer escaped.deinit(allocator);
+        for (err_output) |c| {
+            switch (c) {
+                '"' => try escaped.appendSlice(allocator, "\\\""),
+                '\\' => try escaped.appendSlice(allocator, "\\\\"),
+                '\n' => try escaped.appendSlice(allocator, "\\n"),
+                '\r' => try escaped.appendSlice(allocator, "\\r"),
+                '\t' => try escaped.appendSlice(allocator, "\\t"),
+                else => try escaped.append(allocator, c),
+            }
+        }
+
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"errors":"{s}"}}
+        , .{escaped.items});
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 fn handleShowGraph(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
-    _ = params_json;
-    const result_json = try allocator.dupe(u8,
-        \\{"success":false,"error":"show_graph not yet implemented - use 'zr run <task>' in terminal"}
-    );
-    return ToolResult{ .json = result_json, .exit_code = 1 };
+    const config_path = parseStringParam(params_json, "config_path", "zr.toml");
+    const format_str = parseStringParam(params_json, "format", "ascii");
+
+    // Create temporary file for stdout/stderr
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const stdout_path = "mcp_stdout.txt";
+    const stderr_path = "mcp_stderr.txt";
+
+    const stdout_file = try tmp_dir.dir.createFile(stdout_path, .{ .read = true });
+    defer stdout_file.close();
+    const stderr_file = try tmp_dir.dir.createFile(stderr_path, .{ .read = true });
+    defer stderr_file.close();
+
+    var stdout_buf: [8192]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+
+    // Build args array with format flag
+    const format_arg = try std.fmt.allocPrint(allocator, "--format={s}", .{format_str});
+    defer allocator.free(format_arg);
+    const config_arg = try std.fmt.allocPrint(allocator, "--config={s}", .{config_path});
+    defer allocator.free(config_arg);
+    const args = [_][]const u8{ format_arg, config_arg };
+
+    const exit_code = graph.graphCommand(
+        allocator,
+        &args,
+        &stdout_writer.interface,
+        &stderr_writer.interface,
+        false, // use_color = false
+    ) catch |err| {
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{@errorName(err)});
+        return ToolResult{ .json = error_json, .exit_code = 1 };
+    };
+
+    // Flush writers
+    stdout_writer.interface.flush() catch {};
+    stderr_writer.interface.flush() catch {};
+
+    if (exit_code == 0) {
+        try stdout_file.seekTo(0);
+        const output_text = try stdout_file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
+        defer allocator.free(output_text);
+
+        // Escape the graph output for JSON
+        var escaped = std.ArrayList(u8){};
+        defer escaped.deinit(allocator);
+        for (output_text) |c| {
+            switch (c) {
+                '"' => try escaped.appendSlice(allocator, "\\\""),
+                '\\' => try escaped.appendSlice(allocator, "\\\\"),
+                '\n' => try escaped.appendSlice(allocator, "\\n"),
+                '\r' => try escaped.appendSlice(allocator, "\\r"),
+                '\t' => try escaped.appendSlice(allocator, "\\t"),
+                else => try escaped.append(allocator, c),
+            }
+        }
+
+        const result_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":true,"graph":"{s}","format":"{s}"}}
+        , .{ escaped.items, format_str });
+        return ToolResult{ .json = result_json, .exit_code = exit_code };
+    } else {
+        try stderr_file.seekTo(0);
+        const err_output = try stderr_file.readToEndAlloc(allocator, 64 * 1024); // 64KB max
+        defer allocator.free(err_output);
+
+        const error_json = try std.fmt.allocPrint(allocator,
+            \\{{"success":false,"error":"{s}"}}
+        , .{if (err_output.len > 0) err_output else "Graph generation failed"});
+        return ToolResult{ .json = error_json, .exit_code = exit_code };
+    }
 }
 
 fn handleRunWorkflow(allocator: std.mem.Allocator, params_json: []const u8) !ToolResult {
@@ -330,10 +549,8 @@ test "handleTool: show_task requires task parameter" {
 test "handleTool: unimplemented handlers return error" {
     const allocator = std.testing.allocator;
 
+    // Only test the handlers that are still stubs
     const unimplemented = [_][]const u8{
-        "run_task",
-        "validate_config",
-        "show_graph",
         "run_workflow",
         "task_history",
         "estimate_duration",
