@@ -341,10 +341,101 @@ test "105: run with malformed config file reports error" {
 
     var result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
     defer result.deinit();
-    // Malformed TOML currently results in "task not found" instead of parse error
-    // This is a known limitation - TOML parser silently ignores malformed sections
+    // Parser now detects malformed section headers and reports clear error
     try std.testing.expect(result.exit_code != 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "error") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Malformed") != null or std.mem.indexOf(u8, result.stderr, "error") != null);
+}
+
+test "106: malformed workflow section header reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const malformed_toml =
+        \\[workflows.deploy
+        \\description = "Deploy workflow"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, malformed_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list", "workflows" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Malformed") != null);
+}
+
+test "107: malformed plugin section header reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const malformed_toml =
+        \\[plugins.custom
+        \\path = "/path/to/plugin.so"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, malformed_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Malformed") != null);
+}
+
+test "108: malformed profile section header reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const malformed_toml =
+        \\[profiles.production
+        \\description = "Production profile"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, malformed_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Malformed") != null);
+}
+
+test "109: malformed template section header reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const malformed_toml =
+        \\[templates.api
+        \\cmd = "npm run api"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, malformed_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Malformed") != null);
 }
 
 test "112: matrix task expansion creates multiple task instances" {

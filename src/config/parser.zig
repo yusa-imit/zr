@@ -56,6 +56,28 @@ fn dupeConstraintScope(allocator: std.mem.Allocator, scope: types.ConstraintScop
     };
 }
 
+pub const ParseError = error{
+    MalformedSectionHeader,
+    OutOfMemory,
+};
+
+/// Validate that a TOML section header is well-formed (has closing bracket).
+/// Returns the content between start and the closing bracket.
+/// Returns error.MalformedSectionHeader if closing bracket is missing.
+fn validateSectionHeader(line: []const u8, prefix: []const u8) ParseError![]const u8 {
+    if (!std.mem.startsWith(u8, line, prefix)) {
+        return error.MalformedSectionHeader;
+    }
+    const start = prefix.len;
+    const end = std.mem.indexOf(u8, line[start..], "]") orelse {
+        // Missing closing bracket - return helpful error
+        std.debug.print("Error: Malformed TOML section header: '{s}'\n", .{line});
+        std.debug.print("  Expected closing bracket ']' after '{s}'\n", .{prefix});
+        return error.MalformedSectionHeader;
+    };
+    return line[start..][0..end];
+}
+
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
     errdefer config.deinit();
@@ -388,9 +410,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 current_task = null;
             }
             // Parse new workflow name from "[workflows.X]"
-            const wf_start = "[workflows.".len;
-            const wf_end = std.mem.indexOf(u8, trimmed[wf_start..], "]") orelse continue;
-            current_workflow = trimmed[wf_start..][0..wf_end];
+            current_workflow = validateSectionHeader(trimmed, "[workflows.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
             workflow_desc = null;
         } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.indexOf(u8, trimmed, ".tasks.") != null) {
             in_workspace = false;
@@ -427,9 +450,17 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Parse task name: "[profiles.X.tasks.Y]" → Y
             const tasks_marker = ".tasks.";
-            const tm_idx = std.mem.indexOf(u8, trimmed, tasks_marker) orelse continue;
+            const tm_idx = std.mem.indexOf(u8, trimmed, tasks_marker) orelse {
+                std.debug.print("Error: Malformed profile task section: '{s}'\n", .{trimmed});
+                std.debug.print("  Expected '.tasks.' in section header\n", .{});
+                return error.MalformedSectionHeader;
+            };
             const after_tasks = trimmed[tm_idx + tasks_marker.len ..];
-            const rbracket = std.mem.indexOf(u8, after_tasks, "]") orelse continue;
+            const rbracket = std.mem.indexOf(u8, after_tasks, "]") orelse {
+                std.debug.print("Error: Malformed profile task section: '{s}'\n", .{trimmed});
+                std.debug.print("  Expected closing bracket ']'\n", .{});
+                return error.MalformedSectionHeader;
+            };
             current_profile_task = after_tasks[0..rbracket];
             // Entering a profile task context; clear task context
             current_task = null;
@@ -502,9 +533,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
 
             // Parse new profile name: "[profiles.X]" → X
-            const pstart = "[profiles.".len;
-            const pend = std.mem.indexOf(u8, trimmed[pstart..], "]") orelse continue;
-            current_profile = trimmed[pstart..][0..pend];
+            current_profile = validateSectionHeader(trimmed, "[profiles.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
         } else if (std.mem.eql(u8, trimmed, "[workspace]")) {
             // Flush pending task/workflow/profile contexts
             if (stage_name) |sn| {
@@ -776,9 +808,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 plugin_kind = .local;
             }
             // Parse new plugin name: "[plugins.X]" → X
-            const plstart = "[plugins.".len;
-            const plend = std.mem.indexOf(u8, trimmed[plstart..], "]") orelse continue;
-            current_plugin_name = trimmed[plstart..][0..plend];
+            current_plugin_name = validateSectionHeader(trimmed, "[plugins.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
             // Flush pending stage (if any)
             if (stage_name) |sn| {
@@ -915,10 +948,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_workspace = false;
             in_cache = false;
             in_cache_remote = false;
-            const start = "[tasks.".len;
-            const end = std.mem.indexOf(u8, trimmed[start..], "]") orelse continue;
-            // Non-owning slice into content
-            current_task = trimmed[start..][0..end];
+            // Validate section header has closing bracket
+            current_task = validateSectionHeader(trimmed, "[tasks.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
         } else if (std.mem.startsWith(u8, trimmed, "[templates.")) {
             // Flush pending template before starting a new one
             if (current_template) |tmpl_name| {
@@ -1048,9 +1082,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_max_cpu = null;
             template_max_memory = null;
 
-            const tmpl_start = "[templates.".len;
-            const tmpl_end = std.mem.indexOf(u8, trimmed[tmpl_start..], "]") orelse continue;
-            current_template = trimmed[tmpl_start..][0..tmpl_end];
+            current_template = validateSectionHeader(trimmed, "[templates.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
         } else if (std.mem.indexOf(u8, trimmed, "=")) |eq_idx| {
             const key = std.mem.trim(u8, trimmed[0..eq_idx], " \t");
             var value = std.mem.trim(u8, trimmed[eq_idx + 1 ..], " \t");
