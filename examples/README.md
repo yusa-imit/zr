@@ -135,6 +135,21 @@ Shows modern Node.js development with TypeScript and modern tooling.
 
 ---
 
+### [Zig Build](./zig-build/)
+Demonstrates Zig development with the Zig build system and cross-compilation.
+
+- Auto-generated tasks via `zr init --detect`
+- Zig build system integration (build, test, run, docs)
+- Multiple optimization modes (Debug, ReleaseSafe, ReleaseFast, ReleaseSmall)
+- Cross-compilation for 5 major platforms (Linux, macOS, Windows)
+- Built-in memory leak detection
+- Code formatting with `zig fmt`
+- CI workflows with format checking and testing
+
+**When to use:** Zig projects, systems programming, CLI tools, cross-platform native applications, performance-critical code
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -179,18 +194,19 @@ Shows modern Node.js development with TypeScript and modern tooling.
 
 ## Feature Matrix
 
-| Example          | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
-|------------------|-------|------|--------|-------|-----------|---------|------------|-------------|
-| Basic            | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
-| Workspace        | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
-| Multi-lang       | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
-| Plugin           | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
-| Toolchain        | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
-| Java Maven       | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Python Poetry    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Rust Cargo       | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Go Modules       | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Node.js TypeScript | ✓   | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Example            | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
+|--------------------|-------|------|--------|-------|-----------|---------|------------|-------------|
+| Basic              | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
+| Workspace          | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
+| Multi-lang         | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
+| Plugin             | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
+| Toolchain          | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
+| Java Maven         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Python Poetry      | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Rust Cargo         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Go Modules         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Node.js TypeScript | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Zig Build          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 
