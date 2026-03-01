@@ -106,6 +106,20 @@ Shows Rust development with Cargo and the Rust toolchain.
 
 ---
 
+### [Go Modules](./go-modules/)
+Demonstrates Go development with modules, testing, and cross-compilation.
+
+- Auto-generated tasks via `zr init --detect`
+- Go modules integration (build, test, vet, fmt, mod-tidy)
+- Coverage reports with HTML output
+- Cross-platform builds (Linux, macOS, Windows)
+- golangci-lint integration
+- CI workflows with parallel checks
+
+**When to use:** Go projects with modules, CLI applications with Cobra, microservices, cross-platform tools
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -160,6 +174,7 @@ Shows Rust development with Cargo and the Rust toolchain.
 | Java Maven    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Python Poetry | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Rust Cargo    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Go Modules    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 
