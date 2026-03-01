@@ -80,6 +80,19 @@ Shows integration with Java/Maven projects using auto-detection.
 
 ---
 
+### [Python Poetry](./python-poetry/)
+Demonstrates Python development with Poetry and quality tools.
+
+- Auto-generated tasks via `zr init --detect`
+- Poetry integration (install, run, test, build)
+- Quality tools (pytest, black, ruff, mypy)
+- Coverage reporting (HTML and terminal)
+- CI workflow with parallel checks
+
+**When to use:** Python projects with Poetry, adding task orchestration to existing Python projects, unified tooling across languages
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -124,14 +137,15 @@ Shows integration with Java/Maven projects using auto-detection.
 
 ## Feature Matrix
 
-| Example      | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
-|--------------|-------|------|--------|-------|-----------|---------|------------|-------------|
-| Basic        | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
-| Workspace    | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
-| Multi-lang   | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
-| Plugin       | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
-| Toolchain    | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
-| Java Maven   | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Example       | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
+|---------------|-------|------|--------|-------|-----------|---------|------------|-------------|
+| Basic         | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
+| Workspace     | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
+| Multi-lang    | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
+| Plugin        | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
+| Toolchain     | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
+| Java Maven    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Python Poetry | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 

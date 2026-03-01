@@ -1,0 +1,66 @@
+# This file was enhanced from auto-generated output by `zr init --detect`
+# Python project detected with Poetry
+
+[tasks.install]
+description = "Install dependencies using Poetry"
+cmd = "poetry install"
+
+[tasks.test]
+description = "Run tests with pytest"
+cmd = "poetry run pytest"
+deps = ["install"]
+
+[tasks.test-cov]
+description = "Run tests with coverage report"
+cmd = "poetry run pytest --cov=myapp --cov-report=html --cov-report=term"
+deps = ["install"]
+
+[tasks.lint]
+description = "Run code quality checks"
+cmd = "poetry run ruff check src tests"
+deps = ["install"]
+
+[tasks.format]
+description = "Format code with black"
+cmd = "poetry run black src tests"
+deps = ["install"]
+
+[tasks.format-check]
+description = "Check code formatting"
+cmd = "poetry run black --check src tests"
+deps = ["install"]
+
+[tasks.typecheck]
+description = "Run type checking with mypy"
+cmd = "poetry run mypy src"
+deps = ["install"]
+
+[tasks.run]
+description = "Run the application"
+cmd = "poetry run myapp"
+deps = ["install"]
+
+# Enhanced workflows beyond auto-generated tasks
+
+[workflows.ci]
+description = "Complete CI pipeline"
+stages = [
+  { tasks = ["install"] },
+  { tasks = ["format-check", "lint", "typecheck"], parallel = true },
+  { tasks = ["test-cov"] }
+]
+
+[workflows.check]
+description = "Quick local checks before commit"
+stages = [
+  { tasks = ["format", "lint", "typecheck", "test"], parallel = false }
+]
+
+[tasks.clean]
+description = "Clean build artifacts and cache"
+cmd = "rm -rf dist/ .pytest_cache/ .ruff_cache/ htmlcov/ .coverage"
+
+[tasks.build]
+description = "Build distribution package"
+cmd = "poetry build"
+deps = ["test-cov"]
