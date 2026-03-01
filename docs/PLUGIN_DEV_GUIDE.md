@@ -636,9 +636,9 @@ Planned features (not yet implemented):
 
 ## Resources
 
-- **zr GitHub**: [https://github.com/yourorg/zr](https://github.com/yourorg/zr)
-- **Example Plugins**: [https://github.com/yourorg/zr-plugins](https://github.com/yourorg/zr-plugins)
-- **Report Issues**: [https://github.com/yourorg/zr/issues](https://github.com/yourorg/zr/issues)
+- **zr GitHub**: [https://github.com/yusa-imit/zr](https://github.com/yusa-imit/zr)
+- **Example Plugins**: See `examples/plugin/` directory
+- **Report Issues**: [https://github.com/yusa-imit/zr/issues](https://github.com/yusa-imit/zr/issues)
 
 ---
 
