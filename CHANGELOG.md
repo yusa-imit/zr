@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-02
+
+### Added
+- **Interactive graph TUI mode**: `zr graph --format=tui` with sailor Tree widget for dependency visualization
+- **Sailor v1.0.3 migration**: Updated to latest sailor library with Zig 0.15.2 compatibility fixes
+
+### Fixed
+- Re-enabled graph TUI mode (was temporarily disabled pending sailor#8 fix)
+- Tree widget ArrayList API compatibility with Zig 0.15.2
+
+### Changed
+- Updated sailor dependency from v1.0.2 to v1.0.3
+
+## [1.0.2] - 2026-03-01
+
+### Fixed
+- Windows terminal ANSI color code bleeding
+- Windows console codepage UTF-8 setup for proper ANSI escape sequence handling
+
+## [1.0.1] - 2026-02-28
+
+### Fixed
+- Minor post-release documentation improvements
+
 ## [1.0.0] - 2026-02-28
 
 ### Added

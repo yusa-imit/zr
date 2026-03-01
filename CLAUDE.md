@@ -316,7 +316,7 @@ All 13 phases from the PRD are **COMPLETE**:
 
 - [x] **v1.1.0 — Sailor v1.0.2 Migration** (DONE): 의존성 업데이트, API 리팩토링, 로컬 TTY workaround 유지, 테마 시스템 검토
 - [x] **v1.2.0 — TOML Parser Improvements** (DONE): 엄격한 검증, malformed section 헤더 감지, 에러 메시지 개선
-- [ ] **v1.3.0 — Advanced TUI Widgets**: sailor v1.0 위젯 (Tree, Chart, Dialog, Notification) 활용
+- [x] **v1.3.0 — TUI Graph Visualization** (DONE): Tree widget 기반 그래프 TUI 모드, sailor v1.0.3 마이그레이션
 - [ ] **v1.4.0 — Plugin Registry Server**: GitHub 백엔드 대신 독립 인덱스 서버 구현
 - [ ] **v1.5.0 — Remote Cache v2**: 증분 동기화, 압축, 캐시 통계 대시보드
 
