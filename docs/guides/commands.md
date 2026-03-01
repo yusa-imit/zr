@@ -377,15 +377,33 @@ Built-in plugins: `env`, `git`, `cache`, `docker`, `http`.
 
 ### `plugin search`
 
-Search installed plugins.
+Search installed plugins or the remote plugin registry.
 
 ```bash
+# Search installed plugins:
 zr plugin search [query]
+
+# Search remote registry:
+zr plugin search --remote [query]
 ```
 
-**Example:**
+**Options:**
+- `--remote` — Search the plugin registry instead of local installations
+- `--format json` — Output results as JSON
+
+**Examples:**
 ```bash
+# Search installed plugins:
 zr plugin search docker
+
+# Search remote registry:
+zr plugin search --remote docker
+
+# List all plugins in registry:
+zr plugin search --remote
+
+# Get JSON output:
+zr plugin search --remote ci --format json
 ```
 
 ---

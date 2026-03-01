@@ -75,13 +75,30 @@ Installed plugins:
 
 ### Search Plugins
 
+**Local search** (installed plugins):
+
 ```bash
-# Search all installed plugins by name/description:
+# Search by name/description:
 zr plugin search notify
 
-# List all:
+# List all installed:
 zr plugin search
 ```
+
+**Remote search** (plugin registry):
+
+```bash
+# Search the registry:
+zr plugin search --remote docker
+
+# Browse all available plugins:
+zr plugin search --remote
+
+# JSON output:
+zr plugin search --remote docker --format json
+```
+
+Remote search queries the central plugin registry at `registry.zr.dev`. If the registry is unavailable, the command gracefully returns an empty result without error.
 
 ### View Plugin Details
 
@@ -502,9 +519,44 @@ All plugins run on every task, in the order defined in `zr.toml`.
 
 ## Plugin Registry
 
-**Coming soon**: Central plugin registry at `zr.dev/plugins`.
+The zr plugin registry provides a centralized index for discovering and installing zr plugins.
 
-For now, discover community plugins at:
+### Searching the Registry
+
+```bash
+# Search for plugins:
+zr plugin search --remote docker
+
+# Browse all plugins:
+zr plugin search --remote
+
+# Get JSON output:
+zr plugin search --remote ci --format json
+```
+
+### Installing from Registry
+
+```bash
+# Install latest version:
+zr plugin install registry:zr-runner/docker
+
+# Install specific version:
+zr plugin install registry:zr-runner/docker@1.2.0
+
+# Install from custom org:
+zr plugin install registry:myorg/custom-plugin
+```
+
+### Registry Information
+
+- **Default URL**: `https://registry.zr.dev`
+- **API Docs**: [plugin-registry-api.md](./plugin-registry-api.md)
+- **Search endpoint**: `/v1/plugins/search`
+- **Graceful fallback**: If registry is unreachable, CLI continues to work with local plugins
+
+### Discover Community Plugins
+
+- Browse the registry: `zr plugin search --remote`
 - GitHub topic: `zr-plugin`
 - Search: `https://github.com/topics/zr-plugin`
 
