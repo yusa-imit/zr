@@ -56,6 +56,7 @@ const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
+const add_cmd = @import("cli/add.zig");
 const mcp_server = @import("mcp/server.zig");
 const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
@@ -471,6 +472,7 @@ fn run(
         "setup",      "env",        "export",     "affected",
         "clean",      "upgrade",    "alias",      "estimate",
         "show",       "schedule",   "mcp",        "lsp",
+        "add",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -838,6 +840,9 @@ fn run(
         }
     } else if (std.mem.eql(u8, cmd, "lsp")) {
         return lsp_server.serve(allocator);
+    } else if (std.mem.eql(u8, cmd, "add")) {
+        const add_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return add_cmd.cmdAdd(allocator, add_args, config_path, effective_w, ew, effective_color);
     }
 
     // This should never be reached due to alias expansion logic above
@@ -884,6 +889,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("    --from-make          Migrate from Makefile\n", .{});
     try w.print("    --from-just          Migrate from justfile\n", .{});
     try w.print("    --from-task          Migrate from Taskfile.yml\n", .{});
+    try w.print("  add <type> [name]      Interactively add a task, workflow, or profile\n", .{});
     try w.print("  setup                  Set up project (install tools, run setup tasks)\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  lint                   Validate architecture constraints\n", .{});
