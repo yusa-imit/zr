@@ -348,13 +348,26 @@ pub fn cmdCache(
             return 1;
         };
 
-        try color.printBold(w, use_color, "Cache Status:\n\n", .{});
-        try color.printDim(w, use_color, "  Directory: ", .{});
+        try color.printBold(w, use_color, "Cache Statistics\n", .{});
+        try w.writeAll("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+
+        try color.printDim(w, use_color, "  Location:     ", .{});
         try w.print("{s}\n", .{stats.cache_dir});
-        try color.printDim(w, use_color, "  Entries:   ", .{});
+
+        try color.printDim(w, use_color, "  Entries:      ", .{});
         try color.printSuccess(w, use_color, "{d}\n", .{stats.total_entries});
-        try color.printDim(w, use_color, "  Size:      ", .{});
-        try color.printSuccess(w, use_color, "{d} bytes\n", .{stats.total_size_bytes});
+
+        try color.printDim(w, use_color, "  Total Size:   ", .{});
+        const size_str = formatBytes(stats.total_size_bytes);
+        try color.printSuccess(w, use_color, "{s}\n", .{std.mem.sliceTo(&size_str, 0)});
+
+        if (stats.total_entries > 0) {
+            const avg_size = stats.total_size_bytes / stats.total_entries;
+            try color.printDim(w, use_color, "  Avg per entry: ", .{});
+            const avg_str = formatBytes(avg_size);
+            try w.print("{s}\n", .{std.mem.sliceTo(&avg_str, 0)});
+        }
+
         return 0;
     } else if (sub.len == 0) {
         try color.printError(ew, use_color,
@@ -365,6 +378,24 @@ pub fn cmdCache(
             "cache: unknown subcommand '{s}'\n\n  Hint: zr cache clear | zr cache status\n", .{sub});
         return 1;
     }
+}
+
+fn formatBytes(bytes: u64) [64]u8 {
+    var buf: [64]u8 = undefined;
+    @memset(&buf, 0);
+    if (bytes < 1024) {
+        _ = std.fmt.bufPrint(&buf, "{d} B", .{bytes}) catch unreachable;
+    } else if (bytes < 1024 * 1024) {
+        const kb = @as(f64, @floatFromInt(bytes)) / 1024.0;
+        _ = std.fmt.bufPrint(&buf, "{d:.2} KB", .{kb}) catch unreachable;
+    } else if (bytes < 1024 * 1024 * 1024) {
+        const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
+        _ = std.fmt.bufPrint(&buf, "{d:.2} MB", .{mb}) catch unreachable;
+    } else {
+        const gb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0 * 1024.0);
+        _ = std.fmt.bufPrint(&buf, "{d:.2} GB", .{gb}) catch unreachable;
+    }
+    return buf;
 }
 
 // --- Tests ---
