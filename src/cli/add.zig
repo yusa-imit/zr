@@ -48,7 +48,7 @@ fn prompt(allocator: std.mem.Allocator, w: anytype, ew: anytype, use_color: bool
     var read_buf: [1]u8 = undefined;
     while (true) {
         const n = stdin.read(&read_buf) catch |err| {
-            if (err == error.EndOfStream) {
+            if (err == error.EndOfStream or err == error.NotOpenForReading) {
                 try color.printError(ew, use_color, "\nCancelled by user\n", .{});
                 return null;
             }
