@@ -144,11 +144,15 @@ fn addTask(
     try toml_entry.writer(allocator).print("\n[tasks.{s}]\n", .{task_name});
 
     if (description) |d| {
-        try toml_entry.writer(allocator).print("description = \"{s}\"\n", .{escapeTomlString(d)});
+        const escaped_desc = try escapeTomlString(allocator, d);
+        defer if (escaped_desc.ptr != d.ptr) allocator.free(escaped_desc);
+        try toml_entry.writer(allocator).print("description = \"{s}\"\n", .{escaped_desc});
     }
 
     if (cmd) |c| {
-        try toml_entry.writer(allocator).print("cmd = \"{s}\"\n", .{escapeTomlString(c)});
+        const escaped_cmd = try escapeTomlString(allocator, c);
+        defer if (escaped_cmd.ptr != c.ptr) allocator.free(escaped_cmd);
+        try toml_entry.writer(allocator).print("cmd = \"{s}\"\n", .{escaped_cmd});
     }
 
     if (deps) |d| {
@@ -254,7 +258,9 @@ fn addWorkflow(
     try toml_entry.writer(allocator).print("\n[[workflows.{s}.stages]]\n", .{workflow_name});
 
     if (description) |d| {
-        try toml_entry.writer(allocator).print("description = \"{s}\"\n", .{escapeTomlString(d)});
+        const escaped_desc = try escapeTomlString(allocator, d);
+        defer if (escaped_desc.ptr != d.ptr) allocator.free(escaped_desc);
+        try toml_entry.writer(allocator).print("description = \"{s}\"\n", .{escaped_desc});
     }
 
     for (stages.items) |stage_tasks| {
@@ -361,7 +367,9 @@ fn addProfile(
     if (env_vars.items.len > 0) {
         try toml_entry.writer(allocator).writeAll("env = {\n");
         for (env_vars.items) |item| {
-            try toml_entry.writer(allocator).print("  {s} = \"{s}\",\n", .{ item.key, escapeTomlString(item.value) });
+            const escaped_value = try escapeTomlString(allocator, item.value);
+            defer if (escaped_value.ptr != item.value.ptr) allocator.free(escaped_value);
+            try toml_entry.writer(allocator).print("  {s} = \"{s}\",\n", .{ item.key, escaped_value });
         }
         try toml_entry.writer(allocator).writeAll("}\n");
     }
@@ -386,10 +394,35 @@ fn addProfile(
 }
 
 /// Escape special characters for TOML string values.
-fn escapeTomlString(s: []const u8) []const u8 {
-    // For simplicity, return as-is. In production, should escape quotes and backslashes.
-    // TODO: Proper TOML string escaping
-    return s;
+fn escapeTomlString(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+    // Check if escaping is needed
+    var needs_escape = false;
+    for (s) |c| {
+        if (c == '"' or c == '\\' or c == '\n' or c == '\r' or c == '\t') {
+            needs_escape = true;
+            break;
+        }
+    }
+
+    // If no escaping needed, return as-is
+    if (!needs_escape) return s;
+
+    // Build escaped string
+    var result = std.ArrayList(u8){};
+    defer result.deinit(allocator);
+
+    for (s) |c| {
+        switch (c) {
+            '"' => try result.appendSlice(allocator, "\\\""),
+            '\\' => try result.appendSlice(allocator, "\\\\"),
+            '\n' => try result.appendSlice(allocator, "\\n"),
+            '\r' => try result.appendSlice(allocator, "\\r"),
+            '\t' => try result.appendSlice(allocator, "\\t"),
+            else => try result.append(allocator, c),
+        }
+    }
+
+    return result.toOwnedSlice(allocator);
 }
 
 test "prompt basic functionality" {
@@ -397,6 +430,25 @@ test "prompt basic functionality" {
 }
 
 test "escapeTomlString basic" {
-    const result = escapeTomlString("hello world");
-    try std.testing.expectEqualStrings("hello world", result);
+    const allocator = std.testing.allocator;
+
+    // No escaping needed
+    const result1 = try escapeTomlString(allocator, "hello world");
+    defer if (result1.ptr != "hello world".ptr) allocator.free(result1);
+    try std.testing.expectEqualStrings("hello world", result1);
+
+    // Quote escaping
+    const result2 = try escapeTomlString(allocator, "say \"hello\"");
+    defer allocator.free(result2);
+    try std.testing.expectEqualStrings("say \\\"hello\\\"", result2);
+
+    // Backslash escaping
+    const result3 = try escapeTomlString(allocator, "path\\to\\file");
+    defer allocator.free(result3);
+    try std.testing.expectEqualStrings("path\\\\to\\\\file", result3);
+
+    // Newline escaping
+    const result4 = try escapeTomlString(allocator, "line1\nline2");
+    defer allocator.free(result4);
+    try std.testing.expectEqualStrings("line1\\nline2", result4);
 }
