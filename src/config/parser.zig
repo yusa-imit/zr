@@ -257,6 +257,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var cache_remote_prefix: ?[]const u8 = null;
     var cache_remote_url: ?[]const u8 = null;
     var cache_remote_auth: ?[]const u8 = null;
+    var cache_remote_compression: bool = true; // default true
+    var cache_remote_incremental_sync: bool = false; // default false
 
     // Versioning parsing state (Phase 8) — [versioning]
     var in_versioning: bool = false;
@@ -1273,7 +1275,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     cache_local_dir = value;
                 }
             } else if (in_cache_remote) {
-                // Inside [cache.remote] — parse type, bucket, region, prefix, url, auth
+                // Inside [cache.remote] — parse type, bucket, region, prefix, url, auth, compression, incremental_sync
                 if (std.mem.eql(u8, key, "type")) {
                     cache_remote_type = types.RemoteCacheType.parse(value) catch null;
                 } else if (std.mem.eql(u8, key, "bucket")) {
@@ -1286,6 +1288,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     cache_remote_url = value;
                 } else if (std.mem.eql(u8, key, "auth")) {
                     cache_remote_auth = value;
+                } else if (std.mem.eql(u8, key, "compression")) {
+                    cache_remote_compression = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "incremental_sync")) {
+                    cache_remote_incremental_sync = std.mem.eql(u8, value, "true");
                 }
             } else if (in_versioning) {
                 // Inside [versioning] — parse mode and convention
@@ -1929,6 +1935,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             .prefix = if (cache_remote_prefix) |p| try allocator.dupe(u8, p) else null,
             .url = if (cache_remote_url) |u| try allocator.dupe(u8, u) else null,
             .auth = if (cache_remote_auth) |a| try allocator.dupe(u8, a) else null,
+            .compression = cache_remote_compression,
+            .incremental_sync = cache_remote_incremental_sync,
         };
     }
 

@@ -1,6 +1,9 @@
 const std = @import("std");
 const types = @import("../config/types.zig");
 
+/// Chunk size for incremental sync (1MB)
+const CHUNK_SIZE: usize = 1024 * 1024;
+
 /// Remote cache client (Phase 7 — PRD §5.7.3).
 /// Supports S3, GCS, Azure, and HTTP backends.
 pub const RemoteCache = struct {
@@ -80,11 +83,187 @@ pub const RemoteCache = struct {
         return result.stdout; // Caller owns
     }
 
+    // ─── Incremental Sync (v1.5.0) ──────────────────────────────────────────
+
+    /// Manifest structure for chunked cache entries
+    const Manifest = struct {
+        original_size: usize,
+        chunk_size: usize,
+        chunks: []ChunkInfo,
+
+        const ChunkInfo = struct {
+            hash: [64]u8, // SHA256 hex string
+            size: usize,
+        };
+
+        pub fn deinit(self: *Manifest, allocator: std.mem.Allocator) void {
+            allocator.free(self.chunks);
+        }
+    };
+
+    /// Create manifest from data by splitting into chunks
+    fn createManifest(self: *const RemoteCache, data: []const u8) !Manifest {
+        const chunk_count = (data.len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        const chunks = try self.allocator.alloc(Manifest.ChunkInfo, chunk_count);
+
+        var i: usize = 0;
+        while (i < chunk_count) : (i += 1) {
+            const start = i * CHUNK_SIZE;
+            const end = @min(start + CHUNK_SIZE, data.len);
+            const chunk_data = data[start..end];
+
+            // Compute SHA256 hash of chunk
+            var hash_buf: [32]u8 = undefined;
+            std.crypto.hash.sha2.Sha256.hash(chunk_data, &hash_buf, .{});
+
+            // Convert to hex
+            var hash_hex: [64]u8 = undefined;
+            bytesToHex(&hash_hex, &hash_buf);
+
+            chunks[i] = .{
+                .hash = hash_hex,
+                .size = chunk_data.len,
+            };
+        }
+
+        return Manifest{
+            .original_size = data.len,
+            .chunk_size = CHUNK_SIZE,
+            .chunks = chunks,
+        };
+    }
+
+    /// Serialize manifest to JSON
+    fn serializeManifest(self: *const RemoteCache, manifest: *const Manifest) ![]u8 {
+        var buf = std.ArrayList(u8){};
+        defer buf.deinit(self.allocator);
+
+        var writer = buf.writer(self.allocator);
+        try writer.writeAll("{\"original_size\":");
+        try writer.print("{d}", .{manifest.original_size});
+        try writer.writeAll(",\"chunk_size\":");
+        try writer.print("{d}", .{manifest.chunk_size});
+        try writer.writeAll(",\"chunks\":[");
+
+        for (manifest.chunks, 0..) |chunk, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"hash\":\"");
+            try writer.writeAll(&chunk.hash);
+            try writer.writeAll("\",\"size\":");
+            try writer.print("{d}", .{chunk.size});
+            try writer.writeAll("}");
+        }
+
+        try writer.writeAll("]}");
+        return try self.allocator.dupe(u8, buf.items);
+    }
+
+    /// Deserialize manifest from JSON
+    fn deserializeManifest(self: *const RemoteCache, json: []const u8) !Manifest {
+        const parsed = try std.json.parseFromSlice(
+            struct {
+                original_size: usize,
+                chunk_size: usize,
+                chunks: []struct {
+                    hash: []const u8,
+                    size: usize,
+                },
+            },
+            self.allocator,
+            json,
+            .{},
+        );
+        defer parsed.deinit();
+
+        const chunks = try self.allocator.alloc(Manifest.ChunkInfo, parsed.value.chunks.len);
+        for (parsed.value.chunks, 0..) |chunk_json, i| {
+            if (chunk_json.hash.len != 64) return error.InvalidManifest;
+            var hash: [64]u8 = undefined;
+            @memcpy(&hash, chunk_json.hash[0..64]);
+            chunks[i] = .{
+                .hash = hash,
+                .size = chunk_json.size,
+            };
+        }
+
+        return Manifest{
+            .original_size = parsed.value.original_size,
+            .chunk_size = parsed.value.chunk_size,
+            .chunks = chunks,
+        };
+    }
+
+    /// Check if a chunk exists remotely (returns true if exists, false if not)
+    fn hasChunk(self: *const RemoteCache, chunk_hash: []const u8) !bool {
+        const key = try std.fmt.allocPrint(self.allocator, "chunks/{s}", .{chunk_hash});
+        defer self.allocator.free(key);
+
+        // Try to pull the chunk (HTTP HEAD would be better, but this works)
+        const result = switch (self.config.type) {
+            .http => try self.pullHTTP(key),
+            .s3 => try self.pullS3(key),
+            .gcs => try self.pullGCS(key),
+            .azure => try self.pullAzure(key),
+        };
+
+        if (result) |data| {
+            self.allocator.free(data);
+            return true;
+        }
+        return false;
+    }
+
+    /// Upload a single chunk
+    fn pushChunk(self: *const RemoteCache, chunk_hash: []const u8, data: []const u8) !void {
+        const key = try std.fmt.allocPrint(self.allocator, "chunks/{s}", .{chunk_hash});
+        defer self.allocator.free(key);
+
+        const to_push = if (self.config.compression)
+            try self.compress(data)
+        else
+            data;
+        defer if (self.config.compression) self.allocator.free(to_push);
+
+        return switch (self.config.type) {
+            .http => try self.pushHTTP(key, to_push),
+            .s3 => try self.pushS3(key, to_push),
+            .gcs => try self.pushGCS(key, to_push),
+            .azure => try self.pushAzure(key, to_push),
+        };
+    }
+
+    /// Download a single chunk
+    fn pullChunk(self: *const RemoteCache, chunk_hash: []const u8) !?[]u8 {
+        const key = try std.fmt.allocPrint(self.allocator, "chunks/{s}", .{chunk_hash});
+        defer self.allocator.free(key);
+
+        const compressed = switch (self.config.type) {
+            .http => try self.pullHTTP(key),
+            .s3 => try self.pullS3(key),
+            .gcs => try self.pullGCS(key),
+            .azure => try self.pullAzure(key),
+        };
+
+        if (compressed == null) return null;
+        defer self.allocator.free(compressed.?);
+
+        if (self.config.compression) {
+            return try self.decompress(compressed.?);
+        }
+        return try self.allocator.dupe(u8, compressed.?);
+    }
+
     // ────────────────────────────────────────────────────────────────────────
 
-    /// Pull a cache entry from remote. Returns cached data or null if not found.
-    /// Caller owns returned memory.
+    /// Pull a cache entry from remote using incremental sync.
+    /// Returns cached data or null if not found. Caller owns returned memory.
     pub fn pull(self: *const RemoteCache, key: []const u8) !?[]u8 {
+        // Use incremental sync if enabled
+        if (self.config.incremental_sync) {
+            return try self.pullIncremental(key);
+        }
+
+        // Fallback to monolithic pull
         const compressed = switch (self.config.type) {
             .http => try self.pullHTTP(key),
             .s3 => try self.pullS3(key),
@@ -103,8 +282,52 @@ pub const RemoteCache = struct {
         return try self.allocator.dupe(u8, compressed.?);
     }
 
-    /// Push a cache entry to remote.
+    /// Pull using incremental sync (download manifest + chunks)
+    fn pullIncremental(self: *const RemoteCache, key: []const u8) !?[]u8 {
+        // Download manifest
+        const manifest_key = try std.fmt.allocPrint(self.allocator, "{s}.manifest", .{key});
+        defer self.allocator.free(manifest_key);
+
+        const manifest_data = switch (self.config.type) {
+            .http => try self.pullHTTP(manifest_key),
+            .s3 => try self.pullS3(manifest_key),
+            .gcs => try self.pullGCS(manifest_key),
+            .azure => try self.pullAzure(manifest_key),
+        };
+
+        if (manifest_data == null) return null; // Cache miss
+        defer self.allocator.free(manifest_data.?);
+
+        var manifest = try self.deserializeManifest(manifest_data.?);
+        defer manifest.deinit(self.allocator);
+
+        // Allocate buffer for reassembled data
+        const result = try self.allocator.alloc(u8, manifest.original_size);
+        errdefer self.allocator.free(result);
+
+        // Download and reassemble chunks
+        var offset: usize = 0;
+        for (manifest.chunks) |chunk_info| {
+            const chunk_data = try self.pullChunk(&chunk_info.hash) orelse return error.MissingChunk;
+            defer self.allocator.free(chunk_data);
+
+            if (chunk_data.len != chunk_info.size) return error.ChunkSizeMismatch;
+
+            @memcpy(result[offset .. offset + chunk_data.len], chunk_data);
+            offset += chunk_data.len;
+        }
+
+        return result;
+    }
+
+    /// Push a cache entry to remote using incremental sync.
     pub fn push(self: *const RemoteCache, key: []const u8, data: []const u8) !void {
+        // Use incremental sync if enabled
+        if (self.config.incremental_sync) {
+            return try self.pushIncremental(key, data);
+        }
+
+        // Fallback to monolithic push
         const to_push = if (self.config.compression)
             try self.compress(data)
         else
@@ -116,6 +339,50 @@ pub const RemoteCache = struct {
             .s3 => try self.pushS3(key, to_push),
             .gcs => try self.pushGCS(key, to_push),
             .azure => try self.pushAzure(key, to_push),
+        };
+    }
+
+    /// Push using incremental sync (upload only missing chunks + manifest)
+    fn pushIncremental(self: *const RemoteCache, key: []const u8, data: []const u8) !void {
+        // Create manifest
+        var manifest = try self.createManifest(data);
+        defer manifest.deinit(self.allocator);
+
+        // Upload chunks (only if they don't exist remotely)
+        var i: usize = 0;
+        while (i < manifest.chunks.len) : (i += 1) {
+            const chunk_info = manifest.chunks[i];
+            const chunk_hash = chunk_info.hash[0..];
+
+            // Check if chunk already exists
+            const exists = try self.hasChunk(chunk_hash);
+            if (exists) continue; // Skip existing chunk
+
+            // Upload missing chunk
+            const start = i * CHUNK_SIZE;
+            const end = @min(start + CHUNK_SIZE, data.len);
+            const chunk_data = data[start..end];
+            try self.pushChunk(chunk_hash, chunk_data);
+        }
+
+        // Upload manifest
+        const manifest_json = try self.serializeManifest(&manifest);
+        defer self.allocator.free(manifest_json);
+
+        const manifest_key = try std.fmt.allocPrint(self.allocator, "{s}.manifest", .{key});
+        defer self.allocator.free(manifest_key);
+
+        const to_push = if (self.config.compression)
+            try self.compress(manifest_json)
+        else
+            manifest_json;
+        defer if (self.config.compression) self.allocator.free(to_push);
+
+        return switch (self.config.type) {
+            .http => try self.pushHTTP(manifest_key, to_push),
+            .s3 => try self.pushS3(manifest_key, to_push),
+            .gcs => try self.pushGCS(manifest_key, to_push),
+            .azure => try self.pushAzure(manifest_key, to_push),
         };
     }
 
@@ -1405,4 +1672,116 @@ test "compression: empty data" {
     defer allocator.free(decompressed);
 
     try std.testing.expectEqualStrings(original, decompressed);
+}
+
+// ─── Incremental Sync Tests (v1.5.0) ────────────────────────────────────────
+
+test "createManifest: single chunk" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .incremental_sync = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    const data = "Small data under 1MB";
+    var manifest = try cache.createManifest(data);
+    defer manifest.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), manifest.chunks.len);
+    try std.testing.expectEqual(@as(usize, data.len), manifest.original_size);
+    try std.testing.expectEqual(@as(usize, data.len), manifest.chunks[0].size);
+}
+
+test "createManifest: multiple chunks" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .incremental_sync = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Create data > 2MB (3 chunks)
+    var data = std.ArrayList(u8){};
+    defer data.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < 3 * 1024 * 1024) : (i += 1) {
+        try data.append(allocator, @as(u8, @truncate(i % 256)));
+    }
+
+    var manifest = try cache.createManifest(data.items);
+    defer manifest.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), manifest.chunks.len);
+    try std.testing.expectEqual(@as(usize, data.items.len), manifest.original_size);
+
+    // First two chunks should be CHUNK_SIZE
+    try std.testing.expectEqual(@as(usize, CHUNK_SIZE), manifest.chunks[0].size);
+    try std.testing.expectEqual(@as(usize, CHUNK_SIZE), manifest.chunks[1].size);
+
+    // Last chunk should be remainder
+    const expected_last_size = data.items.len - (2 * CHUNK_SIZE);
+    try std.testing.expectEqual(expected_last_size, manifest.chunks[2].size);
+}
+
+test "manifest serialization roundtrip" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .incremental_sync = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    const data = "Test data for manifest serialization";
+    var manifest = try cache.createManifest(data);
+    defer manifest.deinit(allocator);
+
+    // Serialize
+    const json = try cache.serializeManifest(&manifest);
+    defer allocator.free(json);
+
+    try std.testing.expect(json.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"original_size\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"chunks\"") != null);
+
+    // Deserialize
+    var manifest2 = try cache.deserializeManifest(json);
+    defer manifest2.deinit(allocator);
+
+    try std.testing.expectEqual(manifest.original_size, manifest2.original_size);
+    try std.testing.expectEqual(manifest.chunk_size, manifest2.chunk_size);
+    try std.testing.expectEqual(manifest.chunks.len, manifest2.chunks.len);
+
+    for (manifest.chunks, manifest2.chunks) |chunk1, chunk2| {
+        try std.testing.expectEqualSlices(u8, &chunk1.hash, &chunk2.hash);
+        try std.testing.expectEqual(chunk1.size, chunk2.size);
+    }
+}
+
+test "chunk hash consistency" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .incremental_sync = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    const data = "Deterministic chunk hashing test";
+
+    var manifest1 = try cache.createManifest(data);
+    defer manifest1.deinit(allocator);
+
+    var manifest2 = try cache.createManifest(data);
+    defer manifest2.deinit(allocator);
+
+    // Same data should produce same chunk hashes
+    try std.testing.expectEqual(manifest1.chunks.len, manifest2.chunks.len);
+    for (manifest1.chunks, manifest2.chunks) |chunk1, chunk2| {
+        try std.testing.expectEqualSlices(u8, &chunk1.hash, &chunk2.hash);
+    }
 }

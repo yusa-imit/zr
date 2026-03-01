@@ -91,6 +91,8 @@ pub const RemoteCacheConfig = struct {
     auth: ?[]const u8 = null,
     /// Enable gzip compression for cache entries (default: true, v1.5.0).
     compression: bool = true,
+    /// Enable incremental sync with chunking (default: false, v1.5.0).
+    incremental_sync: bool = false,
 
     pub fn deinit(self: *RemoteCacheConfig, allocator: std.mem.Allocator) void {
         if (self.bucket) |b| allocator.free(b);
