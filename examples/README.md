@@ -93,6 +93,19 @@ Demonstrates Python development with Poetry and quality tools.
 
 ---
 
+### [Rust Cargo](./rust-cargo/)
+Shows Rust development with Cargo and the Rust toolchain.
+
+- Auto-generated tasks via `zr init --detect`
+- Cargo integration (build, test, check, clippy, fmt, doc)
+- Release builds with LTO and stripping
+- Benchmarks with criterion
+- Security audit and dependency checks
+
+**When to use:** Rust projects with Cargo, cross-compilation, performance-critical builds, monorepo Cargo workspaces
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -146,6 +159,7 @@ Demonstrates Python development with Poetry and quality tools.
 | Toolchain     | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
 | Java Maven    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Python Poetry | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Rust Cargo    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 

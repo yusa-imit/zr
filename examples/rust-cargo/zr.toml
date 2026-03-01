@@ -1,0 +1,89 @@
+# This file was enhanced from auto-generated output by `zr init --detect`
+# Rust project detected with Cargo
+
+[tasks.build]
+description = "Build the project in debug mode"
+cmd = "cargo build"
+
+[tasks.build-release]
+description = "Build the project with optimizations"
+cmd = "cargo build --release"
+
+[tasks.test]
+description = "Run tests"
+cmd = "cargo test"
+
+[tasks.test-verbose]
+description = "Run tests with verbose output"
+cmd = "cargo test -- --nocapture"
+
+[tasks.check]
+description = "Check code without building"
+cmd = "cargo check"
+
+[tasks.clippy]
+description = "Run Clippy lints"
+cmd = "cargo clippy -- -D warnings"
+
+[tasks.fmt]
+description = "Format code with rustfmt"
+cmd = "cargo fmt"
+
+[tasks.fmt-check]
+description = "Check code formatting"
+cmd = "cargo fmt -- --check"
+
+[tasks.doc]
+description = "Generate documentation"
+cmd = "cargo doc --no-deps --open"
+
+[tasks.run]
+description = "Run the application"
+cmd = "cargo run"
+
+[tasks.clean]
+description = "Clean build artifacts"
+cmd = "cargo clean"
+
+# Enhanced tasks beyond auto-generated
+
+[tasks.bench]
+description = "Run benchmarks"
+cmd = "cargo bench"
+deps = ["build-release"]
+
+[tasks.coverage]
+description = "Generate code coverage report"
+cmd = "cargo tarpaulin --out Html --output-dir coverage"
+
+[tasks.audit]
+description = "Check dependencies for security vulnerabilities"
+cmd = "cargo audit"
+
+[tasks.outdated]
+description = "Check for outdated dependencies"
+cmd = "cargo outdated"
+
+# Workflows
+
+[workflows.ci]
+description = "Complete CI pipeline"
+stages = [
+  { tasks = ["fmt-check", "clippy"], parallel = true },
+  { tasks = ["check"] },
+  { tasks = ["test"] },
+  { tasks = ["build-release"] }
+]
+
+[workflows.pre-commit]
+description = "Run before committing"
+stages = [
+  { tasks = ["fmt", "clippy", "test"], parallel = false }
+]
+
+[workflows.full-check]
+description = "Comprehensive quality checks"
+stages = [
+  { tasks = ["fmt-check", "clippy", "audit"], parallel = true },
+  { tasks = ["test", "bench"], parallel = false }
+]
