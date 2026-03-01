@@ -27,7 +27,7 @@ try {
 Write-Success "Latest version: $Version"
 
 # Download URL
-$BinaryName = "zr-$Version-windows-$Arch.exe"
+$BinaryName = "zr-$Arch-windows.exe"
 $DownloadUrl = "https://github.com/yusa-imit/zr/releases/download/$Version/$BinaryName"
 
 # Determine install location

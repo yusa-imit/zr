@@ -44,7 +44,7 @@ fi
 echo "${GREEN}✓${NC} Latest version: $VERSION"
 
 # Download URL
-BINARY_NAME="zr-${VERSION}-${OS}-${ARCH}"
+BINARY_NAME="zr-${ARCH}-${OS}"
 DOWNLOAD_URL="https://github.com/yusa-imit/zr/releases/download/${VERSION}/${BINARY_NAME}"
 
 # Create temporary directory
