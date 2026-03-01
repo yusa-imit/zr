@@ -195,6 +195,22 @@ Complete guide to migrating from Makefile to zr with automated conversion and ma
 
 ---
 
+### [Docker/Kubernetes](./docker-kubernetes/)
+Demonstrates container orchestration workflows with Docker and Kubernetes.
+
+- Multi-stage Docker builds with optimization
+- Docker Compose for local development (app + database + cache)
+- Kubernetes deployment manifests (deployments, services, configmaps, secrets)
+- Security scanning with Docker Scout
+- Multi-environment deployments (dev, staging, production)
+- Multi-architecture builds (AMD64 + ARM64)
+- Production workflows with approval gates and rollback
+- Health checks and probes (liveness, readiness)
+
+**When to use:** Containerized applications, microservices, Kubernetes deployments, cloud-native development, CI/CD pipelines with containers
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -239,22 +255,23 @@ Complete guide to migrating from Makefile to zr with automated conversion and ma
 
 ## Feature Matrix
 
-| Example            | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
-|--------------------|-------|------|--------|-------|-----------|---------|------------|-------------|
-| Basic              | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
-| Workspace          | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
-| Multi-lang         | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
-| Plugin             | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
-| Toolchain          | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
-| Java Maven         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Python Poetry      | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Rust Cargo         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Go Modules         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Node.js TypeScript | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Zig Build          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Deno Fresh         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Bun Elysia         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Migration (Make)   | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | ✓           |
+| Example            | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect | Workflows |
+|--------------------|-------|------|--------|-------|-----------|---------|------------|-------------|-----------|
+| Basic              | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           | -         |
+| Workspace          | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           | -         |
+| Multi-lang         | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           | -         |
+| Plugin             | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           | -         |
+| Toolchain          | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           | -         |
+| Java Maven         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Python Poetry      | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Rust Cargo         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Go Modules         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Node.js TypeScript | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Zig Build          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Deno Fresh         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Bun Elysia         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Migration (Make)   | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Docker/Kubernetes  | ✓     | ✓    | ✓      | -     | -         | -       | -          | -           | ✓         |
 
 ## Common Patterns
 
@@ -329,8 +346,8 @@ Have a useful example? We welcome contributions!
 4. Submit a pull request
 
 Good examples to add:
-- Docker/Kubernetes workflows
-- CI/CD integration examples
-- Remote cache setup
+- CI/CD integration examples (GitHub Actions, GitLab CI, Jenkins)
+- Remote cache setup (S3, GCS, Azure Blob)
 - Complex dependency graphs
-- Real-world project conversions (from Make, npm scripts, etc.)
+- Terraform/Infrastructure as Code workflows
+- Database migration workflows

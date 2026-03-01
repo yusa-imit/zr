@@ -1,0 +1,225 @@
+# Docker/Kubernetes Workflow Example
+# Demonstrates container orchestration with zr
+
+[tasks.docker-build]
+description = "Build Docker image with version tag"
+cmd = '''
+  docker build \
+    -t myapp:${VERSION:-latest} \
+    -t myapp:$(git rev-parse --short HEAD) \
+    --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+    --build-arg VCS_REF=$(git rev-parse HEAD) \
+    .
+'''
+
+[tasks.docker-build-prod]
+description = "Build production-optimized Docker image"
+cmd = '''
+  docker build \
+    -t myapp:${VERSION:-latest} \
+    --target builder \
+    --cache-from myapp:cache \
+    --build-arg BUILDKIT_INLINE_CACHE=1 \
+    .
+'''
+
+[tasks.docker-scan]
+description = "Scan Docker image for vulnerabilities"
+cmd = "docker scout cves myapp:latest"
+deps = ["docker-build"]
+
+[tasks.docker-push]
+description = "Push Docker image to registry"
+cmd = '''
+  docker tag myapp:latest ${REGISTRY:-docker.io}/myapp:${VERSION:-latest}
+  docker push ${REGISTRY:-docker.io}/myapp:${VERSION:-latest}
+'''
+deps = ["docker-build", "docker-scan"]
+
+[tasks.compose-up]
+description = "Start all services with Docker Compose"
+cmd = "docker-compose up -d"
+
+[tasks.compose-down]
+description = "Stop all services"
+cmd = "docker-compose down"
+
+[tasks.compose-logs]
+description = "View service logs"
+cmd = "docker-compose logs -f ${SERVICE:-app}"
+
+[tasks.compose-ps]
+description = "List running services"
+cmd = "docker-compose ps"
+
+[tasks.compose-restart]
+description = "Restart a service"
+cmd = "docker-compose restart ${SERVICE:-app}"
+
+[tasks.compose-build]
+description = "Build all services"
+cmd = "docker-compose build --parallel"
+
+[tasks.k8s-validate]
+description = "Validate Kubernetes manifests"
+cmd = "kubectl apply --dry-run=client -f deployment.yaml"
+
+[tasks.k8s-deploy]
+description = "Deploy to Kubernetes cluster"
+cmd = '''
+  kubectl apply -f deployment.yaml
+  kubectl rollout status deployment/myapp
+'''
+deps = ["docker-push"]
+
+[tasks.k8s-rollback]
+description = "Rollback to previous deployment"
+cmd = "kubectl rollout undo deployment/myapp"
+
+[tasks.k8s-scale]
+description = "Scale deployment replicas"
+cmd = "kubectl scale deployment/myapp --replicas=${REPLICAS:-3}"
+
+[tasks.k8s-logs]
+description = "View pod logs"
+cmd = "kubectl logs -f deployment/myapp"
+
+[tasks.k8s-exec]
+description = "Execute command in pod"
+cmd = "kubectl exec -it deployment/myapp -- ${COMMAND:-sh}"
+
+[tasks.k8s-status]
+description = "Check deployment status"
+cmd = '''
+  echo "=== Deployments ==="
+  kubectl get deployments
+  echo ""
+  echo "=== Pods ==="
+  kubectl get pods
+  echo ""
+  echo "=== Services ==="
+  kubectl get services
+'''
+
+[tasks.k8s-delete]
+description = "Delete deployment from cluster"
+cmd = "kubectl delete -f deployment.yaml"
+
+[tasks.dev-setup]
+description = "Set up local development environment"
+cmd = "docker-compose up -d db cache"
+
+[tasks.dev-teardown]
+description = "Tear down development environment"
+cmd = "docker-compose down -v"
+
+[tasks.health-check]
+description = "Check if services are healthy"
+cmd = '''
+  curl -f http://localhost:3000/health || exit 1
+  echo "✓ App is healthy"
+'''
+
+[tasks.integration-test]
+description = "Run integration tests against Docker Compose stack"
+cmd = '''
+  docker-compose up -d
+  sleep 5
+  curl -f http://localhost:3000/health
+  docker-compose down
+'''
+
+# Workflows
+
+[workflows.local-dev]
+description = "Local development workflow"
+
+[[workflows.local-dev.stages]]
+tasks = ["dev-setup"]
+
+[[workflows.local-dev.stages]]
+tasks = ["compose-up"]
+
+[[workflows.local-dev.stages]]
+tasks = ["health-check"]
+
+[workflows.ci-build]
+description = "CI/CD build and test workflow"
+
+[[workflows.ci-build.stages]]
+tasks = ["docker-build"]
+
+[[workflows.ci-build.stages]]
+tasks = ["docker-scan"]
+
+[[workflows.ci-build.stages]]
+tasks = ["integration-test"]
+
+[workflows.deploy-staging]
+description = "Deploy to staging environment"
+
+[[workflows.deploy-staging.stages]]
+tasks = ["docker-build-prod"]
+
+[[workflows.deploy-staging.stages]]
+tasks = ["docker-push"]
+
+[[workflows.deploy-staging.stages]]
+tasks = ["k8s-validate"]
+
+[[workflows.deploy-staging.stages]]
+tasks = ["k8s-deploy"]
+
+[workflows.deploy-production]
+description = "Deploy to production with safety checks"
+
+[[workflows.deploy-production.stages]]
+tasks = ["docker-build-prod"]
+
+[[workflows.deploy-production.stages]]
+tasks = ["docker-scan"]
+
+[[workflows.deploy-production.stages]]
+tasks = ["docker-push"]
+
+[[workflows.deploy-production.stages]]
+tasks = ["k8s-validate"]
+
+[[workflows.deploy-production.stages]]
+tasks = ["k8s-status"]
+
+[[workflows.deploy-production.stages]]
+tasks = ["k8s-deploy"]
+
+[[workflows.deploy-production.stages]]
+tasks = ["k8s-status"]
+
+# Matrix builds for multi-arch images
+
+[tasks.docker-buildx]
+description = "Build multi-architecture Docker image"
+cmd = '''
+  docker buildx build \
+    --platform linux/amd64,linux/arm64 \
+    -t myapp:${VERSION:-latest} \
+    --push \
+    .
+'''
+matrix.arch = ["amd64", "arm64"]
+
+# Environment-specific configurations
+
+[tasks.deploy-dev]
+description = "Deploy to dev environment"
+cmd = "kubectl apply -f deployment.yaml -n dev"
+env = { ENVIRONMENT = "dev", REPLICAS = "1" }
+
+[tasks.deploy-staging]
+description = "Deploy to staging environment"
+cmd = "kubectl apply -f deployment.yaml -n staging"
+env = { ENVIRONMENT = "staging", REPLICAS = "2" }
+
+[tasks.deploy-prod]
+description = "Deploy to production environment"
+cmd = "kubectl apply -f deployment.yaml -n prod"
+env = { ENVIRONMENT = "production", REPLICAS = "3" }
