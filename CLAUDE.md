@@ -318,10 +318,12 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.2.0 — TOML Parser Improvements** (DONE): 엄격한 검증, malformed section 헤더 감지, 에러 메시지 개선
 - [x] **v1.3.0 — TUI Graph Visualization** (DONE): Tree widget 기반 그래프 TUI 모드, sailor v1.0.3 마이그레이션
 - [x] **v1.4.0 — Plugin Registry Client** (DONE, released 2026-03-02): HTTP client, 원격 검색 `--remote` 플래그, 우아한 폴백, 통합 테스트, API 문서
-- [ ] **v1.5.0 — Remote Cache v2**: 증분 동기화, 압축, 캐시 통계 대시보드
-- [ ] **v1.6.0 — Interactive Configuration** (issue #11): `zr add task/workflow/profile` 대화형 설정 생성, TOML 라이브 편집
+- [x] **v1.5.0 — Remote Cache v2** (DONE, released 2026-03-02): gzip 압축, 증분 동기화, 캐시 통계 대시보드
+- [x] **v1.6.0 — Interactive Configuration** (DONE, released 2026-03-02): `zr add task/workflow/profile` 대화형 명령어, 스마트 stdin 처리, 통합 테스트 (6개), issue #11 해결
 - [ ] **v1.7.0 — Performance Enhancements**: 핫 패스 최적화, 메모리 할당 감소, 벤치마크 개선
 - [ ] **v1.8.0 — Toolchain Auto-Update**: `zr tools upgrade --check-updates`, 버전 충돌 자동 해결
+- [ ] **v1.9.0 — Sailor v1.1.0 Accessibility**: Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능
+- [ ] **v1.10.0 — Task Dependencies v2**: 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 순환 감지 개선
 
 ### 마일스톤 수립 프로세스
 
@@ -563,7 +565,7 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Optional upgrade completed. Tree widget fix doesn't affect zr's current functionality, but unblocks future v1.3.0 TUI widgets milestone.
 
-### v1.1.0 — Accessibility & Internationalization (status: READY)
+### v1.1.0 — Accessibility & Internationalization (status: DONE)
 
 **sailor v1.1.0 released** (2026-03-02) — Accessibility and i18n features
 
@@ -576,8 +578,8 @@ gh issue create --repo yusa-imit/sailor \
 - **Impact on zr**: Low priority for CLI tool, but beneficial for future TUI features
   - Unicode width fixes improve CJK character display in TUI mode
   - Keyboard navigation useful for future interactive TUI widgets
-- [ ] `build.zig.zon`에 sailor v1.1.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-- [ ] (Optional) Consider keyboard bindings for TUI graph mode
+- [x] `build.zig.zon`에 sailor v1.1.0 의존성 업데이트 (2026-03-02)
+- [x] 기존 테스트 전체 통과 확인 (685 unit, 819 integration)
+- [ ] (Optional) Consider keyboard bindings for TUI graph mode — deferred to future TUI enhancements
 
 **Note**: Non-breaking upgrade. Accessibility features are opt-in. Unicode width improvements automatically benefit any CJK/emoji display.
