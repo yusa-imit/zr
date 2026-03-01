@@ -9,9 +9,9 @@ function Write-Info { param($msg) Write-Host "→ $msg" -ForegroundColor Yellow 
 function Write-Error { param($msg) Write-Host "✗ $msg" -ForegroundColor Red }
 
 # Detect architecture
-$Arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else { 
+$Arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else {
     Write-Error "32-bit Windows is not supported"
-    exit 1
+    return
 }
 
 # Get latest release version
@@ -21,7 +21,7 @@ try {
     $Version = $Release.tag_name
 } catch {
     Write-Error "Failed to fetch latest version: $_"
-    exit 1
+    return
 }
 
 Write-Success "Latest version: $Version"
@@ -43,10 +43,25 @@ $InstallPath = Join-Path $InstallDir "zr.exe"
 # Download binary
 Write-Info "Downloading zr..."
 try {
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallPath
+    Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallPath -ErrorAction Stop
+
+    # Verify the file was actually downloaded and has non-zero size
+    if (-not (Test-Path $InstallPath)) {
+        throw "Binary file was not created at $InstallPath"
+    }
+    $FileInfo = Get-Item $InstallPath
+    if ($FileInfo.Length -eq 0) {
+        Remove-Item $InstallPath -Force
+        throw "Downloaded file is empty (0 bytes)"
+    }
 } catch {
     Write-Error "Failed to download zr from $DownloadUrl : $_"
-    exit 1
+    Write-Host ""
+    Write-Host "Please try:" -ForegroundColor Yellow
+    Write-Host "  1. Check your internet connection" -ForegroundColor Cyan
+    Write-Host "  2. Download manually from: https://github.com/yusa-imit/zr/releases/latest" -ForegroundColor Cyan
+    Write-Host "  3. Extract the binary to: $InstallDir" -ForegroundColor Cyan
+    return
 }
 
 Write-Success "zr installed successfully to $InstallPath"
