@@ -7,44 +7,44 @@ version = "1.0.0"
 
 # Simple tasks
 [tasks.hello]
-command = "echo 'Hello from zr!'"
+cmd = "echo 'Hello from zr!'"
 description = "Print a greeting"
 
 [tasks.build]
-command = "echo 'Building project...'"
+cmd = "echo 'Building project...'"
 description = "Build the project"
 
 [tasks.test]
-command = "echo 'Running tests...'"
+cmd = "echo 'Running tests...'"
 description = "Run tests"
 # Depend on build task
 deps = ["build"]
 
 [tasks.clean]
-command = "rm -rf dist/ build/"
+cmd = "rm -rf dist/ build/"
 description = "Clean build artifacts"
 
 # Task with environment variables
 [tasks.deploy]
-command = "echo 'Deploying to $ENV...'"
+cmd = "echo 'Deploying to $ENV...'"
 description = "Deploy to environment"
 deps = ["test"]
 env = { ENV = "production" }
 
 # Task with working directory
 [tasks.backend-test]
-command = "npm test"
+cmd = "npm test"
 description = "Run backend tests"
 cwd = "./backend"
 
 # Parallel tasks using matrix
 [tasks.lint]
-command = "echo 'Linting ${{lang}}...'"
+cmd = "echo 'Linting ${{lang}}...'"
 description = "Lint all languages"
 matrix.lang = ["javascript", "python", "rust"]
 
 # Task that never caches (always runs)
 [tasks.timestamp]
-command = "date"
+cmd = "date"
 description = "Show current timestamp"
 cache = false
