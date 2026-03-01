@@ -1,7 +1,7 @@
 # zr — Claude Code Orchestrator
 
 > **zr** (zig-runner): Zig로 작성된 범용 태스크 러너 & 워크플로우 매니저 CLI
-> Current Phase: **Phase 1 — Foundation (MVP)**
+> **v1.0.0 Released** (2026-02-28) — Phase 1-13 COMPLETE, post-release development
 
 ---
 
@@ -36,20 +36,25 @@ zr/
 │   └── release.yml              #   Release pipeline
 ├── tests/                       # Integration tests
 │   └── integration.zig          #   Black-box CLI integration tests
-└── src/                         # Source code (Phase 1 구현 대상)
-    ├── main.zig                 #   엔트리포인트
-    ├── cli/                     #   CLI interface
+├── examples/                    # Language-specific example projects (15 examples)
+├── docs/                        # Documentation
+│   ├── PRD.md                   #   Product Requirements Document
+│   └── guides/                  #   User guides (6 guides)
+└── src/                         # Source code (~34 modules)
+    ├── main.zig                 #   엔트리포인트 + dispatcher (~550 lines)
+    ├── cli/                     #   CLI interface (34 modules)
     ├── config/                  #   TOML parser, schema, expression engine
     ├── graph/                   #   DAG, topological sort, cycle detection
     ├── exec/                    #   Scheduler, worker pool, process manager
-    ├── plugin/                  #   Plugin system
-    ├── watch/                   #   File watcher
+    ├── plugin/                  #   Plugin system (native + WASM)
+    ├── watch/                   #   Native file watcher (inotify/kqueue/ReadDirectoryChangesW)
     ├── output/                  #   Terminal rendering, colors, progress
     ├── history/                 #   Execution history
-    └── util/                    #   Glob, duration, semver, hash
+    ├── toolchain/               #   Toolchain management (8 languages)
+    ├── cache/                   #   Local + remote cache (S3/GCS/Azure/HTTP)
+    ├── multirepo/               #   Multi-repo orchestration
+    └── util/                    #   Glob, duration, semver, hash, platform
 ```
-
-> **Note**: `src/`, `build.zig`, `build.zig.zon`은 Phase 1 구현 시 생성됨. 현재는 문서·설정·CI만 존재.
 
 ---
 
@@ -270,33 +275,48 @@ Types: `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `perf`, `ci`
 
 ---
 
-## Phase 1 Implementation Roadmap
+## Completed Phases (v1.0.0)
 
-현재 Phase 1 (Foundation/MVP) 구현 중. 우선순위:
+All 13 phases from the PRD are **COMPLETE**:
 
-1. **TOML Config Parser** — `src/config/loader.zig`
-   - TOML 파싱 (자체 구현 또는 zig-toml)
-   - 스키마 검증
-   - 환경 변수 보간
+| Phase | Name | Status |
+|-------|------|--------|
+| 1 | Foundation (MVP) | ✅ TOML parser, DAG, parallel execution, CLI |
+| 2 | Workflow & Control | ✅ Workflows, expressions, watch, matrix, profiles |
+| 3 | Resource & UX | ✅ TUI, resource limits, shell completion, dry-run |
+| 4 | Extensibility | ✅ Plugins (native + WASM), remote cache, Docker |
+| 5 | Toolchain Management | ✅ 8 languages, auto-install, PATH injection |
+| 6 | Monorepo Intelligence | ✅ Affected detection, graph viz, constraints |
+| 7 | Multi-repo & Remote Cache | ✅ S3/GCS/Azure/HTTP, cross-repo tasks |
+| 8 | Enterprise & Community | ✅ CODEOWNERS, versioning, analytics, conformance |
+| 9 | Infrastructure + DX | ✅ LanguageProvider, JSON-RPC, "Did you mean?" |
+| 10 | MCP Server | ✅ 9 tools, `zr init --detect` |
+| 11 | LSP Server | ✅ Diagnostics, completion, hover |
+| 12 | Performance & Stability | ✅ Binary optimization, fuzz testing, benchmarks |
+| 13 | v1.0 Release | ✅ Documentation, migration guides, README |
 
-2. **Task Definition & DAG** — `src/graph/`
-   - DAG 구성
-   - Kahn's Algorithm 순환 감지
-   - 토폴로지 정렬
+**Current stats**: 670/678 unit tests (8 skipped), 805/805 integration tests, 0 memory leaks, CI green
 
-3. **Parallel Execution Engine** — `src/exec/`
-   - Worker pool (std.Thread)
-   - Process spawning & management
-   - Timeout handling
+---
 
-4. **Basic CLI** — `src/cli/`
-   - `run`, `list`, `graph` 명령어
-   - Argument parsing
-   - Color output, error formatting
+## Post-v1.0 Development Priorities
 
-5. **Cross-compilation CI** — `.github/workflows/`
-   - 6 target builds
-   - Automated testing
+### Immediate: Sailor v1.0.2 Migration
+- sailor v1.0.2 released (2026-02-28) — zr still uses v0.5.1
+- Tasks: update dependency, apply API ref, adopt theme system, remove local TTY workaround
+- See Sailor Migration section below for checklist
+
+### Near-term: Quality & Community
+- Expand example projects and migration guides
+- Community feedback integration (GitHub issues/discussions)
+- Performance optimization (hot path profiling)
+- TOML parser improvements (stricter validation, better error messages)
+
+### Future: PRD v2.0 Features (not yet scoped)
+- Plugin registry index server (currently GitHub-only backend)
+- Advanced TUI widgets (Tree, Chart, Dialog, Notification — via sailor v1.0)
+- Additional language providers beyond the current 8
+- Remote cache improvements (incremental sync, compression)
 
 ---
 
@@ -491,13 +511,13 @@ gh issue create --repo yusa-imit/sailor \
 
 ### v1.0.0 — production ready (status: READY)
 
-**v1.0.1 패치**: 크로스 컴파일 수정 (API 변경 없음, drop-in replacement)
+**sailor v1.0.2 released** (2026-02-28) — latest stable, includes cross-compile fix + example fixes
 
-
-- **첫 안정 릴리즈**: 모든 기능 완성, 종합 문서화 포함
-- [ ] `build.zig.zon`에 sailor v1.0.0 의존성 업데이트
-- [ ] [Getting Started Guide](https://github.com/yusa-imit/sailor/blob/v1.0.0/docs/GUIDE.md) 참조하여 모범 사례 적용
-- [ ] [API Reference](https://github.com/yusa-imit/sailor/blob/v1.0.0/docs/API.md) 기반으로 기존 코드 리팩토링
+- **Major upgrade**: Full TUI framework, theme system, animations, comprehensive API
+- [ ] `build.zig.zon`에 sailor v1.0.2 의존성 업데이트: `zig fetch --save git+https://github.com/yusa-imit/sailor#v1.0.2`
+- [ ] [Getting Started Guide](https://github.com/yusa-imit/sailor/blob/v1.0.2/docs/GUIDE.md) 참조하여 모범 사례 적용
+- [ ] [API Reference](https://github.com/yusa-imit/sailor/blob/v1.0.2/docs/API.md) 기반으로 기존 코드 리팩토링
+- [ ] 로컬 TTY workaround 제거 (color.zig) — sailor v1.0.x에서 수정됨
 - [ ] 테마 시스템 활용: 라이트/다크 모드 또는 커스텀 컬러 스킴
 - [ ] 애니메이션 효과 추가 (선택사항): 프로그레스, 로딩 스피너
 - [ ] 기존 테스트 전체 통과 확인

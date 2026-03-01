@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-02-28
+
+### Added
+
+#### Phase 13 - v1.0 Release
+- **Comprehensive documentation site**: 6 user guides (getting-started, configuration, commands, mcp-integration, lsp-setup, adding-language)
+- **Migration guides**: `zr init --from-make`, `--from-just`, `--from-task` automatic conversion
+- **README overhaul**: Complete rewrite with feature matrix, quick start, and comparison tables
+- **Installation scripts**: `install.sh` (macOS/Linux) and `install.ps1` (Windows) for automated binary deployment
+- **Contributor guide**: CONTRIBUTING.md with development setup, coding standards, and workflow
+
+#### Phase 12 - Performance & Stability
+- **Binary optimization**: ReleaseSmall + strip options (~1.2MB binary)
+- **Fuzz testing**: TOML parser, expression engine, JSON-RPC parser (10min+ crash-free)
+- **Benchmark dashboard**: Performance comparison vs Make, Just, Task(go-task)
+
+#### Phase 11 - LSP Server
+- **LSP core + diagnostics**: Full LSP server with document management and TOML parse error diagnostics
+- **Auto-completion**: Context-aware completion for task names, field names, deps, expression keywords
+- **Hover documentation**: Field hover docs and go-to-definition for deps → task definitions
+
+#### Phase 10 - MCP Server
+- **MCP Server core**: JSON-RPC based MCP server with 9 tools (run_task, list_tasks, show_task, validate_config, show_graph, run_workflow, task_history, estimate_duration, generate_config)
+- **Auto-detection**: `zr init --detect` generates zr.toml from detected language providers
+
+#### Phase 9 - Infrastructure + DX Quick Wins
+- **LanguageProvider interface**: 8 languages (Node, Python, Zig, Go, Rust, Deno, Bun, Java) with single-file addition pattern
+- **JSON-RPC shared infrastructure**: Content-Length + newline-delimited transport for MCP/LSP
+- **"Did you mean?" suggestions**: Levenshtein distance-based typo suggestions for commands and task names
+- **Error message improvements**: Line/column numbers in parse errors, similar name suggestions for missing deps
+
+#### Additional Improvements
+- **Version display**: Binary version derived from build.zig.zon as single source of truth
+- **15 example projects**: Docker/Kubernetes, Make migration, all 8 language providers, plugin examples
+- **Sailor library integration**: v0.5.1 for arg parsing, color, progress, JSON formatting, TUI widgets
+
+### Changed
+- Upgraded from development (v0.0.5) to production-ready (v1.0.0)
+- All 13 PRD phases complete with comprehensive test coverage
+
+### Performance
+- Binary size: ~1.2MB (ReleaseSmall)
+- Cold start: < 10ms (~4ms measured)
+- Memory usage: ~2-3MB RSS
+- Unit tests: 670/678 (8 skipped, 0 memory leaks)
+- Integration tests: 805/805 (100% pass rate)
+- Cross-compilation: 6 targets (linux/macos/windows x x86_64/aarch64)
+
 ## [0.0.5] - 2026-02-23
 
 ### Added
@@ -223,9 +271,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Phases | Key Features |
 |---------|--------------|--------|--------------|
-| **0.0.4** | 2026-02-23 | 5-8 | Enterprise features (CODEOWNERS, analytics, conformance, benchmarks), Multi-repo orchestration, Toolchain management, Remote cache (4 backends) |
-| **0.0.3** | 2026-02-20 | 3-4 | Interactive TUI, Resource limits, WASM plugins, Docker plugin, Workspace support |
-| **0.0.2** | 2026-02-17 | 1-2 | MVP task runner, Workflows, Expression engine, Watch mode, Caching |
+| **1.0.0** | 2026-02-28 | 9-13 | MCP/LSP servers, LanguageProvider, DX improvements, binary optimization, documentation |
+| **0.0.5** | 2026-02-23 | - | Shell environment export, task-specific env layering |
+| **0.0.4** | 2026-02-23 | 5-8 | Enterprise features, Multi-repo, Toolchain management, Remote cache |
+| **0.0.3** | 2026-02-20 | 3-4 | Interactive TUI, Resource limits, WASM plugins, Docker plugin |
+| **0.0.2** | 2026-02-17 | 1-2 | MVP task runner, Workflows, Expression engine, Watch mode |
 | **0.0.1** | 2026-02-16 | - | Initial release |
 
 ---
@@ -259,14 +309,16 @@ No breaking changes. New features:
 
 ## Links
 
-- [GitHub Repository](https://github.com/yourusername/zr)
+- [GitHub Repository](https://github.com/yusa-imit/zr)
 - [Documentation](./docs/)
 - [PRD (Product Requirements)](./docs/PRD.md)
 - [Plugin Development Guide](./docs/PLUGIN_DEV_GUIDE.md)
 - [Plugin User Guide](./docs/PLUGIN_GUIDE.md)
 
-[Unreleased]: https://github.com/yourusername/zr/compare/v0.0.4...HEAD
-[0.0.4]: https://github.com/yourusername/zr/compare/v0.0.3...v0.0.4
-[0.0.3]: https://github.com/yourusername/zr/compare/v0.0.2...v0.0.3
-[0.0.2]: https://github.com/yourusername/zr/compare/v0.0.1...v0.0.2
-[0.0.1]: https://github.com/yourusername/zr/releases/tag/v0.0.1
+[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/yusa-imit/zr/compare/v0.0.5...v1.0.0
+[0.0.5]: https://github.com/yusa-imit/zr/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/yusa-imit/zr/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/yusa-imit/zr/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/yusa-imit/zr/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/yusa-imit/zr/releases/tag/v0.0.1

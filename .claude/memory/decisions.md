@@ -10,6 +10,19 @@ Decisions are logged chronologically. Format:
 
 ---
 
+## [2026-03-01] Post-v1.0 Document Update
+- Context: v1.0.0 released 2026-02-28, all 13 PRD phases complete, project needs forward-looking documentation
+- Decision: Updated CLAUDE.md, CHANGELOG.md, project-context.md, MEMORY.md for post-v1.0 development
+- Rationale:
+  - CLAUDE.md still said "Phase 1 — Foundation (MVP)" as current phase — misleading
+  - CHANGELOG.md had no v1.0.0 entry (jumped from 0.0.5 to Unreleased)
+  - project-context.md was 557 lines of outdated session logs — compressed to 95 lines
+  - MEMORY.md was 446 lines (limit: 200) — compressed to 98 lines
+  - Sailor v1.0.2 now available (zr still uses v0.5.1) — documented as next migration priority
+  - Added "Post-v1.0 Development Priorities" section to CLAUDE.md for future direction
+
+---
+
 ## [2026-02-28] Defer Sailor Migration to Feature Mode
 - Context: CLAUDE.md lists 4 READY sailor migrations (v0.1.0-v0.4.0) to refactor arg parsing, color, progress, and TUI to use standardized sailor library
 - Decision: Defer all sailor migrations to FEATURE MODE sessions
