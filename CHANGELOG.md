@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-02
+
+### Added
+- **Plugin registry client**: HTTP client for `registry.zr.dev` API with search, list, and getPlugin endpoints
+- **Remote plugin search**: `zr plugin search --remote <query>` to browse the central plugin registry
+- **Registry documentation**: Complete API specification in `docs/plugin-registry-api.md`
+- **Graceful fallback**: CLI continues to work when registry is unreachable (returns empty results)
+- **Integration tests**: 3 new tests (811-813) for remote search functionality
+
+### Changed
+- Updated `zr plugin search` help text to document `--remote` flag
+- Enhanced PLUGIN_GUIDE.md with registry usage examples and API information
+- Updated commands.md with remote search options and examples
+
 ## [1.3.0] - 2026-03-02
 
 ### Added
