@@ -549,13 +549,13 @@ gh issue create --repo yusa-imit/sailor \
 - [x] 기존 테스트 전체 통과 확인 (670 unit, 805 integration)
 - **Note**: Theme system and animations are part of `sailor.tui` (TUI apps), not applicable to zr's CLI output which uses `sailor.color` directly
 
-### v1.0.3 — bug fix release (status: READY)
+### v1.0.3 — bug fix release (status: DONE)
 
 **sailor v1.0.3 released** (2026-03-02) — Zig 0.15.2 compatibility patch
 
 - **Bug fix**: Tree widget ArrayList API updated for Zig 0.15.2
-- **Impact on zr**: None (zr doesn't use Tree widget)
-- [ ] `build.zig.zon`에 sailor v1.0.3 의존성 업데이트 (optional, no breaking changes)
-- [ ] 기존 테스트 전체 통과 확인
+- **Impact on zr**: None (zr doesn't use Tree widget yet)
+- [x] `build.zig.zon`에 sailor v1.0.3 의존성 업데이트 (✓ complete, no breaking changes)
+- [x] 기존 테스트 전체 통과 확인 (670/678 unit, 810/810 integration)
 
-**Note**: This is an optional upgrade. Tree widget fix doesn't affect zr's current functionality.
+**Note**: Optional upgrade completed. Tree widget fix doesn't affect zr's current functionality, but unblocks future v1.3.0 TUI widgets milestone.
