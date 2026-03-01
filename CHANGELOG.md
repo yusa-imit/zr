@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-03-02
+
+### Added
+- **Interactive configuration builder**: `zr add` command for creating tasks, workflows, and profiles interactively
+  - `zr add task [name]`: Interactive task creation with prompts for cmd, description, dependencies
+  - `zr add workflow [name]`: Interactive workflow creation with multi-stage support (each stage accepts comma-separated task lists)
+  - `zr add profile [name]`: Interactive profile creation with environment variables (KEY=VALUE format)
+  - Smart stdin handling with byte-by-byte reading (Zig 0.15 compatible)
+  - Yes/no prompts for optional fields
+  - Graceful error handling (missing config file, EOF, empty input)
+  - Appends to existing `zr.toml` file without overwriting
+- **Integration tests**: 6 new tests for `zr add` command (819/819 total, 100% pass rate)
+- **Documentation**: Updated getting-started.md and commands.md with comprehensive examples and usage notes
+
+### Fixed
+- stdin error handling: Added `NotOpenForReading` to catch closed stdin in tests
+- ArrayList API: Updated to Zig 0.15.2 unmanaged API (`.{}` initialization, allocator parameters for `.append`, `.deinit`, `.writer`)
+
+### Closed Issues
+- Closes #11 (need interactive add feature)
+
 ## [1.5.0] - 2026-03-02
 
 ### Added
