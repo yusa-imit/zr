@@ -462,17 +462,13 @@ pub fn graphCommand(
         .json => try renderJson(w, nodes, use_color),
         .html => try renderHtml(w, nodes, use_color),
         .tui => {
-            // TODO: Re-enable when sailor#8 is fixed (Tree widget ArrayList.init incompatibility)
-            try color.printError(ew, use_color,
-                "graph: TUI mode is temporarily disabled (waiting for sailor#8 fix)\n\n  Hint: Use --format=ascii, dot, json, or html instead\n",
-                .{});
-            return 1;
-            // graph_tui.graphTui(allocator, nodes, w, use_color) catch |err| {
-            //     try color.printError(ew, use_color,
-            //         "graph: TUI mode failed: {s}\n\n  Hint: TUI mode requires a terminal (not supported on Windows)\n",
-            //         .{@errorName(err)});
-            //     return 1;
-            // };
+            // Re-enabled: sailor#8 fixed in v1.0.3 (Tree widget ArrayList.init compatibility)
+            graph_tui.graphTui(allocator, nodes, w, use_color) catch |err| {
+                try color.printError(ew, use_color,
+                    "graph: TUI mode failed: {s}\n\n  Hint: TUI mode requires a terminal (not supported on Windows)\n",
+                    .{@errorName(err)});
+                return 1;
+            };
         },
     }
 
