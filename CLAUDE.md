@@ -309,24 +309,15 @@ All 13 phases from the PRD are **COMPLETE**:
 
 ---
 
-## Post-v1.0 Development Priorities
+## Post-v1.0 Milestones
 
-### Immediate: Sailor v1.0.2 Migration
-- sailor v1.0.2 released (2026-02-28) — zr still uses v0.5.1
-- Tasks: update dependency, apply API ref, adopt theme system, remove local TTY workaround
-- See Sailor Migration section below for checklist
+마일스톤 하나가 완료되면 마이너 릴리즈를 발행한다. (Release & Patch Policy 참조)
 
-### Near-term: Quality & Community
-- Expand example projects and migration guides
-- Community feedback integration (GitHub issues/discussions)
-- Performance optimization (hot path profiling)
-- TOML parser improvements (stricter validation, better error messages)
-
-### Future: PRD v2.0 Features (not yet scoped)
-- Plugin registry index server (currently GitHub-only backend)
-- Advanced TUI widgets (Tree, Chart, Dialog, Notification — via sailor v1.0)
-- Additional language providers beyond the current 8
-- Remote cache improvements (incremental sync, compression)
+- [ ] **v1.1.0 — Sailor v1.0.2 Migration**: 의존성 업데이트, API 리팩토링, 로컬 TTY workaround 제거, 테마 시스템 적용
+- [ ] **v1.2.0 — TOML Parser Improvements**: 엄격한 검증, 더 나은 에러 메시지, malformed section 처리 개선
+- [ ] **v1.3.0 — Advanced TUI Widgets**: sailor v1.0 위젯 (Tree, Chart, Dialog, Notification) 활용
+- [ ] **v1.4.0 — Plugin Registry Server**: GitHub 백엔드 대신 독립 인덱스 서버 구현
+- [ ] **v1.5.0 — Remote Cache v2**: 증분 동기화, 압축, 캐시 통계 대시보드
 
 ---
 
@@ -382,9 +373,9 @@ rm -rf zig-out .zig-cache
 - 빌드/테스트 실패 또는 크로스 컴파일 깨짐을 수정한 커밋
 - 설치 스크립트, 문서의 치명적 오류 수정
 
-**마이너 릴리즈 (v1.X.0)** — 다음 조건을 **모두** 충족 시 발행:
-1. 마지막 릴리즈 태그 이후 **새 기능** 커밋이 존재 (feat 타입)
-2. 새 기능에 대한 **테스트가 작성**되어 있음
+**마이너 릴리즈 (v1.X.0)** — **마일스톤 완료** 시 발행. 다음 조건을 **모두** 충족:
+1. 아래 **마일스톤 체크리스트**에서 하나의 항목이 **완료** 표시됨
+2. 해당 마일스톤의 기능에 대한 **테스트가 작성**되어 있음
 3. `zig build test && zig build integration-test` — 전체 통과, 0 failures
 4. `bug` 라벨 이슈가 **0개** (open)
 
@@ -403,7 +394,7 @@ gh issue list --state open --label bug --limit 5
 
 - 마지막 태그 이후 커밋이 없으면 → 릴리즈 불필요, 스킵
 - `fix:` 커밋만 있으면 → PATCH 릴리즈
-- `feat:` 커밋 포함 → MINOR 릴리즈 (bug 이슈 0개 확인 필수)
+- 마일스톤 체크리스트 항목 완료 → MINOR 릴리즈 (bug 이슈 0개 확인 필수)
 
 ### 릴리즈 절차
 
