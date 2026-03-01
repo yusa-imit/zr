@@ -14,7 +14,7 @@ pub const JavaProvider: LanguageProvider = .{
     .getBinaryPath = getBinaryPath,
     .getEnvironmentVars = getEnvironmentVars,
     .detectProject = detectProject,
-    .extractTasks = null,
+    .extractTasks = extractTasks,
 };
 
 fn resolveDownloadUrl(allocator: std.mem.Allocator, version: ToolVersion, platform: PlatformInfo) !DownloadSpec {
@@ -110,4 +110,120 @@ fn detectProject(allocator: std.mem.Allocator, dir_path: []const u8) !ProjectInf
         .confidence = @min(confidence, 100),
         .files_found = try files.toOwnedSlice(allocator),
     };
+}
+
+/// Extract common Java tasks based on build tool (Maven or Gradle)
+fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageProvider.TaskSuggestion {
+    var dir = std.fs.openDirAbsolute(dir_path, .{}) catch return &.{};
+    defer dir.close();
+
+    var tasks = std.ArrayList(LanguageProvider.TaskSuggestion){};
+    errdefer {
+        for (tasks.items) |task| {
+            allocator.free(task.name);
+            allocator.free(task.command);
+            allocator.free(task.description);
+        }
+        tasks.deinit(allocator);
+    }
+
+    // Detect build tool
+    const is_maven = (dir.access("pom.xml", .{}) catch null) != null;
+    const is_gradle = (dir.access("build.gradle", .{}) catch null) != null or
+        (dir.access("build.gradle.kts", .{}) catch null) != null;
+    const has_gradle_wrapper = (dir.access("gradlew", .{}) catch null) != null;
+    const has_maven_wrapper = (dir.access("mvnw", .{}) catch null) != null;
+
+    if (is_maven) {
+        const mvn_cmd = if (has_maven_wrapper) "./mvnw" else "mvn";
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "build"),
+            .command = try std.fmt.allocPrint(allocator, "{s} clean package", .{mvn_cmd}),
+            .description = try allocator.dupe(u8, "Build project with Maven"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "test"),
+            .command = try std.fmt.allocPrint(allocator, "{s} test", .{mvn_cmd}),
+            .description = try allocator.dupe(u8, "Run tests with Maven"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "clean"),
+            .command = try std.fmt.allocPrint(allocator, "{s} clean", .{mvn_cmd}),
+            .description = try allocator.dupe(u8, "Clean build artifacts"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "install"),
+            .command = try std.fmt.allocPrint(allocator, "{s} install", .{mvn_cmd}),
+            .description = try allocator.dupe(u8, "Install to local Maven repository"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "verify"),
+            .command = try std.fmt.allocPrint(allocator, "{s} verify", .{mvn_cmd}),
+            .description = try allocator.dupe(u8, "Run integration tests and verification"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "run"),
+            .command = try std.fmt.allocPrint(allocator, "{s} exec:java", .{mvn_cmd}),
+            .description = try allocator.dupe(u8, "Execute main class"),
+        });
+    } else if (is_gradle) {
+        const gradle_cmd = if (has_gradle_wrapper) "./gradlew" else "gradle";
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "build"),
+            .command = try std.fmt.allocPrint(allocator, "{s} build", .{gradle_cmd}),
+            .description = try allocator.dupe(u8, "Build project with Gradle"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "test"),
+            .command = try std.fmt.allocPrint(allocator, "{s} test", .{gradle_cmd}),
+            .description = try allocator.dupe(u8, "Run tests with Gradle"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "clean"),
+            .command = try std.fmt.allocPrint(allocator, "{s} clean", .{gradle_cmd}),
+            .description = try allocator.dupe(u8, "Clean build artifacts"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "assemble"),
+            .command = try std.fmt.allocPrint(allocator, "{s} assemble", .{gradle_cmd}),
+            .description = try allocator.dupe(u8, "Assemble project artifacts"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "check"),
+            .command = try std.fmt.allocPrint(allocator, "{s} check", .{gradle_cmd}),
+            .description = try allocator.dupe(u8, "Run all checks (tests, linting, etc.)"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "run"),
+            .command = try std.fmt.allocPrint(allocator, "{s} run", .{gradle_cmd}),
+            .description = try allocator.dupe(u8, "Run the application"),
+        });
+    } else {
+        // Generic Java tasks (no build tool detected)
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "compile"),
+            .command = try allocator.dupe(u8, "javac -d bin src/**/*.java"),
+            .description = try allocator.dupe(u8, "Compile Java sources"),
+        });
+
+        try tasks.append(allocator, .{
+            .name = try allocator.dupe(u8, "run"),
+            .command = try allocator.dupe(u8, "java -cp bin Main"),
+            .description = try allocator.dupe(u8, "Run main class"),
+        });
+    }
+
+    return try tasks.toOwnedSlice(allocator);
 }
