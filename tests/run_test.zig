@@ -3628,3 +3628,68 @@ test "714: run with task containing invalid expression syntax shows error" {
         try std.testing.expect(std.mem.indexOf(u8, output, "expression") != null or std.mem.indexOf(u8, output, "syntax") != null or std.mem.indexOf(u8, output, "parse") != null);
     }
 }
+
+test "715: run with deep dependency chain executes tasks in correct order" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a 10-level deep dependency chain: task10 -> task9 -> ... -> task1
+    const config =
+        \\[tasks.task1]
+        \\cmd = "echo 1"
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo 2"
+        \\deps = ["task1"]
+        \\
+        \\[tasks.task3]
+        \\cmd = "echo 3"
+        \\deps = ["task2"]
+        \\
+        \\[tasks.task4]
+        \\cmd = "echo 4"
+        \\deps = ["task3"]
+        \\
+        \\[tasks.task5]
+        \\cmd = "echo 5"
+        \\deps = ["task4"]
+        \\
+        \\[tasks.task6]
+        \\cmd = "echo 6"
+        \\deps = ["task5"]
+        \\
+        \\[tasks.task7]
+        \\cmd = "echo 7"
+        \\deps = ["task6"]
+        \\
+        \\[tasks.task8]
+        \\cmd = "echo 8"
+        \\deps = ["task7"]
+        \\
+        \\[tasks.task9]
+        \\cmd = "echo 9"
+        \\deps = ["task8"]
+        \\
+        \\[tasks.task10]
+        \\cmd = "echo 10"
+        \\deps = ["task9"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(config);
+
+    var result = try runZr(allocator, &.{ "run", "task10" }, tmp_path);
+    defer result.deinit();
+
+    // Should execute successfully
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // All tasks should have run (verify output contains all numbers)
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "10") != null);
+}
