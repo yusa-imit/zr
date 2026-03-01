@@ -129,6 +129,7 @@ pub fn isTty(file: std.fs.File) bool {
 pub fn printSuccess(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.success, "\xe2\x9c\x93", .{});
+        try w.writeAll(Code.reset); // Reset after styled symbol
         try w.print(" " ++ fmt, args);
     } else {
         try w.print("\xe2\x9c\x93 " ++ fmt, args);
@@ -138,6 +139,7 @@ pub fn printSuccess(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8
 pub fn printError(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.err, "\xe2\x9c\x97", .{});
+        try w.writeAll(Code.reset); // Reset after styled symbol
         try w.print(" " ++ fmt, args);
     } else {
         try w.print("\xe2\x9c\x97 " ++ fmt, args);
@@ -147,6 +149,7 @@ pub fn printError(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, 
 pub fn printInfo(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.info, "\xe2\x86\x92", .{});
+        try w.writeAll(Code.reset); // Reset after styled symbol
         try w.print(" " ++ fmt, args);
     } else {
         try w.print("\xe2\x86\x92 " ++ fmt, args);
@@ -156,6 +159,7 @@ pub fn printInfo(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, a
 pub fn printWarning(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.warn, "\xe2\x9a\xa0", .{});
+        try w.writeAll(Code.reset); // Reset after styled symbol
         try w.print(" " ++ fmt, args);
     } else {
         try w.print("\xe2\x9a\xa0 " ++ fmt, args);
@@ -165,6 +169,7 @@ pub fn printWarning(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8
 pub fn printBold(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.bold_style, fmt, args);
+        try w.writeAll(Code.reset); // Reset after styled text
     } else {
         try w.print(fmt, args);
     }
@@ -173,6 +178,7 @@ pub fn printBold(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, a
 pub fn printDim(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.dim_style, fmt, args);
+        try w.writeAll(Code.reset); // Reset after styled text
     } else {
         try w.print(fmt, args);
     }
@@ -181,6 +187,7 @@ pub fn printDim(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, ar
 pub fn printHeader(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8, args: anytype) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.header, fmt, args);
+        try w.writeAll(Code.reset); // Reset after styled text
         try w.writeAll("\n");
     } else {
         try w.print(fmt ++ "\n", args);
@@ -190,6 +197,7 @@ pub fn printHeader(w: *std.Io.Writer, use_color: bool, comptime fmt: []const u8,
 pub fn taskLabel(w: *std.Io.Writer, use_color: bool, name: []const u8) !void {
     if (use_color) {
         try sailor_color.printStyled(w, styles.task, "[{s}]", .{name});
+        try w.writeAll(Code.reset); // Reset after styled text
         try w.writeAll(" ");
     } else {
         try w.print("[{s}] ", .{name});
