@@ -312,12 +312,30 @@ All 13 phases from the PRD are **COMPLETE**:
 ## Post-v1.0 Milestones
 
 마일스톤 하나가 완료되면 마이너 릴리즈를 발행한다. (Release & Patch Policy 참조)
+마일스톤이 2개 이하로 남으면 **마일스톤 수립 프로세스**를 실행하여 보충한다.
 
 - [ ] **v1.1.0 — Sailor v1.0.2 Migration**: 의존성 업데이트, API 리팩토링, 로컬 TTY workaround 제거, 테마 시스템 적용
 - [ ] **v1.2.0 — TOML Parser Improvements**: 엄격한 검증, 더 나은 에러 메시지, malformed section 처리 개선
 - [ ] **v1.3.0 — Advanced TUI Widgets**: sailor v1.0 위젯 (Tree, Chart, Dialog, Notification) 활용
 - [ ] **v1.4.0 — Plugin Registry Server**: GitHub 백엔드 대신 독립 인덱스 서버 구현
 - [ ] **v1.5.0 — Remote Cache v2**: 증분 동기화, 압축, 캐시 통계 대시보드
+
+### 마일스톤 수립 프로세스
+
+미완료 마일스톤이 **2개 이하**가 되면, 에이전트가 자율적으로 새 마일스톤을 수립한다.
+
+**입력 소스** (우선순위 순):
+1. `gh issue list --state open --label feature-request` — 사용자 요청 기능
+2. `docs/PRD.md` — 아직 구현되지 않은 PRD 항목 (Phase 5-8의 미구현 세부사항)
+3. 의존성 업데이트 — sailor, Zig 새 버전 등
+4. 기술 부채 — Known Limitations, TODO, 성능 병목
+5. 경쟁 도구 분석 — just, task, make 대비 누락된 기능
+
+**수립 규칙**:
+- 마일스톤 하나는 **단일 테마**로 구성 (여러 작은 기능을 하나의 주제로 묶음)
+- 1-2주 내 완료 가능한 범위로 스코프 설정
+- 버전 번호는 마지막 마일스톤의 다음 번호로 자동 부여
+- 수립 후 이 섹션의 체크리스트에 추가하고 커밋: `chore: add milestone v1.X.0`
 
 ---
 
@@ -407,15 +425,17 @@ gh issue list --state open --label bug --limit 5
 6. Discord 알림
 
 **마이너 (v1.X.0)**:
-1. `build.zig.zon`의 version 업데이트
-2. CHANGELOG.md에 릴리즈 항목 추가
-3. 커밋: `chore: bump version to v1.X.0`
-4. `zig build test && zig build integration-test` 통과 확인
-5. 태그: `git tag -a v1.X.0 -m "Release v1.X.0: <요약>"`
-6. 푸시: `git push && git push origin v1.X.0`
-7. GitHub Release: `gh release create v1.X.0 --title "v1.X.0: <요약>" --notes "<릴리즈 노트>"`
-8. 관련 이슈 닫기
-9. Discord 알림: `openclaw message send --channel discord --target user:264745080709971968 --message "[zr] Released v1.X.0 — <요약>"`
+1. CLAUDE.md 마일스톤 체크리스트에서 해당 항목 `[x]` 완료 표시
+2. `build.zig.zon`의 version 업데이트
+3. CHANGELOG.md에 릴리즈 항목 추가
+4. 커밋: `chore: bump version to v1.X.0`
+5. `zig build test && zig build integration-test` 통과 확인
+6. 태그: `git tag -a v1.X.0 -m "Release v1.X.0: <요약>"`
+7. 푸시: `git push && git push origin v1.X.0`
+8. GitHub Release: `gh release create v1.X.0 --title "v1.X.0: <요약>" --notes "<릴리즈 노트>"`
+9. 관련 이슈 닫기
+10. Discord 알림: `openclaw message send --channel discord --target user:264745080709971968 --message "[zr] Released v1.X.0 — <요약>"`
+11. **마일스톤 보충**: 미완료 마일스톤이 2개 이하이면 **마일스톤 수립 프로세스** 실행
 
 ---
 
