@@ -7,11 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-03-02
+
 ### Added
 - **Remote cache compression**: gzip compression for remote cache entries (reduces network transfer and storage costs)
   - New `compression` field in `RemoteCacheConfig` (default: true)
   - Auto-compress on push, auto-decompress on pull
   - Cross-platform using gzip CLI
+- **Incremental sync**: Chunked upload/download for remote cache with deduplication
+  - Split large cache entries into 1MB chunks
+  - Track chunks via SHA256 hashes in manifest
+  - Upload only missing chunks (deduplication across entries)
+  - New `incremental_sync` field in `RemoteCacheConfig` (default: false)
+  - Works with all backends (HTTP, S3, GCS, Azure)
+- **Enhanced cache stats dashboard**: Improved `zr cache status` command
+  - Human-readable size formatting (B, KB, MB, GB)
+  - Average entry size calculation
+  - Enhanced visual layout with separator line
+
+### Changed
+- Updated cache statistics display from "Cache Status" to "Cache Statistics" with better formatting
 
 ## [1.4.0] - 2026-03-02
 
