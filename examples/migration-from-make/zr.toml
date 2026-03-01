@@ -1,0 +1,125 @@
+# Migrated configuration using: zr init --from-make
+# This shows the auto-generated output, then enhanced with zr-specific features
+
+[tasks.build]
+description = "Build the application"
+cmd = """
+mkdir -p build
+gcc -Wall -Wextra -O2 -std=c11 -c src/*.c -o build/*.o
+gcc build/*.o -lm -o myapp
+"""
+
+[tasks.test]
+description = "Run tests"
+deps = ["build"]
+cmd = "./test_runner.sh"
+
+[tasks.bench]
+description = "Run benchmarks"
+deps = ["build"]
+cmd = "./bench.sh"
+
+[tasks.coverage]
+description = "Generate coverage report"
+deps = ["clean"]
+cmd = """
+gcc -Wall -Wextra -O2 -std=c11 --coverage -c src/*.c -o build/*.o
+gcc build/*.o -lm -o myapp
+./test_runner.sh
+gcov src/*.c
+lcov --capture --directory . --output-file coverage.info
+genhtml coverage.info --output-directory coverage_html
+"""
+
+[tasks.format]
+description = "Format code"
+cmd = "clang-format -i src/*.c src/*.h"
+
+[tasks.lint]
+description = "Lint code"
+cmd = "clang-tidy src/*.c -- -Wall -Wextra -O2 -std=c11"
+
+[tasks.clean]
+description = "Clean build artifacts"
+cmd = "rm -rf build myapp *.gcov *.gcda *.gcno coverage.info coverage_html"
+
+[tasks.install]
+description = "Install to /usr/local/bin"
+deps = ["build"]
+cmd = "sudo cp myapp /usr/local/bin/"
+
+[tasks.run]
+description = "Run the application"
+deps = ["build"]
+cmd = "./myapp"
+
+# Enhanced version: Add zr-specific features that weren't possible in Make
+
+[tasks."build:debug"]
+description = "Build with debug symbols"
+cmd = """
+mkdir -p build
+gcc -Wall -Wextra -g -std=c11 -c src/*.c -o build/*.o
+gcc build/*.o -lm -o myapp
+"""
+
+[tasks."build:release"]
+description = "Build optimized release binary"
+cmd = """
+mkdir -p build
+gcc -Wall -Wextra -O3 -flto -std=c11 -c src/*.c -o build/*.o
+gcc build/*.o -lm -o myapp -s
+"""
+cache = true  # Cache release builds
+
+[tasks.ci]
+description = "Full CI pipeline"
+deps = ["lint", "test", "coverage"]
+
+[workflow.development]
+description = "Development workflow with watch mode"
+stages = [
+  { name = "format", tasks = ["format"] },
+  { name = "build", tasks = ["build:debug"] },
+  { name = "test", tasks = ["test"] }
+]
+
+[workflow.release]
+description = "Release workflow"
+stages = [
+  { name = "quality", tasks = ["lint", "format"], fail_fast = true },
+  { name = "test", tasks = ["test", "bench"], fail_fast = true },
+  { name = "build", tasks = ["build:release"] },
+  { name = "install", tasks = ["install"], approval = true }
+]
+
+# Matrix builds across platforms/optimizations (not possible in Make)
+[matrix.optimization]
+values = ["O0", "O1", "O2", "O3"]
+
+[tasks."build:matrix"]
+description = "Build with optimization level ${matrix.optimization}"
+cmd = """
+mkdir -p build
+gcc -Wall -Wextra -${matrix.optimization} -std=c11 -c src/*.c -o build/*.o
+gcc build/*.o -lm -o myapp
+"""
+
+# Conditional builds based on platform
+[tasks."build:linux"]
+description = "Build for Linux"
+condition = 'platform.is_linux'
+cmd = """
+mkdir -p build
+gcc -Wall -Wextra -O2 -std=c11 -c src/*.c -o build/*.o
+gcc build/*.o -lm -o myapp
+"""
+
+[tasks."build:macos"]
+description = "Build for macOS"
+condition = 'platform.is_macos'
+cmd = """
+mkdir -p build
+gcc -Wall -Wextra -O2 -std=c11 -c src/*.c -o build/*.o
+gcc build/*.o -lm -framework CoreFoundation -o myapp
+"""

@@ -1,0 +1,65 @@
+# Original Makefile from a real-world C project
+# This is what you're migrating FROM
+
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -std=c11
+LDFLAGS = -lm
+SRC_DIR = src
+BUILD_DIR = build
+TARGET = myapp
+
+SOURCES = $(wildcard $(SRC_DIR)/*.c)
+OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+
+.PHONY: all build test clean install run bench coverage format lint
+
+all: build
+
+build: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	@echo "Linking $@..."
+	@$(CC) $(OBJECTS) $(LDFLAGS) -o $@
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	@echo "Compiling $<..."
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)
+
+test: build
+	@echo "Running tests..."
+	@./test_runner.sh
+
+bench: build
+	@echo "Running benchmarks..."
+	@./bench.sh
+
+coverage: CFLAGS += --coverage
+coverage: clean build test
+	@echo "Generating coverage report..."
+	@gcov $(SOURCES)
+	@lcov --capture --directory . --output-file coverage.info
+	@genhtml coverage.info --output-directory coverage_html
+
+format:
+	@echo "Formatting code..."
+	@clang-format -i $(SRC_DIR)/*.c $(SRC_DIR)/*.h
+
+lint:
+	@echo "Linting code..."
+	@clang-tidy $(SRC_DIR)/*.c -- $(CFLAGS)
+
+clean:
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR) $(TARGET) *.gcov *.gcda *.gcno coverage.info coverage_html
+
+install: build
+	@echo "Installing to /usr/local/bin..."
+	@sudo cp $(TARGET) /usr/local/bin/
+
+run: build
+	@./$(TARGET)
+
+.DEFAULT_GOAL := all

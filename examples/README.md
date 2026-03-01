@@ -180,6 +180,21 @@ Shows Bun development with ultra-fast runtime and Elysia web framework.
 
 ---
 
+### [Migration from Make](./migration-from-make/)
+Complete guide to migrating from Makefile to zr with automated conversion and manual enhancements.
+
+- Real-world C project Makefile example
+- Automated migration using `zr init --from-make`
+- Before/after comparison of build configuration
+- Manual enhancement guide (caching, workflows, matrix builds)
+- Common migration issues and solutions
+- Feature comparison table (Make vs zr)
+- Production-ready patterns and best practices
+
+**When to use:** Migrating from Make to zr, understanding zr features through comparison, learning how to leverage modern task runner capabilities
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -239,6 +254,7 @@ Shows Bun development with ultra-fast runtime and Elysia web framework.
 | Zig Build          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Deno Fresh         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Bun Elysia         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Migration (Make)   | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 
