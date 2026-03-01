@@ -87,6 +87,53 @@ test "126: plugin search with query returns results" {
     try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
 }
 
+test "811: plugin search --remote queries registry" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "search", "--remote", "docker" }, tmp_path);
+    defer result.deinit();
+    // Remote search should complete without error (graceful fallback if registry unavailable)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "812: plugin search --remote without query lists all" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "search", "--remote" }, tmp_path);
+    defer result.deinit();
+    // Should list all plugins from registry or show graceful fallback
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "813: plugin search --remote --format json returns JSON" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "plugin", "search", "--remote", "docker", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should be valid JSON (either empty array or array of plugin objects)
+    // Even if registry is down, should return empty array []
+    if (result.stdout.len > 0) {
+        const is_json_array = std.mem.startsWith(u8, result.stdout, "[") and std.mem.endsWith(u8, result.stdout, "]\n");
+        try std.testing.expect(is_json_array);
+    }
+}
+
 test "145: plugin update updates installed plugin" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
