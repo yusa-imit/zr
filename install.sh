@@ -1,158 +1,84 @@
-#!/usr/bin/env bash
-# zr installer script
+#!/bin/sh
+# zr installation script for macOS/Linux
 # Usage: curl -fsSL https://raw.githubusercontent.com/yusa-imit/zr/main/install.sh | sh
 
-set -euo pipefail
-
-# Configuration
-REPO="yusa-imit/zr"
-INSTALL_DIR="${ZR_INSTALL_DIR:-$HOME/.local/bin}"
-BINARY_NAME="zr"
+set -e
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-log() {
-    echo -e "${BLUE}==>${NC} $1"
-}
-
-success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-error() {
-    echo -e "${RED}✗${NC} $1" >&2
-    exit 1
-}
-
-warn() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
 # Detect OS and architecture
-detect_platform() {
-    local os arch
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
 
-    # Detect OS
-    case "$(uname -s)" in
-        Linux*)     os="linux" ;;
-        Darwin*)    os="macos" ;;
-        MINGW*|MSYS*|CYGWIN*) os="windows" ;;
-        *)          error "Unsupported operating system: $(uname -s)" ;;
-    esac
+case "$OS" in
+    darwin) OS="macos" ;;
+    linux) OS="linux" ;;
+    *)
+        echo "${RED}✗${NC} Unsupported OS: $OS"
+        exit 1
+        ;;
+esac
 
-    # Detect architecture
-    case "$(uname -m)" in
-        x86_64|amd64)   arch="x86_64" ;;
-        aarch64|arm64)  arch="aarch64" ;;
-        *)              error "Unsupported architecture: $(uname -m)" ;;
-    esac
-
-    echo "${arch}-${os}"
-}
+case "$ARCH" in
+    x86_64) ARCH="x86_64" ;;
+    aarch64|arm64) ARCH="aarch64" ;;
+    *)
+        echo "${RED}✗${NC} Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
 
 # Get latest release version
-get_latest_version() {
-    local version
-    version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+echo "${YELLOW}→${NC} Fetching latest release..."
+VERSION=$(curl -fsSL https://api.github.com/repos/yusa-imit/zr/releases/latest | grep -o '"tag_name": "[^"]*' | grep -o '[^"]*$')
 
-    if [ -z "$version" ]; then
-        error "Failed to fetch latest release version"
-    fi
+if [ -z "$VERSION" ]; then
+    echo "${RED}✗${NC} Failed to fetch latest version"
+    exit 1
+fi
 
-    echo "$version"
-}
+echo "${GREEN}✓${NC} Latest version: $VERSION"
 
-# Download and install binary
-install_binary() {
-    local platform="$1"
-    local version="$2"
-    local artifact_name extension
+# Download URL
+BINARY_NAME="zr-${VERSION}-${OS}-${ARCH}"
+DOWNLOAD_URL="https://github.com/yusa-imit/zr/releases/download/${VERSION}/${BINARY_NAME}"
 
-    # Determine artifact name and extension
-    if [[ "$platform" == *"windows"* ]]; then
-        artifact_name="zr-${platform}.exe"
-        extension=".exe"
-    else
-        artifact_name="zr-${platform}"
-        extension=""
-    fi
+# Create temporary directory
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-    local download_url="https://github.com/${REPO}/releases/download/${version}/${artifact_name}"
-    local tmp_file="/tmp/${artifact_name}"
+echo "${YELLOW}→${NC} Downloading zr..."
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/zr"; then
+    echo "${RED}✗${NC} Failed to download zr from $DOWNLOAD_URL"
+    exit 1
+fi
 
-    log "Downloading zr ${version} for ${platform}..."
-    if ! curl -fsSL -o "$tmp_file" "$download_url"; then
-        error "Failed to download binary from ${download_url}"
-    fi
+# Make executable
+chmod +x "$TMP_DIR/zr"
 
-    # Make binary executable
-    chmod +x "$tmp_file"
+# Determine install location
+INSTALL_DIR="${ZR_INSTALL_DIR:-$HOME/.local/bin}"
+mkdir -p "$INSTALL_DIR"
 
-    # Create install directory if it doesn't exist
-    mkdir -p "$INSTALL_DIR"
+# Install binary
+echo "${YELLOW}→${NC} Installing to $INSTALL_DIR/zr..."
+mv "$TMP_DIR/zr" "$INSTALL_DIR/zr"
 
-    # Move binary to install directory
-    local install_path="${INSTALL_DIR}/${BINARY_NAME}${extension}"
-    mv "$tmp_file" "$install_path"
+echo "${GREEN}✓${NC} zr installed successfully!"
+echo ""
+echo "Run 'zr --version' to verify installation"
+echo ""
 
-    success "Installed zr to ${install_path}"
-}
-
-# Check if install directory is in PATH
-check_path() {
-    if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
-        warn "Install directory ${INSTALL_DIR} is not in your PATH"
-        echo ""
-        echo "Add it to your PATH by adding this to your shell profile:"
-        echo ""
-        echo "  export PATH=\"\${PATH}:${INSTALL_DIR}\""
-        echo ""
-    fi
-}
-
-# Main installation flow
-main() {
-    echo "zr installer"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
-    # Detect platform
-    local platform
-    platform=$(detect_platform)
-    log "Detected platform: ${platform}"
-
-    # Get latest version
-    local version
-    version=$(get_latest_version)
-    log "Latest version: ${version}"
-
-    # Install binary
-    install_binary "$platform" "$version"
-
-    echo ""
-    success "zr installed successfully!"
-
-    # Verify installation
-    if command -v zr &> /dev/null; then
-        local installed_version
-        installed_version=$(zr --version 2>/dev/null | head -n1 || echo "unknown")
-        success "Version: ${installed_version}"
-    else
-        check_path
-    fi
-
-    echo ""
-    echo "Get started:"
-    echo "  zr init          # Create a new zr.toml"
-    echo "  zr list          # List available tasks"
-    echo "  zr run <task>    # Run a task"
-    echo ""
-    echo "Documentation: https://github.com/${REPO}"
-}
-
-main "$@"
+# Check if install dir is in PATH
+case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *)
+        echo "${YELLOW}⚠${NC}  $INSTALL_DIR is not in your PATH"
+        echo "   Add this line to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
+        echo "   export PATH=\"\$PATH:$INSTALL_DIR\""
+        ;;
+esac

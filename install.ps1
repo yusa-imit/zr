@@ -1,180 +1,64 @@
-# zr installer script for Windows
+# zr installation script for Windows
 # Usage: irm https://raw.githubusercontent.com/yusa-imit/zr/main/install.ps1 | iex
-
-param(
-    [string]$InstallDir = "$env:LOCALAPPDATA\zr\bin",
-    [string]$Version = "latest"
-)
 
 $ErrorActionPreference = "Stop"
 
-# Configuration
-$Repo = "yusa-imit/zr"
-$BinaryName = "zr.exe"
+# Colors
+function Write-Success { param($msg) Write-Host "✓ $msg" -ForegroundColor Green }
+function Write-Info { param($msg) Write-Host "→ $msg" -ForegroundColor Yellow }
+function Write-Error { param($msg) Write-Host "✗ $msg" -ForegroundColor Red }
 
-# Utility functions
-function Write-ColorText {
-    param(
-        [string]$Text,
-        [string]$Color = "White"
-    )
-    Write-Host $Text -ForegroundColor $Color
-}
-
-function Write-Log {
-    param([string]$Message)
-    Write-ColorText "==> $Message" "Blue"
-}
-
-function Write-Success {
-    param([string]$Message)
-    Write-ColorText "✓ $Message" "Green"
-}
-
-function Write-Error {
-    param([string]$Message)
-    Write-ColorText "✗ $Message" "Red"
+# Detect architecture
+$Arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else { 
+    Write-Error "32-bit Windows is not supported"
     exit 1
 }
 
-function Write-Warning {
-    param([string]$Message)
-    Write-ColorText "⚠ $Message" "Yellow"
-}
-
-# Detect architecture
-function Get-Architecture {
-    $arch = $env:PROCESSOR_ARCHITECTURE
-    if ($arch -eq "AMD64") {
-        return "x86_64"
-    } elseif ($arch -eq "ARM64") {
-        return "aarch64"
-    } else {
-        Write-Error "Unsupported architecture: $arch"
-    }
-}
-
 # Get latest release version
-function Get-LatestVersion {
-    try {
-        $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-        return $response.tag_name
-    } catch {
-        Write-Error "Failed to fetch latest release version: $_"
-    }
+Write-Info "Fetching latest release..."
+try {
+    $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/yusa-imit/zr/releases/latest"
+    $Version = $Release.tag_name
+} catch {
+    Write-Error "Failed to fetch latest version: $_"
+    exit 1
 }
 
-# Download and install binary
-function Install-Binary {
-    param(
-        [string]$Arch,
-        [string]$Ver
-    )
+Write-Success "Latest version: $Version"
 
-    $artifactName = "zr-${Arch}-windows.exe"
-    $downloadUrl = "https://github.com/$Repo/releases/download/$Ver/$artifactName"
-    $tmpFile = "$env:TEMP\$artifactName"
+# Download URL
+$BinaryName = "zr-$Version-windows-$Arch.exe"
+$DownloadUrl = "https://github.com/yusa-imit/zr/releases/download/$Version/$BinaryName"
 
-    Write-Log "Downloading zr $Ver for $Arch-windows..."
+# Determine install location
+$InstallDir = if ($env:ZR_INSTALL_DIR) { 
+    $env:ZR_INSTALL_DIR 
+} else { 
+    "$env:LOCALAPPDATA\Programs\zr"
+}
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-    try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpFile -UseBasicParsing
-    } catch {
-        Write-Error "Failed to download binary from ${downloadUrl}: $_"
-    }
+$InstallPath = Join-Path $InstallDir "zr.exe"
 
-    # Create install directory if it doesn't exist
-    if (-not (Test-Path $InstallDir)) {
-        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    }
-
-    # Move binary to install directory
-    $installPath = Join-Path $InstallDir $BinaryName
-    Move-Item -Path $tmpFile -Destination $installPath -Force
-
-    Write-Success "Installed zr to $installPath"
-    return $installPath
+# Download binary
+Write-Info "Downloading zr..."
+try {
+    Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallPath
+} catch {
+    Write-Error "Failed to download zr from $DownloadUrl : $_"
+    exit 1
 }
 
-# Check if install directory is in PATH
-function Test-PathContains {
-    param([string]$Dir)
+Write-Success "zr installed successfully to $InstallPath"
+Write-Host ""
+Write-Host "Run 'zr --version' to verify installation"
+Write-Host ""
 
-    $pathDirs = $env:PATH -split ";"
-    foreach ($pathDir in $pathDirs) {
-        if ($pathDir -eq $Dir) {
-            return $true
-        }
-    }
-    return $false
+# Check if install dir is in PATH
+$PathArray = $env:PATH -split ';'
+if ($PathArray -notcontains $InstallDir) {
+    Write-Host "⚠  $InstallDir is not in your PATH" -ForegroundColor Yellow
+    Write-Host "   Add it to PATH with:" -ForegroundColor Yellow
+    Write-Host "   `$env:PATH += ';$InstallDir'" -ForegroundColor Cyan
+    Write-Host "   Or add it permanently via System Properties > Environment Variables"
 }
-
-# Add directory to PATH
-function Add-ToPath {
-    param([string]$Dir)
-
-    if (Test-PathContains $Dir) {
-        return
-    }
-
-    Write-Warning "Install directory $Dir is not in your PATH"
-    Write-Host ""
-    Write-Host "Add it to your PATH by running (as Administrator):"
-    Write-Host ""
-    Write-Host "  [Environment]::SetEnvironmentVariable('Path', `$env:Path + ';$Dir', 'User')"
-    Write-Host ""
-    Write-Host "Or add it to your current session:"
-    Write-Host ""
-    Write-Host "  `$env:PATH += ';$Dir'"
-    Write-Host ""
-
-    # Add to current session
-    $env:PATH += ";$Dir"
-    Write-Success "Added to current session PATH"
-}
-
-# Main installation flow
-function Main {
-    Write-Host "zr installer"
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    Write-Host ""
-
-    # Detect architecture
-    $arch = Get-Architecture
-    Write-Log "Detected architecture: $arch"
-
-    # Get version
-    $ver = if ($Version -eq "latest") {
-        Get-LatestVersion
-    } else {
-        $Version
-    }
-    Write-Log "Version: $ver"
-
-    # Install binary
-    $installPath = Install-Binary -Arch $arch -Ver $ver
-
-    Write-Host ""
-    Write-Success "zr installed successfully!"
-
-    # Check PATH
-    Add-ToPath -Dir $InstallDir
-
-    # Verify installation
-    try {
-        $installedVersion = & $installPath --version 2>&1 | Select-Object -First 1
-        Write-Success "Version: $installedVersion"
-    } catch {
-        Write-Warning "Could not verify installation"
-    }
-
-    Write-Host ""
-    Write-Host "Get started:"
-    Write-Host "  zr init          # Create a new zr.toml"
-    Write-Host "  zr list          # List available tasks"
-    Write-Host "  zr run <task>    # Run a task"
-    Write-Host ""
-    Write-Host "Documentation: https://github.com/$Repo"
-}
-
-Main
