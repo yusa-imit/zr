@@ -314,8 +314,8 @@ All 13 phases from the PRD are **COMPLETE**:
 마일스톤 하나가 완료되면 마이너 릴리즈를 발행한다. (Release & Patch Policy 참조)
 마일스톤이 2개 이하로 남으면 **마일스톤 수립 프로세스**를 실행하여 보충한다.
 
-- [ ] **v1.1.0 — Sailor v1.0.2 Migration**: 의존성 업데이트, API 리팩토링, 로컬 TTY workaround 제거, 테마 시스템 적용
-- [ ] **v1.2.0 — TOML Parser Improvements**: 엄격한 검증, 더 나은 에러 메시지, malformed section 처리 개선
+- [x] **v1.1.0 — Sailor v1.0.2 Migration** (DONE): 의존성 업데이트, API 리팩토링, 로컬 TTY workaround 유지, 테마 시스템 검토
+- [x] **v1.2.0 — TOML Parser Improvements** (DONE): 엄격한 검증, malformed section 헤더 감지, 에러 메시지 개선
 - [ ] **v1.3.0 — Advanced TUI Widgets**: sailor v1.0 위젯 (Tree, Chart, Dialog, Notification) 활용
 - [ ] **v1.4.0 — Plugin Registry Server**: GitHub 백엔드 대신 독립 인덱스 서버 구현
 - [ ] **v1.5.0 — Remote Cache v2**: 증분 동기화, 압축, 캐시 통계 대시보드
