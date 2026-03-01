@@ -18,24 +18,104 @@ pub const RemoteCache = struct {
         _ = self;
     }
 
+    // ─── Compression (v1.5.0) ───────────────────────────────────────────────
+
+    /// Compress data using gzip CLI. Caller owns returned memory.
+    /// Uses external `gzip` command for maximum compatibility across platforms.
+    fn compress(self: *const RemoteCache, data: []const u8) ![]u8 {
+        // Write data to temporary file
+        const tmp_in = try std.fmt.allocPrint(self.allocator, "/tmp/zr-compress-in-{d}.tmp", .{std.time.timestamp()});
+        defer self.allocator.free(tmp_in);
+        const in_file = try std.fs.cwd().createFile(tmp_in, .{});
+        defer in_file.close();
+        defer std.fs.cwd().deleteFile(tmp_in) catch {};
+        try in_file.writeAll(data);
+
+        // Compress with gzip
+        const tmp_out = try std.fmt.allocPrint(self.allocator, "{s}.gz", .{tmp_in});
+        defer self.allocator.free(tmp_out);
+        defer std.fs.cwd().deleteFile(tmp_out) catch {};
+
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = &[_][]const u8{ "gzip", "-f", "-9", tmp_in }, // -f = force, -9 = best compression
+        });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        if (result.term.Exited != 0) {
+            return error.CompressionFailed;
+        }
+
+        // Read compressed file
+        const out_file = try std.fs.cwd().openFile(tmp_out, .{});
+        defer out_file.close();
+        const compressed = try out_file.readToEndAlloc(self.allocator, 100 * 1024 * 1024); // 100MB max
+
+        return compressed;
+    }
+
+    /// Decompress gzipped data using gzip CLI. Caller owns returned memory.
+    fn decompress(self: *const RemoteCache, compressed_data: []const u8) ![]u8 {
+        // Write compressed data to temporary file
+        const tmp_in = try std.fmt.allocPrint(self.allocator, "/tmp/zr-decompress-in-{d}.tmp.gz", .{std.time.timestamp()});
+        defer self.allocator.free(tmp_in);
+        const in_file = try std.fs.cwd().createFile(tmp_in, .{});
+        defer in_file.close();
+        defer std.fs.cwd().deleteFile(tmp_in) catch {};
+        try in_file.writeAll(compressed_data);
+
+        // Decompress with gunzip
+        const result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = &[_][]const u8{ "gunzip", "-c", tmp_in }, // -c = write to stdout
+        });
+        defer self.allocator.free(result.stderr);
+
+        if (result.term.Exited != 0) {
+            self.allocator.free(result.stdout);
+            return error.DecompressionFailed;
+        }
+
+        return result.stdout; // Caller owns
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+
     /// Pull a cache entry from remote. Returns cached data or null if not found.
     /// Caller owns returned memory.
     pub fn pull(self: *const RemoteCache, key: []const u8) !?[]u8 {
-        return switch (self.config.type) {
+        const compressed = switch (self.config.type) {
             .http => try self.pullHTTP(key),
             .s3 => try self.pullS3(key),
             .gcs => try self.pullGCS(key),
             .azure => try self.pullAzure(key),
         };
+
+        if (compressed == null) return null;
+        defer self.allocator.free(compressed.?);
+
+        // Decompress if compression is enabled
+        if (self.config.compression) {
+            return try self.decompress(compressed.?);
+        }
+        // Return raw data if compression is disabled
+        return try self.allocator.dupe(u8, compressed.?);
     }
 
     /// Push a cache entry to remote.
     pub fn push(self: *const RemoteCache, key: []const u8, data: []const u8) !void {
+        const to_push = if (self.config.compression)
+            try self.compress(data)
+        else
+            data;
+        defer if (self.config.compression) self.allocator.free(to_push);
+
         return switch (self.config.type) {
-            .http => try self.pushHTTP(key, data),
-            .s3 => try self.pushS3(key, data),
-            .gcs => try self.pushGCS(key, data),
-            .azure => try self.pushAzure(key, data),
+            .http => try self.pushHTTP(key, to_push),
+            .s3 => try self.pushS3(key, to_push),
+            .gcs => try self.pushGCS(key, to_push),
+            .azure => try self.pushAzure(key, to_push),
         };
     }
 
@@ -1223,4 +1303,106 @@ test "Azure signature generation" {
     // Verify the header starts with "SharedKey testaccount:"
     try std.testing.expect(std.mem.startsWith(u8, auth_header, "SharedKey testaccount:"));
     try std.testing.expect(auth_header.len > 30); // Should have a base64 signature
+}
+
+// ─── Compression Tests (v1.5.0) ─────────────────────────────────────────────
+
+test "compression: roundtrip small data" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .compression = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    const original = "Hello, World! This is a test of gzip compression.";
+
+    const compressed = try cache.compress(original);
+    defer allocator.free(compressed);
+
+    // Compressed data should be smaller or roughly the same for small data
+    try std.testing.expect(compressed.len > 0);
+
+    const decompressed = try cache.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(original, decompressed);
+}
+
+test "compression: roundtrip large repeating data" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .compression = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Create highly compressible data (repeating pattern)
+    var original = std.ArrayList(u8){};
+    defer original.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < 1000) : (i += 1) {
+        try original.appendSlice(allocator, "AAAAAAAAAA");
+    }
+
+    const compressed = try cache.compress(original.items);
+    defer allocator.free(compressed);
+
+    // Compressed should be significantly smaller than original
+    try std.testing.expect(compressed.len < original.items.len / 10);
+
+    const decompressed = try cache.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualSlices(u8, original.items, decompressed);
+}
+
+test "compression: binary data" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .compression = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    // Binary data with all byte values
+    var original: [256]u8 = undefined;
+    for (&original, 0..) |*byte, idx| {
+        byte.* = @as(u8, @truncate(idx));
+    }
+
+    const compressed = try cache.compress(&original);
+    defer allocator.free(compressed);
+
+    const decompressed = try cache.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualSlices(u8, &original, decompressed);
+}
+
+test "compression: empty data" {
+    const allocator = std.testing.allocator;
+    const config = types.RemoteCacheConfig{
+        .type = .http,
+        .url = "http://localhost",
+        .compression = true,
+    };
+    const cache = RemoteCache.init(allocator, config);
+
+    const original = "";
+
+    const compressed = try cache.compress(original);
+    defer allocator.free(compressed);
+
+    // Even empty data should have gzip header/footer
+    try std.testing.expect(compressed.len >= 20);
+
+    const decompressed = try cache.decompress(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualStrings(original, decompressed);
 }

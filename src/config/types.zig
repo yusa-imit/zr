@@ -89,6 +89,8 @@ pub const RemoteCacheConfig = struct {
     url: ?[]const u8 = null,
     /// HTTP auth header (e.g., "bearer:$TOKEN") (owned).
     auth: ?[]const u8 = null,
+    /// Enable gzip compression for cache entries (default: true, v1.5.0).
+    compression: bool = true,
 
     pub fn deinit(self: *RemoteCacheConfig, allocator: std.mem.Allocator) void {
         if (self.bucket) |b| allocator.free(b);
