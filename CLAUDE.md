@@ -103,16 +103,18 @@ Leader (orchestrator)
 5. `.claude/memory/patterns.md` — 검증된 코드 패턴
 6. `.claude/memory/zig-0.15-migration.md` — Zig 0.15 breaking changes
 
-**8단계 실행 사이클**:
+**9단계 실행 사이클**:
 
 | Phase | 내용 | 비고 |
 |-------|------|------|
-| 1. 상태 파악 | `/status` 실행, git log·빌드·테스트 상태 점검 | 체크리스트에서 다음 미완료 항목 식별 |
+| 1. 상태 파악 | `/status` 실행, git log·빌드·테스트 상태 점검 | CLAUDE.md에서 다음 작업 식별 |
+| 1.5. 이슈 확인 | `gh issue list --state open --limit 10` | 아래 **이슈 우선순위 프로토콜** 참조 |
 | 2. 계획 | 구현 전략을 내부적으로 수립 (텍스트 출력) | `EnterPlanMode`/`ExitPlanMode` 사용 금지 — 비대화형 세션에서 블로킹됨 |
 | 3. 구현 → 검증 → 커밋 (반복) | 아래 **구현 루프** 참조 | 단위별로 즉시 커밋+푸시 |
 | 4. 코드 리뷰 | `/review` — PRD 준수·메모리 안전성·테스트 커버리지 확인 | 이슈 발견 시 수정 후 재커밋 |
-| 5. 메모리 갱신 | `.claude/memory/` 파일 업데이트 | 별도 커밋: `chore: update session memory` → push |
-| 6. 세션 요약 | 구조화된 요약 출력 | 아래 템플릿 참조 |
+| 5. 릴리즈 판단 | 릴리즈 조건 충족 시 **자동 릴리즈** | 아래 **Release & Patch Policy** 참조 |
+| 6. 메모리 갱신 | `.claude/memory/` 파일 업데이트 | 별도 커밋: `chore: update session memory` → push |
+| 7. 세션 요약 | 구조화된 요약 출력 | 아래 템플릿 참조 |
 
 **구현 루프** (Phase 3 상세):
 
@@ -125,20 +127,28 @@ Leader (orchestrator)
 - `git add -A` 금지 — 변경된 파일을 명시적으로 지정
 
 **작업 선택 규칙**:
-- `build.zig`가 없으면 프로젝트 부트스트랩부터 시작
 - 이전 세션의 미커밋 변경사항이 있으면: 테스트 통과 시 커밋+푸시, 실패 시 폐기
 - 테스트 실패 중이면 새 기능 추가 전에 수정
-- 의존성 순서 준수: Config → Graph → Exec → CLI
 - 사이클당 하나의 집중 작업만 수행
 - 이전 세션의 미완료 작업이 있으면 먼저 완료
+- Post-v1.0 우선순위: Sailor Migration (READY) > Bug 이슈 > Post-v1.0 Priorities 항목
 
-**v1.0.0 릴리스 프로토콜**:
-- sailor#3 (Windows cross-compile) 해결됨 (sailor v0.5.1)
-- 릴리즈 전 필수 작업:
-  1. sailor 의존성 v0.5.1로 업데이트: `zig fetch --save git+https://github.com/yusa-imit/sailor`
-  2. Windows cross-compile 검증: `zig build -Dtarget=x86_64-windows-msvc -Doptimize=ReleaseSafe`
-  3. 전체 테스트 통과 확인
-- 릴리즈 절차는 아래 **Release & Patch Policy** 참조
+**이슈 우선순위 프로토콜** (Phase 1.5):
+
+세션 시작 시 GitHub Issues를 확인하고 우선순위를 결정한다:
+
+```bash
+gh issue list --state open --limit 10 --json number,title,labels,createdAt
+```
+
+| 우선순위 | 조건 | 행동 |
+|---------|------|------|
+| 1 (최우선) | `bug` 라벨 | 다른 작업보다 **항상 우선** 처리 |
+| 2 (높음) | `feature-request` + 현재 우선순위 범위 내 | 현재 작업과 **병행** |
+| 3 (낮음) | `feature-request` + 미래 범위 | **적어두고 넘어감** |
+
+- 이슈 처리 후: `gh issue close <number> --comment "Fixed in <commit-hash>"`
+- 진행 상황 공유: `gh issue comment <number> --body "Working on this"`
 
 **폴리싱 작업**:
 - README 개선: 오타, 불명확한 설명, 누락된 기능 문서화
@@ -363,52 +373,58 @@ rm -rf zig-out .zig-cache
 
 ## Release & Patch Policy
 
-### 마이너 릴리즈 (v0.X.0 / v1.0.0)
+세션 사이클의 **Step 5 (릴리즈 판단)** 에서 아래 조건을 확인하고, 충족 시 자율적으로 릴리즈를 수행한다.
 
-phase의 모든 모듈이 완성되었을 때 자율적으로 릴리즈를 수행한다.
+### 릴리즈 판단 기준 (Step 5에서 매 세션 확인)
 
-**릴리즈 조건 (ALL must be true)**:
-1. 현재 phase의 체크리스트 항목이 **모두 완료** (`[x]`)
-2. `zig build test && zig build integration-test` — 전체 통과, 0 failures
-3. 크로스 컴파일 타겟 빌드 성공
+**패치 릴리즈 (v1.0.X)** — 다음 중 하나라도 해당하면 즉시 발행:
+- 사용자 보고 버그(`bug` 라벨 이슈)를 수정한 커밋이 마지막 릴리즈 태그 이후에 존재
+- 빌드/테스트 실패 또는 크로스 컴파일 깨짐을 수정한 커밋
+- 설치 스크립트, 문서의 치명적 오류 수정
+
+**마이너 릴리즈 (v1.X.0)** — 다음 조건을 **모두** 충족 시 발행:
+1. 마지막 릴리즈 태그 이후 **새 기능** 커밋이 존재 (feat 타입)
+2. 새 기능에 대한 **테스트가 작성**되어 있음
+3. `zig build test && zig build integration-test` — 전체 통과, 0 failures
 4. `bug` 라벨 이슈가 **0개** (open)
 
-**릴리즈 절차**:
+**메이저 릴리즈 (v2.0.0)** — 사용자 명시적 지시 시에만 (Breaking changes)
+
+### 릴리즈 조건 확인 방법
+
+```bash
+# 마지막 릴리즈 태그 이후 커밋 확인
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+git log ${LAST_TAG}..HEAD --oneline
+
+# 버그 이슈 확인
+gh issue list --state open --label bug --limit 5
+```
+
+- 마지막 태그 이후 커밋이 없으면 → 릴리즈 불필요, 스킵
+- `fix:` 커밋만 있으면 → PATCH 릴리즈
+- `feat:` 커밋 포함 → MINOR 릴리즈 (bug 이슈 0개 확인 필수)
+
+### 릴리즈 절차
+
+**패치 (v1.0.X)**:
+1. `zig build test && zig build integration-test` 통과 확인
+2. 태그: `git tag -a v1.0.X -m "Release v1.0.X: <수정 요약>"`
+3. 푸시: `git push origin v1.0.X`
+4. GitHub Release: `gh release create v1.0.X --title "v1.0.X: <요약>" --notes "<릴리즈 노트>"`
+5. 관련 이슈 닫기
+6. Discord 알림
+
+**마이너 (v1.X.0)**:
 1. `build.zig.zon`의 version 업데이트
-2. CLAUDE.md phase 체크리스트에 완료 표시
-3. 커밋: `chore: bump version to v0.X.0`
-4. 태그: `git tag -a v0.X.0 -m "Release v0.X.0: <phase 요약>"`
-5. 푸시: `git push && git push origin v0.X.0`
-6. GitHub Release: `gh release create v0.X.0 --title "v0.X.0: <phase 요약>" --notes "<릴리즈 노트>"`
-7. 관련 이슈 닫기: `gh issue close <number> --comment "Resolved in v0.X.0"`
-8. Discord 알림: `openclaw message send --channel discord --target user:264745080709971968 --message "[zr] Released v0.X.0 — <요약>"`
-
-### 패치 릴리즈 (v0.X.Y)
-
-버그 수정 시 패치 릴리즈를 즉시 발행한다.
-
-**트리거 조건**:
-- 사용자 보고 버그가 수정된 커밋이 존재하지만 릴리즈 태그가 없을 때
-- 빌드/테스트 실패를 수정한 커밋
-- 크로스 컴파일 깨짐을 수정한 커밋
-
-**패치 vs 마이너 판단**:
-- 버그 수정만 포함 → PATCH (v0.X.Y)
-- 새 기능 포함 → MINOR (v0.X+1.0)
-
-**버전 규칙**:
-- PATCH 번호만 증가 (예: v0.1.0 → v0.1.1)
-- `build.zig.zon` version 수정 불필요 — 태그만으로 충분
-- 기능 커밋을 패치에 포함하지 않음
-
-**패치 릴리즈 절차**:
-1. 버그 수정 커밋 식별
-2. `zig build test && zig build integration-test` 통과 확인
-3. 태그: `git tag -a v0.X.Y <commit-hash> -m "Release v0.X.Y: <수정 요약>"`
-4. 푸시: `git push origin v0.X.Y`
-5. GitHub Release: `gh release create v0.X.Y --title "v0.X.Y: <요약>" --notes "<릴리즈 노트>"`
-6. 관련 이슈에 릴리즈 코멘트 추가
-7. Discord 알림
+2. CHANGELOG.md에 릴리즈 항목 추가
+3. 커밋: `chore: bump version to v1.X.0`
+4. `zig build test && zig build integration-test` 통과 확인
+5. 태그: `git tag -a v1.X.0 -m "Release v1.X.0: <요약>"`
+6. 푸시: `git push && git push origin v1.X.0`
+7. GitHub Release: `gh release create v1.X.0 --title "v1.X.0: <요약>" --notes "<릴리즈 노트>"`
+8. 관련 이슈 닫기
+9. Discord 알림: `openclaw message send --channel discord --target user:264745080709971968 --message "[zr] Released v1.X.0 — <요약>"`
 
 ---
 
