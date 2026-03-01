@@ -162,6 +162,63 @@ zr init --from-task  # convert from Taskfile.yml (Phase 13B)
 
 ---
 
+### `add`
+
+Interactively add a task, workflow, or profile.
+
+```bash
+zr add <type> [name]
+```
+
+**Examples:**
+```bash
+# Interactive task creation
+zr add task
+# Prompts for: name, command, description, dependencies
+
+# Add task with predefined name
+zr add task build
+# Prompts for: command, description, dependencies
+
+# Interactive workflow creation
+zr add workflow ci
+# Prompts for: description, multi-stage task lists
+
+# Interactive profile creation
+zr add profile production
+# Prompts for: environment variables (KEY=VALUE format)
+```
+
+**Interactive Prompts:**
+
+For **tasks**:
+- Task name (if not provided)
+- Add command? (y/n) → Command line
+- Add description? (y/n) → Description text
+- Add dependencies? (y/n) → Comma-separated task names
+
+For **workflows**:
+- Workflow name (if not provided)
+- Add description? (y/n) → Description text
+- Add stages (one per line, empty to finish)
+  - Stage 1 tasks (comma-separated)
+  - Stage 2 tasks (comma-separated)
+  - ... (continues until empty input)
+
+For **profiles**:
+- Profile name (if not provided)
+- Add environment variables? (y/n)
+  - Environment variable (KEY=VALUE format)
+  - ... (continues until empty input)
+
+**Notes:**
+- Appends to existing `zr.toml` file
+- Validates input format (e.g., KEY=VALUE for env vars)
+- Escapes special characters in TOML strings
+- Gracefully handles EOF (cancelled by user)
+
+---
+
 ### `validate`
 
 Validate `zr.toml` configuration.

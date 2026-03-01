@@ -80,7 +80,30 @@ zr init --detect
 
 This automatically extracts tasks from your existing build configuration.
 
-### 3. Run Tasks
+### 3. Interactive Task Creation
+
+Add tasks, workflows, or profiles interactively with guided prompts:
+
+```bash
+# Add a task interactively
+zr add task
+
+# Add with a predefined name
+zr add task build
+
+# Add a workflow
+zr add workflow ci
+
+# Add a profile
+zr add profile production
+```
+
+The interactive prompts guide you through:
+- **Tasks**: name, command, description, dependencies
+- **Workflows**: name, description, multi-stage task lists
+- **Profiles**: name, environment variables (KEY=VALUE format)
+
+### 4. Run Tasks
 
 ```bash
 # Run a single task
