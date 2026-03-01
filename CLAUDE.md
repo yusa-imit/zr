@@ -562,3 +562,22 @@ gh issue create --repo yusa-imit/sailor \
 - [x] 기존 테스트 전체 통과 확인 (670/678 unit, 810/810 integration)
 
 **Note**: Optional upgrade completed. Tree widget fix doesn't affect zr's current functionality, but unblocks future v1.3.0 TUI widgets milestone.
+
+### v1.1.0 — Accessibility & Internationalization (status: READY)
+
+**sailor v1.1.0 released** (2026-03-02) — Accessibility and i18n features
+
+- **New features**:
+  - Accessibility module (screen reader hints, semantic labels)
+  - Focus management system (tab order, focus ring)
+  - Keyboard navigation protocol (custom key bindings)
+  - Unicode width calculation (CJK, emoji proper sizing)
+  - Bidirectional text support (RTL rendering for Arabic/Hebrew)
+- **Impact on zr**: Low priority for CLI tool, but beneficial for future TUI features
+  - Unicode width fixes improve CJK character display in TUI mode
+  - Keyboard navigation useful for future interactive TUI widgets
+- [ ] `build.zig.zon`에 sailor v1.1.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+- [ ] (Optional) Consider keyboard bindings for TUI graph mode
+
+**Note**: Non-breaking upgrade. Accessibility features are opt-in. Unicode width improvements automatically benefit any CJK/emoji display.
