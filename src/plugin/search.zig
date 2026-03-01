@@ -1,6 +1,7 @@
 const std = @import("std");
 const install = @import("install.zig");
 const platform = @import("../util/platform.zig");
+const registry_client = @import("registry_client.zig");
 
 /// Result entry from searchInstalledPlugins.
 pub const SearchResult = struct {
@@ -217,4 +218,107 @@ test "searchInstalledPlugins: case-insensitive match on description" {
         }
     }
     try std.testing.expect(found);
+}
+
+/// Remote search result entry (from registry).
+pub const RemoteSearchResult = struct {
+    name: []const u8,
+    org: []const u8,
+    version: []const u8,
+    description: []const u8,
+    author: []const u8,
+    repository: []const u8,
+    tags: []const []const u8,
+    downloads: u64,
+    updated_at: []const u8,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *RemoteSearchResult) void {
+        self.allocator.free(self.name);
+        self.allocator.free(self.org);
+        self.allocator.free(self.version);
+        self.allocator.free(self.description);
+        self.allocator.free(self.author);
+        self.allocator.free(self.repository);
+        for (self.tags) |tag| self.allocator.free(tag);
+        self.allocator.free(self.tags);
+        self.allocator.free(self.updated_at);
+    }
+};
+
+/// Search the remote plugin registry.
+/// Returns matching RemoteSearchResult entries (caller must deinit each and free the slice).
+/// Falls back to empty result if registry is unreachable.
+pub fn searchRemotePlugins(
+    allocator: std.mem.Allocator,
+    query: []const u8,
+    registry_url: ?[]const u8,
+) ![]RemoteSearchResult {
+    const config = registry_client.Config{
+        .base_url = registry_url orelse registry_client.default_registry_url,
+    };
+
+    var client = registry_client.Client.init(allocator, config);
+
+    // Attempt to search the registry.
+    const search_result = client.search(query, 50, 0) catch |err| {
+        // If the registry is unreachable, return an empty result.
+        // This allows zr to continue working even if the registry is down.
+        switch (err) {
+            registry_client.RegistryClientError.NetworkError,
+            registry_client.RegistryClientError.ServerError,
+            => return &[_]RemoteSearchResult{},
+            else => return err,
+        }
+    };
+    defer {
+        var mut_result = search_result;
+        mut_result.deinit();
+    }
+
+    // Convert registry_client.PluginEntry to RemoteSearchResult.
+    var results: std.ArrayListUnmanaged(RemoteSearchResult) = .empty;
+    errdefer {
+        for (results.items) |*r| r.deinit();
+        results.deinit(allocator);
+    }
+
+    for (search_result.plugins) |entry| {
+        const result = RemoteSearchResult{
+            .name = try allocator.dupe(u8, entry.name),
+            .org = try allocator.dupe(u8, entry.org),
+            .version = try allocator.dupe(u8, entry.version),
+            .description = try allocator.dupe(u8, entry.description),
+            .author = try allocator.dupe(u8, entry.author),
+            .repository = try allocator.dupe(u8, entry.repository),
+            .tags = blk: {
+                var tags = try allocator.alloc([]const u8, entry.tags.len);
+                for (entry.tags, 0..) |tag, i| {
+                    tags[i] = try allocator.dupe(u8, tag);
+                }
+                break :blk tags;
+            },
+            .downloads = entry.downloads,
+            .updated_at = try allocator.dupe(u8, entry.updated_at),
+            .allocator = allocator,
+        };
+        try results.append(allocator, result);
+    }
+
+    return try results.toOwnedSlice(allocator);
+}
+
+test "searchRemotePlugins: unreachable registry returns empty" {
+    const allocator = std.testing.allocator;
+    // Use an invalid URL to simulate network error.
+    const results = try searchRemotePlugins(allocator, "docker", "http://invalid.local:9999");
+    defer {
+        for (results) |*r| {
+            var rc = r.*;
+            rc.deinit();
+        }
+        allocator.free(results);
+    }
+    // Should return empty slice instead of erroring.
+    try std.testing.expectEqual(@as(usize, 0), results.len);
 }
