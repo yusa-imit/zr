@@ -583,3 +583,25 @@ gh issue create --repo yusa-imit/sailor \
 - [ ] (Optional) Consider keyboard bindings for TUI graph mode — deferred to future TUI enhancements
 
 **Note**: Non-breaking upgrade. Accessibility features are opt-in. Unicode width improvements automatically benefit any CJK/emoji display.
+
+### v1.2.0 — Layout & Composition (status: READY)
+
+**sailor v1.2.0 released** (2026-03-02) — Advanced layout and composition features
+
+- **New features**:
+  - Grid layout system (CSS Grid-inspired 2D constraint solver)
+  - ScrollView widget (virtual scrolling for large content)
+  - Overlay/z-index system (non-modal popups, tooltips, dropdown menus)
+  - Widget composition helpers (split panes, resizable borders)
+  - Responsive breakpoints (adaptive layouts based on terminal size)
+- **Impact on zr**: Medium priority — enables advanced TUI layouts
+  - Grid layout useful for complex dashboard layouts in TUI graph mode
+  - ScrollView enables handling large task lists in TUI
+  - Split panes for side-by-side views (graph + logs)
+  - Responsive breakpoints for adaptive layouts on different terminal sizes
+- [ ] `build.zig.zon`에 sailor v1.2.0 의존성 업데이트
+- [ ] (Optional) Consider using Grid layout for TUI graph dashboard
+- [ ] (Optional) Add ScrollView for large task lists in TUI mode
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. Layout features are opt-in. Current TUI implementation doesn't require immediate migration, but these features enable future enhancements.
