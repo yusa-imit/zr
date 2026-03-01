@@ -67,6 +67,19 @@ Demonstrates built-in toolchain version management.
 
 ---
 
+### [Java Maven](./java-maven/)
+Shows integration with Java/Maven projects using auto-detection.
+
+- Auto-generated tasks via `zr init --detect`
+- Maven lifecycle integration (build, test, package)
+- Custom workflows (CI pipeline, coverage reporting)
+- Build profiles for different environments
+- Wrapper script preference (mvnw)
+
+**When to use:** Java projects using Maven, migrating from Maven to zr, adding task orchestration to existing Maven builds
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -111,13 +124,14 @@ Demonstrates built-in toolchain version management.
 
 ## Feature Matrix
 
-| Example      | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains |
-|--------------|-------|------|--------|-------|-----------|---------|------------|
-| Basic        | ✓     | ✓    | ✓      | ✓     | -         | -       | -          |
-| Workspace    | ✓     | ✓    | -      | ✓     | ✓         | -       | -          |
-| Multi-lang   | ✓     | ✓    | -      | ✓     | -         | -       | -          |
-| Plugin       | ✓     | ✓    | -      | -     | -         | ✓       | -          |
-| Toolchain    | ✓     | ✓    | ✓      | -     | -         | -       | ✓          |
+| Example      | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
+|--------------|-------|------|--------|-------|-----------|---------|------------|-------------|
+| Basic        | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
+| Workspace    | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
+| Multi-lang   | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
+| Plugin       | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
+| Toolchain    | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
+| Java Maven   | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 
