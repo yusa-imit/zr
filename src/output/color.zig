@@ -74,6 +74,11 @@ fn enableWindowsAnsiSupport(file: std.fs.File) bool {
     const windows = std.os.windows;
     const handle = file.handle;
 
+    // Set console output codepage to UTF-8 (CP_UTF8 = 65001)
+    // This is required for proper ANSI escape sequence handling
+    const CP_UTF8 = 65001;
+    _ = windows.kernel32.SetConsoleOutputCP(CP_UTF8);
+
     // Get current console mode
     var mode: windows.DWORD = 0;
     if (windows.kernel32.GetConsoleMode(handle, &mode) == 0) {
