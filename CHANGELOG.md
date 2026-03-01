@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Remote cache compression**: gzip compression for remote cache entries (reduces network transfer and storage costs)
+  - New `compression` field in `RemoteCacheConfig` (default: true)
+  - Auto-compress on push, auto-decompress on pull
+  - Cross-platform using gzip CLI
+
 ## [1.4.0] - 2026-03-02
 
 ### Added
