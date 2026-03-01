@@ -6,6 +6,7 @@ const loader = @import("../config/loader.zig");
 const workspace = @import("workspace.zig");
 const affected_mod = @import("../util/affected.zig");
 const synthetic = @import("../multirepo/synthetic.zig");
+const graph_tui = @import("graph_tui.zig");
 
 /// Output format for graph visualization
 pub const GraphFormat = enum {
@@ -13,12 +14,14 @@ pub const GraphFormat = enum {
     dot,
     json,
     html,
+    tui, // Interactive TUI mode
 
     pub fn fromString(s: []const u8) ?GraphFormat {
         if (std.mem.eql(u8, s, "ascii")) return .ascii;
         if (std.mem.eql(u8, s, "dot")) return .dot;
         if (std.mem.eql(u8, s, "json")) return .json;
         if (std.mem.eql(u8, s, "html")) return .html;
+        if (std.mem.eql(u8, s, "tui")) return .tui;
         return null;
     }
 };
@@ -458,6 +461,19 @@ pub fn graphCommand(
         .dot => try renderDot(w, nodes, use_color),
         .json => try renderJson(w, nodes, use_color),
         .html => try renderHtml(w, nodes, use_color),
+        .tui => {
+            // TODO: Re-enable when sailor#8 is fixed (Tree widget ArrayList.init incompatibility)
+            try color.printError(ew, use_color,
+                "graph: TUI mode is temporarily disabled (waiting for sailor#8 fix)\n\n  Hint: Use --format=ascii, dot, json, or html instead\n",
+                .{});
+            return 1;
+            // graph_tui.graphTui(allocator, nodes, w, use_color) catch |err| {
+            //     try color.printError(ew, use_color,
+            //         "graph: TUI mode failed: {s}\n\n  Hint: TUI mode requires a terminal (not supported on Windows)\n",
+            //         .{@errorName(err)});
+            //     return 1;
+            // };
+        },
     }
 
     return 0;
@@ -470,7 +486,7 @@ fn printGraphHelp(w: *std.Io.Writer) !void {
         \\Visualize workspace dependency graph
         \\
         \\Options:
-        \\  --format=<fmt>      Output format: ascii (default), dot, json, html
+        \\  --format=<fmt>      Output format: ascii (default), dot, json, html, tui
         \\  --affected <ref>    Highlight affected projects (git base reference)
         \\  --focus=<path>      Focus on specific project
         \\  --config=<path>     Config file path (default: zr.toml)
@@ -478,6 +494,7 @@ fn printGraphHelp(w: *std.Io.Writer) !void {
         \\
         \\Examples:
         \\  zr graph                          # ASCII tree view
+        \\  zr graph --format=tui             # Interactive TUI (arrow keys, q to quit)
         \\  zr graph --format=dot             # Graphviz DOT format
         \\  zr graph --format=json            # JSON for programmatic use
         \\  zr graph --format=html > graph.html  # Interactive HTML
@@ -491,6 +508,7 @@ test "GraphFormat.fromString" {
     try std.testing.expectEqual(GraphFormat.dot, GraphFormat.fromString("dot").?);
     try std.testing.expectEqual(GraphFormat.json, GraphFormat.fromString("json").?);
     try std.testing.expectEqual(GraphFormat.html, GraphFormat.fromString("html").?);
+    try std.testing.expectEqual(GraphFormat.tui, GraphFormat.fromString("tui").?);
     try std.testing.expect(GraphFormat.fromString("invalid") == null);
 }
 
