@@ -120,6 +120,21 @@ Demonstrates Go development with modules, testing, and cross-compilation.
 
 ---
 
+### [Node.js TypeScript](./node-typescript/)
+Shows modern Node.js development with TypeScript and modern tooling.
+
+- Auto-generated tasks via `zr init --detect`
+- TypeScript compilation with tsc
+- Testing with Vitest (fast, modern alternative to Jest)
+- Linting with ESLint, formatting with Prettier
+- Watch mode for rapid development
+- Content-based caching for faster rebuilds
+- CI workflows with parallel quality checks
+
+**When to use:** Node.js projects with TypeScript, web applications, APIs, CLI tools, npm package development
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -164,17 +179,18 @@ Demonstrates Go development with modules, testing, and cross-compilation.
 
 ## Feature Matrix
 
-| Example       | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
-|---------------|-------|------|--------|-------|-----------|---------|------------|-------------|
-| Basic         | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
-| Workspace     | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
-| Multi-lang    | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
-| Plugin        | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
-| Toolchain     | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
-| Java Maven    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Python Poetry | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Rust Cargo    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
-| Go Modules    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Example          | Tasks | Deps | Matrix | Cache | Workspace | Plugins | Toolchains | Auto-detect |
+|------------------|-------|------|--------|-------|-----------|---------|------------|-------------|
+| Basic            | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           |
+| Workspace        | ✓     | ✓    | -      | ✓     | ✓         | -       | -          | -           |
+| Multi-lang       | ✓     | ✓    | -      | ✓     | -         | -       | -          | -           |
+| Plugin           | ✓     | ✓    | -      | -     | -         | ✓       | -          | -           |
+| Toolchain        | ✓     | ✓    | ✓      | -     | -         | -       | ✓          | -           |
+| Java Maven       | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Python Poetry    | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Rust Cargo       | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Go Modules       | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Node.js TypeScript | ✓   | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 
