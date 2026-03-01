@@ -257,6 +257,8 @@ pub const readPluginMeta = install.readPluginMeta;
 
 pub const SearchResult = search.SearchResult;
 pub const searchInstalledPlugins = search.searchInstalledPlugins;
+pub const searchRemotePlugins = search.searchRemotePlugins;
+pub const RemoteSearchResult = search.RemoteSearchResult;
 
 // ---------------------------------------------------------------------------
 // Tests

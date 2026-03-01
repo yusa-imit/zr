@@ -21,6 +21,7 @@ pub fn cmdPlugin(
         try w.writeAll("  zr plugin list                  List plugins declared in zr.toml\n");
         try w.writeAll("  zr plugin builtins              List available built-in plugins\n");
         try w.writeAll("  zr plugin search [query]        Search installed plugins by name/description\n");
+        try w.writeAll("  zr plugin search --remote [q]   Search remote plugin registry\n");
         try w.writeAll("  zr plugin install <path|url>    Install a plugin (local path or git URL)\n");
         try w.writeAll("  zr plugin remove <name>         Remove an installed plugin\n");
         try w.writeAll("  zr plugin update <name> [path]  Update a plugin (git pull, or from new path)\n");
@@ -328,53 +329,127 @@ pub fn cmdPlugin(
         try color.printSuccess(w, use_color, "Updated plugin '{s}' → {s}\n", .{ plugin_name, dest });
         return 0;
     } else if (std.mem.eql(u8, sub, "search")) {
-        // zr plugin search [<query>]
-        // Searches installed plugins by name/description (case-insensitive substring).
-        const query: []const u8 = if (args.len >= 4) args[3] else "";
+        // zr plugin search [--remote] [<query>]
+        // Searches installed plugins or remote registry by name/description.
 
-        const results = try plugin_loader.searchInstalledPlugins(allocator, query);
-        defer {
-            for (results) |*r| {
-                var rc = r.*;
-                rc.deinit();
-            }
-            allocator.free(results);
+        // Check for --remote flag.
+        var is_remote = false;
+        var query_idx: usize = 3;
+        if (args.len >= 4 and std.mem.eql(u8, args[3], "--remote")) {
+            is_remote = true;
+            query_idx = 4;
         }
 
-        if (json_output) {
-            const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
-            var arr = try JsonArr.init(w);
-            for (results) |r| {
-                var obj = try arr.beginObject();
-                try obj.addString("name", r.name);
-                try obj.addString("version", r.version);
-                try obj.addString("description", r.description);
-                try obj.addString("author", r.author);
-                try obj.end();
-            }
-            try arr.end();
-            try w.writeAll("\n");
-        } else {
-            if (results.len == 0) {
-                if (query.len > 0) {
-                    try color.printDim(w, use_color, "No installed plugins matching '{s}'\n\n  Hint: Run 'zr plugin list' to see all installed plugins\n", .{query});
-                } else {
-                    try color.printDim(w, use_color, "No plugins installed\n\n  Hint: Install plugins with 'zr plugin install <path|url>'\n", .{});
+        const query: []const u8 = if (args.len > query_idx) args[query_idx] else "";
+
+        if (is_remote) {
+            // Remote registry search.
+            const remote_results = try plugin_loader.searchRemotePlugins(allocator, query, null);
+            defer {
+                for (remote_results) |*r| {
+                    var rc = r.*;
+                    rc.deinit();
                 }
-                return 0;
+                allocator.free(remote_results);
             }
-            if (query.len > 0) {
-                try color.printBold(w, use_color, "Search results for '{s}' ({d})\n", .{ query, results.len });
+
+            if (json_output) {
+                const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+                var arr = try JsonArr.init(w);
+                for (remote_results) |r| {
+                    var obj = try arr.beginObject();
+                    try obj.addString("name", r.name);
+                    try obj.addString("org", r.org);
+                    try obj.addString("version", r.version);
+                    try obj.addString("description", r.description);
+                    try obj.addString("author", r.author);
+                    try obj.addString("repository", r.repository);
+                    try obj.addNumber("downloads", r.downloads);
+                    try obj.addString("updated_at", r.updated_at);
+                    try obj.end();
+                }
+                try arr.end();
+                try w.writeAll("\n");
             } else {
-                try color.printBold(w, use_color, "Installed plugins ({d})\n", .{results.len});
+                if (remote_results.len == 0) {
+                    if (query.len > 0) {
+                        try color.printDim(w, use_color, "No plugins found in registry matching '{s}'\n\n  Hint: Try a different search term or browse https://registry.zr.dev\n", .{query});
+                    } else {
+                        try color.printDim(w, use_color, "Registry currently unavailable or empty\n\n  Hint: Check https://registry.zr.dev or use 'zr plugin search' for installed plugins\n", .{});
+                    }
+                    return 0;
+                }
+                if (query.len > 0) {
+                    try color.printBold(w, use_color, "Registry search results for '{s}' ({d})\n", .{ query, remote_results.len });
+                } else {
+                    try color.printBold(w, use_color, "Available plugins in registry ({d})\n", .{remote_results.len});
+                }
+                for (remote_results) |r| {
+                    try w.print("  ", .{});
+                    try color.printBold(w, use_color, "{s}/{s}", .{ r.org, r.name });
+                    try w.print(" v{s}", .{r.version});
+                    if (r.description.len > 0) try color.printDim(w, use_color, " — {s}", .{r.description});
+                    try w.print("\n", .{});
+                    if (r.author.len > 0) try color.printDim(w, use_color, "    Author: {s}", .{r.author});
+                    try color.printDim(w, use_color, " | Downloads: {d}", .{r.downloads});
+                    try w.print("\n", .{});
+                    if (r.tags.len > 0) {
+                        try color.printDim(w, use_color, "    Tags: ", .{});
+                        for (r.tags, 0..) |tag, i| {
+                            if (i > 0) try w.print(", ", .{});
+                            try w.print("{s}", .{tag});
+                        }
+                        try w.print("\n", .{});
+                    }
+                    try color.printDim(w, use_color, "    Install: zr plugin install registry:{s}/{s}\n", .{ r.org, r.name });
+                }
             }
-            for (results) |r| {
-                try w.print("  ", .{});
-                try color.printBold(w, use_color, "{s}", .{r.name});
-                if (r.version.len > 0) try w.print(" v{s}", .{r.version});
-                if (r.description.len > 0) try color.printDim(w, use_color, " — {s}", .{r.description});
-                try w.print("\n", .{});
-                if (r.author.len > 0) try color.printDim(w, use_color, "    Author: {s}\n", .{r.author});
+        } else {
+            // Local installed plugins search.
+            const results = try plugin_loader.searchInstalledPlugins(allocator, query);
+            defer {
+                for (results) |*r| {
+                    var rc = r.*;
+                    rc.deinit();
+                }
+                allocator.free(results);
+            }
+
+            if (json_output) {
+                const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+                var arr = try JsonArr.init(w);
+                for (results) |r| {
+                    var obj = try arr.beginObject();
+                    try obj.addString("name", r.name);
+                    try obj.addString("version", r.version);
+                    try obj.addString("description", r.description);
+                    try obj.addString("author", r.author);
+                    try obj.end();
+                }
+                try arr.end();
+                try w.writeAll("\n");
+            } else {
+                if (results.len == 0) {
+                    if (query.len > 0) {
+                        try color.printDim(w, use_color, "No installed plugins matching '{s}'\n\n  Hint: Run 'zr plugin search --remote {s}' to search the registry\n", .{ query, query });
+                    } else {
+                        try color.printDim(w, use_color, "No plugins installed\n\n  Hint: Search the registry with 'zr plugin search --remote' or install with 'zr plugin install <path|url>'\n", .{});
+                    }
+                    return 0;
+                }
+                if (query.len > 0) {
+                    try color.printBold(w, use_color, "Search results for '{s}' ({d})\n", .{ query, results.len });
+                } else {
+                    try color.printBold(w, use_color, "Installed plugins ({d})\n", .{results.len});
+                }
+                for (results) |r| {
+                    try w.print("  ", .{});
+                    try color.printBold(w, use_color, "{s}", .{r.name});
+                    if (r.version.len > 0) try w.print(" v{s}", .{r.version});
+                    if (r.description.len > 0) try color.printDim(w, use_color, " — {s}", .{r.description});
+                    try w.print("\n", .{});
+                    if (r.author.len > 0) try color.printDim(w, use_color, "    Author: {s}\n", .{r.author});
+                }
             }
         }
         return 0;
