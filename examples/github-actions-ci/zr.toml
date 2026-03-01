@@ -1,0 +1,199 @@
+# zr.toml — GitHub Actions CI/CD Integration Example
+#
+# This example demonstrates how to use zr with GitHub Actions for continuous
+# integration and deployment workflows. It shows best practices for:
+# - Installing and caching zr in CI
+# - Running parallel tasks with matrix strategies
+# - Conditional deployments based on branch/tags
+# - Multi-platform builds
+# - Integration with GitHub-specific features (releases, artifacts)
+
+# ============================================================================
+# Build Tasks
+# ============================================================================
+
+[tasks.build]
+cmd = "echo 'Building application...' && mkdir -p dist && echo 'v1.0.0' > dist/app"
+description = "Build the application"
+cache = true
+
+[tasks.build-linux]
+cmd = """
+echo 'Building for Linux...'
+mkdir -p dist/linux
+echo 'linux-binary' > dist/linux/app
+"""
+description = "Build Linux binary"
+platform = "linux"
+
+[tasks.build-macos]
+cmd = """
+echo 'Building for macOS...'
+mkdir -p dist/macos
+echo 'macos-binary' > dist/macos/app
+"""
+description = "Build macOS binary"
+platform = "darwin"
+
+[tasks.build-windows]
+cmd = """
+echo 'Building for Windows...'
+mkdir -p dist/windows
+echo 'windows-binary' > dist/windows/app.exe
+"""
+description = "Build Windows binary"
+platform = "windows"
+
+# ============================================================================
+# Test Tasks
+# ============================================================================
+
+[tasks.test-unit]
+cmd = "echo 'Running unit tests...' && sleep 0.5"
+description = "Run unit tests"
+deps = ["build"]
+
+[tasks.test-integration]
+cmd = "echo 'Running integration tests...' && sleep 0.5"
+description = "Run integration tests"
+deps = ["build"]
+
+[tasks.test-e2e]
+cmd = "echo 'Running e2e tests...' && sleep 1"
+description = "Run end-to-end tests"
+deps = ["build"]
+
+[tasks.test]
+description = "Run all tests"
+deps = ["test-unit", "test-integration", "test-e2e"]
+
+# ============================================================================
+# Quality Tasks
+# ============================================================================
+
+[tasks.lint]
+cmd = "echo 'Running linter...' && sleep 0.3"
+description = "Run linter"
+
+[tasks.format-check]
+cmd = "echo 'Checking code formatting...' && sleep 0.2"
+description = "Check code formatting"
+
+[tasks.security-scan]
+cmd = "echo 'Running security scan...' && sleep 0.5"
+description = "Run security vulnerability scan"
+
+[tasks.type-check]
+cmd = "echo 'Running type checker...' && sleep 0.4"
+description = "Run type checker"
+
+[tasks.quality]
+description = "Run all quality checks"
+deps = ["lint", "format-check", "type-check"]
+
+# ============================================================================
+# CI/CD Tasks
+# ============================================================================
+
+[tasks.ci]
+description = "Full CI pipeline (parallel checks)"
+deps = ["quality", "test", "security-scan"]
+
+[tasks.package]
+cmd = """
+echo 'Creating release package...'
+mkdir -p artifacts
+tar -czf artifacts/release-$(uname -s)-$(uname -m).tar.gz dist/
+"""
+description = "Package build artifacts"
+deps = ["build"]
+
+[tasks.upload-artifact]
+cmd = """
+if [ -n "$GITHUB_ACTIONS" ]; then
+  echo 'Uploading artifacts to GitHub...'
+  # In real CI, this would use actions/upload-artifact
+  echo '::set-output name=artifact-path::artifacts/'
+else
+  echo 'Not in GitHub Actions environment'
+fi
+"""
+description = "Upload artifacts to GitHub Actions"
+deps = ["package"]
+
+[tasks.create-release]
+cmd = """
+if [ -n "$GITHUB_ACTIONS" ] && [ -n "$GITHUB_REF_TYPE" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+  echo "Creating GitHub release for $GITHUB_REF_NAME..."
+  # In real CI: gh release create $GITHUB_REF_NAME --generate-notes
+  echo 'Release would be created here'
+else
+  echo 'Skipping release (not a tag push)'
+fi
+"""
+description = "Create GitHub release"
+condition = "env.GITHUB_REF_TYPE == 'tag'"
+
+[tasks.deploy-staging]
+cmd = """
+echo 'Deploying to staging environment...'
+echo 'URL: https://staging.example.com'
+"""
+description = "Deploy to staging"
+deps = ["ci"]
+condition = "env.GITHUB_REF_NAME == 'develop'"
+
+[tasks.deploy-production]
+cmd = """
+echo 'Deploying to production environment...'
+echo 'URL: https://example.com'
+"""
+description = "Deploy to production"
+deps = ["ci"]
+condition = "env.GITHUB_REF_NAME == 'main'"
+
+# ============================================================================
+# Utility Tasks
+# ============================================================================
+
+[tasks.clean]
+cmd = "rm -rf dist artifacts"
+description = "Clean build artifacts"
+
+[tasks.doctor]
+cmd = """
+echo '=== Environment Info ==='
+echo "OS: $(uname -s)"
+echo "Arch: $(uname -m)"
+echo "CI: ${GITHUB_ACTIONS:-false}"
+echo "Branch: ${GITHUB_REF_NAME:-local}"
+echo "Run ID: ${GITHUB_RUN_ID:-N/A}"
+"""
+description = "Show environment information"
+
+# ============================================================================
+# Workflows
+# ============================================================================
+
+[workflows.release]
+description = "Full release pipeline with cross-platform builds"
+
+[[workflows.release.stages]]
+name = "quality-checks"
+tasks = ["lint", "format-check", "type-check", "security-scan"]
+parallel = true
+fail_fast = true
+
+[[workflows.release.stages]]
+name = "tests"
+tasks = ["test-unit", "test-integration", "test-e2e"]
+parallel = true
+
+[[workflows.release.stages]]
+name = "build-all-platforms"
+tasks = ["build-linux", "build-macos", "build-windows"]
+parallel = true
+
+[[workflows.release.stages]]
+name = "package-and-release"
+tasks = ["package", "create-release"]

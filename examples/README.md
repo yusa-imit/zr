@@ -211,6 +211,21 @@ Demonstrates container orchestration workflows with Docker and Kubernetes.
 
 ---
 
+### [GitHub Actions CI/CD](./github-actions-ci/)
+Comprehensive integration with GitHub Actions for continuous integration and deployment.
+
+- Complete CI pipeline (quality, tests, builds, deployments)
+- Multi-platform matrix builds (Linux, macOS, Windows)
+- Conditional deployments (staging on develop, production on main)
+- Release automation on version tags
+- Artifact management and GitHub releases
+- Environment protection and approvals
+- Best practices for caching, concurrency, and job orchestration
+
+**When to use:** GitHub-hosted projects, automated testing and deployment, multi-platform releases, teams using GitHub Actions
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -272,6 +287,7 @@ Demonstrates container orchestration workflows with Docker and Kubernetes.
 | Bun Elysia         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
 | Migration (Make)   | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | ✓           | ✓         |
 | Docker/Kubernetes  | ✓     | ✓    | ✓      | -     | -         | -       | -          | -           | ✓         |
+| GitHub Actions CI  | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           | ✓         |
 
 ## Common Patterns
 
@@ -346,8 +362,9 @@ Have a useful example? We welcome contributions!
 4. Submit a pull request
 
 Good examples to add:
-- CI/CD integration examples (GitHub Actions, GitLab CI, Jenkins)
 - Remote cache setup (S3, GCS, Azure Blob)
 - Complex dependency graphs
 - Terraform/Infrastructure as Code workflows
 - Database migration workflows
+- GitLab CI integration
+- Jenkins pipeline integration
