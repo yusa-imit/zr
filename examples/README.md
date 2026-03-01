@@ -150,6 +150,36 @@ Demonstrates Zig development with the Zig build system and cross-compilation.
 
 ---
 
+### [Deno Fresh](./deno-fresh/)
+Demonstrates Deno development with modern runtime features and JSR imports.
+
+- Auto-generated tasks via `zr init --detect`
+- Deno runtime with permission system
+- JSR (JavaScript Registry) imports from @std
+- HTTP server using @std/http
+- Built-in formatter, linter, and test runner
+- Native compilation to standalone binary
+- CI workflows with type checking and testing
+
+**When to use:** Deno projects, web servers, APIs, serverless functions, modern JavaScript/TypeScript applications
+
+---
+
+### [Bun Elysia](./bun-elysia/)
+Shows Bun development with ultra-fast runtime and Elysia web framework.
+
+- Auto-generated tasks via `zr init --detect`
+- Bun runtime for fast JavaScript/TypeScript execution
+- Elysia web framework (Express-like but faster)
+- Built-in test runner (bun:test)
+- Standalone compilation to single executable
+- Fast package management (3-6x faster than npm)
+- CI workflows with parallel quality checks
+
+**When to use:** Bun projects, high-performance web servers, APIs, full-stack applications, projects prioritizing speed
+
+---
+
 ## Quick Start
 
 1. **Clone an example:**
@@ -207,6 +237,8 @@ Demonstrates Zig development with the Zig build system and cross-compilation.
 | Go Modules         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Node.js TypeScript | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 | Zig Build          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Deno Fresh         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
+| Bun Elysia         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           |
 
 ## Common Patterns
 

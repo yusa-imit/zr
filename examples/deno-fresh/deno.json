@@ -1,0 +1,21 @@
+{
+  "name": "@example/deno-fresh",
+  "version": "0.1.0",
+  "tasks": {
+    "dev": "deno run --allow-net --allow-read --watch main.ts",
+    "start": "deno run --allow-net --allow-read main.ts",
+    "test": "deno test --allow-read",
+    "fmt": "deno fmt",
+    "lint": "deno lint",
+    "check": "deno check main.ts"
+  },
+  "imports": {
+    "@std/http": "jsr:@std/http@^1.0.0",
+    "@std/assert": "jsr:@std/assert@^1.0.0"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  }
+}
