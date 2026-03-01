@@ -1,6 +1,6 @@
 .{
     .name = .zr,
-    .version = "0.0.5",
+    .version = "1.0.0",
     .fingerprint = 0x2a029393cdc4be33,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{

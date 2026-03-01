@@ -83,6 +83,7 @@ const codeowners_types = @import("codeowners/types.zig");
 const codeowners_generator = @import("codeowners/generator.zig");
 const aliases = @import("config/aliases.zig");
 const levenshtein = @import("util/levenshtein.zig");
+const checker = @import("upgrade/checker.zig");
 
 // Public exports for fuzz tests and external tools
 // Use different names to avoid shadowing internal const declarations
@@ -190,7 +191,7 @@ comptime {
     _ = clean_cmd;
     _ = upgrade_cmd;
     _ = @import("upgrade/types.zig");
-    _ = @import("upgrade/checker.zig");
+    _ = checker;
     _ = @import("upgrade/installer.zig");
     _ = alias_cmd;
     _ = estimate_cmd;
@@ -844,12 +845,12 @@ fn run(
 }
 
 fn printVersion(w: *std.Io.Writer, use_color: bool) !void {
-    try color.printBold(w, use_color, "zr v1.0.0", .{});
+    try color.printBold(w, use_color, "zr v" ++ checker.CURRENT_VERSION, .{});
     try w.print("\n", .{});
 }
 
 fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
-    try color.printBold(w, use_color, "zr v1.0.0", .{});
+    try color.printBold(w, use_color, "zr v" ++ checker.CURRENT_VERSION, .{});
     try w.print(" - Zig Task Runner\n\n", .{});
     try color.printBold(w, use_color, "Usage:\n", .{});
     try w.print("  zr [options] <command> [arguments]\n\n", .{});

@@ -6,8 +6,8 @@ const Release = types.Release;
 /// GitHub API endpoint for releases
 const GITHUB_API_URL = "https://api.github.com/repos/YOUR_ORG/zr/releases";
 
-/// Current version of zr (from build config)
-pub const CURRENT_VERSION = "0.0.5";
+/// Current version of zr, injected from build.zig.zon via build options
+pub const CURRENT_VERSION = @import("build_options").version;
 
 /// Check if a newer version is available
 pub fn checkForUpdate(

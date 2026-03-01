@@ -17,6 +17,18 @@ pub fn build(b: *std.Build) void {
 
     const sailor_dep = b.dependency("sailor", .{ .target = target, .optimize = optimize });
 
+    // Extract version from build.zig.zon at comptime and expose as build option
+    const version: []const u8 = comptime blk: {
+        const zon = @embedFile("build.zig.zon");
+        const needle = ".version = \"";
+        const start = std.mem.indexOf(u8, zon, needle).? + needle.len;
+        const end = std.mem.indexOfPos(u8, zon, start, "\"").?;
+        break :blk zon[start..end];
+    };
+
+    const version_opts = b.addOptions();
+    version_opts.addOption([]const u8, "version", version);
+
     const exe = b.addExecutable(.{
         .name = "zr",
         .root_module = b.createModule(.{
@@ -30,6 +42,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("sailor", sailor_dep.module("sailor"));
+    exe.root_module.addOptions("build_options", version_opts);
 
     // Strip debug symbols in release builds for smaller binary size
     // Only keep symbols in Debug mode for easier debugging
@@ -100,6 +113,7 @@ pub fn build(b: *std.Build) void {
     });
     release_exe.root_module.strip = true;
     release_exe.root_module.addImport("sailor", sailor_dep.module("sailor"));
+    release_exe.root_module.addOptions("build_options", version_opts);
 
     const install_release = b.addInstallArtifact(release_exe, .{});
     const release_step = b.step("release", "Build optimized release binary (ReleaseSmall + strip)");
@@ -114,6 +128,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = if (target.result.os.tag != .windows) true else null,
     });
     zr_module.addImport("sailor", sailor_dep.module("sailor"));
+    zr_module.addOptions("build_options", version_opts);
 
     // TOML parser fuzzer
     const fuzz_toml = b.addExecutable(.{
