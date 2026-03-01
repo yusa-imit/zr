@@ -319,6 +319,9 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.3.0 — TUI Graph Visualization** (DONE): Tree widget 기반 그래프 TUI 모드, sailor v1.0.3 마이그레이션
 - [ ] **v1.4.0 — Plugin Registry Server**: GitHub 백엔드 대신 독립 인덱스 서버 구현
 - [ ] **v1.5.0 — Remote Cache v2**: 증분 동기화, 압축, 캐시 통계 대시보드
+- [ ] **v1.6.0 — Interactive Configuration** (issue #11): `zr add task/workflow/profile` 대화형 설정 생성, TOML 라이브 편집
+- [ ] **v1.7.0 — Performance Enhancements**: 핫 패스 최적화, 메모리 할당 감소, 벤치마크 개선
+- [ ] **v1.8.0 — Toolchain Auto-Update**: `zr tools upgrade --check-updates`, 버전 충돌 자동 해결
 
 ### 마일스톤 수립 프로세스
 
