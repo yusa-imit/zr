@@ -31,9 +31,17 @@ pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, dest_path: []
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
-    if (result.term.Exited != 0) {
-        std.debug.print("Download failed: {s}\n", .{result.stderr});
-        return error.DownloadFailed;
+    switch (result.term) {
+        .Exited => |code| {
+            if (code != 0) {
+                std.debug.print("Download failed: {s}\n", .{result.stderr});
+                return error.DownloadFailed;
+            }
+        },
+        else => {
+            std.debug.print("Download failed: process terminated abnormally\n", .{});
+            return error.DownloadFailed;
+        },
     }
 }
 
@@ -50,9 +58,17 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, de
             defer allocator.free(result.stdout);
             defer allocator.free(result.stderr);
 
-            if (result.term.Exited != 0) {
-                std.debug.print("Extraction failed: {s}\n", .{result.stderr});
-                return error.ExtractionFailed;
+            switch (result.term) {
+                .Exited => |code| {
+                    if (code != 0) {
+                        std.debug.print("Extraction failed: {s}\n", .{result.stderr});
+                        return error.ExtractionFailed;
+                    }
+                },
+                else => {
+                    std.debug.print("Extraction failed: process terminated abnormally\n", .{});
+                    return error.ExtractionFailed;
+                },
             }
         },
         .tar_xz => {
@@ -63,9 +79,17 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, de
             defer allocator.free(result.stdout);
             defer allocator.free(result.stderr);
 
-            if (result.term.Exited != 0) {
-                std.debug.print("Extraction failed: {s}\n", .{result.stderr});
-                return error.ExtractionFailed;
+            switch (result.term) {
+                .Exited => |code| {
+                    if (code != 0) {
+                        std.debug.print("Extraction failed: {s}\n", .{result.stderr});
+                        return error.ExtractionFailed;
+                    }
+                },
+                else => {
+                    std.debug.print("Extraction failed: process terminated abnormally\n", .{});
+                    return error.ExtractionFailed;
+                },
             }
         },
         .zip => {
@@ -78,8 +102,13 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, de
                 defer allocator.free(result.stdout);
                 defer allocator.free(result.stderr);
 
-                if (result.term.Exited != 0) {
-                    return error.ExtractionFailed;
+                switch (result.term) {
+                    .Exited => |code| {
+                        if (code != 0) {
+                            return error.ExtractionFailed;
+                        }
+                    },
+                    else => return error.ExtractionFailed,
                 }
             } else {
                 // Use unzip on Unix-like systems
@@ -90,8 +119,13 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, de
                 defer allocator.free(result.stdout);
                 defer allocator.free(result.stderr);
 
-                if (result.term.Exited != 0) {
-                    return error.ExtractionFailed;
+                switch (result.term) {
+                    .Exited => |code| {
+                        if (code != 0) {
+                            return error.ExtractionFailed;
+                        }
+                    },
+                    else => return error.ExtractionFailed,
                 }
             }
         },
