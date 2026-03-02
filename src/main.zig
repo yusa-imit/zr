@@ -467,14 +467,14 @@ fn run(
         "run",        "watch",      "workflow",   "list",
         "graph",      "history",    "init",       "validate",
         "completion", "workspace",  "cache",      "plugin",
-        "interactive", "i",          "live",       "interactive-run",
-        "irun",       "tools",      "lint",       "repo",
-        "codeowners", "version",    "publish",    "analytics",
-        "context",    "conformance", "bench",      "doctor",
-        "setup",      "env",        "export",     "affected",
-        "clean",      "upgrade",    "alias",      "estimate",
-        "show",       "schedule",   "mcp",        "lsp",
-        "add",
+        "registry",   "interactive", "i",          "live",
+        "interactive-run", "irun",       "tools",      "lint",
+        "repo",       "codeowners", "version",    "publish",
+        "analytics",  "context",    "conformance", "bench",
+        "doctor",     "setup",      "env",        "export",
+        "affected",   "clean",      "upgrade",    "alias",
+        "estimate",   "show",       "schedule",   "mcp",
+        "lsp",        "add",
     };
     var is_builtin = false;
     for (known_commands) |known| {
