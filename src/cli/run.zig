@@ -337,7 +337,10 @@ pub fn cmdWorkflow(
             .{wf_name},
         );
 
-        if (suggestions.len > 0) {
+        // If wf_name looks like a flag, provide a different hint
+        if (std.mem.startsWith(u8, wf_name, "-")) {
+            try err_writer.print("\n  Hint: Unknown flag '{s}'. Run 'zr --help' to see available options\n", .{wf_name});
+        } else if (suggestions.len > 0) {
             try err_writer.print("\n  Did you mean?\n", .{});
             for (suggestions) |suggestion| {
                 try err_writer.print("    {s}\n", .{suggestion.name});
