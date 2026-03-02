@@ -9,13 +9,14 @@
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
-## Current Status (2026-03-01)
+## Current Status (2026-03-02)
 
-- **Unit tests**: 670/678 (8 skipped, 0 failed, 0 memory leaks)
-- **Integration tests**: 805/805 (100% pass rate)
+- **Version**: v1.8.0 (released), v1.9.0-dev (in progress)
+- **Unit tests**: 700/708 (8 skipped, 0 failed, 0 memory leaks)
+- **Integration tests**: 831/831 (100% pass rate)
 - **CI**: GREEN — all 6 cross-compile targets passing
 - **GitHub Issues**: 0 open
-- **Binary**: ~1.2MB ReleaseSmall, ~4ms cold start, ~2-3MB RSS
+- **Binary**: ~1.2MB ReleaseSmall, ~4ms cold start, ~1.8MB RSS
 
 ## All Phases COMPLETE
 
@@ -66,13 +67,23 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 - **Migration pending**: Update to v1.0.2 for theme system, animations, local TTY workaround removal
 - Modules using sailor: arg parsing (main.zig), color (color.zig), progress (progress.zig), JSON formatting (cli/), TUI widgets (tui.zig, tui_runner.zig)
 
-## Post-v1.0 Development Priorities
+## Post-v1.0 Development (In Progress)
 
-1. **Sailor v1.0.2 migration** — Update dependency, adopt new APIs, remove local workarounds
-2. **Quality & community** — Example projects, migration guides, community feedback
-3. **TOML parser improvements** — Stricter validation, better error messages for malformed sections
-4. **Plugin registry** — Index server (currently GitHub-only backend)
-5. **Advanced TUI widgets** — Tree, Chart, Dialog, Notification (via sailor v1.0)
+### Completed Milestones
+- v1.1.0 - v1.8.0: See CHANGELOG.md
+
+### Current Work (v1.9.0)
+- **Sailor v1.1.0 Accessibility Features**
+  - ✅ Unicode width calculation (CJK/emoji support)
+  - ✅ Enhanced keyboard navigation (Home/End/PgUp/PgDn/g/G)
+  - 🔄 Accessibility metadata (screen reader hints) - in progress
+  - 🔄 Focus management for TUI widgets - planned
+
+### Next Priorities
+1. Complete v1.9.0 accessibility features
+2. v1.10.0 — Task Dependencies v2 (conditional deps, optional deps)
+3. v1.11.0 — Plugin Registry Index Server
+4. v1.12.0 — TOML Workflow Parser Fix
 
 ## Documentation
 
