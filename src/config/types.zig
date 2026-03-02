@@ -792,6 +792,14 @@ pub const Task = struct {
     /// Task categorization tags (e.g., ["build", "test", "ci"]).
     /// Used for filtering and grouping tasks.
     tags: [][]const u8 = &.{},
+    /// CPU affinity: list of CPU IDs this task should be pinned to (null = no affinity).
+    /// Example: [0, 1] means the task can only run on CPU 0 or CPU 1.
+    /// v1.13.0 feature for parallel execution optimizations.
+    cpu_affinity: ?[]u32 = null,
+    /// NUMA node hint: preferred NUMA node for this task (null = no preference).
+    /// The scheduler will try to run this task on a worker thread in the specified NUMA node.
+    /// v1.13.0 feature for NUMA-aware scheduling.
+    numa_node: ?u32 = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -824,6 +832,7 @@ pub const Task = struct {
         if (self.toolchain.len > 0) allocator.free(self.toolchain);
         for (self.tags) |tag| allocator.free(tag);
         if (self.tags.len > 0) allocator.free(self.tags);
+        if (self.cpu_affinity) |affinity| allocator.free(affinity);
     }
 };
 

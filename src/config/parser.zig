@@ -181,6 +181,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Task tags (non-owning slices into content)
     var task_tags = std.ArrayList([]const u8){};
     defer task_tags.deinit(allocator);
+    // CPU affinity (v1.13.0)
+    var task_cpu_affinity = std.ArrayList(u32){};
+    defer task_cpu_affinity.deinit(allocator);
+    // NUMA node hint (v1.13.0)
+    var task_numa_node: ?u32 = null;
     // Non-owning slices into content for env pairs — addTask dupes them
     var task_env = std.ArrayList([2][]const u8){};
     defer task_env.deinit(allocator);
@@ -1586,6 +1591,23 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             }
                         }
                     }
+                } else if (std.mem.eql(u8, key, "cpu_affinity")) {
+                    // Parse array: [0, 1, 2] (v1.13.0)
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const affinity_str = value[1 .. value.len - 1];
+                        var affinity_it = std.mem.splitScalar(u8, affinity_str, ',');
+                        while (affinity_it.next()) |cpu_str| {
+                            const trimmed_cpu = std.mem.trim(u8, cpu_str, " \t\"");
+                            if (trimmed_cpu.len > 0) {
+                                const cpu_id = std.fmt.parseInt(u32, trimmed_cpu, 10) catch continue;
+                                try task_cpu_affinity.append(allocator, cpu_id);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "numa_node")) {
+                    // Parse single integer: numa_node = 0 (v1.13.0)
+                    const trimmed_numa = std.mem.trim(u8, value, " \t\"");
+                    task_numa_node = std.fmt.parseInt(u32, trimmed_numa, 10) catch null;
                 }
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)
