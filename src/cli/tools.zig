@@ -152,12 +152,29 @@ fn cmdToolsInstall(
         return 1;
     };
 
-    const version = ToolVersion.parse(version_str) catch |err| {
+    const parsed_version = ToolVersion.parse(version_str) catch |err| {
         try color.printError(ew, use_color,
-            "tools install: invalid version '{s}': {s}\n\n  Hint: use semantic version format (e.g., 20.11.1 or 20.11)\n",
+            "tools install: invalid version '{s}': {s}\n\n  Hint: use semantic version format (e.g., 20.11.1, 20.11, or 20)\n",
             .{ version_str, @errorName(err) });
         return 1;
     };
+
+    // Resolve partial version to complete version if needed
+    const version = if (parsed_version.patch == null)
+        toolchain_registry.resolvePartialVersion(allocator, kind, parsed_version) catch |err| {
+            if (err == error.PartialVersionNotSupported) {
+                try color.printError(ew, use_color,
+                    "tools install: partial version resolution not supported for {s}\n\n  Hint: provide full version (e.g., {d}.{d}.0)\n",
+                    .{ kind.toString(), parsed_version.major, parsed_version.minor });
+            } else {
+                try color.printError(ew, use_color,
+                    "tools install: failed to resolve version '{s}': {s}\n\n  Hint: check network connection or use a full version\n",
+                    .{ version_str, @errorName(err) });
+            }
+            return 1;
+        }
+    else
+        parsed_version;
 
     // Check if already installed
     const already_installed = try toolchain_installer.isInstalled(allocator, kind, version);

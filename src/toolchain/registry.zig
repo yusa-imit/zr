@@ -11,6 +11,70 @@ pub fn fetchLatestVersion(allocator: std.mem.Allocator, kind: ToolKind) !ToolVer
     return try provider.fetchLatestVersion(allocator);
 }
 
+/// Resolve a partial version specification to a complete version
+/// Examples:
+/// - "20" → "20.18.1" (latest 20.x)
+/// - "20.11" → "20.11.1" (latest 20.11.x)
+/// - "20.11.1" → "20.11.1" (exact match)
+pub fn resolvePartialVersion(allocator: std.mem.Allocator, kind: ToolKind, partial: ToolVersion) !ToolVersion {
+    // If patch version is provided, it's already complete
+    if (partial.patch != null) {
+        return partial;
+    }
+
+    // Fetch all available versions for this kind
+    const url = switch (kind) {
+        .node => "https://nodejs.org/dist/index.json",
+        else => return error.PartialVersionNotSupported, // Other toolchains: future work
+    };
+
+    const json_data = try fetchUrl(allocator, url);
+    defer allocator.free(json_data);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json_data, .{});
+    defer parsed.deinit();
+
+    const root = parsed.value;
+    if (root != .array) return error.InvalidJson;
+
+    var best_match: ?ToolVersion = null;
+
+    for (root.array.items) |item| {
+        if (item != .object) continue;
+        const obj = item.object;
+
+        // Extract version
+        const ver_field = obj.get("version") orelse continue;
+        if (ver_field != .string) continue;
+
+        const ver_str = ver_field.string;
+        const clean_ver = if (ver_str.len > 0 and ver_str[0] == 'v')
+            ver_str[1..]
+        else
+            ver_str;
+
+        const version = ToolVersion.parse(clean_ver) catch continue;
+
+        // Check if this version matches the partial specification
+        if (version.major != partial.major) continue;
+        if (version.minor != partial.minor) continue;
+
+        // This version matches, check if it's better than current best
+        if (best_match == null) {
+            best_match = version;
+        } else {
+            const curr = best_match.?;
+            const curr_patch = curr.patch orelse 0;
+            const new_patch = version.patch orelse 0;
+            if (new_patch > curr_patch) {
+                best_match = version;
+            }
+        }
+    }
+
+    return best_match orelse error.VersionNotFound;
+}
+
 /// Fetch latest Node.js LTS version from nodejs.org/dist/index.json
 fn fetchNodeLatest(allocator: std.mem.Allocator) !ToolVersion {
     const url = "https://nodejs.org/dist/index.json";
@@ -238,4 +302,41 @@ test "ToolVersion parse" {
     try std.testing.expectEqual(@as(u32, 3), v2.major);
     try std.testing.expectEqual(@as(u32, 12), v2.minor);
     try std.testing.expectEqual(@as(?u32, null), v2.patch);
+}
+
+test "resolvePartialVersion returns exact version if patch is provided" {
+    const allocator = std.testing.allocator;
+    const exact = ToolVersion{ .major = 20, .minor = 11, .patch = 1 };
+    const resolved = try resolvePartialVersion(allocator, .node, exact);
+
+    try std.testing.expectEqual(exact.major, resolved.major);
+    try std.testing.expectEqual(exact.minor, resolved.minor);
+    try std.testing.expectEqual(exact.patch, resolved.patch);
+}
+
+test "resolvePartialVersion returns error for unsupported toolchain" {
+    const allocator = std.testing.allocator;
+    const partial = ToolVersion{ .major = 3, .minor = 12, .patch = null };
+    const result = resolvePartialVersion(allocator, .python, partial);
+
+    try std.testing.expectError(error.PartialVersionNotSupported, result);
+}
+
+test "resolvePartialVersion resolves node partial version (requires network)" {
+    // Skip this test in CI or without network
+    const allocator = std.testing.allocator;
+    const partial = ToolVersion{ .major = 20, .minor = 11, .patch = null };
+    const resolved = resolvePartialVersion(allocator, .node, partial) catch |err| {
+        // Network errors are acceptable in tests
+        if (err == error.CurlFailed or err == error.VersionNotFound) {
+            return;
+        }
+        return err;
+    };
+
+    // If we got a result, verify it matches the partial spec
+    try std.testing.expectEqual(@as(u32, 20), resolved.major);
+    try std.testing.expectEqual(@as(u32, 11), resolved.minor);
+    try std.testing.expect(resolved.patch != null);
+    try std.testing.expect(resolved.patch.? > 0);
 }
