@@ -1220,3 +1220,54 @@ test "735: validate with exact match should not fail" {
     // Should pass validation
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
+
+test "858: validate with malformed section header (missing closing bracket)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const bad_config =
+        \\[tasks.test
+        \\cmd = "echo test"
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(bad_config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail validation
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Malformed") != null or
+        std.mem.indexOf(u8, output, "Error") != null);
+}
+
+test "859: validate with malformed workflow section header" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const bad_config =
+        \\[workflows.build
+        \\
+        \\[[workflows.build.stages
+        \\tasks = ["test"]
+        \\
+    ;
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(bad_config);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail validation
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+}
