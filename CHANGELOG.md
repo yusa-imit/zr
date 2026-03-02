@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Partial version resolution**: `zr tools install` now supports partial version specifications
+  - `node@20` resolves to latest 20.x.x version
+  - `node@20.11` resolves to latest 20.11.x version
+  - Currently supports Node.js (other toolchains coming soon)
+  - Provides helpful error messages for unsupported toolchains
+- **Integration tests**: 4 new tests for partial version resolution (841/841 total)
+
+### Fixed
+- **Child.Term handling**: Use switch statement for proper tagged union access in toolchain downloader
+  - Fixes Zig 0.15.2 compatibility issue with `result.term.Exited` access pattern
+  - Properly handles all exit status cases (Exited, Signaled, Stopped, Unknown)
+
+## [1.10.1] - 2026-03-02
+
+### Fixed
+- **Windows stdin buffering**: Fixed prompt display issue in `zr add` command on Windows
+  - Added explicit stdout flush before reading stdin
+  - Ensures prompts appear correctly before user input
+  - Fixes issue where prompts appeared after entering input
+
 ## [1.10.0] - 2026-03-02
 
 ### Added
