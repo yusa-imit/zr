@@ -153,9 +153,10 @@ fn buildItemLabels(allocator: std.mem.Allocator, items: []const Item) ![][]const
         allocator.free(labels);
     }
     for (items) |item| {
+        // Use distinctive symbols for accessibility (screen readers can announce these)
         const kind_label: []const u8 = switch (item.kind) {
-            .task => "task",
-            .workflow => "wf  ",
+            .task => "[T]",
+            .workflow => "[W]",
         };
 
         // Truncate long task names to fit screen width (60 cols - 10 for kind/padding)
@@ -190,13 +191,20 @@ fn drawScreen(
     use_color: bool,
 ) !void {
     const screen_width: u16 = 60;
-    const screen_height: u16 = @intCast(@min(@as(usize, 30), items.len + 5));
+    // +6 for header (2 lines) + footer (1 line) + padding (3 lines)
+    const screen_height: u16 = @intCast(@min(@as(usize, 30), items.len + 6));
 
     var buf = try stui.Buffer.init(allocator, screen_width, screen_height);
     defer buf.deinit();
 
-    // Header
-    buf.setString(0, 0, "zr Interactive Mode", stui.Style{ .bold = true });
+    // Header with item count and position indicator for accessibility
+    var header_buf: [128]u8 = undefined;
+    const header = if (items.len > 0)
+        std.fmt.bufPrint(&header_buf, "zr Interactive Mode — {d} items (selected: {d}/{d})", .{items.len, selected + 1, items.len}) catch "zr Interactive Mode"
+    else
+        "zr Interactive Mode — 0 items";
+
+    buf.setString(0, 0, header, stui.Style{ .bold = true });
     buf.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
         stui.Style{ .fg = .bright_cyan });
 
@@ -210,13 +218,28 @@ fn drawScreen(
     const labels = try buildItemLabels(allocator, items);
     defer freeItemLabels(allocator, labels);
 
-    const list_area = stui.Rect.new(0, 3, screen_width, screen_height - 3);
+    // Leave room for header (3 lines) and footer (1 line)
+    const list_height = if (screen_height > 4) screen_height - 4 else 1;
+    const list_area = stui.Rect.new(0, 3, screen_width, list_height);
     const list = stui.widgets.List.init(labels)
         .withSelected(selected)
         .withSelectedStyle(stui.Style{ .fg = .bright_cyan })
         .withHighlightSymbol("> ");
 
     list.render(&buf, list_area);
+
+    // Footer: show currently selected item details for accessibility
+    if (selected < items.len) {
+        const current_item = items[selected];
+        const kind_name = switch (current_item.kind) {
+            .task => "Task",
+            .workflow => "Workflow",
+        };
+        var footer_buf: [256]u8 = undefined;
+        const footer = std.fmt.bufPrint(&footer_buf, "Selected: {s} '{s}'", .{kind_name, current_item.name}) catch "Selected item";
+        const footer_y = if (screen_height > 1) screen_height - 1 else 0;
+        buf.setString(0, footer_y, footer, stui.Style{ .fg = .bright_black });
+    }
 
     try renderBuffer(&buf, w, use_color);
 }
