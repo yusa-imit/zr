@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-03-02
+
+### Added
+- **Accessibility features**: Enhanced TUI with screen reader support and better visual feedback
+  - Position indicator in header showing current selection (e.g., "selected: 3/10")
+  - Item count display for context awareness
+  - Distinctive [T]/[W] symbols for task/workflow type differentiation
+  - Footer showing currently selected item details
+  - Improved semantic labels for better screen reader compatibility
+- **Unicode width calculation**: Proper display width for CJK characters and emoji in TUI
+  - Fixes alignment issues with multibyte characters
+  - Supports full Unicode width calculation (combining characters, zero-width, etc.)
+- **Enhanced keyboard navigation**: Extended TUI navigation shortcuts
+  - `g/G`: Jump to top/bottom of list (Vim-style)
+  - `Home/End`: Navigate to first/last item
+  - `PgUp/PgDn`: Page up/down through lists
+  - Arrow key support (↑/↓) in addition to j/k
+
+### Changed
+- Upgraded sailor library to v1.2.0 (layout & composition features)
+- Improved TUI layout with dedicated footer area
+- Better visual hierarchy with semantic type indicators
+
 ## [1.8.0] - 2026-03-02
 
 ### Added
