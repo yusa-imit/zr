@@ -321,7 +321,7 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.5.0 — Remote Cache v2** (DONE, released 2026-03-02): gzip 압축, 증분 동기화, 캐시 통계 대시보드
 - [x] **v1.6.0 — Interactive Configuration** (DONE, released 2026-03-02): `zr add task/workflow/profile` 대화형 명령어, 스마트 stdin 처리, 통합 테스트 (6개), issue #11 해결
 - [x] **v1.7.0 — Performance Enhancements** (DONE, released 2026-03-02): 문자열 인터닝 (StringPool), 객체 풀링 (ObjectPool), hyperfine 기반 자동화 벤치마크 스크립트, 30-50% 메모리 감소
-- [ ] **v1.8.0 — Toolchain Auto-Update**: `zr tools upgrade --check-updates`, 버전 충돌 자동 해결
+- [x] **v1.8.0 — Toolchain Auto-Update** (DONE): `zr tools upgrade --check-updates`, `--cleanup` 플래그로 버전 충돌 자동 해결
 - [ ] **v1.9.0 — Sailor v1.1.0 Accessibility**: Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능
 - [ ] **v1.10.0 — Task Dependencies v2**: 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 순환 감지 개선
 
