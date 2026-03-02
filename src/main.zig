@@ -62,6 +62,7 @@ const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
 const schedule_cmd = @import("cli/schedule.zig");
+const registry_cmd = @import("cli/registry.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -129,6 +130,7 @@ comptime {
     _ = init;
     _ = workspace;
     _ = plugin_cli;
+    _ = registry_cmd;
     _ = run_cmd;
     _ = list_cmd;
     _ = tui;
@@ -653,6 +655,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "plugin")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return plugin_cli.cmdPlugin(allocator, sub, effective_args, config_path, json_output, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "registry")) {
+        try registry_cmd.cmdRegistry(allocator, effective_args, effective_color, effective_w, ew);
+        return 0;
     } else if (std.mem.eql(u8, cmd, "interactive") or std.mem.eql(u8, cmd, "i")) {
         return tui.cmdInteractive(allocator, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "live")) {
@@ -881,6 +886,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  plugin update <n> [p]  Update a plugin (git pull, or from new path)\n", .{});
     try w.print("  plugin info <name>     Show metadata for an installed plugin\n", .{});
     try w.print("  plugin create <name>   Scaffold a new plugin template directory\n", .{});
+    try w.print("  registry serve         Start plugin registry HTTP server\n", .{});
     try w.print("  interactive, i         Launch interactive TUI task picker\n", .{});
     try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
