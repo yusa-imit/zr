@@ -1,6 +1,32 @@
 # zr Performance Benchmarks
 
-## Binary Size Comparison
+## Quick Start
+
+Run the automated benchmark suite:
+
+```bash
+cd benchmarks
+./run_benchmarks.sh
+```
+
+Requires [hyperfine](https://github.com/sharkdp/hyperfine) for accurate measurements:
+```bash
+# macOS
+brew install hyperfine
+
+# Other platforms
+cargo install hyperfine
+```
+
+The script compares zr against Make, Just, and Task (if installed) across 4 categories:
+1. **Cold Start** — minimal config, measures startup overhead
+2. **Config Parsing** — 100 tasks, measures TOML parser performance
+3. **Parallel Execution** — 4 sleep tasks, measures worker pool efficiency
+4. **Memory Usage** — peak RSS measurements
+
+## Manual Benchmarks
+
+### Binary Size Comparison
 
 | Tool | Binary Size | Notes |
 |------|-------------|-------|
@@ -69,3 +95,5 @@ zr achieves its performance through:
 2. Efficient TOML parsing with minimal allocations
 3. Worker pool reuse across task executions
 4. Content-based caching to skip unchanged tasks
+5. **String interning** to reduce duplicate allocations (v1.7.0+)
+6. **Object pooling** to minimize malloc/free churn (v1.7.0+)
