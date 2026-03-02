@@ -216,7 +216,7 @@ fn collectToolchains(
             const version_str = try std.fmt.allocPrint(
                 allocator,
                 "{d}.{d}.{d}",
-                .{ spec.version.major, spec.version.minor, spec.version.patch orelse 0 },
+                .{ spec.version.major, spec.version.minor orelse 0, spec.version.patch orelse 0 },
             );
 
             try ctx.toolchains.append(allocator, .{

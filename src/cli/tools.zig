@@ -160,12 +160,13 @@ fn cmdToolsInstall(
     };
 
     // Resolve partial version to complete version if needed
-    const version = if (parsed_version.patch == null)
+    const version = if (parsed_version.minor == null or parsed_version.patch == null)
         toolchain_registry.resolvePartialVersion(allocator, kind, parsed_version) catch |err| {
             if (err == error.PartialVersionNotSupported) {
+                const minor = parsed_version.minor orelse 0;
                 try color.printError(ew, use_color,
                     "tools install: partial version resolution not supported for {s}\n\n  Hint: provide full version (e.g., {d}.{d}.0)\n",
-                    .{ kind.toString(), parsed_version.major, parsed_version.minor });
+                    .{ kind.toString(), parsed_version.major, minor });
             } else {
                 try color.printError(ew, use_color,
                     "tools install: failed to resolve version '{s}': {s}\n\n  Hint: check network connection or use a full version\n",
@@ -476,8 +477,11 @@ fn cmdToolsUpgrade(
 fn isNewer(v1: ToolVersion, v2: ToolVersion) bool {
     if (v1.major > v2.major) return true;
     if (v1.major < v2.major) return false;
-    if (v1.minor > v2.minor) return true;
-    if (v1.minor < v2.minor) return false;
+
+    const m1 = v1.minor orelse 0;
+    const m2 = v2.minor orelse 0;
+    if (m1 > m2) return true;
+    if (m1 < m2) return false;
 
     const p1 = v1.patch orelse 0;
     const p2 = v2.patch orelse 0;

@@ -39,21 +39,21 @@ pub const ToolKind = enum {
     }
 };
 
-/// A specific version requirement for a tool (e.g., "20.11", "3.12", "0.15.2").
+/// A specific version requirement for a tool (e.g., "20", "20.11", "3.12", "0.15.2").
 pub const ToolVersion = struct {
     major: u32,
-    minor: u32,
+    minor: ?u32, // null = any minor version
     patch: ?u32, // null = any patch version
 
-    /// Parse a version string like "20.11" or "0.15.2".
+    /// Parse a version string like "20", "20.11" or "0.15.2".
     pub fn parse(s: []const u8) !ToolVersion {
         var parts = std.mem.splitScalar(u8, s, '.');
         const major_str = parts.next() orelse return error.InvalidVersion;
-        const minor_str = parts.next() orelse return error.InvalidVersion;
-        const patch_str = parts.next();
+        const minor_str = parts.next();
+        const patch_str = if (minor_str != null) parts.next() else null;
 
         const major = try std.fmt.parseInt(u32, major_str, 10);
-        const minor = try std.fmt.parseInt(u32, minor_str, 10);
+        const minor: ?u32 = if (minor_str) |m| try std.fmt.parseInt(u32, m, 10) else null;
         const patch: ?u32 = if (patch_str) |p| try std.fmt.parseInt(u32, p, 10) else null;
 
         return ToolVersion{ .major = major, .minor = minor, .patch = patch };
@@ -62,20 +62,29 @@ pub const ToolVersion = struct {
     /// Convert to string (caller owns the returned memory).
     pub fn toString(self: ToolVersion, allocator: std.mem.Allocator) ![]u8 {
         if (self.patch) |p| {
-            return std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ self.major, self.minor, p });
+            const minor = self.minor orelse 0;
+            return std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ self.major, minor, p });
+        } else if (self.minor) |m| {
+            return std.fmt.allocPrint(allocator, "{d}.{d}", .{ self.major, m });
         } else {
-            return std.fmt.allocPrint(allocator, "{d}.{d}", .{ self.major, self.minor });
+            return std.fmt.allocPrint(allocator, "{d}", .{self.major});
         }
     }
 
     /// Check if this version matches a requirement (semantic).
+    /// If req.minor is null, any minor version is accepted.
     /// If req.patch is null, any patch version is accepted.
     pub fn matches(self: ToolVersion, req: ToolVersion) bool {
-        if (self.major != req.major or self.minor != req.minor) return false;
-        if (req.patch) |req_p| {
-            return (self.patch orelse 0) == req_p;
+        if (self.major != req.major) return false;
+        if (req.minor) |req_m| {
+            const self_m = self.minor orelse 0;
+            if (self_m != req_m) return false;
         }
-        return true; // req.patch is null, so any patch matches
+        if (req.patch) |req_p| {
+            const self_p = self.patch orelse 0;
+            return self_p == req_p;
+        }
+        return true; // req.patch/minor is null, so any value matches
     }
 };
 
@@ -126,13 +135,18 @@ test "ToolKind fromString/toString roundtrip" {
 test "ToolVersion parse and format" {
     const v1 = try ToolVersion.parse("20.11");
     try std.testing.expectEqual(@as(u32, 20), v1.major);
-    try std.testing.expectEqual(@as(u32, 11), v1.minor);
+    try std.testing.expectEqual(@as(?u32, 11), v1.minor);
     try std.testing.expectEqual(@as(?u32, null), v1.patch);
 
     const v2 = try ToolVersion.parse("0.15.2");
     try std.testing.expectEqual(@as(u32, 0), v2.major);
-    try std.testing.expectEqual(@as(u32, 15), v2.minor);
+    try std.testing.expectEqual(@as(?u32, 15), v2.minor);
     try std.testing.expectEqual(@as(?u32, 2), v2.patch);
+
+    const v3 = try ToolVersion.parse("20");
+    try std.testing.expectEqual(@as(u32, 20), v3.major);
+    try std.testing.expectEqual(@as(?u32, null), v3.minor);
+    try std.testing.expectEqual(@as(?u32, null), v3.patch);
 
     const allocator = std.testing.allocator;
     const formatted = try v1.toString(allocator);
@@ -142,6 +156,10 @@ test "ToolVersion parse and format" {
     const formatted2 = try v2.toString(allocator);
     defer allocator.free(formatted2);
     try std.testing.expectEqualStrings("0.15.2", formatted2);
+
+    const formatted3 = try v3.toString(allocator);
+    defer allocator.free(formatted3);
+    try std.testing.expectEqualStrings("20", formatted3);
 }
 
 test "ToolVersion matches" {

@@ -20,20 +20,27 @@ pub fn getToolDir(allocator: std.mem.Allocator, kind: ToolKind, version: ToolVer
     const base = try getToolchainsDir(allocator);
     defer allocator.free(base);
 
+    const minor = version.minor orelse 0;
     if (version.patch) |p| {
         return std.fmt.allocPrint(allocator, "{s}/{s}/{d}.{d}.{d}", .{
             base,
             kind.toString(),
             version.major,
-            version.minor,
+            minor,
             p,
         });
-    } else {
+    } else if (version.minor != null) {
         return std.fmt.allocPrint(allocator, "{s}/{s}/{d}.{d}", .{
             base,
             kind.toString(),
             version.major,
-            version.minor,
+            minor,
+        });
+    } else {
+        return std.fmt.allocPrint(allocator, "{s}/{s}/{d}", .{
+            base,
+            kind.toString(),
+            version.major,
         });
     }
 }

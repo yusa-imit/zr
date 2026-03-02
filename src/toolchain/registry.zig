@@ -57,17 +57,31 @@ pub fn resolvePartialVersion(allocator: std.mem.Allocator, kind: ToolKind, parti
 
         // Check if this version matches the partial specification
         if (version.major != partial.major) continue;
-        if (version.minor != partial.minor) continue;
+
+        // If partial has a minor version, it must match
+        if (partial.minor) |partial_minor| {
+            const ver_minor = version.minor orelse continue;
+            if (ver_minor != partial_minor) continue;
+        }
 
         // This version matches, check if it's better than current best
         if (best_match == null) {
             best_match = version;
         } else {
             const curr = best_match.?;
-            const curr_patch = curr.patch orelse 0;
-            const new_patch = version.patch orelse 0;
-            if (new_patch > curr_patch) {
+            const curr_minor = curr.minor orelse 0;
+            const new_minor = version.minor orelse 0;
+
+            // Compare minor versions first
+            if (new_minor > curr_minor) {
                 best_match = version;
+            } else if (new_minor == curr_minor) {
+                // Same minor, compare patch
+                const curr_patch = curr.patch orelse 0;
+                const new_patch = version.patch orelse 0;
+                if (new_patch > curr_patch) {
+                    best_match = version;
+                }
             }
         }
     }
@@ -295,13 +309,18 @@ test "ToolVersion comparison" {
 test "ToolVersion parse" {
     const v1 = try ToolVersion.parse("20.11.1");
     try std.testing.expectEqual(@as(u32, 20), v1.major);
-    try std.testing.expectEqual(@as(u32, 11), v1.minor);
+    try std.testing.expectEqual(@as(?u32, 11), v1.minor);
     try std.testing.expectEqual(@as(?u32, 1), v1.patch);
 
     const v2 = try ToolVersion.parse("3.12");
     try std.testing.expectEqual(@as(u32, 3), v2.major);
-    try std.testing.expectEqual(@as(u32, 12), v2.minor);
+    try std.testing.expectEqual(@as(?u32, 12), v2.minor);
     try std.testing.expectEqual(@as(?u32, null), v2.patch);
+
+    const v3 = try ToolVersion.parse("20");
+    try std.testing.expectEqual(@as(u32, 20), v3.major);
+    try std.testing.expectEqual(@as(?u32, null), v3.minor);
+    try std.testing.expectEqual(@as(?u32, null), v3.patch);
 }
 
 test "resolvePartialVersion returns exact version if patch is provided" {
@@ -336,7 +355,25 @@ test "resolvePartialVersion resolves node partial version (requires network)" {
 
     // If we got a result, verify it matches the partial spec
     try std.testing.expectEqual(@as(u32, 20), resolved.major);
-    try std.testing.expectEqual(@as(u32, 11), resolved.minor);
+    try std.testing.expectEqual(@as(?u32, 11), resolved.minor);
     try std.testing.expect(resolved.patch != null);
     try std.testing.expect(resolved.patch.? > 0);
+}
+
+test "resolvePartialVersion resolves node major-only version (requires network)" {
+    // Skip this test in CI or without network
+    const allocator = std.testing.allocator;
+    const partial = ToolVersion{ .major = 20, .minor = null, .patch = null };
+    const resolved = resolvePartialVersion(allocator, .node, partial) catch |err| {
+        // Network errors are acceptable in tests
+        if (err == error.CurlFailed or err == error.VersionNotFound) {
+            return;
+        }
+        return err;
+    };
+
+    // If we got a result, verify it matches the partial spec
+    try std.testing.expectEqual(@as(u32, 20), resolved.major);
+    try std.testing.expect(resolved.minor != null);
+    try std.testing.expect(resolved.patch != null);
 }
