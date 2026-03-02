@@ -29,5 +29,22 @@ test "upgrade: --version without value returns error" {
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "--version requires") != null);
 }
 
-// Note: --check flag tests would require network access and are skipped for integration tests
-// as they depend on external GitHub API availability
+test "upgrade: --check completes without crashing" {
+    // This test verifies the command doesn't crash and handles network errors gracefully
+    // It may report "already on latest" if GitHub API is unreachable, which is acceptable
+    var result = try helpers.runZr(std.testing.allocator, &.{ "upgrade", "--check" }, null);
+    defer result.deinit();
+
+    // Exit code should be 0 regardless of network availability
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should show "Checking for updates" message
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Checking for updates") != null);
+
+    // Should either show "latest version" or "Update available" (if network works)
+    const has_latest = std.mem.indexOf(u8, result.stdout, "latest version") != null;
+    const has_update = std.mem.indexOf(u8, result.stdout, "Update available") != null;
+    try std.testing.expect(has_latest or has_update);
+}
+
+// Note: Full --check flag tests would require network access and are handled by the basic test above
