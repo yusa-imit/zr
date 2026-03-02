@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.9.0-green.svg)](https://github.com/yusa-imit/zr/releases)
+[![Version](https://img.shields.io/badge/version-1.10.1-green.svg)](https://github.com/yusa-imit/zr/releases)
 
 ---
 
@@ -94,6 +94,15 @@ deps = ["build"]  # Runs build first
 # Parallel dependencies
 [tasks.ci]
 deps = ["lint", "test", "docs"]  # All run in parallel
+
+# Conditional dependencies (v1.10.0+)
+[tasks.build]
+cmd = "cargo build"
+deps_if = [
+  { task = "lint", condition = "env.CI == 'true'" },
+  { task = "type-check", condition = "env.STRICT == 'true'" }
+]
+deps_optional = ["format"]  # Run if exists, skip if not
 
 # Conditional execution
 [tasks.deploy]
