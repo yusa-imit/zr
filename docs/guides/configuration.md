@@ -42,6 +42,8 @@ cmd = "npm run build"
 | `description` | string | ❌ | null | Human-readable description |
 | `deps` | array | ❌ | [] | Parallel dependencies (run before this task) |
 | `deps_serial` | array | ❌ | [] | Sequential dependencies (run one at a time) |
+| `deps_if` | array | ❌ | [] | Conditional dependencies (run if condition is true) |
+| `deps_optional` | array | ❌ | [] | Optional dependencies (ignored if task doesn't exist) |
 | `env` | table | ❌ | {} | Environment variable overrides |
 | `dir` | string | ❌ | null | Working directory (alias: `cwd`) |
 | `timeout_ms` | integer | ❌ | null | Timeout in milliseconds |
@@ -67,7 +69,33 @@ deps = ["build"]  # runs build first (parallel if multiple)
 [tasks.deploy]
 cmd = "./deploy.sh"
 deps_serial = ["build", "test", "lint"]  # runs in order, one at a time
+
+[tasks.build-prod]
+cmd = "npm run build"
+deps_if = [{ task = "lint", condition = "env.CI == 'true'" }]  # only lint in CI
+deps_optional = ["format"]  # run format if it exists, silently skip if not
 ```
+
+**Dependency Types:**
+
+- `deps`: Parallel dependencies (run concurrently if multiple)
+- `deps_serial`: Sequential dependencies (run one after another)
+- `deps_if`: Conditional dependencies (only run if expression evaluates to true)
+- `deps_optional`: Optional dependencies (silently skip if task doesn't exist)
+
+**Conditional Dependencies Syntax:**
+
+```toml
+deps_if = [{ task = "task_name", condition = "expression" }, ...]
+```
+
+The condition is evaluated using the same [expression engine](#expressions) as the `condition` field. Common patterns:
+
+- `env.VAR == "value"` - check environment variable
+- `platform.is_linux` - check platform
+- `env.CI == 'true' && platform.is_linux` - combine conditions
+
+**Note:** Use inline format for `deps_if` (multi-line arrays with indentation are not currently supported).
 
 ### Environment Variables
 

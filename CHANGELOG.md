@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-03-02
+
+### Added
+- **Conditional dependencies (`deps_if`)**: Run dependencies only when a condition evaluates to true
+  - Syntax: `deps_if = [{ task = "lint", condition = "env.CI == 'true'" }]`
+  - Supports full expression engine (env vars, platform checks, boolean logic)
+  - Useful for environment-specific workflows (CI-only linting, platform-specific builds)
+- **Optional dependencies (`deps_optional`)**: Silently skip dependencies if they don't exist
+  - Syntax: `deps_optional = ["format", "optional-task"]`
+  - Runs the dependency if defined, skips without error if not found
+  - Useful for conditional features or plugin-based workflows
+- **Integration tests**: 5 new tests for conditional/optional dependency execution (837/837 total)
+- **Unit tests**: 16 new tests for deps v2 parser, graph builder, validation, and helper functions (716/724 total)
+
+### Changed
+- Enhanced dependency traversal in scheduler to support conditional and optional deps
+- Updated configuration documentation with `deps_if` and `deps_optional` examples
+
+### Fixed
+- Execution logic now correctly evaluates conditional dependencies during graph building
+
 ## [1.9.0] - 2026-03-02
 
 ### Added
