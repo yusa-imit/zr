@@ -611,7 +611,7 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. Layout features are opt-in. Current TUI implementation doesn't require immediate migration, but these features enable future enhancements.
 
-### v1.3.0 — Performance & Developer Experience (status: READY)
+### v1.3.0 — Performance & Developer Experience (status: DONE)
 
 **sailor v1.3.0 released** (2026-03-02) — Performance optimization and debugging tools
 
@@ -626,8 +626,10 @@ gh issue create --repo yusa-imit/sailor \
   - Event batching handles terminal resize gracefully
   - DebugOverlay useful for developing TUI features
   - ThemeWatcher enables live theme iteration
-- [ ] `build.zig.zon`에 sailor v1.3.0 의존성 업데이트
-- [ ] (Optional) Add DebugOverlay toggle for TUI development — deferred
-- [ ] 기존 테스트 전체 통과 확인 (685 unit, 819 integration expected)
+- [x] `build.zig.zon`에 sailor v1.3.0 의존성 업데이트 (2026-03-02)
+- [x] 기존 테스트 전체 통과 확인 (716 unit, 837 integration)
+- [ ] (Optional) Add DebugOverlay toggle for TUI development — deferred to future TUI enhancements
+
+**Note**: Non-breaking upgrade. Performance features are opt-in. Current TUI implementation automatically benefits from event batching improvements without code changes.
 
 **Note**: Non-breaking upgrade. Performance features are opt-in. Current CLI mode unaffected. TUI mode can benefit from lazy rendering when displaying large graphs.
