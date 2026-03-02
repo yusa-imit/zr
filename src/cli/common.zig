@@ -1,5 +1,6 @@
 const std = @import("std");
 const loader = @import("../config/loader.zig");
+const types = @import("../config/types.zig");
 const dag_mod = @import("../graph/dag.zig");
 const color = @import("../output/color.zig");
 
@@ -128,4 +129,113 @@ test "writeJsonString escapes special characters" {
     try writeJsonString(&w.interface, "with \"quotes\"");
     try writeJsonString(&w.interface, "with\nnewline");
     try writeJsonString(&w.interface, "with\\backslash");
+}
+
+test "buildDag with conditional dependencies - condition true" {
+    const allocator = std.testing.allocator;
+    var config = types.Config.init(allocator);
+    defer config.deinit();
+
+    // Add tasks
+    try config.addTask("lint", "echo lint", null, null, &[_][]const u8{});
+    try config.addTask("test", "echo test", null, null, &[_][]const u8{});
+
+    // Add task with conditional dep where condition is true
+    try config.addTaskWithDepsIf("build", "echo build", &[_]types.ConditionalDep{
+        .{ .task = try allocator.dupe(u8, "lint"), .condition = try allocator.dupe(u8, "true") },
+    });
+
+    var dag = try buildDag(allocator, &config);
+    defer dag.deinit();
+
+    // build should depend on lint because condition is true
+    const lint_node = dag.getNode("lint").?;
+    try std.testing.expectEqual(@as(usize, 0), lint_node.dependencies.items.len);
+
+    const build_node = dag.getNode("build").?;
+    try std.testing.expectEqual(@as(usize, 1), build_node.dependencies.items.len);
+    try std.testing.expectEqualStrings("lint", build_node.dependencies.items[0]);
+}
+
+test "buildDag with conditional dependencies - condition false" {
+    const allocator = std.testing.allocator;
+    var config = types.Config.init(allocator);
+    defer config.deinit();
+
+    // Add tasks
+    try config.addTask("lint", "echo lint", null, null, &[_][]const u8{});
+    try config.addTask("test", "echo test", null, null, &[_][]const u8{});
+
+    // Add task with conditional dep where condition is false
+    try config.addTaskWithDepsIf("build", "echo build", &[_]types.ConditionalDep{
+        .{ .task = try allocator.dupe(u8, "lint"), .condition = try allocator.dupe(u8, "false") },
+    });
+
+    var dag = try buildDag(allocator, &config);
+    defer dag.deinit();
+
+    // build should NOT depend on lint because condition is false
+    const build_node = dag.getNode("build").?;
+    try std.testing.expectEqual(@as(usize, 0), build_node.dependencies.items.len);
+}
+
+test "buildDag with optional dependencies - task exists" {
+    const allocator = std.testing.allocator;
+    var config = types.Config.init(allocator);
+    defer config.deinit();
+
+    // Add tasks
+    try config.addTask("format", "echo format", null, null, &[_][]const u8{});
+    try config.addTask("lint", "echo lint", null, null, &[_][]const u8{});
+
+    // Add task with optional deps where tasks exist
+    try config.addTaskWithDepsOptional("build", "echo build", &[_][]const u8{ "format", "lint" });
+
+    var dag = try buildDag(allocator, &config);
+    defer dag.deinit();
+
+    // build should depend on format and lint because they exist
+    const build_node = dag.getNode("build").?;
+    try std.testing.expectEqual(@as(usize, 2), build_node.dependencies.items.len);
+}
+
+test "buildDag with optional dependencies - task missing" {
+    const allocator = std.testing.allocator;
+    var config = types.Config.init(allocator);
+    defer config.deinit();
+
+    // Add only some tasks
+    try config.addTask("format", "echo format", null, null, &[_][]const u8{});
+    // Note: "lint" does not exist
+
+    // Add task with optional dep where one task doesn't exist
+    try config.addTaskWithDepsOptional("build", "echo build", &[_][]const u8{ "format", "missing_task" });
+
+    var dag = try buildDag(allocator, &config);
+    defer dag.deinit();
+
+    // build should only depend on format (missing_task is ignored)
+    const build_node = dag.getNode("build").?;
+    try std.testing.expectEqual(@as(usize, 1), build_node.dependencies.items.len);
+    try std.testing.expectEqualStrings("format", build_node.dependencies.items[0]);
+}
+
+test "buildDag with mixed dependency types" {
+    const allocator = std.testing.allocator;
+    var config = types.Config.init(allocator);
+    defer config.deinit();
+
+    // Add all tasks
+    try config.addTask("install", "echo install", null, null, &[_][]const u8{});
+    try config.addTask("generate", "echo generate", null, null, &[_][]const u8{});
+
+    // Add task with parallel deps only (deps_serial are handled by scheduler, not DAG)
+    try config.addTask("build", "echo build", null, null, &[_][]const u8{"install", "generate"});
+
+    var dag = try buildDag(allocator, &config);
+    defer dag.deinit();
+
+    // Verify the regular deps
+    const build_node = dag.getNode("build").?;
+    try std.testing.expectEqual(@as(usize, 2), build_node.dependencies.items.len); // install + generate
 }

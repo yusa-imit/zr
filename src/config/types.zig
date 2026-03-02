@@ -485,6 +485,26 @@ pub const Config = struct {
         return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{});
     }
 
+    /// Add a task with conditional dependencies (for tests or programmatic use).
+    pub fn addTaskWithDepsIf(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        deps_if: []const ConditionalDep,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{});
+    }
+
+    /// Add a task with optional dependencies (for tests or programmatic use).
+    pub fn addTaskWithDepsOptional(
+        self: *Config,
+        name: []const u8,
+        cmd: []const u8,
+        deps_optional: []const []const u8,
+    ) !void {
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{});
+    }
+
     /// Add a workflow (for tests or programmatic use).
     pub fn addWorkflow(
         self: *Config,
