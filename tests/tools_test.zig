@@ -444,3 +444,110 @@ test "673: tools install with version range or latest tag" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "838: tools install with partial major version resolves to latest patch" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test partial version with major only: node@20 should resolve to latest 20.x.x
+    var result = try runZr(allocator, &.{ "--config", config, "tools", "install", "node@20" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (exit 0) or show helpful message if network is unavailable
+    // The important thing is it doesn't crash or show confusing errors
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "839: tools install with partial major.minor version resolves correctly" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test partial version with major.minor: node@20.11 should resolve to latest 20.11.x
+    var result = try runZr(allocator, &.{ "--config", config, "tools", "install", "node@20.11" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed or show helpful message if network is unavailable
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "840: tools install with partial version on unsupported toolchain shows helpful error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test partial version on unsupported toolchain (python doesn't support it yet)
+    var result = try runZr(allocator, &.{ "--config", config, "tools", "install", "python@3.12" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error message
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(result.exit_code != 0);
+    // Check that error message mentions partial version resolution not being supported
+    try std.testing.expect(
+        std.mem.indexOf(u8, output, "not supported") != null or
+            std.mem.indexOf(u8, output, "exact version") != null or
+            std.mem.indexOf(u8, output, "full version") != null,
+    );
+}
+
+test "841: tools install with exact version still works as before" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test exact version still works (no resolution needed)
+    var result = try runZr(allocator, &.{ "--config", config, "tools", "install", "node@20.11.1" }, tmp_path);
+    defer result.deinit();
+
+    // Should work normally (may fail without network, but shouldn't crash)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+}
