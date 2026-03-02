@@ -107,6 +107,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer task_deps.deinit(allocator);
     var task_deps_serial = std.ArrayList([]const u8){};
     defer task_deps_serial.deinit(allocator);
+    // Conditional dependencies (task + condition pairs) — non-owning slices
+    var task_deps_if = std.ArrayList(types.ConditionalDep){};
+    defer task_deps_if.deinit(allocator);
+    // Optional dependencies (non-owning slices into content)
+    var task_deps_optional = std.ArrayList([]const u8){};
+    defer task_deps_optional.deinit(allocator);
     // Toolchain requirements (non-owning slices into content)
     var task_toolchain = std.ArrayList([]const u8){};
     defer task_toolchain.deinit(allocator);
@@ -387,11 +393,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (task_matrix_raw) |mraw| {
                         try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
                     }
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
                 task_env.clearRetainingCapacity();
                 task_toolchain.clearRetainingCapacity();
                 task_tags.clearRetainingCapacity();
@@ -512,11 +520,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (task_matrix_raw) |mraw| {
                         try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
                     }
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
                 task_env.clearRetainingCapacity();
                 task_toolchain.clearRetainingCapacity();
                 task_tags.clearRetainingCapacity();
@@ -563,10 +573,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (task_matrix_raw) |mraw| {
                         try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
             }
@@ -593,10 +603,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (task_matrix_raw) |mraw| {
                         try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
             }
@@ -773,10 +783,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (task_matrix_raw) |mraw| {
                         try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 current_task = null;
@@ -921,7 +931,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (task_matrix_raw) |mraw| {
                         try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                     } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
                     }
                 }
             }
@@ -929,6 +939,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Reset state — no freeing needed since these are non-owning slices
             task_deps.clearRetainingCapacity();
             task_deps_serial.clearRetainingCapacity();
+            task_deps_if.clearRetainingCapacity();
+            task_deps_optional.clearRetainingCapacity();
             task_env.clearRetainingCapacity();
             task_toolchain.clearRetainingCapacity();
             task_tags.clearRetainingCapacity();
@@ -1394,6 +1406,61 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             }
                         }
                     }
+                } else if (std.mem.eql(u8, key, "deps_if")) {
+                    // Parse array of inline tables: [{ task = "build", condition = "platform.is_linux" }, ...]
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "[") and std.mem.endsWith(u8, inner, "]")) {
+                        const array_str = inner[1 .. inner.len - 1];
+                        var depth: usize = 0;
+                        var table_start: usize = 0;
+                        var in_quotes = false;
+                        for (array_str, 0..) |c, i| {
+                            if (c == '"') in_quotes = !in_quotes;
+                            if (in_quotes) continue;
+                            if (c == '{') {
+                                if (depth == 0) table_start = i + 1;
+                                depth += 1;
+                            } else if (c == '}' and depth > 0) {
+                                depth -= 1;
+                                if (depth == 0) {
+                                    const table_str = array_str[table_start..i];
+                                    // Parse inline table fields
+                                    var task_name: ?[]const u8 = null;
+                                    var cond_expr: ?[]const u8 = null;
+                                    var pairs_it = std.mem.splitScalar(u8, table_str, ',');
+                                    while (pairs_it.next()) |pair_str| {
+                                        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                                        const field_key = std.mem.trim(u8, pair_str[0..eq], " \t");
+                                        const field_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                                        if (std.mem.eql(u8, field_key, "task")) {
+                                            task_name = field_val;
+                                        } else if (std.mem.eql(u8, field_key, "condition")) {
+                                            cond_expr = field_val;
+                                        }
+                                    }
+                                    if (task_name != null and cond_expr != null) {
+                                        // Non-owning slices — addTask will dupe
+                                        try task_deps_if.append(allocator, .{
+                                            .task = task_name.?,
+                                            .condition = cond_expr.?,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_optional")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                // Non-owning slice — addTask will dupe
+                                try task_deps_optional.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
                 } else if (std.mem.eql(u8, key, "env")) {
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
@@ -1641,7 +1708,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             if (task_matrix_raw) |mraw| {
                 try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
             } else {
-                try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
+                try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items);
             }
         }
     }
