@@ -324,6 +324,8 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.8.0 — Toolchain Auto-Update** (DONE): `zr tools upgrade --check-updates`, `--cleanup` 플래그로 버전 충돌 자동 해결
 - [ ] **v1.9.0 — Sailor v1.1.0 Accessibility**: Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능
 - [ ] **v1.10.0 — Task Dependencies v2**: 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 순환 감지 개선
+- [ ] **v1.11.0 — Plugin Registry Index Server**: 독립 인덱스 서버 구축 (GitHub 의존성 제거), REST API, 플러그인 메타데이터, 검색 엔드포인트
+- [ ] **v1.12.0 — TOML Workflow Parser Fix**: `[[workflows.name.stages]]` 파싱 개선, array-of-tables 정확한 처리, 검증 경고 제거
 
 ### 마일스톤 수립 프로세스
 
