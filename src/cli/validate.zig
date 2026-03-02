@@ -672,3 +672,197 @@ test "cmdValidate: duplicate task in workflow stage fails" {
     try std.testing.expect(std.mem.indexOf(u8, err_str, "appears multiple times") != null);
 }
 
+test "cmdValidate: deps_if with valid task passes" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_if = [{ task = "lint", condition = "platform.is_linux" }]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdValidate: deps_if with missing task passes (no validation)" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_if = [{ task = "missing_task", condition = "platform.is_linux" }]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    // deps_if are not validated for existence (by design), so this should pass
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdValidate: deps_if with multiple conditions passes" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_if = [{ task = "lint", condition = "platform.is_linux" }, { task = "test", condition = "env.CI == '1'" }]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdValidate: deps_optional with existing task passes" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.format]
+        \\cmd = "echo format"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_optional = ["format"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdValidate: deps_optional with missing task passes (ignored)" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_optional = ["missing_task"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdValidate: deps_optional with multiple tasks passes" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.format]
+        \\cmd = "echo format"
+        \\
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_optional = ["format", "lint", "missing_task"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+
+    // Should pass - format and lint exist, missing_task is ignored
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
