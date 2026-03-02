@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const common = @import("common.zig");
 const run_cmd = @import("run.zig");
 const color = @import("../output/color.zig");
+const unicode = @import("../util/unicode.zig");
 const sailor = @import("sailor");
 const stui = sailor.tui;
 
@@ -142,6 +143,8 @@ fn emitFgColor(w: anytype, c: stui.Color) !void {
 // Screen-drawing helpers using sailor.tui widgets
 // ---------------------------------------------------------------------------
 
+/// Build display labels for List widget with "kind  name" format.
+/// Uses Unicode width calculation to ensure proper alignment with CJK/emoji.
 fn buildItemLabels(allocator: std.mem.Allocator, items: []const Item) ![][]const u8 {
     const labels = try allocator.alloc([]const u8, items.len);
     var count: usize = 0;
@@ -154,7 +157,20 @@ fn buildItemLabels(allocator: std.mem.Allocator, items: []const Item) ![][]const
             .task => "task",
             .workflow => "wf  ",
         };
-        labels[count] = try std.fmt.allocPrint(allocator, "{s}  {s}", .{ kind_label, item.name });
+
+        // Truncate long task names to fit screen width (60 cols - 10 for kind/padding)
+        const max_name_width = 50;
+        const name_width = unicode.displayWidth(item.name);
+        const display_name = if (name_width > max_name_width)
+            unicode.truncateToWidth(item.name, max_name_width - 3) // -3 for "..."
+        else
+            item.name;
+
+        labels[count] = if (name_width > max_name_width)
+            try std.fmt.allocPrint(allocator, "{s}  {s}...", .{ kind_label, display_name })
+        else
+            try std.fmt.allocPrint(allocator, "{s}  {s}", .{ kind_label, display_name });
+
         count += 1;
     }
     return labels;
@@ -181,7 +197,7 @@ fn drawScreen(
 
     // Header
     buf.setString(0, 0, "zr Interactive Mode", stui.Style{ .bold = true });
-    buf.setString(0, 1, "[^v] Navigate  [Enter] Run  [q] Quit  [r] Refresh",
+    buf.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
         stui.Style{ .fg = .bright_cyan });
 
     if (items.len == 0) {
@@ -315,18 +331,71 @@ fn cmdInteractiveInner(
                 try w.flush();
             },
 
+            // Vim-style navigation
+            'g' => {
+                // Go to top
+                if (item_count > 0) selected = 0;
+                try drawScreen(allocator, w, items.items, selected, use_color);
+                try w.flush();
+            },
+
+            'G' => {
+                // Go to bottom
+                if (item_count > 0) selected = item_count - 1;
+                try drawScreen(allocator, w, items.items, selected, use_color);
+                try w.flush();
+            },
+
             0x1b => {
                 const b2 = readByte() orelse continue;
                 if (b2 == '[') {
                     const b3 = readByte() orelse continue;
                     switch (b3) {
+                        // Arrow up
                         'A' => {
                             if (item_count > 0 and selected > 0) selected -= 1;
                             try drawScreen(allocator, w, items.items, selected, use_color);
                             try w.flush();
                         },
+                        // Arrow down
                         'B' => {
                             if (item_count > 0 and selected + 1 < item_count) selected += 1;
+                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try w.flush();
+                        },
+                        // Home key (ESC [ H)
+                        'H' => {
+                            if (item_count > 0) selected = 0;
+                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try w.flush();
+                        },
+                        // End key (ESC [ F)
+                        'F' => {
+                            if (item_count > 0) selected = item_count - 1;
+                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try w.flush();
+                        },
+                        // Page Up (ESC [ 5 ~) / Page Down (ESC [ 6 ~)
+                        '5', '6' => {
+                            const tilde = readByte() orelse continue;
+                            if (tilde != '~') continue;
+
+                            const page_size: usize = 10;
+                            if (b3 == '5') {
+                                // Page Up
+                                if (selected >= page_size) {
+                                    selected -= page_size;
+                                } else {
+                                    selected = 0;
+                                }
+                            } else {
+                                // Page Down
+                                if (selected + page_size < item_count) {
+                                    selected += page_size;
+                                } else if (item_count > 0) {
+                                    selected = item_count - 1;
+                                }
+                            }
                             try drawScreen(allocator, w, items.items, selected, use_color);
                             try w.flush();
                         },

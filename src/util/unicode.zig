@@ -109,13 +109,14 @@ pub fn padToWidth(allocator: std.mem.Allocator, str: []const u8, target_width: u
     }
 
     const padding_needed = target_width - current_width;
-    var result = try std.ArrayList(u8).initCapacity(allocator, str.len + padding_needed);
-    errdefer result.deinit();
+    var result: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer result.deinit(allocator);
 
-    try result.appendSlice(str);
-    try result.appendNTimes(' ', padding_needed);
+    try result.ensureTotalCapacity(allocator, str.len + padding_needed);
+    try result.appendSlice(allocator, str);
+    try result.appendNTimes(allocator, ' ', padding_needed);
 
-    return try result.toOwnedSlice();
+    return try result.toOwnedSlice(allocator);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +149,8 @@ test "displayWidth: emoji" {
 }
 
 test "displayWidth: mixed content" {
-    // "Hello 世界" - 6 ASCII + 1 space + 2 CJK = 7 + 4 = 11 columns
-    try std.testing.expectEqual(@as(usize, 11), displayWidth("Hello 世界"));
+    // "Hello 世界" - 5 ASCII chars + 1 space + 2 CJK chars (width 2 each) = 6 + 4 = 10 columns
+    try std.testing.expectEqual(@as(usize, 10), displayWidth("Hello 世界"));
 }
 
 test "charWidth: various ranges" {
@@ -194,13 +195,13 @@ test "truncateToWidth: CJK" {
 test "truncateToWidth: mixed content" {
     const input = "Hello 世界";
 
-    // Truncate to 7 columns = "Hello " (6 ASCII + 1 space)
-    const result = truncateToWidth(input, 7);
+    // Truncate to 6 columns = "Hello " (5 ASCII chars + 1 space = 6 columns)
+    const result = truncateToWidth(input, 6);
     try std.testing.expectEqualStrings("Hello ", result);
 
-    // Truncate to 9 columns = "Hello 世" (7 + 2)
-    const result2 = truncateToWidth(input, 9);
-    try std.testing.expectEqual(@as(usize, 9), displayWidth(result2));
+    // Truncate to 8 columns = "Hello 世" (6 + 2 = 8 columns)
+    const result2 = truncateToWidth(input, 8);
+    try std.testing.expectEqual(@as(usize, 8), displayWidth(result2));
 }
 
 test "padToWidth: basic" {
