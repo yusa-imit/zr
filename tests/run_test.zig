@@ -7,6 +7,9 @@ const HELLO_TOML = helpers.HELLO_TOML;
 const FAIL_TOML = helpers.FAIL_TOML;
 const DEPS_TOML = helpers.DEPS_TOML;
 const ENV_TOML = helpers.ENV_TOML;
+const DEPS_IF_TOML = helpers.DEPS_IF_TOML;
+const DEPS_OPTIONAL_TOML = helpers.DEPS_OPTIONAL_TOML;
+const DEPS_COMBINED_TOML = helpers.DEPS_COMBINED_TOML;
 
 test "5: run success" {
     const allocator = std.testing.allocator;
@@ -3692,4 +3695,110 @@ test "715: run with deep dependency chain executes tasks in correct order" {
     const output = result.stdout;
     try std.testing.expect(std.mem.indexOf(u8, output, "1") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "10") != null);
+}
+
+test "716: run with deps_if where condition is true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_IF_TOML);
+    defer allocator.free(config);
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+    try env_map.put("RUN_LINT", "true");
+    try env_map.put("RUN_TESTS", "false");
+
+    var result = try helpers.runZrEnv(allocator, &.{ "--config", config, "run", "build" }, null, &env_map);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Lint should run because condition is true
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "linting") != null);
+    // Test should NOT run because condition is false
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "testing") == null);
+}
+
+test "717: run with deps_if where condition is false" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_IF_TOML);
+    defer allocator.free(config);
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+    try env_map.put("RUN_LINT", "false");
+    try env_map.put("RUN_TESTS", "false");
+
+    var result = try helpers.runZrEnv(allocator, &.{ "--config", config, "run", "build" }, null, &env_map);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Neither lint nor test should run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "linting") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "testing") == null);
+}
+
+test "718: run with deps_optional where task exists" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_OPTIONAL_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "build" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Format exists and should run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "formatting") != null);
+    // Nonexistent task should be silently ignored
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "nonexistent") == null);
+}
+
+test "719: run with deps_optional where task doesn't exist" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\deps_optional = ["nonexistent"]
+        \\
+    ;
+    
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "build" }, null);
+    defer result.deinit();
+
+    // Should succeed even though optional dep doesn't exist
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "building") != null);
+}
+
+test "720: run with combined deps, deps_serial, deps_if, deps_optional" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const config = try writeTmpConfig(allocator, tmp.dir, DEPS_COMBINED_TOML);
+    defer allocator.free(config);
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+    try env_map.put("WITH_FORMAT", "yes");
+
+    var result = try helpers.runZrEnv(allocator, &.{ "--config", config, "run", "build" }, null, &env_map);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // All defined tasks should run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "linting") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "testing") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "formatting") != null);
+    // Nonexistent optional dep should be ignored
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "nonexistent") == null);
 }

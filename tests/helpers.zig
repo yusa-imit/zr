@@ -36,6 +36,48 @@ pub const ENV_TOML =
     \\
 ;
 
+pub const DEPS_IF_TOML =
+    \\[tasks.lint]
+    \\cmd = "echo linting"
+    \\
+    \\[tasks.test]
+    \\cmd = "echo testing"
+    \\
+    \\[tasks.build]
+    \\cmd = "echo building"
+    \\deps_if = [{ task = "lint", condition = "env.RUN_LINT == 'true'" }, { task = "test", condition = "env.RUN_TESTS == 'true'" }]
+    \\
+;
+
+pub const DEPS_OPTIONAL_TOML =
+    \\[tasks.format]
+    \\cmd = "echo formatting"
+    \\
+    \\[tasks.build]
+    \\cmd = "echo building"
+    \\deps_optional = ["format", "nonexistent"]
+    \\
+;
+
+pub const DEPS_COMBINED_TOML =
+    \\[tasks.lint]
+    \\cmd = "echo linting"
+    \\
+    \\[tasks.test]
+    \\cmd = "echo testing"
+    \\
+    \\[tasks.format]
+    \\cmd = "echo formatting"
+    \\
+    \\[tasks.build]
+    \\cmd = "echo building"
+    \\deps = ["lint"]
+    \\deps_serial = ["test"]
+    \\deps_if = [{ task = "format", condition = "env.WITH_FORMAT == 'yes'" }]
+    \\deps_optional = ["nonexistent"]
+    \\
+;
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 pub const ZrResult = struct {
@@ -69,6 +111,73 @@ pub fn runZr(allocator: std.mem.Allocator, args: []const []const u8, cwd: ?[]con
     child.stderr_behavior = .Pipe;
     child.stdin_behavior = .Close;
     child.cwd = cwd;
+
+    try child.spawn();
+
+    // Read stdout/stderr BEFORE wait() — Zig 0.15 closes pipes in wait()
+    var stdout_list = std.ArrayList(u8){};
+    errdefer stdout_list.deinit(allocator);
+    var stderr_list = std.ArrayList(u8){};
+    errdefer stderr_list.deinit(allocator);
+
+    if (child.stdout) |pipe| {
+        var buf: [4096]u8 = undefined;
+        while (true) {
+            const n = pipe.read(&buf) catch break;
+            if (n == 0) break;
+            try stdout_list.appendSlice(allocator, buf[0..n]);
+        }
+    }
+    if (child.stderr) |pipe| {
+        var buf: [4096]u8 = undefined;
+        while (true) {
+            const n = pipe.read(&buf) catch break;
+            if (n == 0) break;
+            try stderr_list.appendSlice(allocator, buf[0..n]);
+        }
+    }
+
+    const term = try child.wait();
+    const exit_code: u8 = switch (term) {
+        .Exited => |code| code,
+        .Signal => |_| 255,
+        .Stopped => |_| 255,
+        .Unknown => |_| 255,
+    };
+
+    return ZrResult{
+        .exit_code = exit_code,
+        .stdout = try stdout_list.toOwnedSlice(allocator),
+        .stderr = try stderr_list.toOwnedSlice(allocator),
+        .allocator = allocator,
+    };
+}
+
+/// Spawn the `zr` binary with custom environment variables.
+/// Returns captured stdout, stderr, and exit code.
+pub fn runZrEnv(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    cwd: ?[]const u8,
+    env_map: *std.process.EnvMap,
+) !ZrResult {
+    // Resolve binary to absolute path so it works even with a different child cwd
+    const resolved_bin = try std.fs.cwd().realpathAlloc(allocator, ZR_BIN);
+    defer allocator.free(resolved_bin);
+
+    var argv = std.ArrayList([]const u8){};
+    defer argv.deinit(allocator);
+    try argv.append(allocator, resolved_bin);
+    for (args) |arg| {
+        try argv.append(allocator, arg);
+    }
+
+    var child = std.process.Child.init(argv.items, allocator);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+    child.stdin_behavior = .Close;
+    child.cwd = cwd;
+    child.env_map = env_map;
 
     try child.spawn();
 

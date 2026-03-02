@@ -405,6 +405,22 @@ fn collectDeps(
                 try stack.append(allocator, dep);
             }
         }
+
+        // Traverse conditional dependencies (only if condition is true)
+        for (task.deps_if) |dep_if| {
+            const condition_met = expr.evalCondition(allocator, dep_if.condition, task.env) catch false;
+            if (condition_met and !needed.contains(dep_if.task)) {
+                try stack.append(allocator, dep_if.task);
+            }
+        }
+
+        // Traverse optional dependencies (only if task exists)
+        for (task.deps_optional) |dep| {
+            if (config.tasks.contains(dep) and !needed.contains(dep)) {
+                try stack.append(allocator, dep);
+            }
+        }
+
         // Note: deps_serial are intentionally NOT traversed here.
         // They run inline via runSerialChain, not via the DAG scheduler.
     }
