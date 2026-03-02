@@ -610,3 +610,24 @@ gh issue create --repo yusa-imit/sailor \
 - [x] 기존 테스트 전체 통과 확인 (685 unit, 819 integration)
 
 **Note**: Non-breaking upgrade. Layout features are opt-in. Current TUI implementation doesn't require immediate migration, but these features enable future enhancements.
+
+### v1.3.0 — Performance & Developer Experience (status: READY)
+
+**sailor v1.3.0 released** (2026-03-02) — Performance optimization and debugging tools
+
+- **New features**:
+  - RenderBudget: Frame time tracking with automatic frame skip for 60fps
+  - LazyBuffer: Dirty region tracking (only render changed cells)
+  - EventBatcher: Coalesce rapid events (resize storms, key bursts)
+  - DebugOverlay: Visual debugging (layout rects, FPS, event log)
+  - ThemeWatcher: Hot-reload JSON themes without restart
+- **Impact on zr**: Medium priority — improves TUI performance
+  - Lazy rendering reduces overhead for large graphs (skip unchanged cells)
+  - Event batching handles terminal resize gracefully
+  - DebugOverlay useful for developing TUI features
+  - ThemeWatcher enables live theme iteration
+- [ ] `build.zig.zon`에 sailor v1.3.0 의존성 업데이트
+- [ ] (Optional) Add DebugOverlay toggle for TUI development — deferred
+- [ ] 기존 테스트 전체 통과 확인 (685 unit, 819 integration expected)
+
+**Note**: Non-breaking upgrade. Performance features are opt-in. Current CLI mode unaffected. TUI mode can benefit from lazy rendering when displaying large graphs.
