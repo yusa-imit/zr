@@ -20,6 +20,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixes Zig 0.15.2 compatibility issue with `result.term.Exited` access pattern
   - Properly handles all exit status cases (Exited, Signaled, Stopped, Unknown)
 
+## [1.12.0] - 2026-03-03
+
+### Added
+- **Auto-generated stage names for anonymous workflow stages**: TOML array-of-tables syntax `[[workflows.X.stages]]` without explicit `name =` field now works correctly
+  - Parser auto-generates names like "stage-1", "stage-2", etc. for anonymous stages
+  - Works seamlessly with mixed named/anonymous stages
+  - All example configs (docker-kubernetes, github-actions-ci) now parse correctly
+- **Unit tests**: 3 new parser tests for anonymous stage handling (730/738 total)
+- **Integration tests**: 3 new workflow tests for anonymous stages (852/852 total)
+
+### Fixed
+- **Anonymous workflow stages no longer discarded**: Previously, stages without `name =` were silently dropped during parsing
+  - Fixes "0 stages" validation warnings in example configs
+  - Resolves Known Limitation documented in debugging.md
+- **flushPendingStage() helper**: Refactored 5 stage flush points to use unified helper function
+  - Ensures consistent behavior across all section transitions
+  - Proper memory management with auto-generated names
+
+### Changed
+- Enhanced TOML parser with anonymous stage name generation logic
+- Improved workflow stage handling for better ergonomics
+
 ## [1.10.1] - 2026-03-02
 
 ### Fixed
