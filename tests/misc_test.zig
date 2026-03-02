@@ -2393,3 +2393,79 @@ test "697: doctor with --verbose flag shows detailed diagnostics" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "853: cpu_affinity array parsing in TOML (v1.13.0)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.affinity_test]
+        \\cmd = "echo affinity"
+        \\cpu_affinity = [0, 1, 2, 3]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test that config parses successfully
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "affinity_test") != null);
+}
+
+test "854: numa_node integer parsing in TOML (v1.13.0)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.numa_test]
+        \\cmd = "echo numa"
+        \\numa_node = 0
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test that config parses successfully
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "numa_test") != null);
+}
+
+test "855: cpu_affinity and numa_node combined in TOML (v1.13.0)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.combined_test]
+        \\cmd = "echo combined"
+        \\cpu_affinity = [0, 1]
+        \\numa_node = 1
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test that config parses successfully and task can execute
+    var result = try runZr(allocator, &.{ "--config", config, "run", "combined_test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "combined") != null);
+}
