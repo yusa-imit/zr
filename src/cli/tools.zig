@@ -299,7 +299,7 @@ fn cmdToolsOutdated(
     }
 }
 
-/// `zr tools upgrade [--check-updates] [kind]` - Upgrade outdated toolchains
+/// `zr tools upgrade [--check-updates] [--cleanup] [kind]` - Upgrade outdated toolchains
 fn cmdToolsUpgrade(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -309,6 +309,7 @@ fn cmdToolsUpgrade(
 ) !u8 {
     // Parse flags and optional kind filter
     var check_updates = false;
+    var cleanup_old = false;
     var filter_kind: ?ToolKind = null;
 
     for (args) |arg| {
@@ -318,6 +319,8 @@ fn cmdToolsUpgrade(
         }
         if (std.mem.eql(u8, arg, "--check-updates")) {
             check_updates = true;
+        } else if (std.mem.eql(u8, arg, "--cleanup")) {
+            cleanup_old = true;
         } else if (ToolKind.fromString(arg)) |kind| {
             filter_kind = kind;
         }
@@ -399,7 +402,17 @@ fn cmdToolsUpgrade(
                 };
 
                 try w.print(" ", .{});
-                try color.printSuccess(w, use_color, "✓\n", .{});
+                try color.printSuccess(w, use_color, "✓", .{});
+
+                // Cleanup old versions if requested
+                if (cleanup_old) {
+                    // Uninstall the old version
+                    toolchain_installer.uninstall(allocator, kind, curr_version) catch |err| {
+                        try color.printDim(w, use_color, " (cleanup failed: {s})", .{@errorName(err)});
+                    };
+                }
+
+                try w.print("\n", .{});
                 upgraded_count += 1;
             } else {
                 try color.printDim(w, use_color, " (update available)\n", .{});
@@ -458,20 +471,24 @@ fn printUpgradeHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "zr tools upgrade", .{});
     try w.print(" - Upgrade outdated toolchains\n\n", .{});
     try color.printBold(w, use_color, "Usage:\n", .{});
-    try w.print("  zr tools upgrade [--check-updates] [kind]\n\n", .{});
+    try w.print("  zr tools upgrade [--check-updates] [--cleanup] [kind]\n\n", .{});
     try color.printBold(w, use_color, "Description:\n", .{});
     try w.print("  Checks installed toolchains for updates and optionally upgrades them.\n", .{});
     try w.print("  Without --check-updates, shows available updates without installing.\n", .{});
-    try w.print("  With --check-updates, automatically installs the latest versions.\n\n", .{});
+    try w.print("  With --check-updates, automatically installs the latest versions.\n", .{});
+    try w.print("  With --cleanup, removes old versions after successful upgrades.\n\n", .{});
     try color.printBold(w, use_color, "Options:\n", .{});
-    try w.print("  --check-updates  Automatically install available updates\n\n", .{});
+    try w.print("  --check-updates  Automatically install available updates\n", .{});
+    try w.print("  --cleanup        Remove old versions after upgrade (requires --check-updates)\n\n", .{});
     try color.printBold(w, use_color, "Arguments:\n", .{});
     try w.print("  kind             Optional filter (node|python|zig|go|rust|deno|bun|java)\n\n", .{});
     try color.printBold(w, use_color, "Examples:\n", .{});
-    try w.print("  zr tools upgrade                      # Check all for updates\n", .{});
-    try w.print("  zr tools upgrade --check-updates      # Upgrade all outdated toolchains\n", .{});
-    try w.print("  zr tools upgrade node                 # Check only Node.js\n", .{});
-    try w.print("  zr tools upgrade --check-updates node # Upgrade only Node.js\n", .{});
+    try w.print("  zr tools upgrade                              # Check all for updates\n", .{});
+    try w.print("  zr tools upgrade --check-updates              # Upgrade all outdated toolchains\n", .{});
+    try w.print("  zr tools upgrade --check-updates --cleanup    # Upgrade and remove old versions\n", .{});
+    try w.print("  zr tools upgrade node                         # Check only Node.js\n", .{});
+    try w.print("  zr tools upgrade --check-updates node         # Upgrade only Node.js\n", .{});
+    try w.print("  zr tools upgrade --check-updates --cleanup go # Upgrade Go and cleanup\n", .{});
 }
 
 fn printOutdatedHelp(w: *std.Io.Writer, use_color: bool) !void {
@@ -496,10 +513,10 @@ fn printToolsHelp(w: *std.Io.Writer, ew: *std.Io.Writer, use_color: bool) !void 
     try color.printBold(w, use_color, "Usage:\n", .{});
     try w.print("  zr tools <subcommand> [arguments]\n\n", .{});
     try color.printBold(w, use_color, "Subcommands:\n", .{});
-    try w.print("  list [kind]              List installed toolchain versions\n", .{});
-    try w.print("  install <kind>@<ver>     Install a specific toolchain version\n", .{});
-    try w.print("  outdated [kind]          Check for outdated toolchains\n", .{});
-    try w.print("  upgrade [--check-updates] [kind]  Upgrade outdated toolchains\n\n", .{});
+    try w.print("  list [kind]                       List installed toolchain versions\n", .{});
+    try w.print("  install <kind>@<ver>              Install a specific toolchain version\n", .{});
+    try w.print("  outdated [kind]                   Check for outdated toolchains\n", .{});
+    try w.print("  upgrade [--check-updates] [--cleanup] [kind]  Upgrade outdated toolchains\n\n", .{});
     try color.printBold(w, use_color, "Examples:\n", .{});
     try w.print("  zr tools list                         # List all installed toolchains\n", .{});
     try w.print("  zr tools list node                    # List installed Node.js versions\n", .{});
@@ -722,6 +739,26 @@ test "cmdToolsUpgrade with --check-updates flag" {
     const exit_code = try cmdToolsUpgrade(allocator, args, &out_w.interface, &err_w.interface, false);
 
     // Exit code can be 0 (no tools/all up-to-date) or 1 (upgrades failed)
+    // Both are valid non-error cases, so just check it doesn't crash
+    _ = exit_code;
+}
+
+test "cmdToolsUpgrade with --cleanup flag" {
+    const allocator = std.testing.allocator;
+    // Use /dev/null to avoid corrupting test protocol
+    const devnull = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer devnull.close();
+
+    var out_buf: [1]u8 = undefined;
+    var out_w = devnull.writer(&out_buf);
+
+    var err_buf: [1]u8 = undefined;
+    var err_w = devnull.writer(&err_buf);
+
+    const args = &[_][]const u8{ "zr", "tools", "upgrade", "--check-updates", "--cleanup" };
+    const exit_code = try cmdToolsUpgrade(allocator, args, &out_w.interface, &err_w.interface, false);
+
+    // Exit code can be 0 (no tools/all up-to-date/cleaned) or 1 (upgrades failed)
     // Both are valid non-error cases, so just check it doesn't crash
     _ = exit_code;
 }

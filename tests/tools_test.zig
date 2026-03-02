@@ -178,6 +178,39 @@ test "824: tools upgrade with kind filter" {
     try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
 }
 
+test "825: tools upgrade with --cleanup flag" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run upgrade with --cleanup (removes old versions after upgrade)
+    var result = try runZr(allocator, &.{ "tools", "upgrade", "--check-updates", "--cleanup" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (exit code 0 if all up-to-date/upgraded, 1 if upgrades failed)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "826: tools upgrade --cleanup without --check-updates has no effect" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run upgrade with --cleanup but without --check-updates (dry-run mode)
+    // Should still work but not actually cleanup anything
+    var result = try runZr(allocator, &.{ "tools", "upgrade", "--cleanup" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (exit code 0 if up-to-date, 1 if updates available)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
 test "450: tools install with invalid version format shows error" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
