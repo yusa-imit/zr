@@ -50,7 +50,10 @@ pub fn cmdRun(
             .{task_name},
         );
 
-        if (suggestions.len > 0) {
+        // If task_name looks like a flag, provide a different hint
+        if (std.mem.startsWith(u8, task_name, "-")) {
+            try err_writer.print("\n  Hint: Unknown flag '{s}'. Run 'zr --help' to see available options\n", .{task_name});
+        } else if (suggestions.len > 0) {
             try err_writer.print("\n  Did you mean?\n", .{});
             for (suggestions) |suggestion| {
                 try err_writer.print("    {s}\n", .{suggestion.name});
