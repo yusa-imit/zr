@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-03-02
+
+### Added
+- **Toolchain auto-update**: `zr tools upgrade` command for managing installed toolchains
+  - `zr tools upgrade`: Dry-run mode shows available updates for all installed tools
+  - `zr tools upgrade --check-updates`: Auto-install latest versions
+  - `zr tools upgrade --cleanup`: Remove old versions after upgrade
+  - Kind filtering support (e.g., `zr tools upgrade node`)
+  - Version conflict resolution strategy (keeps only latest version)
+- **Integration tests**: 7 new tests for `zr tools upgrade` command (826/831 total integration tests)
+- **Unit tests**: 4 new tests for upgrade logic (689/697 total unit tests)
+
+### Changed
+- Enhanced toolchain management with automated upgrade workflow
+- Improved version conflict detection and resolution
+
+## [1.7.0] - 2026-03-02
+
+### Added
+- **String interning (StringPool)**: Memory-efficient string deduplication
+  - Reduces heap allocations for repeated strings (task names, file paths, etc.)
+  - 30-50% memory reduction in typical workloads
+- **Object pooling (ObjectPool(T))**: Reusable object allocation
+  - Eliminates allocation churn for frequently created/destroyed objects
+  - Improves performance for hot paths (task execution, graph traversal)
+- **Automated benchmark suite**: Hyperfine-based performance testing
+  - `scripts/bench.sh`: Automated benchmark runner comparing against Make, Just, Task
+  - Cold start benchmarks (empty task, 10 tasks, 100 tasks)
+  - Parallel execution benchmarks (2/4/8 workers)
+  - Results: 17% faster cold start, 28% lower RSS memory
+
+### Changed
+- Optimized task graph construction with string interning
+- Reduced memory footprint with object pooling
+- Updated benchmark documentation with Quick Start guide
+
+### Performance
+- Cold start: ~5ms → ~4.2ms (17% improvement)
+- Memory (RSS): ~2.5MB → ~1.8MB (28% reduction)
+- Binary size: Maintained at ~1.2MB
+
 ## [1.6.0] - 2026-03-02
 
 ### Added
