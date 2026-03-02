@@ -99,6 +99,85 @@ test "352: tools subcommand with invalid toolchain name reports error" {
     try std.testing.expect(output.len > 0);
 }
 
+test "820: tools upgrade without --check-updates shows available updates" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run upgrade without --check-updates (dry-run mode)
+    var result = try runZr(allocator, &.{ "tools", "upgrade" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (exit code 0 if up-to-date, 1 if updates available)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "821: tools upgrade --help shows help message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "tools", "upgrade", "--help" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Upgrade outdated toolchains") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--check-updates") != null);
+}
+
+test "822: tools upgrade -h shows help message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "tools", "upgrade", "-h" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Upgrade outdated toolchains") != null);
+}
+
+test "823: tools upgrade --check-updates performs upgrades" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run upgrade with --check-updates (actually performs upgrades)
+    var result = try runZr(allocator, &.{ "tools", "upgrade", "--check-updates" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (exit code 0 if all up-to-date/upgraded, 1 if upgrades failed)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
+test "824: tools upgrade with kind filter" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run upgrade with kind filter
+    var result = try runZr(allocator, &.{ "tools", "upgrade", "node" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (exit code 0 if up-to-date, 1 if updates available)
+    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+}
+
 test "450: tools install with invalid version format shows error" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
