@@ -754,3 +754,131 @@ test "687: workflow with single task and complex dependencies executes correctly
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "852: workflow with anonymous stages auto-generates stage names" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.clean]
+        \\cmd = "echo cleaning"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[workflows.simple]
+        \\
+        \\[[workflows.simple.stages]]
+        \\tasks = ["clean"]
+        \\
+        \\[[workflows.simple.stages]]
+        \\tasks = ["build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test that workflow executes successfully with anonymous stages
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "simple" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+
+    // Test that list command shows the workflow with auto-generated stage names
+    var list_result = try runZr(allocator, &.{ "--config", config, "list", "--format", "json" }, tmp_path);
+    defer list_result.deinit();
+    try std.testing.expect(list_result.exit_code == 0);
+    // JSON output should contain workflow with stages
+    try std.testing.expect(std.mem.indexOf(u8, list_result.stdout, "simple") != null);
+}
+
+test "853: workflow with mixed named and anonymous stages preserves all" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\
+        \\[workflows.mixed]
+        \\
+        \\[[workflows.mixed.stages]]
+        \\name = "first"
+        \\tasks = ["a"]
+        \\
+        \\[[workflows.mixed.stages]]
+        \\tasks = ["b"]
+        \\
+        \\[[workflows.mixed.stages]]
+        \\name = "last"
+        \\tasks = ["c"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "mixed" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Should execute all three stages
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "b") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "c") != null);
+}
+
+test "854: example workflow with anonymous stages from docker-kubernetes" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Simplified version of docker-kubernetes example with anonymous stages
+    const toml =
+        \\[tasks.docker-build]
+        \\cmd = "echo docker build"
+        \\
+        \\[tasks.docker-test]
+        \\cmd = "echo docker test"
+        \\
+        \\[tasks.docker-push]
+        \\cmd = "echo docker push"
+        \\
+        \\[workflows.deploy]
+        \\description = "Build, test, and deploy workflow"
+        \\
+        \\[[workflows.deploy.stages]]
+        \\tasks = ["docker-build"]
+        \\
+        \\[[workflows.deploy.stages]]
+        \\tasks = ["docker-test"]
+        \\
+        \\[[workflows.deploy.stages]]
+        \\tasks = ["docker-push"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "deploy" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // All three stages should execute
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "docker build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "docker test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "docker push") != null);
+}
