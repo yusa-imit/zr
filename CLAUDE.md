@@ -584,7 +584,7 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. Accessibility features are opt-in. Unicode width improvements automatically benefit any CJK/emoji display.
 
-### v1.2.0 — Layout & Composition (status: READY)
+### v1.2.0 — Layout & Composition (status: DONE)
 
 **sailor v1.2.0 released** (2026-03-02) — Advanced layout and composition features
 
@@ -599,9 +599,9 @@ gh issue create --repo yusa-imit/sailor \
   - ScrollView enables handling large task lists in TUI
   - Split panes for side-by-side views (graph + logs)
   - Responsive breakpoints for adaptive layouts on different terminal sizes
-- [ ] `build.zig.zon`에 sailor v1.2.0 의존성 업데이트
-- [ ] (Optional) Consider using Grid layout for TUI graph dashboard
-- [ ] (Optional) Add ScrollView for large task lists in TUI mode
-- [ ] 기존 테스트 전체 통과 확인
+- [x] `build.zig.zon`에 sailor v1.2.0 의존성 업데이트 (2026-03-02)
+- [ ] (Optional) Consider using Grid layout for TUI graph dashboard — deferred to future TUI enhancements
+- [ ] (Optional) Add ScrollView for large task lists in TUI mode — deferred to future TUI enhancements
+- [x] 기존 테스트 전체 통과 확인 (685 unit, 819 integration)
 
 **Note**: Non-breaking upgrade. Layout features are opt-in. Current TUI implementation doesn't require immediate migration, but these features enable future enhancements.
