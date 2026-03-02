@@ -633,3 +633,26 @@ gh issue create --repo yusa-imit/sailor \
 **Note**: Non-breaking upgrade. Performance features are opt-in. Current TUI implementation automatically benefits from event batching improvements without code changes.
 
 **Note**: Non-breaking upgrade. Performance features are opt-in. Current CLI mode unaffected. TUI mode can benefit from lazy rendering when displaying large graphs.
+
+### v1.4.0 — Advanced Input & Forms (status: READY)
+
+**sailor v1.4.0 released** (2026-03-03) — Form widgets and input validation
+
+- **New features**:
+  - Form widget: Field validation, submit/cancel handlers, error display
+  - Select/Dropdown widget: Single/multi-select with keyboard navigation
+  - Checkbox widget: Single and grouped checkboxes with state management
+  - RadioGroup widget: Mutually exclusive selection
+  - Validators module: Comprehensive input validation (email, URL, IPv4, numeric, patterns)
+  - Input masks: SSN, phone, dates, credit card formatting
+- **Impact on zr**: Low-Medium priority — enables interactive config editing
+  - Form widget useful for interactive configuration editor TUI
+  - Validators useful for validating task parameters in TUI mode
+  - Checkbox/RadioGroup for task selection and filtering UI
+  - Select widget for choosing targets, toolchains, cache backends
+- [ ] `build.zig.zon`에 sailor v1.4.0 의존성 업데이트
+- [ ] (Optional) Add interactive config editor TUI using Form widget — deferred to future enhancements
+- [ ] (Optional) Use Select widget for task picker in TUI mode — deferred to future enhancements
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. Form features are opt-in. Current CLI/TUI implementation works without changes. These features enable future interactive configuration and task selection UIs.
