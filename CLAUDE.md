@@ -324,7 +324,7 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.8.0 — Toolchain Auto-Update** (DONE, released 2026-03-02): `zr tools upgrade --check-updates`, `--cleanup` 플래그로 버전 충돌 자동 해결
 - [x] **v1.9.0 — Sailor v1.1.0 Accessibility** (DONE, released 2026-03-02): Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능 (위치 표시, 의미론적 레이블, 푸터 상태)
 - [x] **v1.10.0 — Task Dependencies v2** (DONE, released 2026-03-02): 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 표현식 엔진 통합, 16 unit tests + 5 integration tests
-- [ ] **v1.11.0 — Plugin Registry Index Server**: 독립 인덱스 서버 구축 (GitHub 의존성 제거), REST API, 플러그인 메타데이터, 검색 엔드포인트
+- [x] **v1.11.0 — Plugin Registry Index Server** (DONE): 독립 인덱스 서버 구축 (GitHub 의존성 제거), REST API, 플러그인 메타데이터, 검색 엔드포인트, `zr registry serve` 명령어, JSON 파일 기반 저장소, 2 integration tests
 - [ ] **v1.12.0 — TOML Parser v2**: Multi-line array 지원, `[[workflows.name.stages]]` 파싱 개선, array-of-tables 정확한 처리, 검증 경고 제거
 - [ ] **v1.13.0 — Parallel Execution Optimizations**: Work-stealing scheduler, task affinity, NUMA awareness, CPU pinning options
 - [ ] **v1.14.0 — Enhanced Error Diagnostics**: Stack traces for expression failures, task execution timeline, failure replay mode
