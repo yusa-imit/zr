@@ -1,0 +1,69 @@
+# Conditional Dependencies Example Configuration
+# Demonstrates deps_if and deps_optional features (v1.10.0+)
+
+[tasks.lint]
+description = "Run code linting"
+cmd = "echo '✓ Linting complete'"
+
+[tasks.type-check]
+description = "Run strict type checking"
+cmd = "echo '✓ Type checking complete'"
+
+[tasks.format]
+description = "Format code (optional)"
+cmd = "echo '✓ Code formatted'"
+
+[tasks.build]
+description = "Build the application"
+cmd = "echo '🔨 Building application...'"
+# Conditional dependencies - only run if conditions are met
+deps_if = [
+  { task = "lint", condition = "env.CI == 'true'" },
+  { task = "type-check", condition = "env.STRICT == 'true'" }
+]
+
+[tasks.test]
+description = "Run test suite"
+cmd = "echo '✓ All tests passed'"
+
+[tasks.security-scan]
+description = "Run security vulnerability scan"
+cmd = "echo '✓ Security scan complete'"
+
+[tasks.docs]
+description = "Build documentation"
+cmd = "echo '✓ Documentation generated'"
+
+[tasks.deploy]
+description = "Deploy application"
+cmd = "echo '🚀 Deploying to production...'"
+deps = ["build"]                    # Always required
+deps_optional = ["security-scan"]   # Run if exists, skip if not
+
+[tasks.release]
+description = "Create a production release"
+cmd = "echo '📦 Creating release package...'"
+deps = ["build"]                    # Always run first
+deps_serial = ["test"]              # Run after all parallel deps
+deps_if = [
+  { task = "lint", condition = "env.SKIP_LINT != 'true'" },
+  { task = "docs", condition = "env.BUILD_DOCS == 'true'" }
+]
+deps_optional = ["format"]          # Run if available
+
+[tasks.ci-pipeline]
+description = "Full CI/CD pipeline"
+cmd = "echo '✅ CI pipeline complete'"
+deps = ["lint", "type-check", "test"]
+deps_if = [
+  { task = "deploy", condition = "env.BRANCH == 'main'" }
+]
+
+[tasks.dev-build]
+description = "Development build (faster, fewer checks)"
+cmd = "echo '🔧 Development build complete'"
+# No conditional deps in dev mode for speed
+deps = []
+
+# Note: This example focuses on task dependencies (deps_if, deps_optional)
+# For workflow examples with stages, see examples/github-actions-ci/
