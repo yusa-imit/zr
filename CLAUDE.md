@@ -305,7 +305,7 @@ All 13 phases from the PRD are **COMPLETE**:
 | 12 | Performance & Stability | ✅ Binary optimization, fuzz testing, benchmarks |
 | 13 | v1.0 Release | ✅ Documentation, migration guides, README |
 
-**Current stats**: 670/678 unit tests (8 skipped), 805/805 integration tests, 0 memory leaks, CI green
+**Current stats**: 716/724 unit tests (8 skipped), 837/837 integration tests, 0 memory leaks, CI green
 
 ---
 
@@ -322,10 +322,13 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.6.0 — Interactive Configuration** (DONE, released 2026-03-02): `zr add task/workflow/profile` 대화형 명령어, 스마트 stdin 처리, 통합 테스트 (6개), issue #11 해결
 - [x] **v1.7.0 — Performance Enhancements** (DONE, released 2026-03-02): 문자열 인터닝 (StringPool), 객체 풀링 (ObjectPool), hyperfine 기반 자동화 벤치마크 스크립트, 30-50% 메모리 감소
 - [x] **v1.8.0 — Toolchain Auto-Update** (DONE, released 2026-03-02): `zr tools upgrade --check-updates`, `--cleanup` 플래그로 버전 충돌 자동 해결
-- [x] **v1.9.0 — Sailor v1.1.0 Accessibility** (DONE, releasing today): Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능 (위치 표시, 의미론적 레이블, 푸터 상태)
-- [ ] **v1.10.0 — Task Dependencies v2**: 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 순환 감지 개선
+- [x] **v1.9.0 — Sailor v1.1.0 Accessibility** (DONE, released 2026-03-02): Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능 (위치 표시, 의미론적 레이블, 푸터 상태)
+- [x] **v1.10.0 — Task Dependencies v2** (DONE, released 2026-03-02): 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 표현식 엔진 통합, 16 unit tests + 5 integration tests
 - [ ] **v1.11.0 — Plugin Registry Index Server**: 독립 인덱스 서버 구축 (GitHub 의존성 제거), REST API, 플러그인 메타데이터, 검색 엔드포인트
-- [ ] **v1.12.0 — TOML Workflow Parser Fix**: `[[workflows.name.stages]]` 파싱 개선, array-of-tables 정확한 처리, 검증 경고 제거
+- [ ] **v1.12.0 — TOML Parser v2**: Multi-line array 지원, `[[workflows.name.stages]]` 파싱 개선, array-of-tables 정확한 처리, 검증 경고 제거
+- [ ] **v1.13.0 — Parallel Execution Optimizations**: Work-stealing scheduler, task affinity, NUMA awareness, CPU pinning options
+- [ ] **v1.14.0 — Enhanced Error Diagnostics**: Stack traces for expression failures, task execution timeline, failure replay mode
+- [ ] **v1.15.0 — Workspace Enhancements**: Workspace-wide cache invalidation, dependency visualization improvements, cross-workspace tasks
 
 ### 마일스톤 수립 프로세스
 

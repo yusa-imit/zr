@@ -11,9 +11,9 @@
 
 ## Current Status (2026-03-02)
 
-- **Version**: v1.9.0 (released), v1.10.0-dev (in progress - Task Dependencies v2)
-- **Unit tests**: 700/708 (8 skipped, 0 failed, 0 memory leaks)
-- **Integration tests**: 832/832 (100% pass rate)
+- **Version**: v1.10.0 (released - Task Dependencies v2)
+- **Unit tests**: 716/724 (8 skipped, 0 failed, 0 memory leaks)
+- **Integration tests**: 837/837 (100% pass rate)
 - **CI**: GREEN — all 6 cross-compile targets passing
 - **GitHub Issues**: 0 open
 - **Binary**: ~1.2MB ReleaseSmall, ~4ms cold start, ~1.8MB RSS
