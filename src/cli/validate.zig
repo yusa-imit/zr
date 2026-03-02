@@ -254,6 +254,39 @@ pub fn cmdValidate(
                 }
             };
         }
+
+        // Add conditional dependencies for cycle detection
+        for (task.deps_if) |dep_if| {
+            // For validation, always add the edge (cycle detection doesn't depend on condition value)
+            dag.addEdge(task_name, dep_if.task) catch |err| {
+                if (err == error.CycleDetected) {
+                    try color.printError(err_writer, use_color,
+                        "✗ Circular dependency detected involving task '{s}' (conditional)\n  Hint: Review your task dependencies to break the cycle\n\n",
+                        .{task_name},
+                    );
+                    error_count += 1;
+                } else {
+                    return err;
+                }
+            };
+        }
+
+        // Add optional dependencies for cycle detection (only if they exist)
+        for (task.deps_optional) |dep_name| {
+            if (config.tasks.contains(dep_name)) {
+                dag.addEdge(task_name, dep_name) catch |err| {
+                    if (err == error.CycleDetected) {
+                        try color.printError(err_writer, use_color,
+                            "✗ Circular dependency detected involving task '{s}' (optional)\n  Hint: Review your task dependencies to break the cycle\n\n",
+                            .{task_name},
+                        );
+                        error_count += 1;
+                    } else {
+                        return err;
+                    }
+                };
+            }
+        }
     }
 
     // Strict mode: check for unused tasks (tasks that are never dependencies)
@@ -265,6 +298,14 @@ pub fn cmdValidate(
         var dep_iter = config.tasks.iterator();
         while (dep_iter.next()) |entry| {
             for (entry.value_ptr.deps) |dep_name| {
+                try referenced_tasks.put(dep_name, {});
+            }
+            // Also mark conditional dependencies
+            for (entry.value_ptr.deps_if) |dep_if| {
+                try referenced_tasks.put(dep_if.task, {});
+            }
+            // Also mark optional dependencies
+            for (entry.value_ptr.deps_optional) |dep_name| {
                 try referenced_tasks.put(dep_name, {});
             }
         }

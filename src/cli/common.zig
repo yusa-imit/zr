@@ -76,8 +76,26 @@ pub fn buildDag(allocator: std.mem.Allocator, config: *const loader.Config) !dag
     while (it.next()) |entry| {
         const task = entry.value_ptr;
         try dag.addNode(task.name);
+
+        // Add regular dependencies
         for (task.deps) |dep| {
             try dag.addEdge(task.name, dep);
+        }
+
+        // Add conditional dependencies (only if condition evaluates to true)
+        const expr = @import("../config/expr.zig");
+        for (task.deps_if) |dep_if| {
+            const condition_met = expr.evalCondition(allocator, dep_if.condition, task.env) catch false;
+            if (condition_met) {
+                try dag.addEdge(task.name, dep_if.task);
+            }
+        }
+
+        // Add optional dependencies (only if task exists)
+        for (task.deps_optional) |dep| {
+            if (config.tasks.contains(dep)) {
+                try dag.addEdge(task.name, dep);
+            }
         }
     }
 

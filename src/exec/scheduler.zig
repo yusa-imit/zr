@@ -427,9 +427,26 @@ fn buildSubgraph(
         try subdag.addNode(name);
 
         const task = config.tasks.get(name) orelse continue;
+
+        // Add regular dependencies
         for (task.deps) |dep| {
             // Only include deps that are in our needed set
             if (needed.contains(dep)) {
+                try subdag.addEdge(name, dep);
+            }
+        }
+
+        // Add conditional dependencies (only if condition evaluates to true)
+        for (task.deps_if) |dep_if| {
+            const condition_met = expr.evalCondition(allocator, dep_if.condition, task.env) catch false;
+            if (condition_met and needed.contains(dep_if.task)) {
+                try subdag.addEdge(name, dep_if.task);
+            }
+        }
+
+        // Add optional dependencies (only if task exists and is in needed set)
+        for (task.deps_optional) |dep| {
+            if (config.tasks.contains(dep) and needed.contains(dep)) {
                 try subdag.addEdge(name, dep);
             }
         }
