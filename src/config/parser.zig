@@ -2922,3 +2922,154 @@ test "parse workflow with approval and on_failure" {
     try std.testing.expect(stage2.on_failure != null);
     try std.testing.expectEqualStrings("notify", stage2.on_failure.?);
 }
+
+test "parse deps_if from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_if = [{ task = "lint", condition = "platform.is_linux" }, { task = "test", condition = "env.CI == 'true'" }]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), config.tasks.count());
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqualStrings("build", task.name);
+    try std.testing.expectEqual(@as(usize, 2), task.deps_if.len);
+
+    // First conditional dep
+    try std.testing.expectEqualStrings("lint", task.deps_if[0].task);
+    try std.testing.expectEqualStrings("platform.is_linux", task.deps_if[0].condition);
+
+    // Second conditional dep
+    try std.testing.expectEqualStrings("test", task.deps_if[1].task);
+    try std.testing.expectEqualStrings("env.CI == 'true'", task.deps_if[1].condition);
+}
+
+test "parse deps_optional from toml" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.format]
+        \\cmd = "echo format"
+        \\
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_optional = ["format", "lint"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), config.tasks.count());
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqualStrings("build", task.name);
+    try std.testing.expectEqual(@as(usize, 2), task.deps_optional.len);
+
+    try std.testing.expectEqualStrings("format", task.deps_optional[0]);
+    try std.testing.expectEqualStrings("lint", task.deps_optional[1]);
+}
+
+test "parse combined deps, deps_serial, deps_if, deps_optional" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.install]
+        \\cmd = "echo install"
+        \\
+        \\[tasks.generate]
+        \\cmd = "echo generate"
+        \\
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.format]
+        \\cmd = "echo format"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps = ["install"]
+        \\deps_serial = ["generate"]
+        \\deps_if = [{ task = "lint", condition = "platform.is_linux" }]
+        \\deps_optional = ["format", "test"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 6), config.tasks.count());
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqualStrings("build", task.name);
+
+    // Check parallel deps
+    try std.testing.expectEqual(@as(usize, 1), task.deps.len);
+    try std.testing.expectEqualStrings("install", task.deps[0]);
+
+    // Check serial deps
+    try std.testing.expectEqual(@as(usize, 1), task.deps_serial.len);
+    try std.testing.expectEqualStrings("generate", task.deps_serial[0]);
+
+    // Check conditional deps
+    try std.testing.expectEqual(@as(usize, 1), task.deps_if.len);
+    try std.testing.expectEqualStrings("lint", task.deps_if[0].task);
+    try std.testing.expectEqualStrings("platform.is_linux", task.deps_if[0].condition);
+
+    // Check optional deps
+    try std.testing.expectEqual(@as(usize, 2), task.deps_optional.len);
+    try std.testing.expectEqualStrings("format", task.deps_optional[0]);
+    try std.testing.expectEqualStrings("test", task.deps_optional[1]);
+}
+
+test "parse deps_if with complex condition expressions" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.deploy_staging]
+        \\cmd = "echo deploy staging"
+        \\
+        \\[tasks.deploy_prod]
+        \\cmd = "echo deploy prod"
+        \\
+        \\[tasks.release]
+        \\cmd = "echo release"
+        \\deps_if = [{ task = "deploy_staging", condition = "env.BRANCH == 'staging' && platform.is_linux" }, { task = "deploy_prod", condition = "env.BRANCH == 'main' || env.FORCE_PROD == '1'" }]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("release").?;
+    try std.testing.expectEqual(@as(usize, 2), task.deps_if.len);
+
+    try std.testing.expectEqualStrings("deploy_staging", task.deps_if[0].task);
+    try std.testing.expectEqualStrings("env.BRANCH == 'staging' && platform.is_linux", task.deps_if[0].condition);
+
+    try std.testing.expectEqualStrings("deploy_prod", task.deps_if[1].task);
+    try std.testing.expectEqualStrings("env.BRANCH == 'main' || env.FORCE_PROD == '1'", task.deps_if[1].condition);
+}
+
+test "empty deps_if and deps_optional arrays" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\deps_if = []
+        \\deps_optional = []
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqual(@as(usize, 0), task.deps_if.len);
+    try std.testing.expectEqual(@as(usize, 0), task.deps_optional.len);
+}
