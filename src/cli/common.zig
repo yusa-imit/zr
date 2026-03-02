@@ -142,7 +142,7 @@ test "buildDag with conditional dependencies - condition true" {
 
     // Add task with conditional dep where condition is true
     try config.addTaskWithDepsIf("build", "echo build", &[_]types.ConditionalDep{
-        .{ .task = try allocator.dupe(u8, "lint"), .condition = try allocator.dupe(u8, "true") },
+        .{ .task = "lint", .condition = "true" },
     });
 
     var dag = try buildDag(allocator, &config);
@@ -168,7 +168,7 @@ test "buildDag with conditional dependencies - condition false" {
 
     // Add task with conditional dep where condition is false
     try config.addTaskWithDepsIf("build", "echo build", &[_]types.ConditionalDep{
-        .{ .task = try allocator.dupe(u8, "lint"), .condition = try allocator.dupe(u8, "false") },
+        .{ .task = "lint", .condition = "false" },
     });
 
     var dag = try buildDag(allocator, &config);
