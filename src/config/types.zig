@@ -716,6 +716,19 @@ pub const TaskTemplate = struct {
     }
 };
 
+/// Conditional dependency: a dependency that only runs if a condition is met.
+pub const ConditionalDep = struct {
+    /// Task name to depend on.
+    task: []const u8,
+    /// Condition expression (evaluates to boolean).
+    condition: []const u8,
+
+    pub fn deinit(self: *ConditionalDep, allocator: std.mem.Allocator) void {
+        allocator.free(self.task);
+        allocator.free(self.condition);
+    }
+};
+
 pub const Task = struct {
     name: []const u8,
     cmd: []const u8,
@@ -724,6 +737,10 @@ pub const Task = struct {
     deps: [][]const u8,
     /// Sequential dependencies: run in array order before this task, one at a time.
     deps_serial: [][]const u8,
+    /// Conditional dependencies: run only if condition evaluates to true.
+    deps_if: []ConditionalDep = &.{},
+    /// Optional dependencies: ignore if task doesn't exist, but respect if it does.
+    deps_optional: [][]const u8 = &.{},
     /// Environment variable overrides. Each entry is [key, value] (owned, duped).
     env: [][2][]const u8,
     /// Timeout in milliseconds. null means no timeout.
@@ -767,6 +784,14 @@ pub const Task = struct {
             allocator.free(dep);
         }
         allocator.free(self.deps_serial);
+        for (self.deps_if) |*dep| {
+            dep.deinit(allocator);
+        }
+        if (self.deps_if.len > 0) allocator.free(self.deps_if);
+        for (self.deps_optional) |dep| {
+            allocator.free(dep);
+        }
+        if (self.deps_optional.len > 0) allocator.free(self.deps_optional);
         for (self.env) |pair| {
             allocator.free(pair[0]);
             allocator.free(pair[1]);
