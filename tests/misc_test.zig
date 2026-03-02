@@ -2469,3 +2469,51 @@ test "855: cpu_affinity and numa_node combined in TOML (v1.13.0)" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "combined") != null);
 }
+
+test "856: cpu_affinity with empty array in TOML (v1.13.0)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.empty_affinity]
+        \\cmd = "echo empty"
+        \\cpu_affinity = []
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test that empty affinity array is valid
+    var result = try runZr(allocator, &.{ "--config", config, "run", "empty_affinity" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "857: cpu_affinity with whitespace in TOML (v1.13.0)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.whitespace_affinity]
+        \\cmd = "echo whitespace"
+        \\cpu_affinity = [ 0 ,  1  , 2 ]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test that whitespace is handled correctly
+    var result = try runZr(allocator, &.{ "--config", config, "run", "whitespace_affinity" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
