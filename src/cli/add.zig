@@ -38,6 +38,7 @@ pub fn cmdAdd(
 fn prompt(allocator: std.mem.Allocator, w: anytype, ew: anytype, use_color: bool, message: []const u8) !?[]const u8 {
     try color.printBold(w, use_color, "{s}", .{message});
     try w.writeAll(": ");
+    try w.flush(); // CRITICAL: flush before reading stdin on Windows
 
     const stdin = std.fs.File.stdin();
 
@@ -97,11 +98,13 @@ fn addTask(
     use_color: bool,
 ) !u8 {
     try color.printBold(w, use_color, "\n=== Add New Task ===\n\n", .{});
+    try w.flush(); // CRITICAL: flush header before prompts on Windows
 
     // Get task name
     const task_name = if (name_arg) |n| blk: {
         try color.printBold(w, use_color, "Task name: ", .{});
         try w.print("{s}\n", .{n});
+        try w.flush(); // CRITICAL: flush after printing pre-filled value on Windows
         break :blk try allocator.dupe(u8, n);
     } else blk: {
         const name = try prompt(allocator, w, ew, use_color, "Task name");
@@ -199,11 +202,13 @@ fn addWorkflow(
     use_color: bool,
 ) !u8 {
     try color.printBold(w, use_color, "\n=== Add New Workflow ===\n\n", .{});
+    try w.flush(); // CRITICAL: flush header before prompts on Windows
 
     // Get workflow name
     const workflow_name = if (name_arg) |n| blk: {
         try color.printBold(w, use_color, "Workflow name: ", .{});
         try w.print("{s}\n", .{n});
+        try w.flush(); // CRITICAL: flush after printing pre-filled value on Windows
         break :blk try allocator.dupe(u8, n);
     } else blk: {
         const name = try prompt(allocator, w, ew, use_color, "Workflow name");
@@ -223,6 +228,7 @@ fn addWorkflow(
 
     // Get stages
     try color.printBold(w, use_color, "Add stages (one per line, empty line to finish)\n", .{});
+    try w.flush(); // CRITICAL: flush before prompts on Windows
     var stages = std.ArrayList([]const u8){};
     defer {
         for (stages.items) |stage| {
@@ -307,11 +313,13 @@ fn addProfile(
     use_color: bool,
 ) !u8 {
     try color.printBold(w, use_color, "\n=== Add New Profile ===\n\n", .{});
+    try w.flush(); // CRITICAL: flush header before prompts on Windows
 
     // Get profile name
     const profile_name = if (name_arg) |n| blk: {
         try color.printBold(w, use_color, "Profile name: ", .{});
         try w.print("{s}\n", .{n});
+        try w.flush(); // CRITICAL: flush after printing pre-filled value on Windows
         break :blk try allocator.dupe(u8, n);
     } else blk: {
         const name = try prompt(allocator, w, ew, use_color, "Profile name");
@@ -333,6 +341,7 @@ fn addProfile(
 
     if (has_env) {
         try color.printBold(w, use_color, "Add environment variables (one per line, format: KEY=VALUE, empty line to finish)\n", .{});
+        try w.flush(); // CRITICAL: flush before prompts on Windows
         while (true) {
             const env_input = try prompt(allocator, w, ew, use_color, "Environment variable");
             if (env_input == null or env_input.?.len == 0) {
