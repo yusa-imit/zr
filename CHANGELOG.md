@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Worker threads set CPU affinity at start (if specified in task)
 
 ### Fixed
+- **Linux cross-compilation**: Replaced CPU_ZERO/CPU_SET macros with direct bit manipulation
+  - Fixes build failures on x86_64-linux-gnu and aarch64-linux-gnu targets
+  - CPU_ZERO/CPU_SET macros from sched.h cannot be translated by Zig's @cImport
+  - Uses @memset and manual bitset operations for cpu_set_t manipulation
 - **Child.Term handling**: Use switch statement for proper tagged union access in toolchain downloader
   - Fixes Zig 0.15.2 compatibility issue with `result.term.Exited` access pattern
   - Properly handles all exit status cases (Exited, Signaled, Stopped, Unknown)
