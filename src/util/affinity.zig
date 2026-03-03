@@ -5,6 +5,8 @@ const platform = @import("platform.zig");
 /// This ensures the thread runs only on the specified core.
 ///
 /// Returns error.UnsupportedPlatform if CPU affinity is not supported.
+/// Returns error.InvalidCpuId if cpu_id exceeds the system's CPU limit.
+/// Returns error.SetAffinityFailed if the system call fails.
 pub fn setThreadAffinity(cpu_id: u32) !void {
     const builtin = @import("builtin");
     const os_tag = builtin.os.tag;
@@ -32,9 +34,24 @@ fn setThreadAffinityLinux(cpu_id: u32) !void {
         @cInclude("pthread.h");
     });
 
+    // CPU_ZERO and CPU_SET macros cannot be translated by Zig's translate-c
+    // Use direct bit manipulation on cpu_set_t
+    // cpu_set_t is an opaque bitset - we manually set the bit for cpu_id
     var cpu_set: c.cpu_set_t = undefined;
-    c.CPU_ZERO(&cpu_set);
-    c.CPU_SET(@intCast(cpu_id), &cpu_set);
+    @memset(std.mem.asBytes(&cpu_set), 0);
+
+    // Set the bit for the target CPU
+    // cpu_set_t is typically an array of longs
+    const bits_per_byte = 8;
+    const cpu_set_bytes = std.mem.asBytes(&cpu_set);
+    const byte_index = cpu_id / bits_per_byte;
+    const bit_offset = @as(u3, @intCast(cpu_id % bits_per_byte));
+
+    if (byte_index >= cpu_set_bytes.len) {
+        return error.InvalidCpuId;
+    }
+
+    cpu_set_bytes[byte_index] |= @as(u8, 1) << bit_offset;
 
     const tid = c.pthread_self();
     const result = c.pthread_setaffinity_np(tid, @sizeOf(c.cpu_set_t), &cpu_set);
@@ -127,11 +144,23 @@ fn setThreadAffinityMaskLinux(cpu_ids: []const u32) !void {
         @cInclude("pthread.h");
     });
 
+    // CPU_ZERO and CPU_SET macros cannot be translated by Zig's translate-c
+    // Use direct bit manipulation on cpu_set_t
     var cpu_set: c.cpu_set_t = undefined;
-    c.CPU_ZERO(&cpu_set);
+    @memset(std.mem.asBytes(&cpu_set), 0);
+
+    const bits_per_byte = 8;
+    const cpu_set_bytes = std.mem.asBytes(&cpu_set);
 
     for (cpu_ids) |cpu_id| {
-        c.CPU_SET(@intCast(cpu_id), &cpu_set);
+        const byte_index = cpu_id / bits_per_byte;
+        const bit_offset = @as(u3, @intCast(cpu_id % bits_per_byte));
+
+        if (byte_index >= cpu_set_bytes.len) {
+            return error.InvalidCpuId;
+        }
+
+        cpu_set_bytes[byte_index] |= @as(u8, 1) << bit_offset;
     }
 
     const tid = c.pthread_self();
