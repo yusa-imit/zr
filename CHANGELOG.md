@@ -7,13 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-03-03
+
 ### Added
+- **Parallel Execution Optimizations**: CPU affinity and NUMA awareness for performance-critical tasks
+  - `cpu_affinity` field: Pin tasks to specific CPU cores (array of core IDs)
+  - `numa_node` field: Bind tasks to specific NUMA nodes
+  - Work-stealing deque (Chase-Lev algorithm) for future scheduler improvements
+  - NUMA topology detection (Linux + fallback for other platforms)
+  - Cross-platform CPU affinity support (Linux, Windows, macOS)
+  - Best-effort implementation: silently ignored if platform doesn't support affinity
+  - Use cases: Cache locality, avoiding CPU migration, reducing memory latency
+- **Documentation**: Comprehensive CPU affinity and NUMA guide in configuration.md
+  - Platform support matrix (Linux: full, Windows: full, macOS: advisory)
+  - Example configurations for database, web server, ML training
+  - Performance tuning guidance
+- **Integration tests**: 5 new tests for cpu_affinity/numa_node TOML parsing (tests 853-857)
 - **Partial version resolution**: `zr tools install` now supports partial version specifications
   - `node@20` resolves to latest 20.x.x version
   - `node@20.11` resolves to latest 20.11.x version
   - Currently supports Node.js (other toolchains coming soon)
   - Provides helpful error messages for unsupported toolchains
-- **Integration tests**: 4 new tests for partial version resolution (841/841 total)
+
+### Changed
+- Scheduler WorkerCtx now includes cpu_affinity and numa_node fields
+- Worker threads set CPU affinity at start (if specified in task)
 
 ### Fixed
 - **Child.Term handling**: Use switch statement for proper tagged union access in toolchain downloader
