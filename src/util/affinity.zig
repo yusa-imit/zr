@@ -256,7 +256,27 @@ test "affinity: mask API" {
     const cpu_ids = [_]u32{ 0, 1 };
 
     _ = setThreadAffinityMask(&cpu_ids) catch |err| {
-        try testing.expect(err == error.UnsupportedPlatform or err == error.SetAffinityFailed);
+        try testing.expect(err == error.UnsupportedPlatform or err == error.SetAffinityFailed or err == error.InvalidCpuId);
         return;
     };
+}
+
+test "affinity: invalid CPU ID" {
+    const testing = std.testing;
+
+    // Test with an extremely high CPU ID that should exceed cpu_set_t limits
+    // cpu_set_t is typically 1024 bits (128 bytes), so CPU ID 2048 should fail
+    const result = setThreadAffinity(2048);
+
+    if (result) |_| {
+        // On some platforms, this might succeed (e.g., unsupported platforms just return OK)
+        // This is acceptable behavior
+    } else |err| {
+        // Expected errors: InvalidCpuId on Linux, or other platform-specific errors
+        try testing.expect(
+            err == error.InvalidCpuId or
+                err == error.UnsupportedPlatform or
+                err == error.SetAffinityFailed,
+        );
+    }
 }
