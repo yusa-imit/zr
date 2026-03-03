@@ -64,6 +64,7 @@ description = "Run end-to-end tests"
 deps = ["build"]
 
 [tasks.test]
+cmd = "echo '✓ All tests passed'"
 description = "Run all tests"
 deps = ["test-unit", "test-integration", "test-e2e"]
 
@@ -88,6 +89,7 @@ cmd = "echo 'Running type checker...' && sleep 0.4"
 description = "Run type checker"
 
 [tasks.quality]
+cmd = "echo '✓ All quality checks passed'"
 description = "Run all quality checks"
 deps = ["lint", "format-check", "type-check"]
 
@@ -96,6 +98,7 @@ deps = ["lint", "format-check", "type-check"]
 # ============================================================================
 
 [tasks.ci]
+cmd = "echo '✓ CI pipeline completed successfully'"
 description = "Full CI pipeline (parallel checks)"
 deps = ["quality", "test", "security-scan"]
 
