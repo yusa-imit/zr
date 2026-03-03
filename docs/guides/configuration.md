@@ -56,6 +56,8 @@ cmd = "npm run build"
 | `max_concurrent` | integer | ❌ | 0 | Max concurrent instances (0 = unlimited) |
 | `max_cpu` | integer | ❌ | null | Max CPU cores for this task |
 | `max_memory` | integer | ❌ | null | Max memory in bytes |
+| `cpu_affinity` | array | ❌ | [] | Bind task to specific CPU cores (e.g., `[0, 1, 2]`) |
+| `numa_node` | integer | ❌ | null | Bind task to specific NUMA node |
 | `toolchain` | array | ❌ | [] | Required toolchains (e.g., `["node@20"]`) |
 | `tags` | array | ❌ | [] | Categorization tags |
 
@@ -147,6 +149,11 @@ cache = true  # skips if cmd + env unchanged and succeeded before
 cmd = "./process-large-data"
 max_cpu = 4  # max 4 cores
 max_memory = 4294967296  # 4GB
+
+[tasks.performance-critical]
+cmd = "./run-simulation"
+cpu_affinity = [0, 1]  # pin to cores 0-1
+numa_node = 0  # bind to NUMA node 0
 ```
 
 ### Toolchain Requirements
@@ -341,6 +348,51 @@ max_workers = 8  # max concurrent tasks
 max_total_memory = 17179869184  # 16GB total
 max_cpu_percent = 80  # 80% CPU usage cap
 ```
+
+### CPU Affinity and NUMA
+
+For performance-critical tasks, you can pin tasks to specific CPU cores or NUMA nodes:
+
+```toml
+[tasks.build]
+cmd = "make -j4"
+cpu_affinity = [0, 1, 2, 3]  # Run only on cores 0-3
+description = "Build on specific cores for cache locality"
+
+[tasks.database]
+cmd = "./run-db"
+numa_node = 0  # Bind to NUMA node 0 (closer memory)
+description = "Run database on NUMA node 0"
+
+[tasks.compute]
+cmd = "./train-model"
+cpu_affinity = [4, 5, 6, 7]
+numa_node = 1  # Cores 4-7 on NUMA node 1
+description = "Run ML training on isolated cores"
+```
+
+**CPU Affinity (`cpu_affinity`):**
+- Array of CPU core IDs (0-indexed)
+- Task will run on the first specified core (future: work-stealing across all cores)
+- Best effort: silently ignored if platform doesn't support affinity
+- Use case: Cache locality, avoiding CPU migration overhead
+
+**NUMA Node (`numa_node`):**
+- Single NUMA node ID
+- Currently parsed but not yet enforced (future: memory allocation on specific node)
+- Use case: Reduce memory access latency on multi-socket systems
+
+**Platform Support:**
+- Linux: Full support via `sched_setaffinity()`
+- Windows: Full support via `SetThreadAffinityMask()`
+- macOS: Advisory only (not guaranteed)
+- Other: Silently ignored
+
+**Example Use Cases:**
+1. **Database server**: Pin to node 0 with its local memory
+2. **Web server**: Pin to node 1 to avoid contention
+3. **Build tasks**: Pin to specific cores for reproducible cache behavior
+4. **ML training**: Isolate on dedicated cores to avoid interruptions
 
 ---
 

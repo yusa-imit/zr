@@ -10,6 +10,7 @@ const control = @import("control.zig");
 const toolchain_path = @import("../toolchain/path.zig");
 const toolchain_types = @import("../toolchain/types.zig");
 const toolchain_installer = @import("../toolchain/installer.zig");
+const affinity = @import("../util/affinity.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -171,6 +172,10 @@ const WorkerCtx = struct {
     use_color: bool,
     /// Optional task control for pause/cancel/retry operations.
     task_control: ?*control.TaskControl,
+    /// CPU affinity: list of CPU IDs this task can run on (v1.13.0).
+    cpu_affinity: ?[]const u32,
+    /// NUMA node ID this task should run on (v1.13.0).
+    numa_node: ?u32,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -225,6 +230,18 @@ fn workerFn(ctx: WorkerCtx) void {
         ctx.semaphore.post();
         ctx.allocator.free(ctx.task_name);
         if (ctx.cache_key) |k| ctx.allocator.free(k);
+    }
+
+    // Set CPU affinity if specified (v1.13.0)
+    if (ctx.cpu_affinity) |cpu_ids| {
+        if (cpu_ids.len > 0) {
+            // Use the first CPU in the affinity list
+            // In the future, work-stealing scheduler will use the full list
+            affinity.setThreadAffinity(cpu_ids[0]) catch {
+                // Affinity setting is best-effort, silently ignore errors
+                // (not all platforms support affinity)
+            };
+        }
     }
 
     // Build environment with toolchain PATH injection
@@ -835,6 +852,8 @@ pub fn run(
                 .monitor = sched_config.monitor,
                 .use_color = sched_config.use_color,
                 .task_control = sched_config.task_control,
+                .cpu_affinity = task.cpu_affinity,
+                .numa_node = task.numa_node,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
