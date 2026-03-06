@@ -11,6 +11,8 @@ const toolchain_path = @import("../toolchain/path.zig");
 const toolchain_types = @import("../toolchain/types.zig");
 const toolchain_installer = @import("../toolchain/installer.zig");
 const affinity = @import("../util/affinity.zig");
+const timeline = @import("timeline.zig");
+const replay = @import("replay.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -176,6 +178,10 @@ const WorkerCtx = struct {
     cpu_affinity: ?[]const u32,
     /// NUMA node ID this task should run on (v1.13.0).
     numa_node: ?u32,
+    /// Timeline for recording execution events (v1.14.0).
+    timeline_tracker: ?*timeline.Timeline,
+    /// Replay manager for capturing failure contexts (v1.14.0).
+    replay_mgr: ?*replay.ReplayManager,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -225,6 +231,11 @@ fn buildEnvWithToolchains(
 }
 
 fn workerFn(ctx: WorkerCtx) void {
+    // Record task started event (v1.14.0)
+    if (ctx.timeline_tracker) |tt| {
+        tt.recordEvent(.started, ctx.task_name, null) catch {};
+    }
+
     defer {
         if (ctx.task_semaphore) |ts| ts.post();
         ctx.semaphore.post();
@@ -320,6 +331,14 @@ fn workerFn(ctx: WorkerCtx) void {
         var attempt: u32 = 0;
         while (!proc_result.success and attempt < ctx.retry_max) : (attempt += 1) {
             retry_count += 1;
+
+            // Record retry event (v1.14.0)
+            if (ctx.timeline_tracker) |tt| {
+                const context_buf = std.fmt.allocPrint(ctx.allocator, "retry {d}/{d}", .{ retry_count, ctx.retry_max }) catch null;
+                defer if (context_buf) |buf| ctx.allocator.free(buf);
+                tt.recordEvent(.retry_started, ctx.task_name, context_buf) catch {};
+            }
+
             if (delay_ms > 0) {
                 std.Thread.sleep(delay_ms * std.time.ns_per_ms);
             }
@@ -365,6 +384,35 @@ fn workerFn(ctx: WorkerCtx) void {
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     };
+
+    // Record completion event (v1.14.0)
+    if (ctx.timeline_tracker) |tt| {
+        tt.recordEvent(.completed, ctx.task_name, null) catch {};
+    }
+
+    // Capture failure context for replay (v1.14.0)
+    if (!proc_result.success and ctx.replay_mgr != null) {
+        if (ctx.replay_mgr) |rm| {
+            // Get timeline events for this task
+            var task_events = if (ctx.timeline_tracker) |tt|
+                tt.getTaskEvents(ctx.allocator, ctx.task_name) catch std.ArrayList(timeline.TimelineEvent){}
+            else
+                std.ArrayList(timeline.TimelineEvent){};
+            defer task_events.deinit(ctx.allocator);
+
+            // Capture failure with individual parameters
+            rm.captureFailure(
+                ctx.task_name,
+                ctx.cmd,
+                ctx.cwd,
+                ctx.env,
+                proc_result.exit_code,
+                &[_]u8{}, // TODO: capture stdout from process.run
+                &[_]u8{}, // TODO: capture stderr from process.run
+                task_events.items,
+            ) catch {};
+        }
+    }
 
     // Only propagate failure to global flag if allow_failure is not set
     if (!proc_result.success and !ctx.allow_failure) {
@@ -698,6 +746,18 @@ pub fn run(
     var failed = std.atomic.Value(bool).init(false);
     var semaphore = std.Thread.Semaphore{ .permits = concurrency };
 
+    // Initialize timeline tracker (v1.14.0)
+    var timeline_tracker = timeline.Timeline.init(allocator);
+    defer timeline_tracker.deinit();
+
+    // Initialize replay manager (v1.14.0)
+    const replay_dir = ".zr/failures"; // Store failure contexts in .zr directory
+    var replay_mgr = replay.ReplayManager.init(allocator, replay_dir) catch {
+        // If init fails, continue without replay functionality
+        return error.BuildFailed;
+    };
+    defer replay_mgr.deinit();
+
     // Per-task semaphores for max_concurrent limits.
     // Keys are task name slices (pointing into config.tasks keys — not owned).
     // Values are heap-allocated semaphores.
@@ -854,6 +914,8 @@ pub fn run(
                 .task_control = sched_config.task_control,
                 .cpu_affinity = task.cpu_affinity,
                 .numa_node = task.numa_node,
+                .timeline_tracker = &timeline_tracker,
+                .replay_mgr = &replay_mgr,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
