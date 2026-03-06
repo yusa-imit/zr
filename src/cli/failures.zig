@@ -14,14 +14,11 @@ pub const FailuresOptions = struct {
 
 /// Execute the failures command to view captured failure reports.
 pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
-    var mgr = replay.ReplayManager.init(allocator, options.storage_dir) catch |err| {
-        if (err == error.FileNotFound) {
-            std.debug.print("No failure reports found. (Storage directory: {s})\n", .{options.storage_dir});
-            return 0;
-        }
-        return err;
-    };
+    var mgr = try replay.ReplayManager.init(allocator, options.storage_dir);
     defer mgr.deinit();
+
+    // Load failures from disk
+    try mgr.loadFromDisk();
 
     // Get all failures (or filtered by task)
     var failures_list = std.ArrayList(replay.FailureContext){};
@@ -75,20 +72,37 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
 
 /// Clear all captured failure reports.
 pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
-    var mgr = replay.ReplayManager.init(allocator, options.storage_dir) catch |err| {
+    var mgr = try replay.ReplayManager.init(allocator, options.storage_dir);
+    defer mgr.deinit();
+
+    // Load failures from disk first
+    try mgr.loadFromDisk();
+
+    const count = mgr.failures.count();
+
+    // Delete all JSON files from disk
+    const dir = std.fs.cwd().openDir(options.storage_dir, .{ .iterate = true }) catch |err| {
         if (err == error.FileNotFound) {
             std.debug.print("No failure reports to clear.\n", .{});
             return 0;
         }
         return err;
     };
-    defer mgr.deinit();
+    var dir_copy = dir;
+    defer dir_copy.close();
 
-    const count = mgr.failures.count();
+    var it = dir_copy.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
 
-    // Clear all failures
-    var it = mgr.failures.iterator();
-    while (it.next()) |entry| {
+        // Delete the file
+        try dir_copy.deleteFile(entry.name);
+    }
+
+    // Clear in-memory failures
+    var failures_it = mgr.failures.iterator();
+    while (failures_it.next()) |entry| {
         var ctx = entry.value_ptr.*;
         ctx.deinit(allocator);
     }

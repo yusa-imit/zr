@@ -209,6 +209,88 @@ pub const ReplayManager = struct {
 
         const key = try self.allocator.dupe(u8, task_name);
         try self.failures.put(key, context);
+
+        // Persist to disk
+        try self.saveToDisk(task_name, &context);
+    }
+
+    /// Save a single failure context to disk as JSON.
+    fn saveToDisk(self: *ReplayManager, task_name: []const u8, context: *const FailureContext) !void {
+        // Create storage directory if it doesn't exist
+        std.fs.cwd().makePath(self.storage_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+
+        // Generate filename: <task_name>-<timestamp>.json
+        const filename = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}/{s}-{d}.json",
+            .{ self.storage_dir, task_name, context.timestamp_ns },
+        );
+        defer self.allocator.free(filename);
+
+        // Write JSON to file
+        const file = try std.fs.cwd().createFile(filename, .{});
+        defer file.close();
+
+        // Build JSON string in memory first
+        var buf = std.ArrayList(u8){};
+        defer buf.deinit(self.allocator);
+        const buf_writer = buf.writer(self.allocator);
+
+        try buf_writer.writeAll("{\n");
+        try buf_writer.print("  \"task_name\": \"{s}\",\n", .{context.task_name});
+        try buf_writer.print("  \"cmd\": \"{s}\",\n", .{context.cmd});
+        if (context.cwd) |cwd| {
+            try buf_writer.print("  \"cwd\": \"{s}\",\n", .{cwd});
+        } else {
+            try buf_writer.writeAll("  \"cwd\": null,\n");
+        }
+        try buf_writer.print("  \"exit_code\": {d},\n", .{context.exit_code});
+        try buf_writer.print("  \"timestamp_ns\": {d},\n", .{context.timestamp_ns});
+        try buf_writer.print("  \"stdout\": \"{s}\",\n", .{context.stdout});
+        try buf_writer.print("  \"stderr\": \"{s}\"\n", .{context.stderr});
+        try buf_writer.writeAll("}\n");
+
+        // Write to file
+        try file.writeAll(buf.items);
+    }
+
+    /// Load all failure contexts from disk.
+    pub fn loadFromDisk(self: *ReplayManager) !void {
+        const dir = std.fs.cwd().openDir(self.storage_dir, .{ .iterate = true }) catch |err| {
+            if (err == error.FileNotFound) return; // No failures yet
+            return err;
+        };
+        var dir_copy = dir;
+        defer dir_copy.close();
+
+        var it = dir_copy.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
+
+            // Extract task name from filename (before first '-')
+            const dash_pos = std.mem.indexOf(u8, entry.name, "-") orelse continue;
+            const task_name = entry.name[0..dash_pos];
+
+            // For now, just track that we have a failure
+            // Full deserialization can be implemented later if needed
+            const key = try self.allocator.dupe(u8, task_name);
+            // Create minimal context (actual file will be read on demand)
+            const minimal_context = FailureContext{
+                .task_name = try self.allocator.dupe(u8, task_name),
+                .cmd = try self.allocator.dupe(u8, ""),
+                .cwd = null,
+                .env = null,
+                .exit_code = 1,
+                .stdout = try self.allocator.dupe(u8, ""),
+                .stderr = try self.allocator.dupe(u8, ""),
+                .timestamp_ns = 0,
+                .timeline_events = try self.allocator.alloc(timeline.TimelineEvent, 0),
+            };
+            try self.failures.put(key, minimal_context);
+        }
     }
 
     /// Get a failure context by task name.
