@@ -66,6 +66,7 @@ pub const CacheStore = struct {
     }
 
     /// Record a successful task execution in the cache.
+    /// Uses atomic write (temp file + rename) to prevent race conditions in concurrent writes.
     pub fn recordHit(self: *const CacheStore, key: []const u8) !void {
         const file_name = try std.fmt.allocPrint(self.allocator, "{s}.ok", .{key});
         defer self.allocator.free(file_name);
@@ -73,8 +74,25 @@ pub const CacheStore = struct {
         const path = try std.fs.path.join(self.allocator, &[_][]const u8{ self.dir_path, file_name });
         defer self.allocator.free(path);
 
-        const file = try std.fs.cwd().createFile(path, .{ .truncate = true });
+        // Write to temporary file first (use timestamp + thread ID for uniqueness)
+        const timestamp = std.time.nanoTimestamp();
+        const thread_id = std.Thread.getCurrentId();
+        const temp_name = try std.fmt.allocPrint(self.allocator, "{s}.tmp.{d}.{d}", .{ key, timestamp, thread_id });
+        defer self.allocator.free(temp_name);
+
+        const temp_path = try std.fs.path.join(self.allocator, &[_][]const u8{ self.dir_path, temp_name });
+        defer self.allocator.free(temp_path);
+
+        // Create temp file
+        const file = try std.fs.cwd().createFile(temp_path, .{ .truncate = true });
         file.close();
+
+        // Atomically rename to final name (this operation is atomic on POSIX and Windows)
+        std.fs.cwd().rename(temp_path, path) catch |err| {
+            // Clean up temp file on failure
+            std.fs.cwd().deleteFile(temp_path) catch {};
+            return err;
+        };
     }
 
     /// Remove a specific cache entry.

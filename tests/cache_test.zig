@@ -764,8 +764,42 @@ test "660: cache with very rapid sequential runs maintains consistency" {
 }
 
 test "690: cache with concurrent writes from parallel tasks maintains integrity" {
-    // SKIP: Flaky test due to race condition in concurrent cache writes
-    // Fails intermittently in CI when cache state becomes inconsistent under load
-    // TODO: Fix race condition in cache implementation, tracked in issue #18
-    return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.task1]
+        \\cmd = "echo task1"
+        \\cache = true
+        \\
+        \\[tasks.task2]
+        \\cmd = "echo task2"
+        \\cache = true
+        \\
+        \\[tasks.task3]
+        \\cmd = "echo task3"
+        \\cache = true
+        \\
+        \\[tasks.parallel]
+        \\cmd = "echo parallel"
+        \\deps = ["task1", "task2", "task3"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "parallel", "--jobs", "3" }, tmp_path);
+    defer result.deinit();
+
+    // Should handle concurrent cache writes without corruption
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Run again - should hit cache for all tasks (atomic write prevents race condition)
+    var result2 = try runZr(allocator, &.{ "--config", config, "run", "parallel", "--jobs", "3" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
 }
