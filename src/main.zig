@@ -60,6 +60,7 @@ const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
 const add_cmd = @import("cli/add.zig");
+const failures_cmd = @import("cli/failures.zig");
 const mcp_server = @import("mcp/server.zig");
 const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
@@ -480,7 +481,7 @@ fn run(
         "doctor",     "setup",      "env",        "export",
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
-        "lsp",        "add",
+        "lsp",        "add",        "failures",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -854,6 +855,36 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "add")) {
         const add_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return add_cmd.cmdAdd(allocator, add_args, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "failures")) {
+        const failures_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        var opts = failures_cmd.FailuresOptions{
+            .use_color = effective_color,
+        };
+
+        // Parse subcommand: `failures list` (default) or `failures clear`
+        var subcommand: []const u8 = "list";
+        var failures_opts_args = failures_args;
+        if (failures_args.len > 0) {
+            if (std.mem.eql(u8, failures_args[0], "clear") or std.mem.eql(u8, failures_args[0], "list")) {
+                subcommand = failures_args[0];
+                failures_opts_args = failures_args[1..];
+            }
+        }
+
+        // Parse options
+        for (failures_opts_args) |arg| {
+            if (std.mem.startsWith(u8, arg, "--task=")) {
+                opts.task = arg["--task=".len..];
+            } else if (std.mem.startsWith(u8, arg, "--storage-dir=")) {
+                opts.storage_dir = arg["--storage-dir=".len..];
+            }
+        }
+
+        if (std.mem.eql(u8, subcommand, "clear")) {
+            return failures_cmd.cmdFailuresClear(allocator, opts);
+        } else {
+            return failures_cmd.cmdFailures(allocator, opts);
+        }
     }
 
     // This should never be reached due to alias expansion logic above
@@ -925,6 +956,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
     try w.print("  estimate <task>        Estimate task duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
+    try w.print("  failures [list|clear]  View or clear captured task failure reports\n", .{});
     try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
     try w.print("  mcp serve              Start MCP server for Claude Code/Cursor integration\n", .{});
     try w.print("  lsp                    Start LSP server for VS Code/Neovim integration\n", .{});
