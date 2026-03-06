@@ -882,3 +882,105 @@ test "854: example workflow with anonymous stages from docker-kubernetes" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "docker test") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "docker push") != null);
 }
+
+test "860: inline workflow stages syntax is not supported (parser limitation)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Test that inline stages array syntax is NOT recognized by parser
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[workflows.ci]
+        \\description = "CI pipeline"
+        \\stages = [
+        \\    { name = "test", tasks = ["test"] },
+        \\    { name = "build", tasks = ["build"] }
+        \\]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Parser should not recognize inline stages syntax
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+    // Should fail validation (no stages detected)
+    try std.testing.expect(result.exit_code == 1);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "no stages defined") != null);
+}
+
+test "861: task without cmd field is not recognized (parser limitation)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Test that dependency-only tasks (without cmd) are not recognized
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.all-checks]
+        \\description = "Run all checks"
+        \\deps = ["test", "build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Parser should not recognize task without cmd field
+    var result = try runZr(allocator, &.{ "--config", config, "run", "all-checks" }, tmp_path);
+    defer result.deinit();
+    // Should fail (task not found)
+    try std.testing.expect(result.exit_code == 1);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "no such task") != null);
+}
+
+test "862: workaround for dependency-only task with echo command" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Test workaround: dependency-only task with dummy echo cmd
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.all-checks]
+        \\description = "Run all checks"
+        \\cmd = "echo 'All checks completed'"
+        \\deps = ["test", "build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Should work with workaround
+    var result = try runZr(allocator, &.{ "--config", config, "run", "all-checks" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    // Dependencies should execute
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "All checks completed") != null);
+}
