@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.13.0-green.svg)](https://github.com/yusa-imit/zr/releases)
+[![Version](https://img.shields.io/badge/version-1.14.0-green.svg)](https://github.com/yusa-imit/zr/releases)
 
 ---
 
@@ -132,6 +132,7 @@ zr list                    # Show all tasks
 zr graph <task>            # Visualize dependency graph
 zr watch <task> [paths]    # Re-run on file changes
 zr interactive             # TUI task picker
+zr failures [list|clear]   # View/clear task failure reports (v1.14.0+)
 zr --dry-run run <task>    # Preview execution plan
 ```
 
