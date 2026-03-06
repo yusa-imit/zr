@@ -72,6 +72,7 @@ cmd = "zig build -Dtarget=x86_64-windows -Doptimize=ReleaseSafe"
 
 [tasks.build-all-platforms]
 description = "Build for all major platforms"
+cmd = "echo 'All platform builds completed'"
 deps = [
     "build-linux-x64",
     "build-linux-arm64",
@@ -107,25 +108,41 @@ cmd = "zig build -Doptimize=ReleaseSafe --prefix ~/.local"
 
 [workflows.ci]
 description = "Full CI pipeline"
-stages = [
-    { name = "format", tasks = ["fmt-check"] },
-    { name = "test", tasks = ["test"] },
-    { name = "build", tasks = ["build-release-safe"] }
-]
+
+[[workflows.ci.stages]]
+name = "format"
+tasks = ["fmt-check"]
+
+[[workflows.ci.stages]]
+name = "test"
+tasks = ["test"]
+
+[[workflows.ci.stages]]
+name = "build"
+tasks = ["build-release-safe"]
 
 [workflows.pre-commit]
 description = "Pre-commit checks"
-stages = [
-    { name = "format", tasks = ["fmt"] },
-    { name = "test", tasks = ["test"], fail_fast = true }
-]
+
+[[workflows.pre-commit.stages]]
+name = "format"
+tasks = ["fmt"]
+
+[[workflows.pre-commit.stages]]
+name = "test"
+tasks = ["test"]
+fail_fast = true
 
 [workflows.release]
 description = "Release build for all platforms"
-stages = [
-    { name = "verify", tasks = ["fmt-check", "test"] },
-    { name = "build", tasks = ["build-all-platforms"] }
-]
+
+[[workflows.release.stages]]
+name = "verify"
+tasks = ["fmt-check", "test"]
+
+[[workflows.release.stages]]
+name = "build"
+tasks = ["build-all-platforms"]
 
 # Cache configuration
 [cache]

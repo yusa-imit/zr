@@ -68,22 +68,34 @@ cmd = "cargo outdated"
 
 [workflows.ci]
 description = "Complete CI pipeline"
-stages = [
-  { tasks = ["fmt-check", "clippy"], parallel = true },
-  { tasks = ["check"] },
-  { tasks = ["test"] },
-  { tasks = ["build-release"] }
-]
+
+[[workflows.ci.stages]]
+tasks = ["fmt-check", "clippy"]
+parallel = true
+
+[[workflows.ci.stages]]
+tasks = ["check"]
+
+[[workflows.ci.stages]]
+tasks = ["test"]
+
+[[workflows.ci.stages]]
+tasks = ["build-release"]
 
 [workflows.pre-commit]
 description = "Run before committing"
-stages = [
-  { tasks = ["fmt", "clippy", "test"], parallel = false }
-]
+
+[[workflows.pre-commit.stages]]
+tasks = ["fmt", "clippy", "test"]
+parallel = false
 
 [workflows.full-check]
 description = "Comprehensive quality checks"
-stages = [
-  { tasks = ["fmt-check", "clippy", "audit"], parallel = true },
-  { tasks = ["test", "bench"], parallel = false }
-]
+
+[[workflows.full-check.stages]]
+tasks = ["fmt-check", "clippy", "audit"]
+parallel = true
+
+[[workflows.full-check.stages]]
+tasks = ["test", "bench"]
+parallel = false

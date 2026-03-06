@@ -61,12 +61,18 @@ cache = false
 
 [workflows.ci]
 description = "Full CI pipeline"
-stages = [
-    { tasks = ["clean"] },
-    { tasks = ["test"] },
-    { tasks = ["coverage-check"] },
-    { tasks = ["build"] }
-]
+
+[[workflows.ci.stages]]
+tasks = ["clean"]
+
+[[workflows.ci.stages]]
+tasks = ["test"]
+
+[[workflows.ci.stages]]
+tasks = ["coverage-check"]
+
+[[workflows.ci.stages]]
+tasks = ["build"]
 
 # Profiles for different environments
 

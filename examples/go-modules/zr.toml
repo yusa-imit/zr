@@ -77,23 +77,43 @@ echo "Built for linux, darwin, and windows"
 
 [workflows.ci]
 description = "Full CI pipeline"
-stages = [
-    { name = "setup", tasks = ["mod-tidy"] },
-    { name = "check", tasks = ["fmt", "vet", "lint"], fail_fast = true },
-    { name = "test", tasks = ["test-coverage"] },
-    { name = "build", tasks = ["build"] }
-]
+
+[[workflows.ci.stages]]
+name = "setup"
+tasks = ["mod-tidy"]
+
+[[workflows.ci.stages]]
+name = "check"
+tasks = ["fmt", "vet", "lint"]
+fail_fast = true
+
+[[workflows.ci.stages]]
+name = "test"
+tasks = ["test-coverage"]
+
+[[workflows.ci.stages]]
+name = "build"
+tasks = ["build"]
 
 [workflows.pre-commit]
 description = "Pre-commit checks (fast)"
-stages = [
-    { name = "format", tasks = ["fmt"] },
-    { name = "check", tasks = ["vet", "test"], fail_fast = true }
-]
+
+[[workflows.pre-commit.stages]]
+name = "format"
+tasks = ["fmt"]
+
+[[workflows.pre-commit.stages]]
+name = "check"
+tasks = ["vet", "test"]
+fail_fast = true
 
 [workflows.release]
 description = "Release workflow"
-stages = [
-    { name = "verify", tasks = ["mod-tidy", "test-verbose", "vet"] },
-    { name = "build", tasks = ["build-all"] }
-]
+
+[[workflows.release.stages]]
+name = "verify"
+tasks = ["mod-tidy", "test-verbose", "vet"]
+
+[[workflows.release.stages]]
+name = "build"
+tasks = ["build-all"]

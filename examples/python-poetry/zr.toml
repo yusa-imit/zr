@@ -44,17 +44,23 @@ deps = ["install"]
 
 [workflows.ci]
 description = "Complete CI pipeline"
-stages = [
-  { tasks = ["install"] },
-  { tasks = ["format-check", "lint", "typecheck"], parallel = true },
-  { tasks = ["test-cov"] }
-]
+
+[[workflows.ci.stages]]
+tasks = ["install"]
+
+[[workflows.ci.stages]]
+tasks = ["format-check", "lint", "typecheck"]
+parallel = true
+
+[[workflows.ci.stages]]
+tasks = ["test-cov"]
 
 [workflows.check]
 description = "Quick local checks before commit"
-stages = [
-  { tasks = ["format", "lint", "typecheck", "test"], parallel = false }
-]
+
+[[workflows.check.stages]]
+tasks = ["format", "lint", "typecheck", "test"]
+parallel = false
 
 [tasks.clean]
 description = "Clean build artifacts and cache"
