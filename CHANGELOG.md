@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (v1.14.0 - In Progress)
+## [1.14.0] - 2026-03-06
+
+### Added
 - **Enhanced Error Diagnostics**: Comprehensive diagnostic framework for debugging task failures
-  - Expression stack traces: `expr_diagnostics.zig` tracks evaluation context with line/column info
-  - Task execution timeline: `timeline.zig` records all events (queued, started, paused, resumed, completed, skipped, cancelled, retry, timeout, memory_limit)
-  - Failure replay mode: `replay.zig` captures full task failure context (cmd, env, stdout, stderr, timeline)
-  - DiagnosticError with formatted stack traces for expression evaluation failures
-  - Timeline statistics: total duration, task count, longest task, retry/skip/cancel/timeout counts
-  - FailureContext with formatReport() for diagnostic output
-- **Tests**: 10 new unit tests (743/751 total, 8 skipped), all 859 integration tests passing
+  - **Timeline tracking**: Records all task execution events (started, completed, retry_started, skipped, cancelled, timeout, memory_limit)
+  - **Failure replay mode**: Captures full context for failed tasks (cmd, cwd, env, exit code, timeline events)
+  - **CLI command**: `zr failures [list|clear]` to view and manage captured failure reports
+    - `--task=<name>` to filter by specific task
+    - `--storage-dir=<path>` to customize storage location (default: `.zr/failures`)
+  - **Expression diagnostics**: Stack traces for expression evaluation failures with line/column info
+  - **Timeline analytics**: Duration analysis, retry/skip/cancel/timeout counts, longest task identification
+- **Integration**: Timeline and replay managers automatically initialized in scheduler
+  - Zero configuration - works out of the box for all task executions
+  - Failure contexts captured on task failure with full diagnostic information
+- **Tests**: 10 new unit tests (743/751 total, 8 skipped), 3 new integration tests (865 total, 100% pass rate for diagnostics tests)
 
 ## [1.13.0] - 2026-03-03
 
