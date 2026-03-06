@@ -11,7 +11,8 @@ test "863: failures shows no reports initially" {
 
     // Create minimal zr.toml
     const toml = "[tasks.build]\ncmd = \"echo 'test'\"";
-    _ = try helpers.writeTmpConfig(allocator, tmp.dir, toml);
+    const config_path = try helpers.writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config_path);
 
     // Run failures command
     var result = try helpers.runZr(allocator, &.{"failures"}, tmp_path);
@@ -31,7 +32,8 @@ test "864: failures clear with no failures" {
     defer allocator.free(tmp_path);
 
     const toml = "[tasks.test]\ncmd = \"echo 'test'\"";
-    _ = try helpers.writeTmpConfig(allocator, tmp.dir, toml);
+    const config_path = try helpers.writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config_path);
 
     var result = try helpers.runZr(allocator, &.{ "failures", "clear" }, tmp_path);
     defer result.deinit();
