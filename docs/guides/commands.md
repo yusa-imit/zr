@@ -811,6 +811,50 @@ zr estimate build
 
 ---
 
+### `failures`
+
+View and manage captured task failure reports.
+
+```bash
+zr failures [subcommand] [OPTIONS]
+```
+
+**Subcommands:**
+- `list` (default) — View all captured failure reports
+- `clear` — Remove all failure reports
+
+**Examples:**
+```bash
+# View all failure reports
+zr failures
+zr failures list
+
+# Filter by task name
+zr failures --task build
+
+# Clear all failure reports
+zr failures clear
+
+# Custom storage directory
+zr failures --storage-dir /path/to/failures
+```
+
+**Options:**
+- `--task <name>` — Filter failures by task name
+- `--storage-dir <path>` — Custom storage directory (default: `.zr/failures`)
+
+**Failure Report Contents:**
+Each failure report includes:
+- Task name and execution timestamp
+- Exit code and command that was run
+- Working directory and environment variables
+- Timeline events (queued, started, completed)
+- Duration and retry information (if applicable)
+
+**Note:** Failure reports are automatically captured when tasks fail and stored in `.zr/failures/` as JSON files. Use this command to review failures for debugging or post-mortem analysis.
+
+---
+
 ### `lint`
 
 Validate architecture constraints.
