@@ -2,7 +2,7 @@
 name: zig-developer
 description: Zig 코드 구현 전문 에이전트. 새 기능 구현, 빌드 오류 해결, 성능 최적화가 필요할 때 사용한다.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: sonnet
+model: haiku
 ---
 
 You are a Zig development specialist working on the **zr** project — a universal task runner & workflow manager CLI written in Zig 0.15.2.
