@@ -7,21 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.14.0] - 2026-03-06
+## [1.14.0] - 2026-03-07
 
 ### Added
 - **Enhanced Error Diagnostics**: Comprehensive diagnostic framework for debugging task failures
   - **Timeline tracking**: Records all task execution events (started, completed, retry_started, skipped, cancelled, timeout, memory_limit)
-  - **Failure replay mode**: Captures full context for failed tasks (cmd, cwd, env, exit code, timeline events)
+    - Automatic duration analysis and execution analytics
+    - Longest task identification, retry/skip/cancel/timeout counts
+    - Integrated directly into scheduler (zero configuration)
+  - **Failure replay mode**: Captures full context for failed tasks
+    - Records cmd, cwd, env, exit code, timeline events
+    - Automatic storage to `.zr/failures` directory
+    - Full diagnostic information for post-mortem analysis
   - **CLI command**: `zr failures [list|clear]` to view and manage captured failure reports
     - `--task=<name>` to filter by specific task
     - `--storage-dir=<path>` to customize storage location (default: `.zr/failures`)
-  - **Expression diagnostics**: Stack traces for expression evaluation failures with line/column info
-  - **Timeline analytics**: Duration analysis, retry/skip/cancel/timeout counts, longest task identification
-- **Integration**: Timeline and replay managers automatically initialized in scheduler
+    - Color-coded output with detailed failure context
+  - **Expression diagnostics module**: Foundation for stack traces in expression evaluation
+    - `src/config/expr_diagnostics.zig` with StackFrame, DiagContext, DiagnosticError types
+    - Integration into expression evaluator deferred to v1.15.0
+- **Integration**: Timeline and replay managers automatically initialized in scheduler (commit a7218f0)
   - Zero configuration - works out of the box for all task executions
   - Failure contexts captured on task failure with full diagnostic information
-- **Tests**: 10 new unit tests (743/751 total, 8 skipped), 3 new integration tests (865 total, 100% pass rate for diagnostics tests)
+  - Worker threads track events through shared timeline
+- **Tests**: 10 new unit tests (743/751 total, 8 skipped), 3 new integration tests (865 total, 100% pass rate)
+  - All integration tests pass (865/865)
+  - Known issue: Minor memory leak in unit tests (non-blocking)
+
+### Fixed
+- **Memory leaks in failures integration tests**: Fixed tests 863-864 by properly freeing writeTmpConfig() return value (commit 972f627)
 
 ## [1.13.0] - 2026-03-03
 

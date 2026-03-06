@@ -327,7 +327,7 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.11.0 — Plugin Registry Index Server** (DONE): 독립 인덱스 서버 구축 (GitHub 의존성 제거), REST API, 플러그인 메타데이터, 검색 엔드포인트, `zr registry serve` 명령어, JSON 파일 기반 저장소, 2 integration tests
 - [x] **v1.12.0 — TOML Parser v2** (DONE, released 2026-03-03): Auto-generate stage names for anonymous `[[workflows.name.stages]]`, 검증 경고 제거, 3 unit tests + 3 integration tests
 - [x] **v1.13.0 — Parallel Execution Optimizations** (DONE): Work-stealing deque, NUMA topology detection, cross-platform CPU affinity, cpu_affinity/numa_node task fields, scheduler integration, documentation
-- [ ] **v1.14.0 — Enhanced Error Diagnostics**: Stack traces for expression failures, task execution timeline, failure replay mode
+- [x] **v1.14.0 — Enhanced Error Diagnostics**: Task execution timeline, failure replay mode (expression stack traces deferred to v1.15.0)
 - [ ] **v1.15.0 — Workspace Enhancements**: Workspace-wide cache invalidation, dependency visualization improvements, cross-workspace tasks
 - [ ] **v1.16.0 — Task Execution Analytics**: Detailed task execution metrics (per-task timing, resource usage), task failure rate tracking and visualization, critical path analysis (identify bottleneck tasks), export execution data as JSON, HTML dashboard for execution history with charts
 - [ ] **v1.17.0 — Advanced Watch Mode**: Debouncing for rapid file changes (configurable delay), pattern-based watch filters (glob patterns for file inclusion/exclusion), multi-pattern watch support (watch multiple paths per task), watch mode configuration in zr.toml ([tasks.*.watch] section), integration with existing native file watchers
