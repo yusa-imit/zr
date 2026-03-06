@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v1.14.0 - In Progress)
+- **Enhanced Error Diagnostics**: Comprehensive diagnostic framework for debugging task failures
+  - Expression stack traces: `expr_diagnostics.zig` tracks evaluation context with line/column info
+  - Task execution timeline: `timeline.zig` records all events (queued, started, paused, resumed, completed, skipped, cancelled, retry, timeout, memory_limit)
+  - Failure replay mode: `replay.zig` captures full task failure context (cmd, env, stdout, stderr, timeline)
+  - DiagnosticError with formatted stack traces for expression evaluation failures
+  - Timeline statistics: total duration, task count, longest task, retry/skip/cancel/timeout counts
+  - FailureContext with formatReport() for diagnostic output
+- **Tests**: 10 new unit tests (743/751 total, 8 skipped), all 859 integration tests passing
+
 ## [1.13.0] - 2026-03-03
 
 ### Added
