@@ -800,10 +800,20 @@ test "690: cache with concurrent writes from parallel tasks maintains integrity"
     defer result.deinit();
 
     // Should handle concurrent cache writes without corruption
-    try std.testing.expect(result.exit_code == 0);
+    if (result.exit_code != 0) {
+        std.debug.print("\nTest 690 first run failed with exit code {d}\n", .{result.exit_code});
+        std.debug.print("stdout: {s}\n", .{result.stdout});
+        std.debug.print("stderr: {s}\n", .{result.stderr});
+    }
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
     // Run again - should hit cache for all tasks
     var result2 = try runZr(allocator, &.{ "--config", config, "run", "parallel", "--jobs", "3" }, tmp_path);
     defer result2.deinit();
-    try std.testing.expect(result2.exit_code == 0);
+    if (result2.exit_code != 0) {
+        std.debug.print("\nTest 690 second run failed with exit code {d}\n", .{result2.exit_code});
+        std.debug.print("stdout: {s}\n", .{result2.stdout});
+        std.debug.print("stderr: {s}\n", .{result2.stderr});
+    }
+    try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
 }
