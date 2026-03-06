@@ -3,6 +3,7 @@ const sailor = @import("sailor");
 const loader = @import("config/loader.zig");
 const parser = @import("config/parser.zig");
 const expr = @import("config/expr.zig");
+const expr_diagnostics = @import("config/expr_diagnostics.zig");
 const matrix = @import("config/matrix.zig");
 const dag_mod = @import("graph/dag.zig");
 const topo_sort = @import("graph/topo_sort.zig");
@@ -101,6 +102,7 @@ comptime {
     _ = loader;
     _ = parser;
     _ = expr;
+    _ = expr_diagnostics;
     _ = matrix;
     _ = constraints_mod;
     _ = dag_mod;

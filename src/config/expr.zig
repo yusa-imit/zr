@@ -1,8 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const semver_util = @import("../util/semver.zig");
+const expr_diagnostics = @import("expr_diagnostics.zig");
 
 pub const EvalError = error{ OutOfMemory, InvalidExpression };
+pub const DiagContext = expr_diagnostics.DiagContext;
+pub const StackFrame = expr_diagnostics.StackFrame;
+pub const DiagnosticError = expr_diagnostics.DiagnosticError;
 
 /// Runtime execution state for tasks and stages.
 /// Used to evaluate expressions like stages['name'].success or tasks['name'].duration.
