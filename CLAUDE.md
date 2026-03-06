@@ -329,6 +329,9 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.13.0 — Parallel Execution Optimizations** (DONE): Work-stealing deque, NUMA topology detection, cross-platform CPU affinity, cpu_affinity/numa_node task fields, scheduler integration, documentation
 - [ ] **v1.14.0 — Enhanced Error Diagnostics**: Stack traces for expression failures, task execution timeline, failure replay mode
 - [ ] **v1.15.0 — Workspace Enhancements**: Workspace-wide cache invalidation, dependency visualization improvements, cross-workspace tasks
+- [ ] **v1.16.0 — Task Execution Analytics**: Detailed task execution metrics (per-task timing, resource usage), task failure rate tracking and visualization, critical path analysis (identify bottleneck tasks), export execution data as JSON, HTML dashboard for execution history with charts
+- [ ] **v1.17.0 — Advanced Watch Mode**: Debouncing for rapid file changes (configurable delay), pattern-based watch filters (glob patterns for file inclusion/exclusion), multi-pattern watch support (watch multiple paths per task), watch mode configuration in zr.toml ([tasks.*.watch] section), integration with existing native file watchers
+- [ ] **v1.18.0 — Conditional Task Execution**: Extended expression engine with additional predicates (git.branch, git.tag, git.dirty), task skip conditions (skip_if field), conditional outputs (output_if), improved error diagnostics for failed conditions
 
 ### 마일스톤 수립 프로세스
 
@@ -634,7 +637,7 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. Performance features are opt-in. Current CLI mode unaffected. TUI mode can benefit from lazy rendering when displaying large graphs.
 
-### v1.4.0 — Advanced Input & Forms (status: READY)
+### v1.4.0 — Advanced Input & Forms (status: DONE)
 
 **sailor v1.4.0 released** (2026-03-03) — Form widgets and input validation
 
@@ -650,9 +653,9 @@ gh issue create --repo yusa-imit/sailor \
   - Validators useful for validating task parameters in TUI mode
   - Checkbox/RadioGroup for task selection and filtering UI
   - Select widget for choosing targets, toolchains, cache backends
-- [ ] `build.zig.zon`에 sailor v1.4.0 의존성 업데이트
+- [x] `build.zig.zon`에 sailor v1.4.0 의존성 업데이트 (2026-03-06, commit dc3d07d)
 - [ ] (Optional) Add interactive config editor TUI using Form widget — deferred to future enhancements
 - [ ] (Optional) Use Select widget for task picker in TUI mode — deferred to future enhancements
-- [ ] 기존 테스트 전체 통과 확인
+- [x] 기존 테스트 전체 통과 확인 (733 unit, 859 integration)
 
 **Note**: Non-breaking upgrade. Form features are opt-in. Current CLI/TUI implementation works without changes. These features enable future interactive configuration and task selection UIs.
