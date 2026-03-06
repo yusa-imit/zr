@@ -12,6 +12,7 @@ const graph_ascii = @import("graph/ascii.zig");
 const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const timeline = @import("exec/timeline.zig");
+const replay = @import("exec/replay.zig");
 const color = @import("output/color.zig");
 const progress = @import("output/progress.zig");
 const monitor = @import("output/monitor.zig");
@@ -113,6 +114,7 @@ comptime {
     _ = scheduler;
     _ = process;
     _ = timeline;
+    _ = replay;
     _ = color;
     _ = progress;
     _ = monitor;
