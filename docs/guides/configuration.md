@@ -185,21 +185,21 @@ Workflows organize tasks into sequential stages with advanced control flow.
 ### Basic Workflow
 
 ```toml
-[workflow.ci]
+[workflows.ci]
 description = "Continuous integration pipeline"
 
-[[workflow.ci.stages]]
+[[workflows.ci.stages]]
 name = "prepare"
 tasks = ["install", "lint"]
 parallel = true
 
-[[workflow.ci.stages]]
+[[workflows.ci.stages]]
 name = "test"
 tasks = ["test-unit", "test-integration"]
 parallel = true
 fail_fast = true
 
-[[workflow.ci.stages]]
+[[workflows.ci.stages]]
 name = "deploy"
 tasks = ["deploy-staging"]
 approval = true  # require user confirmation
@@ -220,7 +220,7 @@ approval = true  # require user confirmation
 ### Conditional Stages
 
 ```toml
-[[workflow.deploy.stages]]
+[[workflows.deploy.stages]]
 name = "prod-deploy"
 tasks = ["deploy-prod"]
 condition = "${env.BRANCH == 'main'}"
@@ -229,11 +229,49 @@ condition = "${env.BRANCH == 'main'}"
 ### Failure Handling
 
 ```toml
-[[workflow.ci.stages]]
+[[workflows.ci.stages]]
 name = "test"
 tasks = ["test-all"]
 on_failure = "notify-slack"
 ```
+
+### Syntax Limitations
+
+> **Note**: The following TOML syntax patterns are **not yet supported** by the parser:
+
+#### ❌ Inline Stage Arrays (Not Supported)
+
+```toml
+# This syntax does NOT work (parser limitation):
+[workflows.ci]
+stages = [
+    { name = "test", tasks = ["unit", "integration"] },
+    { name = "build", tasks = ["build"], fail_fast = true }
+]
+```
+
+**Workaround**: Use the `[[workflows.*.stages]]` array-of-tables syntax shown above.
+
+#### ❌ Tasks Without `cmd` Field (Not Supported)
+
+```toml
+# This syntax does NOT work (parser requires cmd field):
+[tasks.all-checks]
+description = "Run all checks"
+deps = ["lint", "test", "build"]
+# Missing: cmd field
+```
+
+**Workaround**: Add a no-op command:
+
+```toml
+[tasks.all-checks]
+description = "Run all checks"
+cmd = "echo 'All checks completed'"
+deps = ["lint", "test", "build"]
+```
+
+These limitations are tracked in [issue #17](https://github.com/yusa-imit/zr/issues/17) and may be addressed in future versions.
 
 ---
 
