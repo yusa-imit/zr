@@ -803,3 +803,146 @@ test "690: cache with concurrent writes from parallel tasks maintains integrity"
     defer result2.deinit();
     try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
 }
+
+test "870: cache clear --workspace clears cache for all workspace members" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create root workspace config
+    const root_toml =
+        \\[workspace]
+        \\members = ["member1", "member2"]
+        \\
+        \\[tasks.root-task]
+        \\cmd = "echo root"
+        \\cache = true
+        \\
+    ;
+
+    const root_config = try tmp.dir.createFile("zr.toml", .{});
+    defer root_config.close();
+    try root_config.writeAll(root_toml);
+
+    // Create workspace members
+    try tmp.dir.makeDir("member1");
+    try tmp.dir.makeDir("member2");
+
+    const member1_toml =
+        \\[tasks.build]
+        \\cmd = "echo member1-build"
+        \\cache = true
+        \\
+    ;
+
+    const member1_config = try tmp.dir.createFile("member1/zr.toml", .{});
+    defer member1_config.close();
+    try member1_config.writeAll(member1_toml);
+
+    const member2_toml =
+        \\[tasks.test]
+        \\cmd = "echo member2-test"
+        \\cache = true
+        \\
+    ;
+
+    const member2_config = try tmp.dir.createFile("member2/zr.toml", .{});
+    defer member2_config.close();
+    try member2_config.writeAll(member2_toml);
+
+    // Run tasks to populate cache
+    {
+        var result = try runZr(allocator, &.{ "run", "root-task" }, tmp_path);
+        defer result.deinit();
+    }
+
+    // Clear workspace cache
+    var clear_result = try runZr(allocator, &.{ "cache", "clear", "--workspace" }, tmp_path);
+    defer clear_result.deinit();
+
+    // Should succeed and mention workspace members
+    try std.testing.expectEqual(@as(u8, 0), clear_result.exit_code);
+    const output = if (clear_result.stdout.len > 0) clear_result.stdout else clear_result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "workspace") != null or
+        std.mem.indexOf(u8, output, "member") != null);
+}
+
+test "871: cache clear --member <path> clears cache for specific member" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create workspace member
+    try tmp.dir.makeDir("member1");
+
+    const member1_toml =
+        \\[tasks.build]
+        \\cmd = "echo member1-build"
+        \\cache = true
+        \\
+    ;
+
+    const member1_config = try tmp.dir.createFile("member1/zr.toml", .{});
+    defer member1_config.close();
+    try member1_config.writeAll(member1_toml);
+
+    // Clear cache for specific member
+    const member1_path = try std.fmt.allocPrint(allocator, "{s}/member1", .{tmp_path});
+    defer allocator.free(member1_path);
+
+    var result = try runZr(allocator, &.{ "cache", "clear", "--member", member1_path }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "member") != null);
+}
+
+test "872: cache clear --member without path returns error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "cache", "clear", "--member" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "requires") != null or
+        std.mem.indexOf(u8, output, "argument") != null);
+}
+
+test "873: cache clear --workspace without workspace config returns error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config without workspace section
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+    ;
+
+    const config_file = try tmp.dir.createFile("zr.toml", .{});
+    defer config_file.close();
+    try config_file.writeAll(toml);
+
+    var result = try runZr(allocator, &.{ "cache", "clear", "--workspace" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "workspace") != null);
+}
