@@ -319,18 +319,62 @@ pub fn cmdCache(
     if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
         try color.printBold(w, use_color, "zr cache - Task result cache management\n\n", .{});
         try w.writeAll("Usage:\n");
-        try w.writeAll("  zr cache clear [--workspace]   Clear cached task results\n");
-        try w.writeAll("  zr cache status                Show cache statistics\n");
+        try w.writeAll("  zr cache clear [--workspace] [--member <path>]   Clear cached task results\n");
+        try w.writeAll("  zr cache status                                   Show cache statistics\n");
         try w.writeAll("\nOptions:\n");
-        try w.writeAll("  --workspace    Clear cache for all workspace members\n");
+        try w.writeAll("  --workspace        Clear cache for all workspace members\n");
+        try w.writeAll("  --member <path>    Clear cache for specific workspace member\n");
         return 0;
     } else if (std.mem.eql(u8, sub, "clear")) {
-        // Check for --workspace flag
+        // Check for --workspace or --member flags
         var workspace_mode = false;
-        for (args[3..]) |arg| {
+        var target_member_path: ?[]const u8 = null;
+
+        var i: usize = 3;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
             if (std.mem.eql(u8, arg, "--workspace")) {
                 workspace_mode = true;
+            } else if (std.mem.eql(u8, arg, "--member")) {
+                if (i + 1 < args.len) {
+                    target_member_path = args[i + 1];
+                    i += 1; // Skip the next argument (the path)
+                } else {
+                    try color.printError(ew, use_color,
+                        "cache: --member requires a path argument\n\n  Hint: zr cache clear --member <path>\n", .{});
+                    return 1;
+                }
             }
+        }
+
+        // Handle --member flag
+        if (target_member_path) |path| {
+            const member_config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{path});
+            defer allocator.free(member_config_path);
+
+            var member_config = loader.loadFromFile(allocator, member_config_path) catch |err| {
+                try color.printError(ew, use_color,
+                    "cache: failed to load member config at {s}: {}\n", .{ member_config_path, err });
+                return 1;
+            };
+            defer member_config.deinit();
+
+            var store = cache_store.CacheStore.init(allocator) catch |err| {
+                try color.printError(ew, use_color,
+                    "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
+                    .{err});
+                return 1;
+            };
+            defer store.deinit();
+
+            const removed = store.clearForMember(path, member_config) catch |err| {
+                try color.printError(ew, use_color,
+                    "cache: error clearing cache for member: {}\n", .{err});
+                return 1;
+            };
+
+            try color.printSuccess(w, use_color, "Cleared {d} cached task result(s) from member: {s}\n", .{ removed, path });
+            return 0;
         }
 
         if (workspace_mode) {
