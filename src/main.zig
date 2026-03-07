@@ -657,8 +657,7 @@ fn run(
             return 1;
         }
     } else if (std.mem.eql(u8, cmd, "cache")) {
-        const sub = if (effective_args.len >= 3) effective_args[2] else "";
-        return list_cmd.cmdCache(allocator, sub, effective_w, ew, effective_color);
+        return list_cmd.cmdCache(allocator, effective_args, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "plugin")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return plugin_cli.cmdPlugin(allocator, sub, effective_args, config_path, json_output, effective_w, ew, effective_color);

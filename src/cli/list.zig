@@ -6,6 +6,8 @@ const cycle_detect = @import("../graph/cycle_detect.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
 const cache_store = @import("../cache/store.zig");
 const graph_ascii = @import("../graph/ascii.zig");
+const loader = @import("../config/loader.zig");
+const workspace_cmd = @import("workspace.zig");
 
 pub fn cmdList(
     allocator: std.mem.Allocator,
@@ -306,18 +308,87 @@ pub fn cmdGraph(
 
 pub fn cmdCache(
     allocator: std.mem.Allocator,
-    sub: []const u8,
+    args: []const []const u8,
+    config_path: []const u8,
     w: *std.Io.Writer,
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
+    const sub = if (args.len >= 3) args[2] else "";
+
     if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
         try color.printBold(w, use_color, "zr cache - Task result cache management\n\n", .{});
         try w.writeAll("Usage:\n");
-        try w.writeAll("  zr cache clear      Clear all cached task results\n");
-        try w.writeAll("  zr cache status     Show cache statistics\n");
+        try w.writeAll("  zr cache clear [--workspace]   Clear cached task results\n");
+        try w.writeAll("  zr cache status                Show cache statistics\n");
+        try w.writeAll("\nOptions:\n");
+        try w.writeAll("  --workspace    Clear cache for all workspace members\n");
         return 0;
     } else if (std.mem.eql(u8, sub, "clear")) {
+        // Check for --workspace flag
+        var workspace_mode = false;
+        for (args[3..]) |arg| {
+            if (std.mem.eql(u8, arg, "--workspace")) {
+                workspace_mode = true;
+            }
+        }
+
+        if (workspace_mode) {
+            // Load workspace configuration
+            var config = loader.loadFromFile(allocator, config_path) catch |err| {
+                try color.printError(ew, use_color,
+                    "cache: failed to load config: {}\n", .{err});
+                return 1;
+            };
+            defer config.deinit();
+
+            if (config.workspace == null) {
+                try color.printError(ew, use_color,
+                    "cache: no workspace defined in configuration\n\n  Hint: This command requires a workspace configuration\n", .{});
+                return 1;
+            }
+
+            var store = cache_store.CacheStore.init(allocator) catch |err| {
+                try color.printError(ew, use_color,
+                    "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
+                    .{err});
+                return 1;
+            };
+            defer store.deinit();
+
+            // Clear cache for all workspace members
+            var total_removed: usize = 0;
+
+            const members = workspace_cmd.resolveWorkspaceMembers(
+                allocator,
+                config.workspace.?,
+                "zr.toml",
+            ) catch |err| {
+                try color.printError(ew, use_color,
+                    "cache: failed to resolve workspace members: {}\n", .{err});
+                return 1;
+            };
+            defer {
+                for (members) |m| allocator.free(m);
+                allocator.free(members);
+            }
+
+            for (members) |member_path| {
+                // Load member config
+                const member_config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{member_path});
+                defer allocator.free(member_config_path);
+
+                var member_config = loader.loadFromFile(allocator, member_config_path) catch continue;
+                defer member_config.deinit();
+
+                // Clear cache for this member
+                const removed = store.clearForMember(member_path, member_config) catch continue;
+                total_removed += removed;
+            }
+
+            try color.printSuccess(w, use_color, "Cleared {d} cached task result(s) from {d} workspace member(s)\n", .{ total_removed, members.len });
+            return 0;
+        }
         var store = cache_store.CacheStore.init(allocator) catch |err| {
             try color.printError(ew, use_color,
                 "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
@@ -530,7 +601,8 @@ test "cmdCache: missing subcommand returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdCache(allocator, "", &out_w.interface, &err_w.interface, false);
+    const args = [_][]const u8{ "zr", "cache" };
+    const code = try cmdCache(allocator, &args, "zr.toml", &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
 }
 
@@ -544,7 +616,8 @@ test "cmdCache: unknown subcommand returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdCache(allocator, "unknown", &out_w.interface, &err_w.interface, false);
+    const args = [_][]const u8{ "zr", "cache", "unknown" };
+    const code = try cmdCache(allocator, &args, "zr.toml", &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
 }
 
@@ -558,7 +631,8 @@ test "cmdCache: clear subcommand succeeds" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdCache(allocator, "clear", &out_w.interface, &err_w.interface, false);
+    const args = [_][]const u8{ "zr", "cache", "clear" };
+    const code = try cmdCache(allocator, &args, "zr.toml", &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 

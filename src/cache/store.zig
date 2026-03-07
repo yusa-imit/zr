@@ -1,4 +1,5 @@
 const std = @import("std");
+const types = @import("../config/types.zig");
 
 /// Cache entry metadata stored on disk.
 /// File name: <hex-hash>.ok  (task succeeded)
@@ -131,6 +132,37 @@ pub const CacheStore = struct {
             dir.deleteFile(name) catch continue;
             count += 1;
         }
+
+        return count;
+    }
+
+    /// Clear cache for a specific workspace member by computing keys for all tasks in the config.
+    /// This requires loading the config file and computing cache keys for each task.
+    /// Returns the number of entries deleted.
+    pub fn clearForMember(
+        self: *const CacheStore,
+        member_path: []const u8,
+        config: types.Config,
+    ) !usize {
+        var count: usize = 0;
+
+        // Iterate through tasks in the config and invalidate their cache entries
+        var task_it = config.tasks.iterator();
+        while (task_it.next()) |entry| {
+            const task = entry.value_ptr;
+
+            // Compute cache key for this task
+            const key = try CacheStore.computeKey(self.allocator, task.cmd, if (task.env.len > 0) task.env else null);
+            defer self.allocator.free(key);
+
+            // Check if cache entry exists
+            if (self.hasHit(key)) {
+                self.invalidate(key);
+                count += 1;
+            }
+        }
+
+        _ = member_path; // Path may be needed for future enhancements
 
         return count;
     }
