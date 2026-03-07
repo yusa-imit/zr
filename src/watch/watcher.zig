@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const native = @import("native.zig");
+const glob_module = @import("../util/glob.zig");
 
 pub const WatchMode = enum {
     /// Native OS-specific watchers (inotify/kqueue/ReadDirectoryChangesW)
@@ -24,6 +25,16 @@ const SKIP_DIRS = [_][]const u8{
     ".zig-cache",
 };
 
+/// Options for configuring the watcher (v1.17.0).
+pub const WatcherOptions = struct {
+    /// Debounce delay in milliseconds (default: 0 = no debouncing).
+    debounce_ms: u64 = 0,
+    /// Glob patterns for file inclusion (empty = all files).
+    patterns: []const []const u8 = &.{},
+    /// Glob patterns for file exclusion (takes precedence).
+    exclude_patterns: []const []const u8 = &.{},
+};
+
 /// Adaptive filesystem watcher that uses native OS APIs when available,
 /// falling back to polling mode if needed.
 ///
@@ -33,12 +44,25 @@ const SKIP_DIRS = [_][]const u8{
 /// - Windows: ReadDirectoryChangesW
 ///
 /// Fallback: polling-based mtime checking
+///
+/// v1.17.0: Supports debouncing and glob pattern filtering.
 pub const Watcher = struct {
     mode: WatchMode,
     impl: union(WatchMode) {
         native: NativeWatcherWrapper,
         polling: PollingWatcher,
     },
+    /// Debounce delay in milliseconds (0 = no debouncing).
+    debounce_ms: u64,
+    /// Last change timestamp (nanoseconds) for debouncing.
+    last_change_ns: ?i128 = null,
+    /// Pending changed path (owned by watcher).
+    pending_path: ?[]const u8 = null,
+    /// Include patterns (owned).
+    patterns: []const []const u8,
+    /// Exclude patterns (owned).
+    exclude_patterns: []const []const u8,
+    allocator: std.mem.Allocator,
 
     const Self = @This();
 
@@ -49,13 +73,37 @@ pub const Watcher = struct {
 
     /// Initialize the watcher with the preferred mode.
     /// If native mode is requested but fails, falls back to polling automatically.
-    pub fn init(allocator: std.mem.Allocator, paths: []const []const u8, mode: WatchMode, poll_ms: u64) !Self {
+    /// v1.17.0: Added options parameter for debouncing and pattern filtering.
+    pub fn init(allocator: std.mem.Allocator, paths: []const []const u8, mode: WatchMode, poll_ms: u64, options: WatcherOptions) !Self {
+        // Copy patterns (owned by watcher)
+        var patterns_owned = try allocator.alloc([]const u8, options.patterns.len);
+        errdefer allocator.free(patterns_owned);
+        for (options.patterns, 0..) |pattern, i| {
+            patterns_owned[i] = try allocator.dupe(u8, pattern);
+        }
+
+        var exclude_patterns_owned = try allocator.alloc([]const u8, options.exclude_patterns.len);
+        errdefer {
+            for (patterns_owned) |p| allocator.free(p);
+            allocator.free(patterns_owned);
+            allocator.free(exclude_patterns_owned);
+        }
+        for (options.exclude_patterns, 0..) |pattern, i| {
+            exclude_patterns_owned[i] = try allocator.dupe(u8, pattern);
+        }
+
         if (mode == .native) {
             if (supportsNativeMode()) {
                 if (native.NativeWatcher.init(allocator, paths)) |watcher| {
                     return Self{
                         .mode = .native,
                         .impl = .{ .native = .{ .allocator = allocator, .watcher = watcher } },
+                        .debounce_ms = options.debounce_ms,
+                        .last_change_ns = null,
+                        .pending_path = null,
+                        .patterns = patterns_owned,
+                        .exclude_patterns = exclude_patterns_owned,
+                        .allocator = allocator,
                     };
                 } else |_| {
                     // Fall back to polling on error
@@ -68,6 +116,12 @@ pub const Watcher = struct {
         return Self{
             .mode = .polling,
             .impl = .{ .polling = polling_watcher },
+            .debounce_ms = options.debounce_ms,
+            .last_change_ns = null,
+            .pending_path = null,
+            .patterns = patterns_owned,
+            .exclude_patterns = exclude_patterns_owned,
+            .allocator = allocator,
         };
     }
 
@@ -76,17 +130,89 @@ pub const Watcher = struct {
             .native => |*wrapper| wrapper.watcher.deinit(),
             .polling => |*watcher| watcher.deinit(),
         }
+        for (self.patterns) |p| self.allocator.free(p);
+        if (self.patterns.len > 0) self.allocator.free(self.patterns);
+        for (self.exclude_patterns) |p| self.allocator.free(p);
+        if (self.exclude_patterns.len > 0) self.allocator.free(self.exclude_patterns);
+        if (self.pending_path) |p| self.allocator.free(p);
     }
 
     /// Wait for a filesystem change. Blocks until a change is detected.
+    /// v1.17.0: Supports debouncing and glob pattern filtering.
     pub fn waitForChange(self: *Self) !WatchEvent {
-        return switch (self.impl) {
-            .native => |*wrapper| {
-                const event = try wrapper.watcher.waitForEvent();
-                return WatchEvent{ .path = event.path };
-            },
-            .polling => |*watcher| try watcher.waitForChange(),
-        };
+        while (true) {
+            // Get next raw event from underlying watcher
+            const raw_event = switch (self.impl) {
+                .native => |*wrapper| blk: {
+                    const event = try wrapper.watcher.waitForEvent();
+                    break :blk WatchEvent{ .path = event.path };
+                },
+                .polling => |*watcher| try watcher.waitForChange(),
+            };
+
+            // Apply pattern filtering
+            if (!self.matchesPatterns(raw_event.path)) {
+                continue; // Skip this event, wait for next
+            }
+
+            // Apply debouncing
+            if (self.debounce_ms == 0) {
+                // No debouncing — return immediately
+                return raw_event;
+            }
+
+            // Debouncing enabled
+            const now_ns = std.time.nanoTimestamp();
+
+            if (self.last_change_ns) |last_ns| {
+                const elapsed_ms = @divFloor(now_ns - last_ns, std.time.ns_per_ms);
+                if (elapsed_ms < self.debounce_ms) {
+                    // Within debounce window — update pending path and timestamp
+                    if (self.pending_path) |old| self.allocator.free(old);
+                    self.pending_path = try self.allocator.dupe(u8, raw_event.path);
+                    self.last_change_ns = now_ns;
+                    continue; // Wait for more events
+                }
+            }
+
+            // Debounce window elapsed or first event — return pending event
+            self.last_change_ns = now_ns;
+            if (self.pending_path) |pending| {
+                defer {
+                    self.allocator.free(pending);
+                    self.pending_path = null;
+                }
+                return WatchEvent{ .path = pending };
+            } else {
+                self.pending_path = try self.allocator.dupe(u8, raw_event.path);
+                return raw_event;
+            }
+        }
+    }
+
+    /// Check if a path matches the configured patterns.
+    /// Returns true if path should be watched, false if filtered out.
+    fn matchesPatterns(self: *const Self, path: []const u8) bool {
+        // Check exclude patterns first (takes precedence)
+        for (self.exclude_patterns) |exclude_pattern| {
+            if (glob_module.match(exclude_pattern, path)) {
+                return false; // Excluded
+            }
+        }
+
+        // If no include patterns, accept all (not excluded)
+        if (self.patterns.len == 0) {
+            return true;
+        }
+
+        // Check include patterns
+        for (self.patterns) |pattern| {
+            if (glob_module.match(pattern, path)) {
+                return true; // Included
+            }
+        }
+
+        return false; // Not in include list
     }
 
     fn supportsNativeMode() bool {
@@ -277,7 +403,7 @@ test "watcher native mode compiles and initializes" {
 
     const watch_paths = [_][]const u8{tmp_path};
 
-    var watcher = try Watcher.init(allocator, &watch_paths, .native, 500);
+    var watcher = try Watcher.init(allocator, &watch_paths, .native, 500, .{});
     defer watcher.deinit();
 
     // Just verify it initialized successfully
@@ -299,7 +425,7 @@ test "watcher polling mode detects file change" {
 
     const watch_paths = [_][]const u8{tmp_path};
 
-    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10);
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10, .{});
     defer watcher.deinit();
 
     // Modify the file — sleep briefly to ensure mtime difference on fast filesystems.
@@ -324,7 +450,7 @@ test "watcher detects new file" {
     try tmp_dir.dir.writeFile(.{ .sub_path = "a.txt", .data = "a" });
 
     const watch_paths = [_][]const u8{tmp_path};
-    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10);
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10, .{});
     defer watcher.deinit();
 
     // Add a new file — watcher should see it as changed.
@@ -346,7 +472,7 @@ test "watcher no change" {
     try tmp_dir.dir.writeFile(.{ .sub_path = "stable.txt", .data = "content" });
 
     const watch_paths = [_][]const u8{tmp_path};
-    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10);
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10, .{});
     defer watcher.deinit();
 
     // No modification — should return null.
@@ -361,4 +487,72 @@ test "shouldSkip skips known dirs" {
     try std.testing.expect(shouldSkip(".zig-cache"));
     try std.testing.expect(!shouldSkip("src"));
     try std.testing.expect(!shouldSkip("my_file.zig"));
+}
+
+test "watcher pattern filtering includes" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "test.zig", .data = "code" });
+
+    const watch_paths = [_][]const u8{tmp_path};
+    const patterns = [_][]const u8{"*.zig"};
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10, .{ .patterns = &patterns });
+    defer watcher.deinit();
+
+    // Zig file should match
+    try std.testing.expect(watcher.matchesPatterns("src/main.zig"));
+    // Non-zig file should not match
+    try std.testing.expect(!watcher.matchesPatterns("README.md"));
+}
+
+test "watcher pattern filtering excludes" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const watch_paths = [_][]const u8{tmp_path};
+    const exclude_patterns = [_][]const u8{"*.test.zig"};
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10, .{ .exclude_patterns = &exclude_patterns });
+    defer watcher.deinit();
+
+    // Test file should be excluded
+    try std.testing.expect(!watcher.matchesPatterns("src/main.test.zig"));
+    // Regular file should pass
+    try std.testing.expect(watcher.matchesPatterns("src/main.zig"));
+}
+
+test "watcher pattern filtering include and exclude" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const watch_paths = [_][]const u8{tmp_path};
+    const patterns = [_][]const u8{"*.zig"};
+    const exclude_patterns = [_][]const u8{"*.test.zig"};
+    var watcher = try Watcher.init(allocator, &watch_paths, .polling, 10, .{
+        .patterns = &patterns,
+        .exclude_patterns = &exclude_patterns,
+    });
+    defer watcher.deinit();
+
+    // Non-test zig file should match
+    try std.testing.expect(watcher.matchesPatterns("src/main.zig"));
+    // Test zig file should be excluded (exclude takes precedence)
+    try std.testing.expect(!watcher.matchesPatterns("src/main.test.zig"));
+    // Non-zig file should not match
+    try std.testing.expect(!watcher.matchesPatterns("README.md"));
 }

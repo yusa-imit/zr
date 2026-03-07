@@ -180,11 +180,19 @@ pub fn cmdWatch(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    // Verify task exists before starting the watch loop.
+    // Verify task exists and extract WatchConfig before starting the watch loop (v1.17.0).
+    var watch_options = watcher.WatcherOptions{};
     {
         var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
         defer config.deinit();
-        if (config.tasks.get(task_name) == null) {
+        if (config.tasks.get(task_name)) |task| {
+            // Extract WatchConfig from task if present (v1.17.0)
+            if (task.watch) |watch_cfg| {
+                watch_options.debounce_ms = watch_cfg.debounce_ms;
+                watch_options.patterns = watch_cfg.patterns;
+                watch_options.exclude_patterns = watch_cfg.exclude_patterns;
+            }
+        } else {
             // Build list of available task names for suggestions
             var task_names_list = std.ArrayList([]const u8){};
             defer task_names_list.deinit(allocator);
@@ -222,7 +230,8 @@ pub fn cmdWatch(
     }
 
     // Use native file watching (inotify/kqueue/ReadDirectoryChangesW) with 500ms polling fallback
-    var watch = watcher.Watcher.init(allocator, watch_paths, .native, 500) catch |err| {
+    // v1.17.0: Use WatchConfig from task if available
+    var watch = watcher.Watcher.init(allocator, watch_paths, .native, 500, watch_options) catch |err| {
         try color.printError(err_writer, use_color,
             "watch: Failed to initialize watcher: {s}\n", .{@errorName(err)});
         return 1;
@@ -234,7 +243,17 @@ pub fn cmdWatch(
         .native => "native",
         .polling => "polling",
     };
-    try color.printDim(w, use_color, "  (using {s} mode)\n", .{mode_str});
+    try color.printDim(w, use_color, "  (using {s} mode", .{mode_str});
+    if (watch_options.debounce_ms > 0) {
+        try color.printDim(w, use_color, ", debounce: {d}ms", .{watch_options.debounce_ms});
+    }
+    if (watch_options.patterns.len > 0) {
+        try color.printDim(w, use_color, ", patterns: {d}", .{watch_options.patterns.len});
+    }
+    if (watch_options.exclude_patterns.len > 0) {
+        try color.printDim(w, use_color, ", excludes: {d}", .{watch_options.exclude_patterns.len});
+    }
+    try color.printDim(w, use_color, ")\n", .{});
 
     try color.printInfo(w, use_color, "Watching", .{});
     try w.print(" for changes (Ctrl+C to stop)...\n", .{});
