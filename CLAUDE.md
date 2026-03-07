@@ -332,6 +332,9 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.16.0 — Task Execution Analytics**: DONE (2026-03-07) — Resource usage tracking (peak memory, avg CPU), enhanced analytics reports (HTML/JSON), 2 integration tests, documentation updated, all 875 tests pass
 - [ ] **v1.17.0 — Advanced Watch Mode**: Debouncing for rapid file changes (configurable delay), pattern-based watch filters (glob patterns for file inclusion/exclusion), multi-pattern watch support (watch multiple paths per task), watch mode configuration in zr.toml ([tasks.*.watch] section), integration with existing native file watchers
 - [ ] **v1.18.0 — Conditional Task Execution**: Extended expression engine with additional predicates (git.branch, git.tag, git.dirty), task skip conditions (skip_if field), conditional outputs (output_if), improved error diagnostics for failed conditions
+- [ ] **v1.19.0 — Parser Enhancements v3**: Inline workflow stages syntax (`stages = [{ name, tasks }]`, closes #19), dependency-only tasks without cmd field (closes #20), better validation for malformed sections, improved error messages, unit tests for new syntax features
+- [ ] **v1.20.0 — Expression Diagnostics Integration**: Integrate expr_diagnostics.zig into expression evaluator (deferred technical debt from v1.14.0/v1.15.0), refactor eval functions to accept DiagContext parameter, enhanced stack traces for expression failures, error position highlighting, expression debugging documentation
+- [ ] **v1.21.0 — TUI Testing & Enhancements**: Integrate sailor v1.5.0 MockTerminal for TUI unit tests, add snapshot testing for TUI rendering verification, expand TUI test coverage (graph/list/runner modes), implement event bus for cross-component communication, Command pattern for future undo/redo
 
 ### 마일스톤 수립 프로세스
 
