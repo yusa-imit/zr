@@ -1388,6 +1388,12 @@ pub fn addTaskImpl(
         .watch = task_watch,
     };
 
+    // Check for duplicate task definition and reject it
+    // The errdefer cleanup above will handle freeing all allocated memory
+    if (config.tasks.contains(task_name)) {
+        return error.DuplicateTask;
+    }
+
     try config.tasks.put(task_name, task);
 }
 

@@ -754,16 +754,16 @@ test "271: multi-command workflow init → validate → run → history" {
     defer validate_result.deinit();
     try std.testing.expect(validate_result.exit_code == 0);
 
-    // Manually add a task to the generated config
+    // Manually add a task to the generated config (use unique name to avoid duplicate)
     const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
     defer allocator.free(config_path);
     const file = try std.fs.openFileAbsolute(config_path, .{ .mode = .read_write });
     defer file.close();
     try file.seekFromEnd(0);
-    try file.writeAll("\n[tasks.test]\ncmd = \"echo workflow-test\"\n");
+    try file.writeAll("\n[tasks.workflow-test]\ncmd = \"echo workflow-test\"\n");
 
     // Step 3: run task
-    var run_result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    var run_result = try runZr(allocator, &.{ "run", "workflow-test" }, tmp_path);
     defer run_result.deinit();
     try std.testing.expect(run_result.exit_code == 0);
     try std.testing.expect(std.mem.indexOf(u8, run_result.stdout, "workflow-test") != null);
@@ -772,7 +772,7 @@ test "271: multi-command workflow init → validate → run → history" {
     var history_result = try runZr(allocator, &.{"history"}, tmp_path);
     defer history_result.deinit();
     try std.testing.expect(history_result.exit_code == 0);
-    try std.testing.expect(std.mem.indexOf(u8, history_result.stdout, "test") != null or std.mem.indexOf(u8, history_result.stderr, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, history_result.stdout, "workflow-test") != null or std.mem.indexOf(u8, history_result.stderr, "workflow-test") != null);
 }
 
 test "276: error recovery cache corruption → clean → rebuild" {
