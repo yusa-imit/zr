@@ -753,6 +753,32 @@ pub const ConditionalDep = struct {
     }
 };
 
+/// Watch mode configuration for a task ([tasks.*.watch] section).
+/// v1.17.0 feature for advanced watch mode.
+pub const WatchConfig = struct {
+    /// Debounce delay in milliseconds before triggering task execution.
+    /// Multiple rapid changes within this window are coalesced into one execution.
+    /// Default: 300ms
+    debounce_ms: u64 = 300,
+    /// Glob patterns for file inclusion (e.g., ["**/*.zig", "*.toml"]).
+    /// Empty list means watch all files in the paths.
+    patterns: [][]const u8 = &.{},
+    /// Glob patterns for file exclusion (e.g., ["**/*.test.zig", "node_modules/**"]).
+    /// Takes precedence over include patterns.
+    exclude_patterns: [][]const u8 = &.{},
+    /// Watch mode: "native" (inotify/kqueue/ReadDirectoryChangesW) or "polling"
+    /// If null, auto-selects native if available, fallback to polling.
+    mode: ?[]const u8 = null,
+
+    pub fn deinit(self: *WatchConfig, allocator: std.mem.Allocator) void {
+        for (self.patterns) |p| allocator.free(p);
+        if (self.patterns.len > 0) allocator.free(self.patterns);
+        for (self.exclude_patterns) |p| allocator.free(p);
+        if (self.exclude_patterns.len > 0) allocator.free(self.exclude_patterns);
+        if (self.mode) |m| allocator.free(m);
+    }
+};
+
 pub const Task = struct {
     name: []const u8,
     cmd: []const u8,
@@ -802,6 +828,9 @@ pub const Task = struct {
     /// The scheduler will try to run this task on a worker thread in the specified NUMA node.
     /// v1.13.0 feature for NUMA-aware scheduling.
     numa_node: ?u32 = null,
+    /// Watch mode configuration for this task (null = use default watch behavior).
+    /// v1.17.0 feature for advanced watch mode.
+    watch: ?WatchConfig = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -835,6 +864,7 @@ pub const Task = struct {
         for (self.tags) |tag| allocator.free(tag);
         if (self.tags.len > 0) allocator.free(self.tags);
         if (self.cpu_affinity) |affinity| allocator.free(affinity);
+        if (self.watch) |*w| w.deinit(allocator);
     }
 };
 
