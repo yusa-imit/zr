@@ -360,3 +360,78 @@ test "671: analytics with --limit=0 shows all historical data" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "874: analytics JSON includes resource usage metrics (peak_memory, avg_cpu)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.compute]
+        \\cmd = "echo computing"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task to create history with resource tracking
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "compute" }, tmp_path);
+    defer run_result.deinit();
+
+    // Get JSON analytics report
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--format", "json" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify JSON contains resource fields
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "peak_memory_bytes") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "avg_memory_bytes") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "avg_cpu_percent") != null);
+}
+
+test "875: history file stores resource usage fields" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.sample]
+        \\cmd = "echo sample"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "sample" }, tmp_path);
+    defer run_result.deinit();
+
+    // Check history file format
+    const history_path = try std.fs.path.join(allocator, &.{ tmp_path, ".zr_history" });
+    defer allocator.free(history_path);
+
+    const history_content = try std.fs.cwd().readFileAlloc(allocator, history_path, 1024 * 1024);
+    defer allocator.free(history_content);
+
+    // History format: timestamp\tname\tstatus\tduration\tcount\tretries\tpeak_mem\tavg_cpu
+    // Should have at least 8 tab-separated fields
+    var lines = std.mem.splitScalar(u8, history_content, '\n');
+    var found_valid_line = false;
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        var field_count: usize = 0;
+        var it = std.mem.splitScalar(u8, line, '\t');
+        while (it.next()) |_| field_count += 1;
+        if (field_count >= 8) {
+            found_valid_line = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_valid_line);
+}
