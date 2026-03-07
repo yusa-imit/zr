@@ -12,6 +12,7 @@ zig-out
 
 # zr runtime files
 .zr_history
+.zr/
 
 # OS
 .DS_Store

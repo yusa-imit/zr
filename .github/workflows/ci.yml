@@ -35,6 +35,10 @@ jobs:
       - name: Integration Test
         run: zig build integration-test
 
+      - name: Cleanup test artifacts
+        if: always()
+        run: rm -rf .zr/ examples/*/.zr/
+
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
     runs-on: ubuntu-latest

@@ -1,10 +1,142 @@
+# zr dogfooding — zr manages itself
+
+# ─── Build Tasks ───
+
 [tasks.build]
+description = "Debug build"
 cmd = "zig build"
 
+[tasks.release]
+description = "Optimized release build (stripped, 1.2MB)"
+cmd = "zig build release"
+
+[tasks.check]
+description = "Compile check only (no binary output)"
+cmd = "zig build --summary none 2>&1 | head -1 || true"
+
+# ─── Test Tasks ───
+
 [tasks.test]
+description = "Run unit tests"
 cmd = "zig build test"
+
+[tasks.integration]
+description = "Run integration tests (black-box CLI)"
+cmd = "zig build integration-test"
 deps = ["build"]
 
-[tasks.run]
-cmd = "./zig-out/bin/zr --help"
-deps = ["build"]
+[tasks.fuzz-toml]
+description = "Fuzz TOML parser (Ctrl+C to stop)"
+cmd = "zig build fuzz-toml"
+
+[tasks.fuzz-expr]
+description = "Fuzz expression engine (Ctrl+C to stop)"
+cmd = "zig build fuzz-expr"
+
+# ─── Cleanup Tasks ───
+
+[tasks.clean]
+description = "Remove test artifacts (.zr/failures, etc.)"
+cmd = "rm -rf .zr/ examples/*/.zr/"
+
+[tasks.clean-build]
+description = "Remove build output"
+cmd = "rm -rf zig-out"
+
+[tasks.clean-cache]
+description = "Remove zig build cache"
+cmd = "rm -rf .zig-cache"
+
+[tasks.clean-all]
+description = "Full clean (build + cache + test trash)"
+cmd = "rm -rf zig-out .zig-cache .zr/ examples/*/.zr/"
+
+# ─── Dev Utilities ───
+
+[tasks.bench]
+description = "Run performance benchmarks"
+cmd = "bash benchmarks/benchmark.sh"
+deps = ["release"]
+
+[tasks.loc]
+description = "Count lines of source code"
+cmd = "find src -name '*.zig' | xargs wc -l | tail -1"
+
+[tasks.stats]
+description = "Show project stats (tests, files, binary size)"
+cmd = "echo '=== Project Stats ===' && echo \"Source files: $(find src -name '*.zig' | wc -l | tr -d ' ')\" && echo \"Source lines: $(find src -name '*.zig' | xargs wc -l | tail -1 | awk '{print $1}')\" && echo \"Test file: $(wc -l < tests/integration.zig | tr -d ' ') lines\" && echo \"Examples: $(ls -d examples/*/ | wc -l | tr -d ' ')\" && if [ -f zig-out/bin/zr ]; then echo \"Binary size: $(du -h zig-out/bin/zr | cut -f1)\"; else echo 'Binary: not built'; fi && echo \"Cache size: $(du -sh .zig-cache 2>/dev/null | cut -f1 || echo 'none')\""
+
+[tasks.cross-linux]
+description = "Cross-compile for Linux x86_64"
+cmd = "zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSafe"
+
+[tasks.cross-windows]
+description = "Cross-compile for Windows x86_64"
+cmd = "zig build -Dtarget=x86_64-windows-msvc -Doptimize=ReleaseSafe"
+
+[tasks.cross-aarch64]
+description = "Cross-compile for Apple Silicon"
+cmd = "zig build -Dtarget=aarch64-macos-none -Doptimize=ReleaseSafe"
+
+# ─── Workflows ───
+
+[workflows.ci]
+description = "Full CI pipeline"
+
+[[workflows.ci.stages]]
+name = "build"
+tasks = ["build"]
+
+[[workflows.ci.stages]]
+name = "test"
+tasks = ["test", "integration"]
+parallel = true
+fail_fast = true
+
+[[workflows.ci.stages]]
+name = "cleanup"
+tasks = ["clean"]
+
+[workflows.dev]
+description = "Development cycle (clean → build → test)"
+
+[[workflows.dev.stages]]
+name = "prepare"
+tasks = ["clean"]
+
+[[workflows.dev.stages]]
+name = "build"
+tasks = ["build"]
+
+[[workflows.dev.stages]]
+name = "verify"
+tasks = ["test"]
+
+[workflows.full]
+description = "Full verification (clean → build → unit + integration → cleanup)"
+
+[[workflows.full.stages]]
+name = "prepare"
+tasks = ["clean-all"]
+
+[[workflows.full.stages]]
+name = "build"
+tasks = ["build"]
+
+[[workflows.full.stages]]
+name = "test"
+tasks = ["test", "integration"]
+parallel = true
+fail_fast = true
+
+[[workflows.full.stages]]
+name = "cleanup"
+tasks = ["clean"]
+
+[workflows.cross]
+description = "Cross-compile for all major targets"
+
+[[workflows.cross.stages]]
+name = "compile"
+tasks = ["cross-linux", "cross-windows", "cross-aarch64"]
+parallel = true
