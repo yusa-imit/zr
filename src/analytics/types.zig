@@ -13,6 +13,9 @@ pub const TaskStats = struct {
     cache_misses: usize,
     total_retries: u32,
     avg_retries_per_run: f64,
+    peak_memory_bytes: u64 = 0,
+    avg_memory_bytes: f64 = 0.0,
+    avg_cpu_percent: f64 = 0.0,
 
     pub fn cacheHitRate(self: TaskStats) f64 {
         const total = self.cache_hits + self.cache_misses;

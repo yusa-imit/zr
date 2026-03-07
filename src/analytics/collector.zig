@@ -84,6 +84,8 @@ fn collectAnalyticsWithPath(allocator: std.mem.Allocator, limit: ?usize, history
             record.success,
             false, // We don't track cache in current history format
             record.retry_count,
+            record.peak_memory_bytes,
+            record.avg_cpu_percent,
         );
 
         // Update time series
@@ -139,6 +141,10 @@ const TaskStatsBuilder = struct {
     cache_hits: usize,
     cache_misses: usize,
     total_retries: u32,
+    peak_memory_bytes: u64,
+    total_memory_bytes: u64,
+    total_cpu_percent: f64,
+    resource_samples: usize,
     time_series: std.ArrayList(types.TimeSeriesPoint),
 
     fn init(allocator: std.mem.Allocator) TaskStatsBuilder {
@@ -153,6 +159,10 @@ const TaskStatsBuilder = struct {
             .cache_hits = 0,
             .cache_misses = 0,
             .total_retries = 0,
+            .peak_memory_bytes = 0,
+            .total_memory_bytes = 0,
+            .total_cpu_percent = 0.0,
+            .resource_samples = 0,
             .time_series = std.ArrayList(types.TimeSeriesPoint){},
         };
     }
@@ -161,7 +171,7 @@ const TaskStatsBuilder = struct {
         self.time_series.deinit(allocator);
     }
 
-    fn addRun(self: *TaskStatsBuilder, duration_ms: u64, success: bool, cached: bool, retry_count: u32) !void {
+    fn addRun(self: *TaskStatsBuilder, duration_ms: u64, success: bool, cached: bool, retry_count: u32, peak_mem: u64, avg_cpu: f64) !void {
         self.total_runs += 1;
         if (success) {
             self.successful_runs += 1;
@@ -179,6 +189,14 @@ const TaskStatsBuilder = struct {
         } else {
             self.cache_misses += 1;
         }
+
+        // Track resource usage
+        self.peak_memory_bytes = @max(self.peak_memory_bytes, peak_mem);
+        if (peak_mem > 0) {
+            self.total_memory_bytes += peak_mem;
+            self.resource_samples += 1;
+        }
+        self.total_cpu_percent += avg_cpu;
     }
 
     fn addTimeSeriesPoint(self: *TaskStatsBuilder, point: types.TimeSeriesPoint) !void {
@@ -196,6 +214,16 @@ const TaskStatsBuilder = struct {
         else
             0.0;
 
+        const avg_memory = if (self.resource_samples > 0)
+            @as(f64, @floatFromInt(self.total_memory_bytes)) / @as(f64, @floatFromInt(self.resource_samples))
+        else
+            0.0;
+
+        const avg_cpu = if (self.total_runs > 0)
+            self.total_cpu_percent / @as(f64, @floatFromInt(self.total_runs))
+        else
+            0.0;
+
         return .{
             .task_name = try allocator.dupe(u8, task_name),
             .total_runs = self.total_runs,
@@ -208,6 +236,9 @@ const TaskStatsBuilder = struct {
             .cache_misses = self.cache_misses,
             .total_retries = self.total_retries,
             .avg_retries_per_run = avg_retries,
+            .peak_memory_bytes = self.peak_memory_bytes,
+            .avg_memory_bytes = avg_memory,
+            .avg_cpu_percent = avg_cpu,
         };
     }
 };
@@ -253,9 +284,9 @@ test "TaskStatsBuilder accumulation" {
     var builder = TaskStatsBuilder.init(std.testing.allocator);
     defer builder.deinit(std.testing.allocator);
 
-    try builder.addRun(100, true, false, 0);
-    try builder.addRun(200, true, true, 2);
-    try builder.addRun(150, false, false, 3);
+    try builder.addRun(100, true, false, 0, 1024 * 1024, 5.5);
+    try builder.addRun(200, true, true, 2, 2048 * 1024, 10.2);
+    try builder.addRun(150, false, false, 3, 1536 * 1024, 7.8);
 
     try std.testing.expectEqual(@as(usize, 3), builder.total_runs);
     try std.testing.expectEqual(@as(usize, 2), builder.successful_runs);
@@ -265,4 +296,6 @@ test "TaskStatsBuilder accumulation" {
     try std.testing.expectEqual(@as(usize, 1), builder.cache_hits);
     try std.testing.expectEqual(@as(usize, 2), builder.cache_misses);
     try std.testing.expectEqual(@as(u32, 5), builder.total_retries);
+    try std.testing.expectEqual(@as(u64, 2048 * 1024), builder.peak_memory_bytes);
+    try std.testing.expectEqual(@as(usize, 3), builder.resource_samples);
 }
