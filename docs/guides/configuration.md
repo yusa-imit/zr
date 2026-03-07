@@ -60,6 +60,7 @@ cmd = "npm run build"
 | `numa_node` | integer | ❌ | null | Bind task to specific NUMA node |
 | `toolchain` | array | ❌ | [] | Required toolchains (e.g., `["node@20"]`) |
 | `tags` | array | ❌ | [] | Categorization tags |
+| `watch` | table | ❌ | null | Watch mode configuration (v1.17.0, see [Watch Mode Configuration](#watch-mode-configuration-v1170)) |
 
 ### Dependencies
 
@@ -175,6 +176,78 @@ tags = ["test", "ci"]
 cmd = "playwright test"
 tags = ["test", "e2e"]
 ```
+
+### Watch Mode Configuration (v1.17.0)
+
+Tasks can define custom watch mode behavior with the `[tasks.*.watch]` section. This controls debouncing and file filtering when running `zr watch <task>`.
+
+**Available Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `debounce_ms` | integer | 300 | Delay in milliseconds before triggering execution after file changes. Multiple rapid changes within this window are coalesced into one execution. |
+| `patterns` | array | [] | Glob patterns for file inclusion (e.g., `["**/*.zig", "*.toml"]`). Empty list means watch all files. |
+| `exclude_patterns` | array | [] | Glob patterns for file exclusion (e.g., `["**/*.test.zig", "node_modules/**"]`). Takes precedence over include patterns. |
+| `mode` | string | null | Watch mode: `"native"` (inotify/kqueue/ReadDirectoryChangesW) or `"polling"`. If null, auto-selects native if available, fallback to polling. |
+
+**Example: Basic debouncing**
+
+```toml
+[tasks.build]
+cmd = "zig build"
+
+[tasks.build.watch]
+debounce_ms = 500  # wait 500ms after last change
+```
+
+**Example: Watch only specific file types**
+
+```toml
+[tasks.frontend-dev]
+cmd = "npm run dev"
+
+[tasks.frontend-dev.watch]
+debounce_ms = 200
+patterns = ["src/**/*.ts", "src/**/*.tsx", "*.css"]
+exclude_patterns = ["**/*.test.ts", "**/node_modules/**"]
+```
+
+**Example: Full configuration**
+
+```toml
+[tasks.test-watch]
+cmd = "npm test"
+
+[tasks.test-watch.watch]
+debounce_ms = 300
+patterns = ["src/**/*.ts", "test/**/*.ts"]
+exclude_patterns = ["**/*.spec.ts", "**/.zig-cache/**", "**/zig-out/**"]
+mode = "native"
+```
+
+**Usage:**
+
+```bash
+# Uses watch config from task definition
+zr watch build
+
+# Override watch paths from CLI (patterns still apply)
+zr watch build src/ lib/
+```
+
+**Pattern Matching:**
+
+- Patterns use glob syntax (`*` = any chars, `**` = any subdirs)
+- Exclude patterns take precedence over include patterns
+- If no include patterns specified, all files match (unless excluded)
+- Paths are matched relative to the watched directory
+
+**Debouncing:**
+
+- Default debounce is 300ms if not specified
+- Set to `0` to disable debouncing (execute immediately on each change)
+- Useful for preventing excessive rebuilds during rapid editing
+- Changes within the debounce window are coalesced into a single execution
 
 ---
 
