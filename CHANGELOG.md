@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-03-08
+
+### Added
+- **Advanced Watch Mode**: Enhanced file watching with debouncing and pattern filtering
+  - **Debouncing**: Configurable delay (`debounce_ms`) to coalesce rapid file changes
+    - Default: 300ms delay before triggering task execution
+    - Set to 0 to disable debouncing (execute immediately on each change)
+    - Prevents excessive rebuilds during rapid editing sessions
+  - **Pattern-based filtering**: Glob patterns for precise control over watched files
+    - `patterns`: Include only specific file types (e.g., `["**/*.zig", "*.toml"]`)
+    - `exclude_patterns`: Exclude directories/files (e.g., `["**/node_modules/**", "**/.git/**"]`)
+    - Exclude patterns take precedence over include patterns
+    - Empty include list watches all files (unless excluded)
+  - **Watch configuration in TOML**: `[tasks.*.watch]` section for task-specific settings
+    - `debounce_ms`: Delay in milliseconds (default: 300)
+    - `patterns`: Array of glob patterns for inclusion
+    - `exclude_patterns`: Array of glob patterns for exclusion
+    - `mode`: "native" or "polling" (auto-selects if null)
+  - **Enhanced watcher implementation**: Updated `src/watch/watcher.zig` with filtering logic
+    - New `WatcherOptions` struct for configuration
+    - `matchesPatterns()` method for glob-based filtering
+    - Debouncing logic with timestamp tracking and event coalescing
+    - Backwards compatible: existing code works without changes
+  - **CLI integration**: Watch mode automatically applies task configuration
+    - Shows active settings in output: "(using native mode, debounce: 500ms, patterns: 2)"
+    - Pattern and debounce info displayed when configured
+  - **Tests**: 3 new unit tests for pattern filtering (include, exclude, combined)
+  - **Documentation**: Comprehensive guide in `docs/guides/configuration.md`
+    - Complete field reference with examples
+    - Usage patterns and best practices
+    - Pattern matching rules and debouncing behavior
+
+### Changed
+- Watcher initialization now requires `WatcherOptions` parameter (backwards compatible with `.{}`)
+- Watch mode output shows configuration details when debouncing or patterns are active
+
+### Developer Notes
+- All 746 unit tests pass (8 skipped), all 881 integration tests pass
+- Existing watch_test.zig integration tests verify TOML parsing of watch config
+
+## [1.16.0] - 2026-03-07
+
+### Added
+- **Task Execution Analytics**: Resource usage tracking and enhanced reporting
+  - **Resource tracking**: Peak memory and average CPU monitoring
+    - Sampled at 100ms intervals during task execution
+    - Peak memory recorded in bytes (max RSS usage)
+    - Average CPU calculated from samples (percentage)
+  - **Analytics collector**: Extended TaskStats with resource metrics
+    - Integrated into scheduler's result tracking
+    - Zero configuration required
+  - **Enhanced reports**: HTML/JSON output includes resource columns
+    - Peak memory displayed in human-readable format (MB/GB)
+    - Average CPU shown as percentage
+    - Sortable columns in HTML reports
+  - **Tests**: 2 new integration tests (874-875) verifying resource tracking
+  - **Documentation**: Updated commands.md with resource tracking examples
+
+### Changed
+- Analytics reports now include peak_memory_bytes and avg_cpu_percent columns
+- HTML report tables extended with resource usage metrics
+
 ## [1.15.0] - 2026-03-07
 
 ### Added
