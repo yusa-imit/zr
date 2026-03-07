@@ -752,7 +752,7 @@ Uses workspace structure and git history to generate CODEOWNERS.
 
 ### `analytics`
 
-Generate build analysis reports.
+Generate build analysis reports with detailed metrics.
 
 ```bash
 zr analytics [OPTIONS]
@@ -760,13 +760,34 @@ zr analytics [OPTIONS]
 
 **Examples:**
 ```bash
-zr analytics  # text summary
-zr analytics --format html > report.html
-zr analytics --format json > report.json
+zr analytics                         # Open interactive HTML report
+zr analytics --format json          # JSON output to stdout
+zr analytics -o report.html         # Save HTML to file
+zr analytics --limit 100            # Analyze last 100 executions
+zr analytics --no-open              # Generate without opening browser
 ```
 
 **Options:**
-- `--format <fmt>` — Output format: `text`, `html`, `json`
+- `--format <fmt>` — Output format: `html` (default), `json`
+- `-o, --output <path>` — Save report to file instead of temp
+- `--limit <n>` — Analyze last N executions (default: 1000)
+- `--no-open` — Don't open HTML report in browser
+
+**Report Contents:**
+- **Task execution metrics** — Per-task timing, success rates, retry counts
+- **Resource usage** — Peak memory (MB), average CPU (%), per task
+- **Failure analysis** — Failure rates, patterns, trends over time
+- **Critical path** — Slowest tasks (bottlenecks)
+- **Parallelization efficiency** — CPU utilization, speedup metrics
+- **Time series charts** — Duration trends, cache hit rates (HTML only)
+
+**Resource Tracking (v1.16.0+):**
+
+Resource usage is automatically captured during task execution:
+- **Peak Memory**: Maximum RSS (resident set size) in bytes
+- **Average CPU**: CPU percentage averaged over execution (0-100% per core)
+
+Resource data is stored in `.zr_history` and included in all analytics reports.
 
 ---
 
