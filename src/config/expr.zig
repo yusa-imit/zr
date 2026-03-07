@@ -149,6 +149,17 @@ fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
         return evalSemverGte(ctx, trimmed);
     }
 
+    // Git predicates
+    if (std.mem.startsWith(u8, trimmed, "git.branch")) {
+        return evalGitBranch(ctx, trimmed);
+    }
+    if (std.mem.startsWith(u8, trimmed, "git.tag")) {
+        return evalGitTag(ctx, trimmed);
+    }
+    if (std.mem.eql(u8, trimmed, "git.dirty")) {
+        return evalGitDirty(ctx);
+    }
+
     // Environment variable check
     if (std.mem.startsWith(u8, trimmed, "env.")) {
         return evalEnvCheck(ctx, trimmed);
@@ -426,6 +437,137 @@ fn evalSemverGte(ctx: *const ExprContext, expr: []const u8) !bool {
     _ = ctx; // unused but required by signature
 
     return v1.gte(v2);
+}
+
+/// Evaluate git.branch == "main" | "develop" | "feature/*"
+/// Returns true if the current git branch matches the specified pattern.
+/// Supports exact match or glob patterns (e.g., "feature/*").
+fn evalGitBranch(ctx: *const ExprContext, expr: []const u8) !bool {
+    const after_branch = std.mem.trim(u8, expr["git.branch".len..], " \t");
+    if (!std.mem.startsWith(u8, after_branch, "==")) {
+        return error.InvalidExpression;
+    }
+
+    const rhs_raw = std.mem.trim(u8, after_branch["==".len..], " \t");
+    const rhs = stripQuotes(rhs_raw);
+
+    // Get current branch using git
+    const result = std.process.Child.run(.{
+        .allocator = ctx.allocator,
+        .argv = &[_][]const u8{ "git", "rev-parse", "--abbrev-ref", "HEAD" },
+    }) catch return false; // Not a git repo or git not available
+
+    defer ctx.allocator.free(result.stdout);
+    defer ctx.allocator.free(result.stderr);
+
+    // Check if command succeeded
+    const success = switch (result.term) {
+        .Exited => |code| code == 0,
+        else => false,
+    };
+    if (!success) return false;
+
+    // Trim newline from branch name
+    const current_branch = std.mem.trim(u8, result.stdout, " \t\r\n");
+
+    // Check for glob pattern (contains * or ?)
+    if (std.mem.indexOfAny(u8, rhs, "*?")) |_| {
+        // Simple glob match - supports * wildcard only
+        return matchGlob(current_branch, rhs);
+    }
+
+    // Exact match
+    return std.mem.eql(u8, current_branch, rhs);
+}
+
+/// Evaluate git.tag == "v1.0.0" | "v*"
+/// Returns true if the current commit has a tag matching the specified pattern.
+fn evalGitTag(ctx: *const ExprContext, expr: []const u8) !bool {
+    const after_tag = std.mem.trim(u8, expr["git.tag".len..], " \t");
+    if (!std.mem.startsWith(u8, after_tag, "==")) {
+        return error.InvalidExpression;
+    }
+
+    const rhs_raw = std.mem.trim(u8, after_tag["==".len..], " \t");
+    const rhs = stripQuotes(rhs_raw);
+
+    // Get tags for current commit using git
+    const result = std.process.Child.run(.{
+        .allocator = ctx.allocator,
+        .argv = &[_][]const u8{ "git", "tag", "--points-at", "HEAD" },
+    }) catch return false; // Not a git repo or git not available
+
+    defer ctx.allocator.free(result.stdout);
+    defer ctx.allocator.free(result.stderr);
+
+    // Check if command succeeded
+    const success = switch (result.term) {
+        .Exited => |code| code == 0,
+        else => false,
+    };
+    if (!success) return false;
+
+    // Parse tags (one per line)
+    var lines = std.mem.tokenizeScalar(u8, result.stdout, '\n');
+    while (lines.next()) |tag| {
+        const trimmed_tag = std.mem.trim(u8, tag, " \t\r");
+
+        // Check for glob pattern
+        if (std.mem.indexOfAny(u8, rhs, "*?")) |_| {
+            if (matchGlob(trimmed_tag, rhs)) return true;
+        } else {
+            // Exact match
+            if (std.mem.eql(u8, trimmed_tag, rhs)) return true;
+        }
+    }
+
+    return false;
+}
+
+/// Evaluate git.dirty
+/// Returns true if the working directory has uncommitted changes.
+fn evalGitDirty(ctx: *const ExprContext) !bool {
+    // Use git status --porcelain to check for changes
+    const result = std.process.Child.run(.{
+        .allocator = ctx.allocator,
+        .argv = &[_][]const u8{ "git", "status", "--porcelain" },
+    }) catch return false; // Not a git repo or git not available
+
+    defer ctx.allocator.free(result.stdout);
+    defer ctx.allocator.free(result.stderr);
+
+    // Check if command succeeded
+    const success = switch (result.term) {
+        .Exited => |code| code == 0,
+        else => false,
+    };
+    if (!success) return false;
+
+    // If output is non-empty, there are changes
+    return result.stdout.len > 0;
+}
+
+/// Simple glob matching - supports * wildcard only (not full glob spec).
+/// Returns true if str matches the pattern.
+fn matchGlob(str: []const u8, pattern: []const u8) bool {
+    // Find the * position
+    const star_pos = std.mem.indexOf(u8, pattern, "*") orelse {
+        // No wildcard - exact match
+        return std.mem.eql(u8, str, pattern);
+    };
+
+    const prefix = pattern[0..star_pos];
+    const suffix = pattern[star_pos + 1 ..];
+
+    // Check prefix
+    if (!std.mem.startsWith(u8, str, prefix)) return false;
+
+    // Check suffix
+    if (!std.mem.endsWith(u8, str, suffix)) return false;
+
+    // Ensure the middle part doesn't contain path separators if pattern is path-like
+    // For now, simple implementation - just check prefix and suffix
+    return true;
 }
 
 /// Evaluate stages['name'].success
