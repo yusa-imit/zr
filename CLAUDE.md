@@ -682,3 +682,63 @@ gh issue create --repo yusa-imit/sailor \
 - [x] 기존 테스트 전체 통과 확인 (743 unit, 873 integration)
 
 **Note**: Non-breaking upgrade. Testing utilities are opt-in. Current tests work without changes. This release provides better tools for TUI test coverage expansion.
+
+---
+
+## zuda Migration
+
+zr은 현재 자체 구현한 자료구조/알고리즘을 `zuda` 라이브러리(https://github.com/yusa-imit/zuda)로 점진적으로 대체할 예정이다.
+zuda의 해당 구현이 완료되면 `from:zuda` 라벨 이슈가 발행된다.
+
+### 마이그레이션 대상
+
+| 자체 구현 | 파일 | zuda 대체 | status |
+|-----------|------|-----------|--------|
+| DAG | `src/graph/dag.zig` | `zuda.containers.graphs.AdjacencyList` | PENDING |
+| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | `zuda.algorithms.graph.topological_sort` | PENDING |
+| Cycle Detection | `src/graph/cycle_detect.zig` | `zuda.algorithms.graph.cycle_detection` | PENDING |
+| Work-Stealing Deque | `src/exec/workstealing.zig` | `zuda.containers.queues.StealingQueue` | PENDING |
+| Levenshtein Distance | `src/util/levenshtein.zig` | `zuda.algorithms.dynamic_programming.edit_distance` | PENDING |
+| Glob Pattern Matching | `src/util/glob.zig` | `zuda.algorithms.string.glob_match` | PENDING |
+
+### 마이그레이션 제외 (domain-specific)
+
+- `src/util/string_pool.zig` — zr 전용 문자열 인터닝
+- `src/util/object_pool.zig` — zr 전용 객체 풀
+- `src/graph/ascii.zig` — zr 전용 ASCII 그래프 렌더러
+
+### 마이그레이션 프로토콜
+
+1. zuda에서 `from:zuda` 라벨 이슈가 도착하면 해당 마이그레이션의 status를 `READY`로 변경
+2. 마이그레이션 수행:
+   - `build.zig.zon`에 zuda 의존성 추가 (`zig fetch --save <url>`)
+   - `build.zig`에서 zuda 모듈 import 설정
+   - 자체 구현 파일의 코드를 zuda import로 교체
+   - 자체 구현 파일은 래퍼로 전환하거나 삭제
+3. `zig build test && zig build integration-test` 전체 통과 확인
+4. status를 `DONE`으로 변경하고 커밋
+
+### zuda 이슈 발행 프로토콜
+
+zuda 라이브러리를 사용하는 중 버그를 발견하거나, 필요한 기능이 없을 때:
+
+```bash
+gh issue create --repo yusa-imit/zuda \
+  --title "bug: <간단한 설명>" \
+  --label "bug,from:zr" \
+  --body "## 증상
+<어떤 문제가 발생했는지>
+
+## 재현 방법
+<코드 또는 단계>
+
+## 환경
+- zuda: <version>
+- zig: $(zig version)
+- OS: $(uname -s)"
+```
+
+- zuda의 기존 API로 해결할 수 없는 문제일 때만 발행
+- 동일한 이슈가 이미 열려있는지 먼저 확인
+- **로컬 워크어라운드 금지**: zuda에 버그가 있으면 자체 구현으로 우회하지 않고, 이슈 발행 후 수정 대기
+- zuda 에이전트가 `from:*` 라벨 이슈를 최우선 처리한다
