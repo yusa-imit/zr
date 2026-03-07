@@ -94,3 +94,141 @@ test "watch: valid task name with custom paths" {
     // This test is primarily structural - real watch functionality is tested in unit tests
     // We're just verifying the CLI accepts the arguments without crashing
 }
+
+test "watch: parse WatchConfig with debounce_ms" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.build.watch]
+        \\debounce_ms = 500
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    // Use validate to verify parsing
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with patterns" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.build.watch]
+        \\patterns = ["*.zig", "*.toml"]
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with exclude_patterns" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.build.watch]
+        \\exclude_patterns = ["*.tmp", "*.log"]
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with mode" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.build.watch]
+        \\mode = "restart"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with all fields" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+        \\[tasks.build.watch]
+        \\debounce_ms = 300
+        \\patterns = ["src/**/*.zig", "build.zig"]
+        \\exclude_patterns = ["**/.zig-cache/**", "**/zig-out/**"]
+        \\mode = "restart"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: WatchConfig section must follow task definition" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build.watch]
+        \\debounce_ms = 500
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "must follow") != null or
+        std.mem.indexOf(u8, result.stderr, "MalformedSectionHeader") != null);
+}
