@@ -38,7 +38,10 @@ pub fn generateJsonReport(allocator: std.mem.Allocator, report: *const types.Ana
         try writer.print("      \"cache_hits\": {d},\n", .{stat.cache_hits});
         try writer.print("      \"cache_misses\": {d},\n", .{stat.cache_misses});
         try writer.print("      \"cache_hit_rate\": {d},\n", .{stat.cacheHitRate()});
-        try writer.print("      \"failure_rate\": {d}\n", .{stat.failureRate()});
+        try writer.print("      \"failure_rate\": {d},\n", .{stat.failureRate()});
+        try writer.print("      \"peak_memory_bytes\": {d},\n", .{stat.peak_memory_bytes});
+        try writer.print("      \"avg_memory_bytes\": {d},\n", .{stat.avg_memory_bytes});
+        try writer.print("      \"avg_cpu_percent\": {d}\n", .{stat.avg_cpu_percent});
         try writer.writeAll("    }");
     }
     try writer.writeAll("\n  ],\n");

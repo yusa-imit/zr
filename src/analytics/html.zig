@@ -115,7 +115,8 @@ pub fn generateHtmlReport(allocator: std.mem.Allocator, report: *const types.Ana
         \\            <th>Runs</th>
         \\            <th>Success Rate</th>
         \\            <th>Avg Duration</th>
-        \\            <th>Min/Max</th>
+        \\            <th>Peak Memory</th>
+        \\            <th>Avg CPU</th>
         \\            <th>Cache Hit Rate</th>
         \\          </tr>
         \\        </thead>
@@ -129,13 +130,17 @@ pub fn generateHtmlReport(allocator: std.mem.Allocator, report: *const types.Ana
         else
             0.0;
 
+        // Format memory in MB
+        const peak_mem_mb = @as(f64, @floatFromInt(stat.peak_memory_bytes)) / 1_048_576.0;
+
         try writer.print(
             \\          <tr>
             \\            <td>{s}</td>
             \\            <td>{d}</td>
             \\            <td>{d:.1}%</td>
             \\            <td>{d:.0}ms</td>
-            \\            <td>{d}ms / {d}ms</td>
+            \\            <td>{d:.1} MB</td>
+            \\            <td>{d:.1}%</td>
             \\            <td>{d:.1}%</td>
             \\          </tr>
             \\
@@ -144,8 +149,8 @@ pub fn generateHtmlReport(allocator: std.mem.Allocator, report: *const types.Ana
             stat.total_runs,
             success_rate,
             stat.avg_duration_ms,
-            stat.min_duration_ms,
-            stat.max_duration_ms,
+            peak_mem_mb,
+            stat.avg_cpu_percent,
             stat.cacheHitRate(),
         });
     }
