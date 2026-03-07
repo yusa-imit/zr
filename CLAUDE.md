@@ -659,3 +659,23 @@ gh issue create --repo yusa-imit/sailor \
 - [x] 기존 테스트 전체 통과 확인 (733 unit, 859 integration)
 
 **Note**: Non-breaking upgrade. Form features are opt-in. Current CLI/TUI implementation works without changes. These features enable future interactive configuration and task selection UIs.
+
+### v1.5.0 — State Management & Testing (status: READY)
+
+**sailor v1.5.0 released** (2026-03-07) — Testing utilities and state management
+
+- **New features**:
+  - Widget snapshot testing: assertSnapshot() method for pixel-perfect verification
+  - Example test suite: 10 comprehensive integration test patterns
+  - Previously released: Event bus, Command pattern, MockTerminal, EventSimulator
+- **Impact on zr**: HIGH — Critical for TUI testing
+  - MockTerminal already integrated in zr's TUI tests (dashboard, graph)
+  - assertSnapshot() can verify exact rendering output
+  - Example test patterns serve as reference for zr's TUI test expansion
+  - Event bus useful for cross-component TUI communication (future)
+  - Command pattern enables undo/redo in TUI (future interactive features)
+- [ ] `build.zig.zon`에 sailor v1.5.0 의존성 업데이트
+- [ ] Review example test patterns for improving zr's TUI test suite
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. Testing utilities are opt-in. Current tests work without changes. This release provides better tools for TUI test coverage expansion.
