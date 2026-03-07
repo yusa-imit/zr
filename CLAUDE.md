@@ -683,6 +683,25 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. Testing utilities are opt-in. Current tests work without changes. This release provides better tools for TUI test coverage expansion.
 
+### v1.6.0 — Data Visualization & Advanced Charts (status: READY)
+
+**sailor v1.6.0 released** (2026-03-08) — Advanced data visualization widgets
+
+- **New features**:
+  - ScatterPlot: X-Y coordinate plotting with markers and multiple series
+  - Histogram: Frequency distribution bars (vertical/horizontal)
+  - TimeSeriesChart: Time-based line chart with Unix timestamp support
+  - Heatmap & PieChart (previously released in v1.5.0)
+- **Impact on zr**: LOW — Optional for future analytics
+  - Histogram useful for task duration distributions
+  - TimeSeriesChart for build time trends over time
+  - ScatterPlot for cache hit rate vs. build time correlation
+  - Not critical for current functionality
+- [ ] `build.zig.zon`에 sailor v1.6.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. All widgets are opt-in. No immediate action required.
+
 ---
 
 ## zuda Migration
