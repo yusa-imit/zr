@@ -406,6 +406,23 @@ Clear all cached task results.
 zr cache clear
 ```
 
+**Options:**
+- `--workspace` - Clear cache for all workspace members
+- `--member <path>` - Clear cache for a specific workspace member
+
+**Examples:**
+
+```bash
+# Clear cache for the current project
+zr cache clear
+
+# Clear cache for all workspace members
+zr cache clear --workspace
+
+# Clear cache for a specific workspace member
+zr cache clear --member packages/api
+```
+
 ---
 
 ## Plugin Commands
