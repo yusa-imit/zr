@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-03-07
+
+### Added
+- **Workspace-wide cache invalidation**: Clear cache for all workspace members at once
+  - `zr cache clear --workspace` clears cache for root and all member projects
+  - `zr cache clear --member <path>` clears cache for specific workspace member
+  - Enables efficient cache management in multi-project workspaces
+  - Integration tests: 4 new tests (870-873) verifying workspace cache features
+  - Documentation: Updated commands.md with examples and flag descriptions
+- **Sailor v1.5.0 migration**: Testing utilities and state management
+  - Widget snapshot testing: `assertSnapshot()` method for pixel-perfect TUI verification
+  - EventSimulator and MockTerminal available for TUI testing
+  - Event bus and Command pattern for future TUI features
+  - Non-breaking upgrade: all tests pass (743/751 unit, 873/873 integration)
+
+### Changed
+- Workspace cache commands now support targeting specific members
+- Cache clearing operations provide better feedback for workspace scenarios
+
+### Developer Notes
+- Expression diagnostics integration deferred to future milestone (requires refactoring ~15 functions)
+- Future enhancements planned: dependency visualization improvements, cross-workspace tasks
+
 ## [1.14.0] - 2026-03-07
 
 ### Added

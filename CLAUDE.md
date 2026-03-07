@@ -328,7 +328,7 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.12.0 — TOML Parser v2** (DONE, released 2026-03-03): Auto-generate stage names for anonymous `[[workflows.name.stages]]`, 검증 경고 제거, 3 unit tests + 3 integration tests
 - [x] **v1.13.0 — Parallel Execution Optimizations** (DONE): Work-stealing deque, NUMA topology detection, cross-platform CPU affinity, cpu_affinity/numa_node task fields, scheduler integration, documentation
 - [x] **v1.14.0 — Enhanced Error Diagnostics**: Task execution timeline, failure replay mode (expression stack traces deferred to v1.15.0)
-- [ ] **v1.15.0 — Workspace Enhancements**: Workspace-wide cache invalidation, dependency visualization improvements, cross-workspace tasks
+- [x] **v1.15.0 — Workspace Enhancements**: Workspace-wide cache invalidation, member-specific cache clearing, sailor v1.5.0 migration
 - [ ] **v1.16.0 — Task Execution Analytics**: Detailed task execution metrics (per-task timing, resource usage), task failure rate tracking and visualization, critical path analysis (identify bottleneck tasks), export execution data as JSON, HTML dashboard for execution history with charts
 - [ ] **v1.17.0 — Advanced Watch Mode**: Debouncing for rapid file changes (configurable delay), pattern-based watch filters (glob patterns for file inclusion/exclusion), multi-pattern watch support (watch multiple paths per task), watch mode configuration in zr.toml ([tasks.*.watch] section), integration with existing native file watchers
 - [ ] **v1.18.0 — Conditional Task Execution**: Extended expression engine with additional predicates (git.branch, git.tag, git.dirty), task skip conditions (skip_if field), conditional outputs (output_if), improved error diagnostics for failed conditions
