@@ -63,6 +63,8 @@ pub const Timeline = struct {
     start_time_ns: u64,
     /// List of events in chronological order.
     events: std.ArrayList(TimelineEvent),
+    /// Mutex to protect concurrent access to events list.
+    mutex: std.Thread.Mutex,
     /// Whether timeline tracking is enabled.
     enabled: bool = true,
 
@@ -71,6 +73,7 @@ pub const Timeline = struct {
             .allocator = allocator,
             .start_time_ns = @as(u64, @intCast(@max(0, std.time.nanoTimestamp()))),
             .events = std.ArrayList(TimelineEvent){},
+            .mutex = .{},
         };
     }
 
@@ -85,6 +88,7 @@ pub const Timeline = struct {
     }
 
     /// Record a new event in the timeline.
+    /// Thread-safe: multiple worker threads can call this concurrently.
     pub fn recordEvent(
         self: *Timeline,
         event_type: EventType,
@@ -103,6 +107,8 @@ pub const Timeline = struct {
             .context = if (context) |ctx| try self.allocator.dupe(u8, ctx) else null,
         };
 
+        self.mutex.lock();
+        defer self.mutex.unlock();
         try self.events.append(self.allocator, event);
     }
 
