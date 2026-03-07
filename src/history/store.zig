@@ -14,6 +14,10 @@ pub const Record = struct {
     task_count: u32,
     /// Total number of retry attempts across all tasks (0 if all succeeded on first try).
     retry_count: u32,
+    /// Peak memory usage in bytes (0 if not captured).
+    peak_memory_bytes: u64 = 0,
+    /// Average CPU percentage during execution (0.0 if not captured).
+    avg_cpu_percent: f64 = 0.0,
 
     pub fn deinit(self: Record, allocator: std.mem.Allocator) void {
         allocator.free(self.task_name);
@@ -21,7 +25,7 @@ pub const Record = struct {
 };
 
 /// History store backed by a line-delimited text file.
-/// Each line: `<timestamp>\t<task_name>\t<ok|fail>\t<duration_ms>\t<task_count>\t<retry_count>`
+/// Each line: `<timestamp>\t<task_name>\t<ok|fail>\t<duration_ms>\t<task_count>\t<retry_count>\t<peak_memory_bytes>\t<avg_cpu_percent>`
 pub const Store = struct {
     path: []const u8, // owned
     allocator: std.mem.Allocator,
@@ -52,13 +56,15 @@ pub const Store = struct {
 
         var line_buf: [1024]u8 = undefined;
         const status = if (record.success) "ok" else "fail";
-        const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\t{s}\t{d}\t{d}\t{d}\n", .{
+        const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\t{s}\t{d}\t{d}\t{d}\t{d}\t{d:.2}\n", .{
             record.timestamp,
             record.task_name,
             status,
             record.duration_ms,
             record.task_count,
             record.retry_count,
+            record.peak_memory_bytes,
+            record.avg_cpu_percent,
         });
         try file.writeAll(line);
     }
@@ -109,6 +115,8 @@ pub const Store = struct {
                 .duration_ms = r.duration_ms,
                 .task_count = r.task_count,
                 .retry_count = r.retry_count,
+                .peak_memory_bytes = r.peak_memory_bytes,
+                .avg_cpu_percent = r.avg_cpu_percent,
             };
             try records.append(allocator, owned);
         }
@@ -128,11 +136,15 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
     const dur_str = it.next() orelse return error.InvalidFormat;
     const count_str = it.next() orelse return error.InvalidFormat;
     const retry_str = it.next(); // Optional for backward compatibility
+    const mem_str = it.next(); // Optional (v1.16.0+)
+    const cpu_str = it.next(); // Optional (v1.16.0+)
 
     const timestamp = std.fmt.parseInt(i64, ts_str, 10) catch return error.InvalidFormat;
     const duration_ms = std.fmt.parseInt(u64, dur_str, 10) catch return error.InvalidFormat;
     const task_count = std.fmt.parseInt(u32, count_str, 10) catch return error.InvalidFormat;
     const retry_count = if (retry_str) |s| std.fmt.parseInt(u32, s, 10) catch 0 else 0;
+    const peak_memory_bytes = if (mem_str) |s| std.fmt.parseInt(u64, s, 10) catch 0 else 0;
+    const avg_cpu_percent = if (cpu_str) |s| std.fmt.parseFloat(f64, s) catch 0.0 else 0.0;
     const success = std.mem.eql(u8, status_str, "ok");
 
     return Record{
@@ -142,6 +154,8 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
         .duration_ms = duration_ms,
         .task_count = task_count,
         .retry_count = retry_count,
+        .peak_memory_bytes = peak_memory_bytes,
+        .avg_cpu_percent = avg_cpu_percent,
     };
 }
 

@@ -122,6 +122,10 @@ pub const TaskResult = struct {
     skipped: bool = false,
     /// Number of retry attempts (0 if succeeded on first try).
     retry_count: u32 = 0,
+    /// Peak memory usage in bytes (0 if not captured).
+    peak_memory_bytes: u64 = 0,
+    /// Average CPU percentage during execution (0.0 if not captured).
+    avg_cpu_percent: f64 = 0.0,
 };
 
 pub const ScheduleResult = struct {
@@ -379,6 +383,8 @@ fn workerFn(ctx: WorkerCtx) void {
         .exit_code = proc_result.exit_code,
         .duration_ms = proc_result.duration_ms,
         .retry_count = retry_count,
+        .peak_memory_bytes = proc_result.peak_memory_bytes,
+        .avg_cpu_percent = proc_result.avg_cpu_percent,
     }) catch {
         ctx.allocator.free(owned_name);
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);

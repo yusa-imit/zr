@@ -147,15 +147,24 @@ pub fn cmdRun(
         }
     }
 
-    // Calculate total retry count across all tasks
+    // Calculate aggregate stats across all tasks
     var total_retries: u32 = 0;
+    var peak_memory: u64 = 0;
+    var cpu_sum: f64 = 0.0;
+    var cpu_count: usize = 0;
     for (sched_result.results.items) |result| {
         total_retries += result.retry_count;
+        peak_memory = @max(peak_memory, result.peak_memory_bytes);
+        if (result.avg_cpu_percent > 0.0) {
+            cpu_sum += result.avg_cpu_percent;
+            cpu_count += 1;
+        }
     }
+    const avg_cpu = if (cpu_count > 0) cpu_sum / @as(f64, @floatFromInt(cpu_count)) else 0.0;
 
     // Record to history (best-effort, ignore errors)
     recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-        @intCast(sched_result.results.items.len), total_retries);
+        @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu);
 
     return if (sched_result.total_success) 0 else 1;
 }
@@ -281,8 +290,16 @@ pub fn cmdWatch(
         const elapsed_ms: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns, std.time.ns_per_ms));
 
         var total_retries: u32 = 0;
+        var peak_memory: u64 = 0;
+        var cpu_sum: f64 = 0.0;
+        var cpu_count: usize = 0;
         for (sched_result.results.items) |task_result| {
             total_retries += task_result.retry_count;
+            peak_memory = @max(peak_memory, task_result.peak_memory_bytes);
+            if (task_result.avg_cpu_percent > 0.0) {
+                cpu_sum += task_result.avg_cpu_percent;
+                cpu_count += 1;
+            }
             if (task_result.success) {
                 try color.printSuccess(w, use_color, "{s} ", .{task_result.task_name});
                 try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
@@ -291,9 +308,10 @@ pub fn cmdWatch(
                 try color.printDim(err_writer, use_color, "(exit: {d})\n", .{task_result.exit_code});
             }
         }
+        const avg_cpu = if (cpu_count > 0) cpu_sum / @as(f64, @floatFromInt(cpu_count)) else 0.0;
 
         recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-            @intCast(sched_result.results.items.len), total_retries);
+            @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu);
 
         try color.printDim(w, use_color, "Watching for changes (Ctrl+C to stop)...\n", .{});
     }
@@ -592,6 +610,8 @@ pub fn recordHistory(
     duration_ms: u64,
     task_count: u32,
     retry_count: u32,
+    peak_memory_bytes: u64,
+    avg_cpu_percent: f64,
 ) void {
     const hist_path = history.defaultHistoryPath(allocator) catch return;
     defer allocator.free(hist_path);
@@ -606,6 +626,8 @@ pub fn recordHistory(
         .duration_ms = duration_ms,
         .task_count = task_count,
         .retry_count = retry_count,
+        .peak_memory_bytes = peak_memory_bytes,
+        .avg_cpu_percent = avg_cpu_percent,
     }) catch {};
 }
 

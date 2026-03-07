@@ -16,6 +16,10 @@ pub const ProcessResult = struct {
     exit_code: u8,
     duration_ms: u64,
     success: bool,
+    /// Peak memory usage in bytes (0 if not captured).
+    peak_memory_bytes: u64 = 0,
+    /// Average CPU percentage during execution (0.0 if not captured).
+    avg_cpu_percent: f64 = 0.0,
 };
 
 /// Callback for streaming output lines.
@@ -111,6 +115,46 @@ fn resourceWatcher(ctx: ResourceCtx) void {
         // CPU limit is informational only for now
         // (Hard CPU throttling requires cgroups/Job Objects)
         _ = ctx.max_cpu_cores;
+    }
+}
+
+/// Context for resource usage tracking (for analytics).
+const ResourceTrackerCtx = struct {
+    pid: std.process.Child.Id,
+    /// Atomically updated peak memory (read by main thread after join).
+    peak_memory: *std.atomic.Value(u64),
+    /// Sum of CPU samples (averaged by main thread).
+    cpu_sum: *std.atomic.Value(u64), // stored as u64 (cpu_percent * 100)
+    /// Number of samples taken.
+    sample_count: *std.atomic.Value(u64),
+    /// Written to true by main thread when child exits normally.
+    done: *std.atomic.Value(bool),
+};
+
+fn resourceTracker(ctx: ResourceTrackerCtx) void {
+    // Sample every 100ms
+    const sample_interval_ms: u64 = 100;
+    while (!ctx.done.load(.acquire)) {
+        std.Thread.sleep(sample_interval_ms * std.time.ns_per_ms);
+        if (ctx.done.load(.acquire)) return;
+
+        const usage = resource.getProcessUsage(ctx.pid) orelse continue;
+
+        // Update peak memory
+        const current_peak = ctx.peak_memory.load(.monotonic);
+        if (usage.rss_bytes > current_peak) {
+            _ = ctx.peak_memory.cmpxchgWeak(
+                current_peak,
+                usage.rss_bytes,
+                .release,
+                .monotonic,
+            );
+        }
+
+        // Accumulate CPU percentage (* 100 to store as integer)
+        const cpu_int: u64 = @intFromFloat(usage.cpu_percent * 100.0);
+        _ = ctx.cpu_sum.fetchAdd(cpu_int, .monotonic);
+        _ = ctx.sample_count.fetchAdd(1, .monotonic);
     }
 }
 
@@ -267,6 +311,22 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         maybe_control_thread = std.Thread.spawn(.{}, controlWatcher, .{ctx}) catch null;
     }
 
+    // Start resource usage tracker for analytics
+    var peak_memory = std.atomic.Value(u64).init(0);
+    var cpu_sum = std.atomic.Value(u64).init(0);
+    var sample_count = std.atomic.Value(u64).init(0);
+    var maybe_tracker_thread: ?std.Thread = null;
+    {
+        const ctx = ResourceTrackerCtx{
+            .pid = child.id,
+            .peak_memory = &peak_memory,
+            .cpu_sum = &cpu_sum,
+            .sample_count = &sample_count,
+            .done = &child_done,
+        };
+        maybe_tracker_thread = std.Thread.spawn(.{}, resourceTracker, .{ctx}) catch null;
+    }
+
     // Optionally start monitor display thread
     var maybe_monitor_thread: ?std.Thread = null;
     var maybe_monitor_ctx: ?monitor_mod.MonitorContext = null;
@@ -357,10 +417,20 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
     if (maybe_timeout_thread) |t| t.join();
     if (maybe_resource_thread) |t| t.join();
     if (maybe_control_thread) |t| t.join();
+    if (maybe_tracker_thread) |t| t.join();
     if (maybe_monitor_thread) |t| t.join();
 
     const end_ms = std.time.milliTimestamp();
     const duration_ms: u64 = @intCast(@max(0, end_ms - start_ms));
+
+    // Calculate resource usage statistics from tracker
+    const peak_mem = peak_memory.load(.acquire);
+    const total_cpu = cpu_sum.load(.acquire);
+    const samples = sample_count.load(.acquire);
+    const avg_cpu = if (samples > 0)
+        @as(f64, @floatFromInt(total_cpu)) / @as(f64, @floatFromInt(samples)) / 100.0
+    else
+        0.0;
 
     // If killed by timeout, resource limit, or cancellation, report failure
     if (timed_out.load(.acquire) or limit_exceeded.load(.acquire) or cancelled.load(.acquire)) {
@@ -368,6 +438,8 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
             .exit_code = 1,
             .duration_ms = duration_ms,
             .success = false,
+            .peak_memory_bytes = peak_mem,
+            .avg_cpu_percent = avg_cpu,
         };
     }
 
@@ -382,6 +454,8 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         .exit_code = exit_code,
         .duration_ms = duration_ms,
         .success = exit_code == 0,
+        .peak_memory_bytes = peak_mem,
+        .avg_cpu_percent = avg_cpu,
     };
 }
 
