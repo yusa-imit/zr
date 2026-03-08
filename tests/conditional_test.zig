@@ -148,8 +148,8 @@ test "885: git.dirty predicate detects uncommitted changes" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Initialize git repo
-    try runGitCommand(allocator, &.{"git", "init"}, tmp_path);
+    // Initialize git repo with main as default branch
+    try runGitCommand(allocator, &.{"git", "init", "-b", "main"}, tmp_path);
     try runGitCommand(allocator, &.{"git", "config", "user.name", "Test User"}, tmp_path);
     try runGitCommand(allocator, &.{"git", "config", "user.email", "test@example.com"}, tmp_path);
 
@@ -193,8 +193,8 @@ test "886: git.branch predicate matches current branch" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Initialize git repo
-    try runGitCommand(allocator, &.{"git", "init"}, tmp_path);
+    // Initialize git repo with main as default branch
+    try runGitCommand(allocator, &.{"git", "init", "-b", "main"}, tmp_path);
     try runGitCommand(allocator, &.{"git", "config", "user.name", "Test User"}, tmp_path);
     try runGitCommand(allocator, &.{"git", "config", "user.email", "test@example.com"}, tmp_path);
 
@@ -234,8 +234,8 @@ test "887: git.tag predicate matches current tag" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Initialize git repo
-    try runGitCommand(allocator, &.{"git", "init"}, tmp_path);
+    // Initialize git repo with main as default branch
+    try runGitCommand(allocator, &.{"git", "init", "-b", "main"}, tmp_path);
     try runGitCommand(allocator, &.{"git", "config", "user.name", "Test User"}, tmp_path);
     try runGitCommand(allocator, &.{"git", "config", "user.email", "test@example.com"}, tmp_path);
 
