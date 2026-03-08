@@ -331,6 +331,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_env = std.ArrayList([2][]const u8){};
     defer task_env.deinit(allocator);
 
+    // Subsection state (v1.19.0) — for handling subsections appearing before main task
+    var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
+    var in_task_env: bool = false;     // true when inside [tasks.X.env] section
+    var in_task_toolchain: bool = false; // true when inside [tasks.X.toolchain] section
+    var pending_task_name: ?[]const u8 = null; // task name from subsection
+    // Buffer for matrix TOML (will be content for task_matrix_raw when main task appears)
+    var pending_matrix_buffer = std.ArrayList(u8){};
+    defer pending_matrix_buffer.deinit(allocator);
+    // Pending env/toolchain from subsections (non-owning slices for env, owned slices for toolchain)
+    var pending_env = std.ArrayList([2][]const u8){};
+    defer pending_env.deinit(allocator);
+    var pending_toolchain = std.ArrayList([]const u8){};
+    defer {
+        // Free owned toolchain strings
+        for (pending_toolchain.items) |tc| allocator.free(tc);
+        pending_toolchain.deinit(allocator);
+    }
+
     // Template parsing state — non-owning slices into content
     var current_template: ?[]const u8 = null;
     var template_cmd: ?[]const u8 = null;
@@ -1033,6 +1051,60 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
 
             in_task_watch = true;
+        } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".matrix]") != null) {
+            // Section: [tasks.X.matrix] — matrix configuration for task X (v1.19.0)
+            in_workspace = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_task_watch = false;
+
+            // Extract task name: "[tasks.X.matrix]" → X
+            const matrix_marker = ".matrix]";
+            const matrix_idx = std.mem.indexOf(u8, trimmed, matrix_marker) orelse return error.MalformedSectionHeader;
+            const after_tasks = trimmed["[tasks.".len..];
+            const before_matrix = after_tasks[0 .. matrix_idx - "[tasks.".len];
+
+            // Store the task name for when we see the main [tasks.X] section
+            pending_task_name = before_matrix;
+            in_task_matrix = true;
+            in_task_env = false;
+            in_task_toolchain = false;
+        } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".env]") != null) {
+            // Section: [tasks.X.env] — env configuration for task X (v1.19.0)
+            in_workspace = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_task_watch = false;
+
+            // Extract task name: "[tasks.X.env]" → X
+            const env_marker = ".env]";
+            const env_idx = std.mem.indexOf(u8, trimmed, env_marker) orelse return error.MalformedSectionHeader;
+            const after_tasks = trimmed["[tasks.".len..];
+            const before_env = after_tasks[0 .. env_idx - "[tasks.".len];
+
+            // Store the task name for when we see the main [tasks.X] section
+            pending_task_name = before_env;
+            in_task_env = true;
+            in_task_matrix = false;
+            in_task_toolchain = false;
+        } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".toolchain]") != null) {
+            // Section: [tasks.X.toolchain] — toolchain configuration for task X (v1.19.0)
+            in_workspace = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_task_watch = false;
+
+            // Extract task name: "[tasks.X.toolchain]" → X
+            const toolchain_marker = ".toolchain]";
+            const toolchain_idx = std.mem.indexOf(u8, trimmed, toolchain_marker) orelse return error.MalformedSectionHeader;
+            const after_tasks = trimmed["[tasks.".len..];
+            const before_toolchain = after_tasks[0 .. toolchain_idx - "[tasks.".len];
+
+            // Store the task name for when we see the main [tasks.X] section
+            pending_task_name = before_toolchain;
+            in_task_toolchain = true;
+            in_task_matrix = false;
+            in_task_env = false;
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
             // Flush pending stage (if any, with auto-generated name if needed)
             _ = try flushPendingStage(
@@ -1164,12 +1236,41 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_workspace = false;
             in_cache = false;
             in_task_watch = false;
+            in_task_matrix = false;
+            in_task_env = false;
+            in_task_toolchain = false;
             in_cache_remote = false;
             // Validate section header has closing bracket
             current_task = validateSectionHeader(trimmed, "[tasks.") catch |err| {
                 if (err == error.MalformedSectionHeader) return err;
                 return err;
             };
+
+            // If we have pending subsection data for this task, apply it now (v1.19.0)
+            if (pending_task_name) |ptask| {
+                if (std.mem.eql(u8, current_task.?, ptask)) {
+                    // Apply pending matrix data if any
+                    if (pending_matrix_buffer.items.len > 0) {
+                        // Close the inline table
+                        const writer = pending_matrix_buffer.writer(allocator);
+                        try writer.writeAll(" }");
+                        task_matrix_raw = pending_matrix_buffer.items;
+                    }
+                    // Apply pending env data
+                    for (pending_env.items) |env_pair| {
+                        try task_env.append(allocator, env_pair);
+                    }
+                    // Apply pending toolchain data (owned strings, will be freed by deferred cleanup)
+                    for (pending_toolchain.items) |tc| {
+                        try task_toolchain.append(allocator, tc);
+                    }
+                    // Clear pending state (don't clear pending_toolchain, let defer free those strings)
+                    pending_task_name = null;
+                    pending_matrix_buffer.clearRetainingCapacity();
+                    pending_env.clearRetainingCapacity();
+                    // Note: pending_toolchain items stay alive until parseToml returns, so task_toolchain references stay valid
+                }
+            }
         } else if (std.mem.startsWith(u8, trimmed, "[templates.")) {
             // Flush pending template before starting a new one
             if (current_template) |tmpl_name| {
@@ -1611,6 +1712,33 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "mode")) {
                     task_watch_mode = value;
                 }
+            } else if (in_task_matrix) {
+                // Inside [tasks.X.matrix] section (v1.19.0)
+                // Accumulate key=value pairs into pending_matrix_buffer as TOML inline table
+                const writer = pending_matrix_buffer.writer(allocator);
+                if (pending_matrix_buffer.items.len == 0) {
+                    try writer.writeAll("{ ");
+                } else {
+                    try writer.writeAll(", ");
+                }
+                try writer.print("{s} = {s}", .{ key, trimmed[eq_idx + 1 ..] });
+            } else if (in_task_env) {
+                // Inside [tasks.X.env] section (v1.19.0)
+                // Accumulate env key=value pairs into pending_env (non-owning slices into content)
+                const env_key = key;
+                const env_val = value;
+                try pending_env.append(allocator, .{ env_key, env_val });
+            } else if (in_task_toolchain) {
+                // Inside [tasks.X.toolchain] section (v1.19.0)
+                // Accumulate toolchain entries: key = "version" format
+                // e.g., node = "20.11.1" → "node@20.11.1"
+                const toolchain_kind = key;
+                const toolchain_version = value;
+                // Allocate owned string since we're constructing a new string not in original content
+                var buf: [256]u8 = undefined;
+                const formatted = try std.fmt.bufPrint(&buf, "{s}@{s}", .{ toolchain_kind, toolchain_version });
+                const toolchain_entry = try allocator.dupe(u8, formatted);
+                try pending_toolchain.append(allocator, toolchain_entry);
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
