@@ -675,8 +675,12 @@ test "438: validate with task containing matrix and template fields simultaneous
 
     var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
     defer result.deinit();
-    // Should validate successfully (matrix + template are compatible)
-    try std.testing.expect(result.exit_code == 0);
+    // Task has template but no cmd/deps - fails validation (template expansion not implemented)
+    // Before v1.19.0, task wasn't created (no cmd) so validation passed
+    // After v1.19.0, cmd-less tasks are allowed, but this one has no deps either
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "must have 'cmd' or 'deps'") != null);
 }
 
 test "470: validate with missing required task field shows specific error" {
@@ -788,8 +792,10 @@ test "538: validate with both matrix and template shows proper expansion preview
 
     var result = try runZr(allocator, &.{ "--config", config, "validate", "--verbose" }, tmp_path);
     defer result.deinit();
-    // Should validate successfully
-    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Task has template but no cmd/deps - fails validation (same as test 438)
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "must have 'cmd' or 'deps'") != null);
 }
 
 test "575: validate with --verbose flag shows detailed validation diagnostics" {

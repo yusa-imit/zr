@@ -122,8 +122,9 @@ pub fn addMatrixTask(
     }
     try parseMatrixTable(allocator, matrix_raw, &dims);
 
-    if (dims.items.len == 0) {
-        // No matrix dims parsed; fall back to plain task
+    // If cmd is empty or no matrix dims parsed, fall back to plain task
+    // (cmd-less tasks with matrix are treated as regular cmd-less tasks)
+    if (dims.items.len == 0 or cmd.len == 0) {
         return addTaskImpl(config, allocator, name, cmd, cwd, description, deps, deps_serial, &[_]types.ConditionalDep{}, &[_][]const u8{}, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, null, null, max_concurrent, cache, max_cpu, max_memory, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null);
     }
 
