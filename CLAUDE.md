@@ -717,6 +717,26 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. All widgets are opt-in. No immediate action required.
 
+### v1.7.0 — Advanced Layout & Rendering (status: READY)
+
+**sailor v1.7.0 released** (2026-03-09) — Advanced layout and rendering features
+
+- **New features**:
+  - FlexBox layout: CSS flexbox-inspired with justify/align (16 tests)
+  - Viewport clipping: Efficient rendering of large virtual buffers (14 tests)
+  - Shadow & 3D border effects: Visual depth for widgets (15 tests)
+  - Custom widget traits: Extensible widget protocol
+  - Layout caching: LRU cache for constraint computation (13 tests)
+- **Impact on zr**: MEDIUM — Layout improvements for future TUI enhancements
+  - FlexBox useful for responsive task list layouts
+  - Viewport clipping enables efficient log/output scrolling
+  - Shadow effects add visual polish to TUI mode
+  - Layout caching improves performance for complex dashboards
+- [ ] `build.zig.zon`에 sailor v1.7.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. All features are opt-in. No immediate action required.
+
 
 **sailor v1.6.1 patch released** (2026-03-08) — Critical bug fixes for v1.6.0 widgets
 
