@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-03-08
+
+### Added
+- **Conditional Task Execution**: Control task execution with powerful conditional expressions
+  - **Git predicates**: Check repository state in task conditions
+    - `git.branch`: Current branch name (e.g., `skip_if = "git.branch != 'main'"`)
+    - `git.tag`: Current tag if HEAD is tagged (e.g., `skip_if = "git.tag == 'v1.0.0'"`)
+    - `git.dirty`: Boolean indicating uncommitted changes (e.g., `skip_if = "git.dirty"`)
+    - Supports `==` and `!=` operators for branch/tag comparisons
+  - **skip_if**: Skip task execution when condition evaluates to true
+    - Evaluated before task execution
+    - Failed conditions default to `false` (task runs)
+    - Skipped tasks report success with zero exit code
+    - Example: `skip_if = "env.CI != 'true'"` (skip unless in CI)
+  - **output_if**: Control task output visibility based on conditions
+    - Evaluated at task execution time
+    - Failed conditions default to `true` (show output)
+    - Example: `output_if = "env.DEBUG == 'true'"` (hide output unless debugging)
+  - **Integration tests**: 9 comprehensive tests covering all predicates and conditions
+
+### Fixed
+- Parser state bleed between TOML sections (caused incorrect task field assignments)
+- Missing `!=` operator support in git predicate expressions
+- CI test failures due to inconsistent git default branch naming
+
+### Developer Notes
+- All 746 unit tests pass (8 skipped), all 890 integration tests pass
+- Comprehensive error diagnostics for condition failures deferred to v1.20.0
+
 ## [1.17.0] - 2026-03-08
 
 ### Added

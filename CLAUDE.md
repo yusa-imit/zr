@@ -339,7 +339,14 @@ All 13 phases from the PRD are **COMPLETE**:
   - ✅ Integration tests: 9 tests (watch_test.zig) — 51f3da2
   - ✅ Documentation: Complete guide in configuration.md — 611669b
   - Tests: 746/754 unit (8 skipped, 0 leaks), 881/881 integration (100%)
-- [ ] **v1.18.0 — Conditional Task Execution**: Extended expression engine with additional predicates (git.branch, git.tag, git.dirty), task skip conditions (skip_if field), conditional outputs (output_if), improved error diagnostics for failed conditions
+- [x] **v1.18.0 — Conditional Task Execution** (RELEASED 2026-03-08): Extended expression engine with git predicates (git.branch, git.tag, git.dirty), task skip conditions (skip_if field), conditional outputs (output_if). Note: Comprehensive error diagnostics deferred to v1.20.0 (Expression Diagnostics Integration)
+  - ✅ Git predicates: git.branch, git.tag, git.dirty with != operator — 8209382, 1fc6f16
+  - ✅ skip_if evaluation in scheduler — ca2acf8
+  - ✅ output_if evaluation in scheduler — ca2acf8
+  - ✅ Parser fixes (state bleed, git predicate operators) — 1fc6f16
+  - ✅ Integration tests (9 tests: 882-890) — 8209382
+  - ✅ CI fix (git init default branch) — d81cd2d
+  - Tests: 746/754 unit (8 skipped, 0 leaks), 890/890 integration (100%)
 - [ ] **v1.19.0 — Parser Enhancements v3**: Inline workflow stages syntax (`stages = [{ name, tasks }]`, closes #19), dependency-only tasks without cmd field (closes #20), better validation for malformed sections, improved error messages, unit tests for new syntax features
 - [ ] **v1.20.0 — Expression Diagnostics Integration**: Integrate expr_diagnostics.zig into expression evaluator (deferred technical debt from v1.14.0/v1.15.0), refactor eval functions to accept DiagContext parameter, enhanced stack traces for expression failures, error position highlighting, expression debugging documentation
 - [ ] **v1.21.0 — TUI Testing & Enhancements**: Integrate sailor v1.5.0 MockTerminal for TUI unit tests, add snapshot testing for TUI rendering verification, expand TUI test coverage (graph/list/runner modes), implement event bus for cross-component communication, Command pattern for future undo/redo
