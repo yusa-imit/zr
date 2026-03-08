@@ -11,6 +11,7 @@ comptime {
     _ = @import("clean_test.zig");
     _ = @import("codeowners_test.zig");
     _ = @import("completion_test.zig");
+    _ = @import("conditional_test.zig");
     _ = @import("conformance_test.zig");
     _ = @import("context_test.zig");
     _ = @import("doctor_test.zig");

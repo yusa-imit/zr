@@ -186,6 +186,8 @@ const WorkerCtx = struct {
     timeline_tracker: ?*timeline.Timeline,
     /// Replay manager for capturing failure contexts (v1.14.0).
     replay_mgr: ?*replay.ReplayManager,
+    /// Conditional output expression (v1.18.0) — if specified and evaluates to false, suppress task output.
+    output_if: ?[]const u8,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -310,12 +312,21 @@ fn workerFn(ctx: WorkerCtx) void {
     // Cast merged_env to the const slice type expected by ProcessConfig
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |env| env else null;
 
+    // Evaluate output_if condition to determine whether to show task output
+    var should_show_output = ctx.inherit_stdio;
+    if (ctx.output_if) |output_cond| {
+        const show_output = expr.evalCondition(ctx.allocator, output_cond, ctx.env) catch true;
+        if (!show_output) {
+            should_show_output = false;
+        }
+    }
+
     // Run the process with retry logic
     var proc_result = process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
         .cwd = ctx.cwd,
         .env = proc_env,
-        .inherit_stdio = ctx.inherit_stdio,
+        .inherit_stdio = should_show_output,
         .timeout_ms = ctx.timeout_ms,
         .task_control = ctx.task_control,
         .enable_monitor = ctx.monitor,
@@ -350,7 +361,7 @@ fn workerFn(ctx: WorkerCtx) void {
                 .cmd = ctx.cmd,
                 .cwd = ctx.cwd,
                 .env = proc_env,
-                .inherit_stdio = ctx.inherit_stdio,
+                .inherit_stdio = should_show_output,
                 .timeout_ms = ctx.timeout_ms,
                 .task_control = ctx.task_control,
                 .enable_monitor = ctx.monitor,
@@ -837,6 +848,27 @@ pub fn run(
                 }
             }
 
+            // Evaluate skip_if expression — skip task if expression is true.
+            if (task.skip_if) |skip_cond| {
+                const task_env_for_cond: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
+                const should_skip = expr.evalCondition(allocator, skip_cond, task_env_for_cond) catch false;
+                if (should_skip) {
+                    const owned_name = try allocator.dupe(u8, task_name);
+                    results_mutex.lock();
+                    results.append(allocator, .{
+                        .task_name = owned_name,
+                        .success = true,
+                        .exit_code = 0,
+                        .duration_ms = 0,
+                        .skipped = true,
+                    }) catch {
+                        allocator.free(owned_name);
+                    };
+                    results_mutex.unlock();
+                    continue;
+                }
+            }
+
             // Run deps_serial chain synchronously before this task (if any)
             if (task.deps_serial.len > 0) {
                 const serial_ok = try runSerialChain(
@@ -922,6 +954,7 @@ pub fn run(
                 .numa_node = task.numa_node,
                 .timeline_tracker = &timeline_tracker,
                 .replay_mgr = &replay_mgr,
+                .output_if = task.output_if,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
