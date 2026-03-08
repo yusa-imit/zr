@@ -118,6 +118,137 @@ fn flushPendingStage(
     return true;
 }
 
+/// Parse inline stages syntax: stages = [{ name = "...", tasks = [...] }, {...}]
+/// Returns the number of stages parsed (0 if format is invalid).
+fn parseInlineStages(
+    allocator: std.mem.Allocator,
+    workflow_stages: *std.ArrayList(Stage),
+    value: []const u8,
+) !usize {
+    const trimmed = std.mem.trim(u8, value, " \t");
+    if (!std.mem.startsWith(u8, trimmed, "[") or !std.mem.endsWith(u8, trimmed, "]")) {
+        return 0; // Not an array
+    }
+
+    const inner = trimmed[1 .. trimmed.len - 1];
+    var stage_count: usize = 0;
+
+    // Parse array of inline tables: [{ ... }, { ... }]
+    // We need to handle nested braces in tasks arrays
+    var pos: usize = 0;
+    while (pos < inner.len) {
+        // Skip whitespace
+        while (pos < inner.len and (inner[pos] == ' ' or inner[pos] == '\t' or inner[pos] == '\n' or inner[pos] == '\r')) {
+            pos += 1;
+        }
+        if (pos >= inner.len) break;
+
+        // Expect opening brace
+        if (inner[pos] != '{') {
+            if (inner[pos] == ',') {
+                pos += 1;
+                continue;
+            }
+            break; // Invalid format
+        }
+
+        // Find matching closing brace (handle nested braces in arrays)
+        const start = pos;
+        pos += 1;
+        var depth: i32 = 1;
+        while (pos < inner.len and depth > 0) {
+            if (inner[pos] == '{') depth += 1;
+            if (inner[pos] == '}') depth -= 1;
+            pos += 1;
+        }
+
+        if (depth != 0) break; // Unmatched braces
+
+        // Extract inline table: { name = "...", tasks = [...], ... }
+        const table_str = inner[start + 1 .. pos - 1];
+
+        // Parse fields from inline table
+        var stage_name: ?[]const u8 = null;
+        var stage_tasks = std.ArrayList([]const u8){};
+        defer stage_tasks.deinit(allocator);
+        var stage_parallel: bool = true;
+        var stage_fail_fast: bool = false;
+        var stage_condition: ?[]const u8 = null;
+        var stage_approval: bool = false;
+        var stage_on_failure: ?[]const u8 = null;
+
+        // Split by comma, but respect nested brackets
+        var field_start: usize = 0;
+        var field_pos: usize = 0;
+        var bracket_depth: i32 = 0;
+
+        while (field_pos <= table_str.len) {
+            const is_end = field_pos == table_str.len;
+            const is_delimiter = !is_end and table_str[field_pos] == ',' and bracket_depth == 0;
+
+            if (!is_end) {
+                if (table_str[field_pos] == '[') bracket_depth += 1;
+                if (table_str[field_pos] == ']') bracket_depth -= 1;
+            }
+
+            if (is_delimiter or is_end) {
+                const field = std.mem.trim(u8, table_str[field_start..field_pos], " \t");
+                if (field.len > 0) {
+                    const eq_idx = std.mem.indexOf(u8, field, "=") orelse {
+                        field_start = field_pos + 1;
+                        field_pos += 1;
+                        continue;
+                    };
+                    const field_key = std.mem.trim(u8, field[0..eq_idx], " \t");
+                    const field_value = std.mem.trim(u8, field[eq_idx + 1 ..], " \t\"");
+
+                    if (std.mem.eql(u8, field_key, "name")) {
+                        stage_name = field_value;
+                    } else if (std.mem.eql(u8, field_key, "tasks")) {
+                        // Parse tasks array: ["task1", "task2"]
+                        if (std.mem.startsWith(u8, field_value, "[") and std.mem.endsWith(u8, field_value, "]")) {
+                            const tasks_str = field_value[1 .. field_value.len - 1];
+                            var tasks_it = std.mem.splitScalar(u8, tasks_str, ',');
+                            while (tasks_it.next()) |t| {
+                                const trimmed_t = std.mem.trim(u8, t, " \t\"");
+                                if (trimmed_t.len > 0) try stage_tasks.append(allocator, trimmed_t);
+                            }
+                        }
+                    } else if (std.mem.eql(u8, field_key, "parallel")) {
+                        stage_parallel = std.mem.eql(u8, field_value, "true");
+                    } else if (std.mem.eql(u8, field_key, "fail_fast")) {
+                        stage_fail_fast = std.mem.eql(u8, field_value, "true");
+                    } else if (std.mem.eql(u8, field_key, "condition")) {
+                        stage_condition = field_value;
+                    } else if (std.mem.eql(u8, field_key, "approval")) {
+                        stage_approval = std.mem.eql(u8, field_value, "true");
+                    } else if (std.mem.eql(u8, field_key, "on_failure")) {
+                        stage_on_failure = field_value;
+                    }
+                }
+                field_start = field_pos + 1;
+            }
+            field_pos += 1;
+        }
+
+        // Flush this stage
+        _ = try flushPendingStage(
+            allocator,
+            workflow_stages,
+            stage_name,
+            &stage_tasks,
+            stage_parallel,
+            stage_fail_fast,
+            stage_condition,
+            stage_approval,
+            stage_on_failure,
+        );
+        stage_count += 1;
+    }
+
+    return stage_count;
+}
+
 pub const ParseError = error{
     MalformedSectionHeader,
     OutOfMemory,
@@ -437,12 +568,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending task (if any — tasks may precede workflow sections)
             if (current_task) |task_name| {
-                if (task_cmd) |cmd| {
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-                    }
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -564,12 +695,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending task (if any)
             if (current_task) |task_name| {
-                if (task_cmd) |cmd| {
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-                    }
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -623,12 +754,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null;
             }
             if (current_task) |task_name| {
-                if (task_cmd) |cmd| {
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-                    }
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -653,12 +784,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         } else if (std.mem.eql(u8, trimmed, "[tools]")) {
             // Flush pending sections
             if (current_task) |task_name| {
-                if (task_cmd) |cmd| {
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-                    }
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -833,12 +964,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_constraint = false;
             // Flush pending task (if any)
             if (current_task) |task_name| {
-                if (task_cmd) |cmd| {
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-                    }
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -990,12 +1121,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending task before starting new one
             if (current_task) |task_name| {
-                if (task_cmd) |cmd| {
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-                    }
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
                 }
             }
 
@@ -1219,6 +1350,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (std.mem.eql(u8, key, "name") and stage_name == null) {
                     // Stage name (first name= after [[workflows.X.stages]])
                     stage_name = value;
+                } else if (std.mem.eql(u8, key, "stages")) {
+                    // Inline stages syntax: stages = [{ name = "...", tasks = [...] }, ...]
+                    const parsed_count = try parseInlineStages(allocator, &workflow_stages, value);
+                    if (parsed_count > 0) {
+                        // Inline stages were parsed successfully
+                        // No need to track stage state since stages are complete
+                    }
                 } else if (std.mem.eql(u8, key, "tasks")) {
                     if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
                         stage_tasks.clearRetainingCapacity();
@@ -1815,12 +1953,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending task
     if (current_task) |task_name| {
-        if (task_cmd) |cmd| {
-            if (task_matrix_raw) |mraw| {
-                try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-            } else {
-                try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
-            }
+        // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+        const cmd = task_cmd orelse "";
+        if (task_matrix_raw) |mraw| {
+            try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+        } else {
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode);
         }
     }
 
@@ -3311,4 +3449,125 @@ test "empty deps_if and deps_optional arrays" {
     const task = config.tasks.get("build").?;
     try std.testing.expectEqual(@as(usize, 0), task.deps_if.len);
     try std.testing.expectEqual(@as(usize, 0), task.deps_optional.len);
+}
+// Additional tests for v1.19.0 features (inline stages and cmd-less tasks)
+// These should be appended to parser.zig
+
+test "parse inline workflow stages syntax" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.docker]
+        \\cmd = "echo docker"
+        \\
+        \\[workflows.pipeline]
+        \\description = "Build pipeline with inline stages"
+        \\stages = [{ name = "compile", tasks = ["build", "test"] }, { name = "package", tasks = ["docker"] }]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), config.workflows.count());
+
+    const wf = config.workflows.get("pipeline").?;
+    try std.testing.expectEqualStrings("pipeline", wf.name);
+    try std.testing.expectEqualStrings("Build pipeline with inline stages", wf.description.?);
+    try std.testing.expectEqual(@as(usize, 2), wf.stages.len);
+
+    // First stage
+    try std.testing.expectEqualStrings("compile", wf.stages[0].name);
+    try std.testing.expectEqual(@as(usize, 2), wf.stages[0].tasks.len);
+    try std.testing.expectEqualStrings("build", wf.stages[0].tasks[0]);
+    try std.testing.expectEqualStrings("test", wf.stages[0].tasks[1]);
+
+    // Second stage
+    try std.testing.expectEqualStrings("package", wf.stages[1].name);
+    try std.testing.expectEqual(@as(usize, 1), wf.stages[1].tasks.len);
+    try std.testing.expectEqualStrings("docker", wf.stages[1].tasks[0]);
+}
+
+test "parse inline workflow stages with all stage options" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[workflows.ci]
+        \\stages = [{ name = "checks", tasks = ["lint", "test"], parallel = false, fail_fast = true, condition = "platform.is_linux", approval = true, on_failure = "continue" }]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const wf = config.workflows.get("ci").?;
+    try std.testing.expectEqual(@as(usize, 1), wf.stages.len);
+
+    const stage = wf.stages[0];
+    try std.testing.expectEqualStrings("checks", stage.name);
+    try std.testing.expectEqual(false, stage.parallel);
+    try std.testing.expectEqual(true, stage.fail_fast);
+    try std.testing.expectEqualStrings("platform.is_linux", stage.condition.?);
+    try std.testing.expectEqual(true, stage.approval);
+    try std.testing.expectEqualStrings("continue", stage.on_failure.?);
+}
+
+test "parse cmd-less dependency-only task" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.all]
+        \\description = "Run all checks"
+        \\deps = ["lint", "test", "build"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(usize, 4), config.tasks.count());
+
+    const task = config.tasks.get("all").?;
+    try std.testing.expectEqualStrings("all", task.name);
+    try std.testing.expectEqualStrings("Run all checks", task.description.?);
+    try std.testing.expectEqualStrings("", task.cmd); // Empty cmd
+    try std.testing.expectEqual(@as(usize, 3), task.deps.len);
+    try std.testing.expectEqualStrings("lint", task.deps[0]);
+    try std.testing.expectEqualStrings("test", task.deps[1]);
+    try std.testing.expectEqualStrings("build", task.deps[2]);
+}
+
+test "parse cmd-less task with deps_serial" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.install]
+        \\cmd = "npm install"
+        \\
+        \\[tasks.build]
+        \\cmd = "npm run build"
+        \\
+        \\[tasks.setup]
+        \\description = "Setup and build"
+        \\deps_serial = ["install", "build"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("setup").?;
+    try std.testing.expectEqualStrings("", task.cmd);
+    try std.testing.expectEqual(@as(usize, 2), task.deps_serial.len);
+    try std.testing.expectEqualStrings("install", task.deps_serial[0]);
+    try std.testing.expectEqualStrings("build", task.deps_serial[1]);
 }

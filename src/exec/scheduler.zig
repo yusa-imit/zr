@@ -312,6 +312,21 @@ fn workerFn(ctx: WorkerCtx) void {
     // Cast merged_env to the const slice type expected by ProcessConfig
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |env| env else null;
 
+    // Handle dependency-only tasks (tasks without cmd)
+    if (ctx.cmd.len == 0) {
+        // Skip execution for cmd-less tasks - they only run their dependencies
+        const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+        ctx.results_mutex.lock();
+        defer ctx.results_mutex.unlock();
+        ctx.results.append(ctx.allocator, .{
+            .task_name = owned_name,
+            .success = true,
+            .exit_code = 0,
+            .duration_ms = 0,
+        }) catch ctx.allocator.free(owned_name);
+        return;
+    }
+
     // Evaluate output_if condition to determine whether to show task output
     var should_show_output = ctx.inherit_stdio;
     if (ctx.output_if) |output_cond| {
@@ -618,6 +633,22 @@ fn runTaskSync(
 ) !bool {
     // Auto-install any missing toolchains specified in task.toolchain
     try ensureToolchainsInstalled(allocator, task);
+
+    // Handle dependency-only tasks (tasks without cmd)
+    if (task.cmd.len == 0) {
+        // Skip execution for cmd-less tasks - they only run their dependencies
+        const success_result = TaskResult{
+            .task_name = try allocator.dupe(u8, task.name),
+            .success = true,
+            .exit_code = 0,
+            .duration_ms = 0,
+            .retry_count = 0,
+        };
+        results_mutex.lock();
+        defer results_mutex.unlock();
+        try results.append(allocator, success_result);
+        return true;
+    }
 
     // Build environment with toolchain PATH injection
     const merged_env = buildEnvWithToolchains(allocator, env, toolchains);

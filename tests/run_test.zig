@@ -1144,7 +1144,7 @@ test "261: run with multiple independent task failures continues execution" {
     try std.testing.expect(result.exit_code != 0);
 }
 
-test "265: run with empty command string fails validation" {
+test "265: run with empty command string is now supported (v1.19.0)" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1164,8 +1164,8 @@ test "265: run with empty command string fails validation" {
 
     var result = try runZr(allocator, &.{ "run", "bad" }, tmp_path);
     defer result.deinit();
-    // Should fail with validation error
-    try std.testing.expect(result.exit_code != 0);
+    // Should succeed (empty cmd is treated as dependency-only task)
+    try std.testing.expect(result.exit_code == 0);
 }
 
 test "270: run with conflicting flags --dry-run and --monitor reports error" {

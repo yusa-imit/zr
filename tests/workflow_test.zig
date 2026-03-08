@@ -918,14 +918,14 @@ test "860: inline workflow stages syntax is not supported (parser limitation)" {
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "no stages defined") != null);
 }
 
-test "861: task without cmd field is not recognized (parser limitation)" {
+test "861: task without cmd field is now recognized (v1.19.0 feature)" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Test that dependency-only tasks (without cmd) are not recognized
+    // Test that dependency-only tasks (without cmd) are now recognized
     const toml =
         \\[tasks.test]
         \\cmd = "echo test"
@@ -942,12 +942,13 @@ test "861: task without cmd field is not recognized (parser limitation)" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    // Parser should not recognize task without cmd field
+    // Parser should now recognize task without cmd field
     var result = try runZr(allocator, &.{ "--config", config, "run", "all-checks" }, tmp_path);
     defer result.deinit();
-    // Should fail (task not found)
-    try std.testing.expect(result.exit_code == 1);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null or std.mem.indexOf(u8, result.stderr, "no such task") != null);
+    // Should succeed (dependency-only task runs its dependencies)
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
 }
 
 test "862: workaround for dependency-only task with echo command" {
@@ -983,4 +984,142 @@ test "862: workaround for dependency-only task with echo command" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "All checks completed") != null);
+}
+
+test "workflow with inline stages syntax" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo 'Building...'"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo 'Testing...'"
+        \\
+        \\[tasks.docker]
+        \\cmd = "echo 'Docker build...'"
+        \\
+        \\[workflows.pipeline]
+        \\description = "Build pipeline with inline stages"
+        \\stages = [{ name = "compile", tasks = ["build", "test"] }, { name = "package", tasks = ["docker"] }]
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "workflow", "pipeline" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Building...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Testing...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Docker build...") != null);
+}
+
+test "cmd-less dependency-only task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.lint]
+        \\cmd = "echo 'Linting...'"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo 'Testing...'"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo 'Building...'"
+        \\
+        \\[tasks.all]
+        \\description = "Run all checks"
+        \\deps = ["lint", "test", "build"]
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "run", "all" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code == 0);
+    // All dependencies should execute
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Linting...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Testing...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Building...") != null);
+    // The "all" task itself should succeed without running a command
+}
+
+test "cmd-less task with deps_serial" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.install]
+        \\cmd = "echo 'Installing...'"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo 'Building...'"
+        \\
+        \\[tasks.setup]
+        \\description = "Setup and build"
+        \\deps_serial = ["install", "build"]
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "run", "setup" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Installing...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Building...") != null);
+
+    // Verify serial execution order (install should appear before build in output)
+    const install_pos = std.mem.indexOf(u8, result.stdout, "Installing...").?;
+    const build_pos = std.mem.indexOf(u8, result.stdout, "Building...").?;
+    try std.testing.expect(install_pos < build_pos);
+}
+
+test "inline stages with all stage options" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.lint]
+        \\cmd = "echo 'Linting...'"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo 'Testing...'"
+        \\
+        \\[workflows.ci]
+        \\stages = [{ name = "checks", tasks = ["lint", "test"], parallel = false }]
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "workflow", "ci" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Linting...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Testing...") != null);
 }
