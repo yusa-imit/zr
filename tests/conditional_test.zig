@@ -170,7 +170,7 @@ test "885: git.dirty predicate detects uncommitted changes" {
     // Create a file without staging it (makes repo dirty)
     try tmp.dir.writeFile(.{ .sub_path = "test.txt", .data = "hello" });
 
-    var result = try runZr(allocator, &.{ "--config", config, "run", "only_if_clean" }, null);
+    var result = try runZr(allocator, &.{ "--config", config, "run", "only_if_clean" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
@@ -217,7 +217,7 @@ test "886: git.branch predicate matches current branch" {
     const config = try writeTmpConfig(allocator, tmp.dir, config_content);
     defer allocator.free(config);
 
-    var result = try runZr(allocator, &.{ "--config", config, "run", "only_on_main" }, null);
+    var result = try runZr(allocator, &.{ "--config", config, "run", "only_on_main" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
@@ -261,7 +261,7 @@ test "887: git.tag predicate matches current tag" {
     const config = try writeTmpConfig(allocator, tmp.dir, config_content);
     defer allocator.free(config);
 
-    var result = try runZr(allocator, &.{ "--config", config, "run", "only_on_release" }, null);
+    var result = try runZr(allocator, &.{ "--config", config, "run", "only_on_release" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 

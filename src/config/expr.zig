@@ -439,16 +439,22 @@ fn evalSemverGte(ctx: *const ExprContext, expr: []const u8) !bool {
     return v1.gte(v2);
 }
 
-/// Evaluate git.branch == "main" | "develop" | "feature/*"
-/// Returns true if the current git branch matches the specified pattern.
+/// Evaluate git.branch == "main" | "develop" | "feature/*" | != "main"
+/// Returns true if the current git branch matches the specified pattern (or doesn't match for !=).
 /// Supports exact match or glob patterns (e.g., "feature/*").
 fn evalGitBranch(ctx: *const ExprContext, expr: []const u8) !bool {
     const after_branch = std.mem.trim(u8, expr["git.branch".len..], " \t");
-    if (!std.mem.startsWith(u8, after_branch, "==")) {
+
+    // Check for == or != operator
+    const is_not_equal = std.mem.startsWith(u8, after_branch, "!=");
+    const is_equal = std.mem.startsWith(u8, after_branch, "==");
+
+    if (!is_equal and !is_not_equal) {
         return error.InvalidExpression;
     }
 
-    const rhs_raw = std.mem.trim(u8, after_branch["==".len..], " \t");
+    const op_len: usize = if (is_not_equal) 2 else 2;  // Both are 2 chars
+    const rhs_raw = std.mem.trim(u8, after_branch[op_len..], " \t");
     const rhs = stripQuotes(rhs_raw);
 
     // Get current branch using git
@@ -471,24 +477,30 @@ fn evalGitBranch(ctx: *const ExprContext, expr: []const u8) !bool {
     const current_branch = std.mem.trim(u8, result.stdout, " \t\r\n");
 
     // Check for glob pattern (contains * or ?)
-    if (std.mem.indexOfAny(u8, rhs, "*?")) |_| {
-        // Simple glob match - supports * wildcard only
-        return matchGlob(current_branch, rhs);
-    }
+    const matches = if (std.mem.indexOfAny(u8, rhs, "*?")) |_|
+        matchGlob(current_branch, rhs)
+    else
+        std.mem.eql(u8, current_branch, rhs);
 
-    // Exact match
-    return std.mem.eql(u8, current_branch, rhs);
+    // Return result based on operator
+    return if (is_not_equal) !matches else matches;
 }
 
-/// Evaluate git.tag == "v1.0.0" | "v*"
-/// Returns true if the current commit has a tag matching the specified pattern.
+/// Evaluate git.tag == "v1.0.0" | "v*" | != "v*"
+/// Returns true if the current commit has a tag matching the specified pattern (or doesn't match for !=).
 fn evalGitTag(ctx: *const ExprContext, expr: []const u8) !bool {
     const after_tag = std.mem.trim(u8, expr["git.tag".len..], " \t");
-    if (!std.mem.startsWith(u8, after_tag, "==")) {
+
+    // Check for == or != operator
+    const is_not_equal = std.mem.startsWith(u8, after_tag, "!=");
+    const is_equal = std.mem.startsWith(u8, after_tag, "==");
+
+    if (!is_equal and !is_not_equal) {
         return error.InvalidExpression;
     }
 
-    const rhs_raw = std.mem.trim(u8, after_tag["==".len..], " \t");
+    const op_len: usize = 2;  // Both == and != are 2 chars
+    const rhs_raw = std.mem.trim(u8, after_tag[op_len..], " \t");
     const rhs = stripQuotes(rhs_raw);
 
     // Get tags for current commit using git
@@ -508,20 +520,25 @@ fn evalGitTag(ctx: *const ExprContext, expr: []const u8) !bool {
     if (!success) return false;
 
     // Parse tags (one per line)
+    var found_match = false;
     var lines = std.mem.tokenizeScalar(u8, result.stdout, '\n');
     while (lines.next()) |tag| {
         const trimmed_tag = std.mem.trim(u8, tag, " \t\r");
 
         // Check for glob pattern
-        if (std.mem.indexOfAny(u8, rhs, "*?")) |_| {
-            if (matchGlob(trimmed_tag, rhs)) return true;
-        } else {
-            // Exact match
-            if (std.mem.eql(u8, trimmed_tag, rhs)) return true;
+        const matches = if (std.mem.indexOfAny(u8, rhs, "*?")) |_|
+            matchGlob(trimmed_tag, rhs)
+        else
+            std.mem.eql(u8, trimmed_tag, rhs);
+
+        if (matches) {
+            found_match = true;
+            break;
         }
     }
 
-    return false;
+    // Return result based on operator
+    return if (is_not_equal) !found_match else found_match;
 }
 
 /// Evaluate git.dirty
