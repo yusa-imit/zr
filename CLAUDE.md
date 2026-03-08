@@ -710,6 +710,16 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. All widgets are opt-in. No immediate action required.
 
+
+**sailor v1.6.1 patch released** (2026-03-08) — Critical bug fixes for v1.6.0 widgets
+
+- **Bug fixes**:
+  - PieChart: Fixed integer overflow in coordinate calculation (prevented panics)
+  - Multiple widgets: Fixed API compilation errors (Color.rgb, buffer.set, u16 casts)
+- **Impact on zr**: None (zr doesn't use v1.6.0 widgets yet)
+- [ ] Optional: Update to v1.6.1 for stable data visualization widgets
+
+**Note**: Patch release, no breaking changes. Safe to upgrade when/if data visualization widgets are needed.
 ---
 
 ## zuda Migration
