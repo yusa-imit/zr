@@ -49,6 +49,10 @@ pub const BASH_COMPLETION =
     \\            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
     \\            return ;;
     \\        --profile|-p)
+    \\            # Complete profile names from zr.toml
+    \\            local profiles
+    \\            profiles=$(zr list --profiles 2>/dev/null)
+    \\            COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
     \\            return ;;
     \\        --jobs|-j)
     \\            return ;;
@@ -73,6 +77,18 @@ pub const BASH_COMPLETION =
 
 pub const ZSH_COMPLETION =
     \\#compdef zr
+    \\
+    \\_zr_profiles() {
+    \\    local -a profiles
+    \\    profiles=(${(f)"$(zr list --profiles 2>/dev/null)"})
+    \\    _describe 'profile' profiles
+    \\}
+    \\
+    \\_zr_members() {
+    \\    local -a members
+    \\    members=(${(f)"$(zr list --members 2>/dev/null)"})
+    \\    _describe 'member' members
+    \\}
     \\
     \\_zr() {
     \\    local state
@@ -123,8 +139,8 @@ pub const ZSH_COMPLETION =
     \\        '--help[Show help]'
     \\        '-h[Show help]'
     \\        '--version[Show version information]'
-    \\        '--profile[Activate named profile]:profile name'
-    \\        '-p[Activate named profile]:profile name'
+    \\        '--profile[Activate named profile]:profile:_zr_profiles'
+    \\        '-p[Activate named profile]:profile:_zr_profiles'
     \\        '--dry-run[Show plan without executing]'
     \\        '-n[Show plan without executing]'
     \\        '--jobs[Max parallel tasks]:count'
@@ -161,7 +177,13 @@ pub const ZSH_COMPLETION =
     \\                completion)
     \\                    _values 'shell' bash zsh fish ;;
     \\                workspace)
-    \\                    _values 'subcommand' list run sync ;;
+    \\                    if [[ $words[3] == "run" ]]; then
+    \\                        local -a tasks
+    \\                        tasks=(${(f)"$(zr list 2>/dev/null | awk 'NR>1 && /^  / {print $1}')"})
+    \\                        _describe 'task' tasks
+    \\                    else
+    \\                        _values 'subcommand' list run sync
+    \\                    fi ;;
     \\                plugin)
     \\                    _values 'subcommand' list search install remove update info builtins create ;;
     \\                tools)
@@ -193,6 +215,14 @@ pub const FISH_COMPLETION =
     \\
     \\function __zr_workflows
     \\    zr list 2>/dev/null | awk '/^Workflows:/,0 {if (/^  /) print $1}'
+    \\end
+    \\
+    \\function __zr_profiles
+    \\    zr list --profiles 2>/dev/null
+    \\end
+    \\
+    \\function __zr_members
+    \\    zr list --members 2>/dev/null
     \\end
     \\
     \\# Subcommands
@@ -257,7 +287,7 @@ pub const FISH_COMPLETION =
     \\# Global options
     \\complete -c zr -l help       -s h -d 'Show help'
     \\complete -c zr -l version          -d 'Show version information'
-    \\complete -c zr -l profile    -s p -d 'Activate named profile' -r
+    \\complete -c zr -l profile    -s p -d 'Activate named profile' -r -a '(__zr_profiles)'
     \\complete -c zr -l dry-run    -s n -d 'Show plan without executing'
     \\complete -c zr -l jobs       -s j -d 'Max parallel tasks' -r
     \\complete -c zr -l no-color         -d 'Disable color output'

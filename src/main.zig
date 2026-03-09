@@ -566,11 +566,17 @@ fn run(
         var tree_mode = false;
         var filter_pattern: ?[]const u8 = null;
         var filter_tags: ?[]const u8 = null;
+        var profiles_only = false;
+        var members_only = false;
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
             if (std.mem.eql(u8, arg, "--tree")) {
                 tree_mode = true;
+            } else if (std.mem.eql(u8, arg, "--profiles")) {
+                profiles_only = true;
+            } else if (std.mem.eql(u8, arg, "--members")) {
+                members_only = true;
             } else if (std.mem.startsWith(u8, arg, "--tags=")) {
                 filter_tags = arg["--tags=".len..];
             } else if (std.mem.eql(u8, arg, "--tags")) {
@@ -583,7 +589,7 @@ fn run(
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, profiles_only, members_only, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Parse graph options
         var ascii_mode = false;

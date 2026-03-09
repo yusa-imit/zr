@@ -48,7 +48,7 @@ zr run --monitor test  # show live resource usage
 
 ### `list`
 
-List available tasks with optional filtering.
+List available tasks, profiles, or workspace members with optional filtering.
 
 ```bash
 zr list [pattern] [OPTIONS]
@@ -56,16 +56,20 @@ zr list [pattern] [OPTIONS]
 
 **Examples:**
 ```bash
-zr list  # all tasks
+zr list  # all tasks and workflows
 zr list test  # tasks matching "test"
 zr list --tree  # show dependency tree
 zr list --tags ci  # filter by tags
 zr list --tags ci,build  # multiple tags
+zr list --profiles  # list all profile names (v1.23.0+)
+zr list --members  # list all workspace members (v1.23.0+)
 ```
 
 **Options:**
 - `--tree` — Show tasks as a dependency tree
 - `--tags <tags>` — Filter by comma-separated tags
+- `--profiles` — List only profile names (useful for shell completion)
+- `--members` — List only workspace member paths (useful for shell completion)
 
 ---
 
@@ -969,7 +973,7 @@ source <(zr export)
 
 ### `completion`
 
-Print shell completion script.
+Print shell completion script with context-aware suggestions.
 
 ```bash
 zr completion <shell>
@@ -983,6 +987,14 @@ zr completion fish > ~/.config/fish/completions/zr.fish
 ```
 
 Supported shells: `bash`, `zsh`, `fish`.
+
+**Completion Features (v1.23.0+):**
+- **Dynamic task names**: Completes task names from `zr.toml` when typing `zr run <TAB>`
+- **Workflow names**: Completes workflow names for `zr workflow <TAB>`
+- **Profile names**: Completes profile names for `--profile <TAB>` or `-p <TAB>`
+- **Workspace members**: Completes member paths for workspace commands
+- **Flag values**: Context-aware completion for `--format`, `--config`, and other flags
+- **Subcommands**: Intelligent completion for multi-level commands like `zr workspace run <TAB>`
 
 ---
 
