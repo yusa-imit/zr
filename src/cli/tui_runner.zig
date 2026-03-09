@@ -553,3 +553,179 @@ test "TuiRunner: render with tasks" {
     try std.testing.expect(std.mem.indexOf(u8, output, "test") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "Compiling...") != null);
 }
+
+// --- MockTerminal snapshot tests (sailor v1.5.0) ---
+
+const MockTerminal = stui.test_utils.MockTerminal;
+
+test "TuiRunner: MockTerminal snapshot - empty runner" {
+    const allocator = std.testing.allocator;
+
+    var runner = TuiRunner.init(allocator);
+    defer runner.deinit();
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    // Render to buffer
+    var buffer = try stui.Buffer.init(allocator, 80, 24);
+    defer buffer.deinit();
+
+    // Simulate header
+    buffer.setString(0, 0, "zr Live Execution", .{});
+    buffer.setString(0, 2, "(no tasks)", .{});
+
+    // Copy buffer to mock terminal's current buffer
+    var y: u16 = 0;
+    while (y < 24) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 80) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    // Get snapshot
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    // Verify content
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "zr Live Execution") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "(no tasks)") != null);
+}
+
+test "TuiRunner: MockTerminal snapshot - single running task" {
+    const allocator = std.testing.allocator;
+
+    var runner = TuiRunner.init(allocator);
+    defer runner.deinit();
+
+    try runner.addTask("build");
+    runner.setTaskStatus("build", .running);
+    try runner.appendTaskLog("build", "Compiling src/main.zig", false);
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 80, 24);
+    defer buffer.deinit();
+
+    // Simulate TUI runner layout
+    buffer.setString(0, 0, "zr Live Execution", .{});
+    buffer.setString(0, 2, "⏳ build", .{});
+    buffer.setString(0, 4, "Logs:", .{});
+    buffer.setString(0, 5, "  Compiling src/main.zig", .{});
+
+    // Copy buffer to mock
+    var y: u16 = 0;
+    while (y < 24) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 80) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "⏳ build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "Compiling src/main.zig") != null);
+}
+
+test "TuiRunner: MockTerminal snapshot - multiple tasks with different states" {
+    const allocator = std.testing.allocator;
+
+    var runner = TuiRunner.init(allocator);
+    defer runner.deinit();
+
+    try runner.addTask("lint");
+    try runner.addTask("build");
+    try runner.addTask("test");
+
+    runner.completeTask("lint", 0, 100);
+    runner.setTaskStatus("build", .running);
+    // test is pending
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 80, 24);
+    defer buffer.deinit();
+
+    buffer.setString(0, 0, "zr Live Execution", .{});
+    buffer.setString(0, 2, "✓ lint (100ms)", .{});
+    buffer.setString(0, 3, "⏳ build", .{});
+    buffer.setString(0, 4, "⏸ test", .{});
+
+    var y: u16 = 0;
+    while (y < 24) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 80) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "✓ lint") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "⏳ build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "⏸ test") != null);
+}
+
+test "TuiRunner: MockTerminal event simulation - resize" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    // Simulate resize event
+    try mock.resize(120, 30);
+
+    try std.testing.expectEqual(@as(u16, 120), mock.width);
+    try std.testing.expectEqual(@as(u16, 30), mock.height);
+
+    // Verify resize event was queued
+    try std.testing.expectEqual(@as(usize, 1), mock.events.items.len);
+}
+
+test "TuiRunner: MockTerminal - char and style access" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 40, 10);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 40, 10);
+    defer buffer.deinit();
+
+    buffer.setString(0, 0, "✓", .{});
+    buffer.setString(2, 0, "Success", .{});
+
+    var y: u16 = 0;
+    while (y < 10) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 40) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    // Check individual characters
+    const char_0_0 = mock.getChar(0, 0);
+    try std.testing.expect(char_0_0 != null);
+    try std.testing.expectEqual(@as(u21, '✓'), char_0_0.?);
+
+    const char_2_0 = mock.getChar(2, 0);
+    try std.testing.expect(char_2_0 != null);
+    try std.testing.expectEqual(@as(u21, 'S'), char_2_0.?);
+}
