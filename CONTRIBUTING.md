@@ -113,18 +113,59 @@ Example:
 test "run: executes simple task" {
     const tmp = try helpers.tmpDir();
     defer tmp.cleanup();
-    
+
     const config_path = try helpers.writeTmpConfig(tmp.dir,
         \\[tasks.hello]
         \\cmd = "echo hello"
     );
     defer tmp.allocator.free(config_path);
-    
+
     const result = try helpers.runZr(tmp.allocator, &.{ "run", "hello" }, config_path);
     defer result.deinit();
-    
+
     try std.testing.expectEqual(@as(u32, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
+}
+```
+
+**TUI Tests (MockTerminal)**:
+- Use `sailor.tui.test_utils.MockTerminal` for snapshot testing TUI rendering
+- Mock terminal simulates a terminal buffer for pixel-perfect verification
+- Test TUI layout, styling, and content without requiring a real TTY
+
+Example:
+```zig
+test "TUI: MockTerminal snapshot - single task" {
+    const allocator = std.testing.allocator;
+    const MockTerminal = sailor.tui.test_utils.MockTerminal;
+
+    var mock = try MockTerminal.init(allocator, 60, 10);
+    defer mock.deinit();
+
+    var buffer = try sailor.tui.Buffer.init(allocator, 60, 10);
+    defer buffer.deinit();
+
+    // Render TUI content to buffer
+    buffer.setString(0, 0, "Task List", .{ .bold = true });
+    buffer.setString(0, 2, "> [T]  build", .{ .fg = .bright_cyan });
+
+    // Copy buffer to mock terminal
+    var y: u16 = 0;
+    while (y < 10) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 60) : (x += 1) {
+            if (buffer.getConst(x, y)) |cell| {
+                mock.current.set(x, y, cell);
+            }
+        }
+    }
+
+    // Get snapshot and verify
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "Task List") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "[T]  build") != null);
 }
 ```
 
