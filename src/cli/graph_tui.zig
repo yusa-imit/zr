@@ -247,3 +247,221 @@ pub fn graphTui(
     // Clear screen on exit
     try w.writeAll("\x1b[2J\x1b[H");
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const MockTerminal = stui.test_utils.MockTerminal;
+
+test "buildTreeNodes: empty graph" {
+    const allocator = std.testing.allocator;
+
+    const nodes: []const GraphNode = &.{};
+    const tree_nodes = try buildTreeNodes(allocator, nodes);
+    defer {
+        for (tree_nodes) |*node| {
+            freeTreeNode(allocator, node);
+        }
+        allocator.free(tree_nodes);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), tree_nodes.len);
+}
+
+test "buildTreeNodes: single node no dependencies" {
+    const allocator = std.testing.allocator;
+
+    const nodes = [_]GraphNode{
+        .{ .path = "build", .dependencies = &.{}, .is_affected = false },
+    };
+
+    const tree_nodes = try buildTreeNodes(allocator, nodes[0..]);
+    defer {
+        for (tree_nodes) |*node| {
+            freeTreeNode(allocator, node);
+        }
+        allocator.free(tree_nodes);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), tree_nodes.len);
+    try std.testing.expect(std.mem.eql(u8, "build", tree_nodes[0].label));
+    try std.testing.expectEqual(@as(usize, 0), tree_nodes[0].children.len);
+}
+
+test "buildTreeNodes: node with dependencies" {
+    const allocator = std.testing.allocator;
+
+    var deps = [_][]const u8{ "lint", "format" };
+    const nodes = [_]GraphNode{
+        .{ .path = "build", .dependencies = &deps, .is_affected = false },
+    };
+
+    const tree_nodes = try buildTreeNodes(allocator, nodes[0..]);
+    defer {
+        for (tree_nodes) |*node| {
+            freeTreeNode(allocator, node);
+        }
+        allocator.free(tree_nodes);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), tree_nodes.len);
+    try std.testing.expect(std.mem.eql(u8, "build", tree_nodes[0].label));
+    try std.testing.expectEqual(@as(usize, 2), tree_nodes[0].children.len);
+    try std.testing.expect(std.mem.indexOf(u8, tree_nodes[0].children[0].label, "lint") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tree_nodes[0].children[1].label, "format") != null);
+}
+
+test "buildTreeNodes: multiple nodes with dependencies" {
+    const allocator = std.testing.allocator;
+
+    var build_deps = [_][]const u8{"compile"};
+    var test_deps = [_][]const u8{ "build", "setup" };
+    const nodes = [_]GraphNode{
+        .{ .path = "build", .dependencies = &build_deps, .is_affected = false },
+        .{ .path = "test", .dependencies = &test_deps, .is_affected = true },
+    };
+
+    const tree_nodes = try buildTreeNodes(allocator, nodes[0..]);
+    defer {
+        for (tree_nodes) |*node| {
+            freeTreeNode(allocator, node);
+        }
+        allocator.free(tree_nodes);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), tree_nodes.len);
+
+    // First node
+    try std.testing.expect(std.mem.eql(u8, "build", tree_nodes[0].label));
+    try std.testing.expectEqual(@as(usize, 1), tree_nodes[0].children.len);
+
+    // Second node
+    try std.testing.expect(std.mem.eql(u8, "test", tree_nodes[1].label));
+    try std.testing.expectEqual(@as(usize, 2), tree_nodes[1].children.len);
+}
+
+test "Graph TUI: MockTerminal snapshot - empty graph" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 80, 24);
+    defer buffer.deinit();
+
+    // Simulate empty graph display
+    buffer.setString(0, 0, "Dependency Graph", .{});
+    buffer.setString(0, 2, "(no tasks)", .{});
+
+    // Copy buffer to mock
+    var y: u16 = 0;
+    while (y < 24) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 80) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "Dependency Graph") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "(no tasks)") != null);
+}
+
+test "Graph TUI: MockTerminal snapshot - single task" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 80, 24);
+    defer buffer.deinit();
+
+    // Simulate single task in tree view
+    buffer.setString(0, 0, "Dependency Graph", .{});
+    buffer.setString(0, 2, "├─ build", .{});
+
+    var y: u16 = 0;
+    while (y < 24) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 80) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "build") != null);
+}
+
+test "Graph TUI: MockTerminal snapshot - task with dependencies" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 80, 24);
+    defer buffer.deinit();
+
+    // Simulate task tree with dependencies
+    buffer.setString(0, 0, "Dependency Graph", .{});
+    buffer.setString(0, 2, "├─ test", .{});
+    buffer.setString(0, 3, "│  ├─ → build", .{});
+    buffer.setString(0, 4, "│  └─ → setup", .{});
+
+    var y: u16 = 0;
+    while (y < 24) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 80) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "setup") != null);
+}
+
+test "Graph TUI: MockTerminal - navigation simulation" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 80, 24);
+    defer mock.deinit();
+
+    // Simulate keyboard events
+    try mock.pushEvent(.{ .key = .{ .code = .down } });
+    try mock.pushEvent(.{ .key = .{ .code = .up } });
+    try mock.pushEvent(.{ .key = .{ .code = .enter } });
+
+    // Verify events were queued
+    try std.testing.expectEqual(@as(usize, 3), mock.events.items.len);
+
+    // Poll events
+    const event1 = mock.pollEvent();
+    try std.testing.expect(event1 != null);
+
+    const event2 = mock.pollEvent();
+    try std.testing.expect(event2 != null);
+
+    const event3 = mock.pollEvent();
+    try std.testing.expect(event3 != null);
+
+    // Queue should be empty now
+    const event4 = mock.pollEvent();
+    try std.testing.expect(event4 == null);
+}
