@@ -352,7 +352,12 @@ All 13 phases from the PRD are **COMPLETE**:
   - ✅ Cmd-less dependency tasks — b7418c0
   - ✅ Subsection ordering fix — 714341a
   - Tests: 750/758 unit (8 skipped, 0 leaks), 894/894 integration (100%)
-- [ ] **v1.20.0 — Expression Diagnostics Integration**: Integrate expr_diagnostics.zig into expression evaluator (deferred technical debt from v1.14.0/v1.15.0), refactor eval functions to accept DiagContext parameter, enhanced stack traces for expression failures, error position highlighting, expression debugging documentation
+- [x] **v1.20.0 — Expression Diagnostics Integration** (DONE, released 2026-03-09): Integrate expr_diagnostics.zig into expression evaluator, refactor 17 eval functions to accept DiagContext parameter, enhanced stack traces for expression failures, expression debugging documentation
+  - ✅ Add diag parameter to ExprContext struct — 614fe90
+  - ✅ New public API evalConditionWithDiag() accepting optional DiagContext — 614fe90
+  - ✅ Push/pop stack tracking in all 17 eval functions — 614fe90
+  - ✅ Expression Debugging guide in configuration.md — 30c2372
+  - Tests: 750/758 unit (8 skipped, 0 leaks), 894/894 integration (100%)
 - [ ] **v1.21.0 — TUI Testing & Enhancements**: Integrate sailor v1.5.0 MockTerminal for TUI unit tests, add snapshot testing for TUI rendering verification, expand TUI test coverage (graph/list/runner modes), implement event bus for cross-component communication, Command pattern for future undo/redo
 
 ### 마일스톤 수립 프로세스
