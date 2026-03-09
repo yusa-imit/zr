@@ -9,14 +9,15 @@
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
-## Current Status (2026-03-07)
+## Current Status (2026-03-09)
 
-- **Version**: v1.14.0 (released - Enhanced Error Diagnostics)
-- **Unit tests**: 743/751 (8 skipped, 0 failed, 0 memory leaks)
-- **Integration tests**: 869/869 (100% pass rate)
+- **Version**: v1.20.0 (released - Expression Diagnostics Integration)
+- **Unit tests**: 750/758 (8 skipped, 0 failed, 0 memory leaks)
+- **Integration tests**: 894/894 (100% pass rate)
 - **CI**: GREEN — all 6 cross-compile targets passing
-- **GitHub Issues**: 2 open (enhancement requests: #19 inline stages, #20 cmd-less tasks)
+- **GitHub Issues**: 0 open
 - **Binary**: ~1.2MB ReleaseSmall, ~4ms cold start, ~1.8MB RSS
+- **Latest fix**: Example configs corrected (removed invalid cache subsections, fixed 'command' → 'cmd')
 
 ## All Phases COMPLETE
 

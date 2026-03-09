@@ -33,6 +33,24 @@ if (schedules.getPtr(name)) |entry_ptr| {
 
 ---
 
+## Example Configs - Invalid Syntax (2026-03-09, commit 6bd95a4)
+**Symptom**: 6 example configs failed `zr validate` with errors about missing 'cmd' or 'deps'
+**Root causes**:
+1. Several examples used `command` field instead of correct `cmd` field name
+2. Two examples (node-typescript, zig-build) used invalid `[tasks.*.cache]` subsections with `inputs/outputs` fields
+3. This syntax was never implemented - Task struct only has `cache: bool`, not cache subsections
+4. TOML parser treated `[tasks.build.cache]` as a task named "build.cache" instead of rejecting it
+
+**Fix**:
+1. Replaced all `command = ` with `cmd = ` in affected examples
+2. Removed invalid `[tasks.*.cache]` subsections
+3. Added `cache = true` to tasks that needed caching
+4. All 17 example configs now validate successfully
+
+**Lesson**: Example configs can drift from implementation. Always validate examples as part of release checklist.
+
+---
+
 ## Failures Feature - Missing Persistence (2026-03-07, commits 79698be, f6c09e9)
 **Symptom**: Integration tests 866-869 for failures command failed. Manual testing showed failures were never persisted to disk.
 **Root causes**:
