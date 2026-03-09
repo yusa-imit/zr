@@ -335,6 +335,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
     var in_task_env: bool = false;     // true when inside [tasks.X.env] section
     var in_task_toolchain: bool = false; // true when inside [tasks.X.toolchain] section
+    var in_task_hooks: bool = false;    // true when inside [[tasks.X.hooks]] section (v1.24.0)
     var pending_task_name: ?[]const u8 = null; // task name from subsection
     // Buffer for matrix TOML (will be content for task_matrix_raw when main task appears)
     var pending_matrix_buffer = std.ArrayList(u8){};
@@ -348,6 +349,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         for (pending_toolchain.items) |tc| allocator.free(tc);
         pending_toolchain.deinit(allocator);
     }
+    // Hooks parsing (v1.24.0) — owned data for task hooks
+    var task_hooks = std.ArrayList(types.TaskHook){};
+    defer {
+        for (task_hooks.items) |*h| h.deinit(allocator);
+        task_hooks.deinit(allocator);
+    }
+    var pending_hooks = std.ArrayList(types.TaskHook){};
+    defer {
+        for (pending_hooks.items) |*h| h.deinit(allocator);
+        pending_hooks.deinit(allocator);
+    }
+    // Current hook being parsed in [[tasks.X.hooks]] section
+    var current_hook_cmd: ?[]const u8 = null;
+    var current_hook_point: ?[]const u8 = null;
+    var current_hook_failure_strategy: ?[]const u8 = null;
+    var current_hook_working_dir: ?[]const u8 = null;
+    var current_hook_env = std.ArrayList([2][]const u8){};
+    defer current_hook_env.deinit(allocator);
 
     // Template parsing state — non-owning slices into content
     var current_template: ?[]const u8 = null;
@@ -1105,6 +1124,46 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_toolchain = true;
             in_task_matrix = false;
             in_task_env = false;
+            in_task_hooks = false;
+        } else if (std.mem.startsWith(u8, trimmed, "[[tasks.") and std.mem.indexOf(u8, trimmed, ".hooks]]") != null) {
+            // Section: [[tasks.X.hooks]] — hook configuration for task X (v1.24.0)
+            // This is an array-of-tables section, each entry is a hook
+
+            // Flush previous hook if any
+            try flushCurrentHook(
+                allocator,
+                &pending_hooks,
+                current_hook_cmd,
+                current_hook_point,
+                current_hook_failure_strategy,
+                current_hook_working_dir,
+                &current_hook_env,
+            );
+
+            in_workspace = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_task_watch = false;
+
+            // Extract task name: "[[tasks.X.hooks]]" → X
+            const hooks_marker = ".hooks]]";
+            const hooks_idx = std.mem.indexOf(u8, trimmed, hooks_marker) orelse return error.MalformedSectionHeader;
+            const after_tasks = trimmed["[[tasks.".len..];
+            const before_hooks = after_tasks[0 .. hooks_idx - "[[tasks.".len];
+
+            // Store the task name for when we see the main [tasks.X] section
+            pending_task_name = before_hooks;
+            in_task_hooks = true;
+            in_task_matrix = false;
+            in_task_env = false;
+            in_task_toolchain = false;
+
+            // Reset current hook state for new hook entry
+            current_hook_cmd = null;
+            current_hook_point = null;
+            current_hook_failure_strategy = null;
+            current_hook_working_dir = null;
+            current_hook_env.clearRetainingCapacity();
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
             // Flush pending stage (if any, with auto-generated name if needed)
             _ = try flushPendingStage(
@@ -1239,6 +1298,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_matrix = false;
             in_task_env = false;
             in_task_toolchain = false;
+            in_task_hooks = false;
             in_cache_remote = false;
             // Validate section header has closing bracket
             current_task = validateSectionHeader(trimmed, "[tasks.") catch |err| {
@@ -1264,10 +1324,15 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     for (pending_toolchain.items) |tc| {
                         try task_toolchain.append(allocator, tc);
                     }
+                    // Apply pending hooks data (v1.24.0)
+                    for (pending_hooks.items) |hook| {
+                        try task_hooks.append(allocator, hook);
+                    }
                     // Clear pending state (don't clear pending_toolchain, let defer free those strings)
                     pending_task_name = null;
                     pending_matrix_buffer.clearRetainingCapacity();
                     pending_env.clearRetainingCapacity();
+                    pending_hooks.clearRetainingCapacity(); // hooks are moved, don't need to deinit
                     // Note: pending_toolchain items stay alive until parseToml returns, so task_toolchain references stay valid
                 }
             }
@@ -1739,6 +1804,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 const formatted = try std.fmt.bufPrint(&buf, "{s}@{s}", .{ toolchain_kind, toolchain_version });
                 const toolchain_entry = try allocator.dupe(u8, formatted);
                 try pending_toolchain.append(allocator, toolchain_entry);
+            } else if (in_task_hooks) {
+                // Inside [[tasks.X.hooks]] section (v1.24.0)
+                // Parse hook fields: cmd, point, failure_strategy, working_dir, env
+                if (std.mem.eql(u8, key, "cmd")) {
+                    current_hook_cmd = value;
+                } else if (std.mem.eql(u8, key, "point")) {
+                    current_hook_point = value;
+                } else if (std.mem.eql(u8, key, "failure_strategy")) {
+                    current_hook_failure_strategy = value;
+                } else if (std.mem.eql(u8, key, "working_dir")) {
+                    current_hook_working_dir = value;
+                } else if (std.mem.eql(u8, key, "env")) {
+                    // env is a table, will be handled in next section
+                } else {
+                    // Environment variables within [[tasks.X.hooks]] env section
+                    // Store as key=value pairs in current_hook_env
+                    try current_hook_env.append(allocator, .{ key, value });
+                }
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
@@ -2477,6 +2560,73 @@ fn flushProfile(
         .task_overrides = new_overrides,
     };
     try config.profiles.put(p_name, profile);
+}
+
+/// Flush current hook into the destination list (v1.24.0)
+fn flushCurrentHook(
+    allocator: std.mem.Allocator,
+    dest_hooks: *std.ArrayList(types.TaskHook),
+    cmd: ?[]const u8,
+    point: ?[]const u8,
+    failure_strategy: ?[]const u8,
+    working_dir: ?[]const u8,
+    env: *std.ArrayList([2][]const u8),
+) !void {
+    // Hook requires cmd and point
+    if (cmd == null or point == null) return;
+
+    // Parse hook point
+    const hook_point = if (std.mem.eql(u8, point.?, "before"))
+        types.HookPoint.before
+    else if (std.mem.eql(u8, point.?, "after"))
+        types.HookPoint.after
+    else if (std.mem.eql(u8, point.?, "success"))
+        types.HookPoint.success
+    else if (std.mem.eql(u8, point.?, "failure"))
+        types.HookPoint.failure
+    else if (std.mem.eql(u8, point.?, "timeout"))
+        types.HookPoint.timeout
+    else
+        return; // Invalid point, skip this hook
+
+    // Parse failure strategy
+    const hook_failure_strategy = if (failure_strategy) |fs| blk: {
+        if (std.mem.eql(u8, fs, "abort_task")) break :blk types.HookFailureStrategy.abort_task else break :blk types.HookFailureStrategy.continue_task;
+    } else types.HookFailureStrategy.continue_task;
+
+    // Duplicate hook data (owned by TaskHook)
+    const hook_cmd = try allocator.dupe(u8, cmd.?);
+    errdefer allocator.free(hook_cmd);
+
+    const hook_working_dir = if (working_dir) |wd| try allocator.dupe(u8, wd) else null;
+    errdefer if (hook_working_dir) |wd| allocator.free(wd);
+
+    // Duplicate env pairs
+    const hook_env = try allocator.alloc([2][]const u8, env.items.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (hook_env[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(hook_env);
+    }
+    for (env.items, 0..) |pair, i| {
+        hook_env[i][0] = try allocator.dupe(u8, pair[0]);
+        errdefer allocator.free(hook_env[i][0]);
+        hook_env[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
+    const hook = types.TaskHook{
+        .cmd = hook_cmd,
+        .point = hook_point,
+        .failure_strategy = hook_failure_strategy,
+        .working_dir = hook_working_dir,
+        .env = hook_env,
+    };
+
+    try dest_hooks.append(allocator, hook);
 }
 
 test "parse timeout and allow_failure from toml" {
