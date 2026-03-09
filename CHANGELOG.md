@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-03-09
+
+### Added
+- **TUI Testing Framework**: Comprehensive test coverage for all TUI modes using sailor v1.5.0 MockTerminal
+  - **MockTerminal snapshot tests**: 19 new unit tests for pixel-perfect TUI rendering verification
+  - **TUI Runner tests**: 5 tests covering empty runner, single task, multiple states, resize events, char/style access
+  - **Graph TUI tests**: 8 tests including buildTreeNodes unit tests and MockTerminal snapshot tests
+  - **List TUI tests**: 6 tests for empty items, single task, multiple items, navigation, truncation, and helper functions
+  - All tests verify proper rendering, selection highlighting, and layout consistency
+- **Documentation**: Added TUI testing guide to CONTRIBUTING.md with MockTerminal usage examples
+
+### Developer Notes
+- Total unit tests: 769 (up from 763), all integration tests pass (894/894)
+- Event bus and command pattern integration deferred to future versions as optional enhancements
+- All TUI modes (runner, graph, list) now have comprehensive snapshot test coverage
+
 ## [1.18.0] - 2026-03-08
 
 ### Added
