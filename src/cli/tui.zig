@@ -565,3 +565,263 @@ test "cmdInteractive: empty config shows no-TTY message" {
     const output = out_buf[0..out_w.end];
     try std.testing.expect(std.mem.indexOf(u8, output, "No TTY detected") != null);
 }
+
+// --- MockTerminal snapshot tests (sailor v1.5.0) ---
+
+const MockTerminal = stui.test_utils.MockTerminal;
+
+test "TUI list: MockTerminal snapshot - empty items" {
+    const allocator = std.testing.allocator;
+
+    var mock = try MockTerminal.init(allocator, 60, 10);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 60, 10);
+    defer buffer.deinit();
+
+    // Simulate empty list screen
+    buffer.setString(0, 0, "zr Interactive Mode — 0 items", stui.Style{ .bold = true });
+    buffer.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+        stui.Style{ .fg = .bright_cyan });
+    buffer.setString(2, 3, "(no tasks or workflows defined)", .{});
+
+    // Copy buffer to mock terminal
+    var y: u16 = 0;
+    while (y < 10) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 60) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    // Verify content
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "zr Interactive Mode") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "0 items") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "no tasks or workflows") != null);
+}
+
+test "TUI list: MockTerminal snapshot - single task" {
+    const allocator = std.testing.allocator;
+
+    // Simulating: [_]Item{ .{ .name = "build", .kind = .task } }
+
+    var mock = try MockTerminal.init(allocator, 60, 10);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 60, 10);
+    defer buffer.deinit();
+
+    // Simulate list screen with one task
+    buffer.setString(0, 0, "zr Interactive Mode — 1 items (selected: 1/1)", stui.Style{ .bold = true });
+    buffer.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+        stui.Style{ .fg = .bright_cyan });
+
+    // Single selected item
+    buffer.setString(0, 3, "> [T]  build", stui.Style{ .fg = .bright_cyan });
+
+    // Footer
+    buffer.setString(0, 9, "Selected: Task 'build'", stui.Style{ .fg = .bright_black });
+
+    // Copy buffer to mock terminal
+    var y: u16 = 0;
+    while (y < 10) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 60) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    // Verify content
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "1 items") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "[T]  build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "Task 'build'") != null);
+}
+
+test "TUI list: MockTerminal snapshot - multiple items mixed" {
+    const allocator = std.testing.allocator;
+
+    // Simulating: build (task), deploy (workflow), test (task)
+
+    var mock = try MockTerminal.init(allocator, 60, 12);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 60, 12);
+    defer buffer.deinit();
+
+    // Simulate list screen with multiple items, second selected
+    buffer.setString(0, 0, "zr Interactive Mode — 3 items (selected: 2/3)", stui.Style{ .bold = true });
+    buffer.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+        stui.Style{ .fg = .bright_cyan });
+
+    buffer.setString(0, 3, "  [T]  build", .{});
+    buffer.setString(0, 4, "> [W]  deploy", stui.Style{ .fg = .bright_cyan });
+    buffer.setString(0, 5, "  [T]  test", .{});
+
+    // Footer
+    buffer.setString(0, 11, "Selected: Workflow 'deploy'", stui.Style{ .fg = .bright_black });
+
+    // Copy buffer to mock terminal
+    var y: u16 = 0;
+    while (y < 12) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 60) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    // Verify content
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "3 items") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "[T]  build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "[W]  deploy") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "[T]  test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "Workflow 'deploy'") != null);
+}
+
+test "TUI list: MockTerminal snapshot - navigation top to bottom" {
+    const allocator = std.testing.allocator;
+
+    // Simulating: lint, build, test (all tasks)
+
+    // Test selection at top
+    {
+        var mock = try MockTerminal.init(allocator, 60, 12);
+        defer mock.deinit();
+
+        var buffer = try stui.Buffer.init(allocator, 60, 12);
+        defer buffer.deinit();
+
+        buffer.setString(0, 0, "zr Interactive Mode — 3 items (selected: 1/3)", stui.Style{ .bold = true });
+        buffer.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+            stui.Style{ .fg = .bright_cyan });
+
+        buffer.setString(0, 3, "> [T]  lint", stui.Style{ .fg = .bright_cyan });
+        buffer.setString(0, 4, "  [T]  build", .{});
+        buffer.setString(0, 5, "  [T]  test", .{});
+
+        var y: u16 = 0;
+        while (y < 12) : (y += 1) {
+            var x: u16 = 0;
+            while (x < 60) : (x += 1) {
+                const cell = buffer.getConst(x, y);
+                if (cell) |c| {
+                    mock.current.set(x, y, c);
+                }
+            }
+        }
+
+        const snapshot = try mock.getSnapshot(allocator);
+        defer allocator.free(snapshot);
+
+        try std.testing.expect(std.mem.indexOf(u8, snapshot, "selected: 1/3") != null);
+        try std.testing.expect(std.mem.indexOf(u8, snapshot, "> [T]  lint") != null);
+    }
+
+    // Test selection at bottom
+    {
+        var mock = try MockTerminal.init(allocator, 60, 12);
+        defer mock.deinit();
+
+        var buffer = try stui.Buffer.init(allocator, 60, 12);
+        defer buffer.deinit();
+
+        buffer.setString(0, 0, "zr Interactive Mode — 3 items (selected: 3/3)", stui.Style{ .bold = true });
+        buffer.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+            stui.Style{ .fg = .bright_cyan });
+
+        buffer.setString(0, 3, "  [T]  lint", .{});
+        buffer.setString(0, 4, "  [T]  build", .{});
+        buffer.setString(0, 5, "> [T]  test", stui.Style{ .fg = .bright_cyan });
+
+        buffer.setString(0, 11, "Selected: Task 'test'", stui.Style{ .fg = .bright_black });
+
+        var y: u16 = 0;
+        while (y < 12) : (y += 1) {
+            var x: u16 = 0;
+            while (x < 60) : (x += 1) {
+                const cell = buffer.getConst(x, y);
+                if (cell) |c| {
+                    mock.current.set(x, y, c);
+                }
+            }
+        }
+
+        const snapshot = try mock.getSnapshot(allocator);
+        defer allocator.free(snapshot);
+
+        try std.testing.expect(std.mem.indexOf(u8, snapshot, "selected: 3/3") != null);
+        try std.testing.expect(std.mem.indexOf(u8, snapshot, "> [T]  test") != null);
+    }
+}
+
+test "TUI list: MockTerminal snapshot - long task name truncation" {
+    const allocator = std.testing.allocator;
+
+    // Simulating: very-long-task-name-that-should-be-truncated-in-display
+
+    var mock = try MockTerminal.init(allocator, 60, 10);
+    defer mock.deinit();
+
+    var buffer = try stui.Buffer.init(allocator, 60, 10);
+    defer buffer.deinit();
+
+    buffer.setString(0, 0, "zr Interactive Mode — 1 items (selected: 1/1)", stui.Style{ .bold = true });
+    buffer.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+        stui.Style{ .fg = .bright_cyan });
+
+    // Simulate truncated name (max 50 chars for name, -3 for "...")
+    buffer.setString(0, 3, "> [T]  very-long-task-name-that-should-be-truncat...", stui.Style{ .fg = .bright_cyan });
+
+    var y: u16 = 0;
+    while (y < 10) : (y += 1) {
+        var x: u16 = 0;
+        while (x < 60) : (x += 1) {
+            const cell = buffer.getConst(x, y);
+            if (cell) |c| {
+                mock.current.set(x, y, c);
+            }
+        }
+    }
+
+    const snapshot = try mock.getSnapshot(allocator);
+    defer allocator.free(snapshot);
+
+    // Verify truncation
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "very-long-task-name") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot, "...") != null);
+}
+
+test "TUI list: buildItemLabels helper function" {
+    const allocator = std.testing.allocator;
+
+    const items = [_]Item{
+        .{ .name = "build", .kind = .task },
+        .{ .name = "deploy", .kind = .workflow },
+    };
+
+    const labels = try buildItemLabels(allocator, &items);
+    defer freeItemLabels(allocator, labels);
+
+    try std.testing.expectEqual(@as(usize, 2), labels.len);
+    try std.testing.expect(std.mem.indexOf(u8, labels[0], "[T]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, labels[0], "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, labels[1], "[W]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, labels[1], "deploy") != null);
+}
