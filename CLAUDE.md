@@ -362,6 +362,9 @@ All 13 phases from the PRD are **COMPLETE**:
 - [x] **v1.22.0 — Sailor v1.6.0 & v1.7.0 Migration**: DONE (RELEASED 2026-03-09) — Upgraded sailor from v1.5.0 to v1.7.0. New features: data visualization widgets (ScatterPlot, Histogram, TimeSeriesChart), advanced layout (FlexBox, viewport clipping, shadow effects, layout caching). All features are opt-in and non-breaking. Tests: 769/777 unit (8 skipped, 0 leaks), 894/894 integration (100%)
 - [ ] **v1.23.0 — Shell Auto-Completion v2**: Enhanced shell completion with context-aware suggestions (dynamic task names from zr.toml, flag completion, file path completion for --config), support for bash/zsh/fish, completion for workflow names, profile names, workspace member names
 - [ ] **v1.24.0 — Execution Hooks**: Pre/post task hooks for setup/teardown (on_before, on_after, on_success, on_failure, on_timeout), workspace-level hooks, hook failure handling (continue/abort), hook context (task name, exit code, duration), integration tests, documentation
+- [ ] **v1.25.0 — Interactive TUI Config Editor**: TUI-based configuration editor using sailor v1.4.0 Form widgets (task/workflow/profile creation, field validation, syntax highlighting, context-sensitive help), Select widgets for dependencies/toolchains, live preview of generated TOML, integration tests, documentation
+- [ ] **v1.26.0 — Language Provider Expansion**: Add support for 5 additional languages (Go, Rust, Java, C#, Ruby) with auto-detection, version management, PATH injection, example projects for each language, integration tests, updated documentation
+- [ ] **v1.27.0 — Real-time Resource Monitoring**: Live TUI dashboard for task execution monitoring (CPU/memory/IO graphs using sailor v1.6.0 widgets, task timeline visualization, concurrent task status, bottleneck detection), websocket-based monitoring server for remote monitoring, integration tests, documentation
 
 ### 마일스톤 수립 프로세스
 
