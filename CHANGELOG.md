@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-03-09
+
+### Changed
+- **Sailor Library Upgrade**: Updated from v1.5.0 to v1.7.0
+  - **v1.6.0 features**: Data visualization widgets (ScatterPlot, Histogram, TimeSeriesChart, Heatmap, PieChart)
+  - **v1.7.0 features**: Advanced layout and rendering
+    - FlexBox layout: CSS flexbox-inspired with justify/align support
+    - Viewport clipping: Efficient rendering of large virtual buffers
+    - Shadow & 3D border effects: Visual depth for widgets
+    - Custom widget traits: Extensible widget protocol
+    - Layout caching: LRU cache for constraint computation
+  - All new features are opt-in and non-breaking
+  - Enables future TUI enhancements with advanced data visualization and layout capabilities
+
+### Developer Notes
+- Total unit tests: 769/777 (8 skipped, 0 leaks)
+- Total integration tests: 894/894 (100% pass rate)
+- No breaking changes, seamless upgrade from v1.5.0
+
 ## [1.21.0] - 2026-03-09
 
 ### Added

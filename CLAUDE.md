@@ -359,7 +359,7 @@ All 13 phases from the PRD are **COMPLETE**:
   - ✅ Expression Debugging guide in configuration.md — 30c2372
   - Tests: 750/758 unit (8 skipped, 0 leaks), 894/894 integration (100%)
 - [x] **v1.21.0 — TUI Testing & Enhancements**: DONE (RELEASED 2026-03-09) — MockTerminal snapshot tests for all TUI modes (runner, graph, list), 19 new unit tests, documentation updated. Event bus and command pattern deferred to future versions as optional enhancements.
-- [ ] **v1.22.0 — Sailor v1.6.0 & v1.7.0 Migration**: Update to sailor v1.6.0 (data visualization widgets: ScatterPlot, Histogram, TimeSeriesChart, Heatmap, PieChart) and v1.7.0 (advanced layout: FlexBox, viewport clipping, shadow effects, layout caching), both non-breaking opt-in features, run tests
+- [x] **v1.22.0 — Sailor v1.6.0 & v1.7.0 Migration**: DONE (RELEASED 2026-03-09) — Upgraded sailor from v1.5.0 to v1.7.0. New features: data visualization widgets (ScatterPlot, Histogram, TimeSeriesChart), advanced layout (FlexBox, viewport clipping, shadow effects, layout caching). All features are opt-in and non-breaking. Tests: 769/777 unit (8 skipped, 0 leaks), 894/894 integration (100%)
 - [ ] **v1.23.0 — Shell Auto-Completion v2**: Enhanced shell completion with context-aware suggestions (dynamic task names from zr.toml, flag completion, file path completion for --config), support for bash/zsh/fish, completion for workflow names, profile names, workspace member names
 - [ ] **v1.24.0 — Execution Hooks**: Pre/post task hooks for setup/teardown (on_before, on_after, on_success, on_failure, on_timeout), workspace-level hooks, hook failure handling (continue/abort), hook context (task name, exit code, duration), integration tests, documentation
 
