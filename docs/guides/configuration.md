@@ -706,6 +706,59 @@ env = { PREV_STATUS = "${task.status('build')}" }  # "success", "failed", "runni
 env = { BUILD_OUTPUT = "${task.output('build')}" }
 ```
 
+### Expression Debugging
+
+zr provides expression diagnostics for debugging complex conditional expressions. When an expression fails to evaluate, zr can provide a detailed stack trace showing the evaluation path.
+
+**Expression Stack Traces**
+
+When using the expression evaluator API with `DiagContext`, you get detailed stack traces on errors:
+
+```
+Expression evaluation failed: InvalidExpression
+
+Expression evaluation stack:
+  at OR: platform.is_linux || file.exists('package.json')
+  at AND: file.exists('package.json') && env.CI == 'true'
+  at file.exists: file.exists('package.json')
+```
+
+**Diagnostic Features**
+
+- **Operator Tracking**: Shows the sequence of OR/AND operators evaluated
+- **Function Calls**: Tracks each expression function (file.exists, env, etc.)
+- **Platform Predicates**: Logs platform/arch checks
+- **Git Predicates**: Tracks git.branch, git.tag, git.dirty evaluations
+- **Runtime References**: Shows task/stage reference lookups
+
+**Performance**
+
+Expression diagnostics are opt-in and have minimal overhead:
+- Disabled by default (no performance cost)
+- Enabled only when `DiagContext` is provided
+- Uses lightweight stack frames (expression string + type)
+- Automatic cleanup via defer (no memory leaks)
+
+**Usage in Code**
+
+```zig
+const expr_diagnostics = @import("config/expr_diagnostics.zig");
+var diag = expr_diagnostics.DiagContext.init(allocator);
+defer diag.deinit();
+
+const result = evalConditionWithDiag(
+    allocator,
+    "platform.is_linux && file.exists('data.json')",
+    null, // task_env
+    null, // runtime_state
+    &diag, // diagnostic context
+) catch |err| {
+    std.debug.print("Error: {}\n", .{err});
+    try diag.formatStackTrace(std.io.getStdErr().writer());
+    return err;
+};
+```
+
 ---
 
 ## Example Configurations
