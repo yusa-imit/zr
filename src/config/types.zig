@@ -11,6 +11,9 @@ pub const VersioningMode = versioning_types.VersioningMode;
 pub const VersioningConvention = versioning_types.VersioningConvention;
 const conformance_types = @import("../conformance/types.zig");
 pub const ConformanceConfig = conformance_types.ConformanceConfig;
+const hooks_mod = @import("../exec/hooks.zig");
+pub const HookPoint = hooks_mod.HookPoint;
+pub const HookFailureStrategy = hooks_mod.HookFailureStrategy;
 
 /// Project metadata from [metadata] section (for constraint validation).
 pub const Metadata = struct {
@@ -785,6 +788,31 @@ pub const WatchConfig = struct {
     }
 };
 
+/// Task hook definition for setup/teardown operations.
+/// v1.24.0 feature for execution hooks.
+pub const TaskHook = struct {
+    /// Command to execute (shell command).
+    cmd: []const u8,
+    /// Hook execution point (before, after, success, failure, timeout).
+    point: HookPoint,
+    /// Failure handling strategy (continue_task or abort_task).
+    failure_strategy: HookFailureStrategy = .continue_task,
+    /// Optional working directory override (null = use task cwd).
+    working_dir: ?[]const u8 = null,
+    /// Optional environment variables for the hook.
+    env: [][2][]const u8 = &.{},
+
+    pub fn deinit(self: *TaskHook, allocator: std.mem.Allocator) void {
+        allocator.free(self.cmd);
+        if (self.working_dir) |wd| allocator.free(wd);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (self.env.len > 0) allocator.free(self.env);
+    }
+};
+
 pub const Task = struct {
     name: []const u8,
     cmd: []const u8,
@@ -847,6 +875,9 @@ pub const Task = struct {
     /// Watch mode configuration for this task (null = use default watch behavior).
     /// v1.17.0 feature for advanced watch mode.
     watch: ?WatchConfig = null,
+    /// Hooks for task lifecycle events (before, after, success, failure, timeout).
+    /// v1.24.0 feature for execution hooks.
+    hooks: []TaskHook = &.{},
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -883,6 +914,8 @@ pub const Task = struct {
         if (self.tags.len > 0) allocator.free(self.tags);
         if (self.cpu_affinity) |affinity| allocator.free(affinity);
         if (self.watch) |*w| w.deinit(allocator);
+        for (self.hooks) |*h| h.deinit(allocator);
+        if (self.hooks.len > 0) allocator.free(self.hooks);
     }
 };
 
