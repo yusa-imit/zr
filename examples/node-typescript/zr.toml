@@ -5,6 +5,7 @@
 [tasks.build]
 description = "Compile TypeScript to JavaScript"
 cmd = "npm run build"
+cache = true
 
 [tasks.dev]
 description = "Run in development mode with watch"
@@ -18,6 +19,7 @@ deps = ["build"]
 [tasks.test]
 description = "Run unit tests"
 cmd = "npm run test"
+cache = true
 
 [tasks.test-watch]
 description = "Run tests in watch mode"
@@ -126,10 +128,3 @@ tasks = ["bundle"]
 # Cache configuration for faster builds
 [cache]
 enabled = true
-
-[tasks.build.cache]
-inputs = ["src/**/*.ts", "tsconfig.json"]
-outputs = ["dist/"]
-
-[tasks.test.cache]
-inputs = ["src/**/*.ts", "vitest.config.ts"]

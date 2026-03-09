@@ -5,6 +5,7 @@
 [tasks.build]
 description = "Build the Zig project"
 cmd = "zig build"
+cache = true
 
 [tasks.test]
 description = "Run Zig tests"
@@ -147,7 +148,3 @@ tasks = ["build-all-platforms"]
 # Cache configuration
 [cache]
 enabled = true
-
-[tasks.build.cache]
-inputs = ["src/**/*.zig", "build.zig", "build.zig.zon"]
-outputs = ["zig-out/"]

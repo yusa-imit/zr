@@ -11,37 +11,37 @@ members = ["packages/*", "apps/*"]
 
 # Root-level tasks that apply to all workspace members
 [tasks.build]
-command = "npm run build"
+cmd = "npm run build"
 description = "Build a package"
 outputs = ["dist/"]
 inputs = ["src/**/*.ts", "package.json"]
 
 [tasks.test]
-command = "npm test"
+cmd = "npm test"
 description = "Run tests"
 deps = ["build"]
 inputs = ["src/**/*.ts", "tests/**/*.ts"]
 
 [tasks.lint]
-command = "npm run lint"
+cmd = "npm run lint"
 description = "Lint code"
 inputs = ["src/**/*.ts"]
 
 [tasks.clean]
-command = "rm -rf dist/ node_modules/ .turbo/"
+cmd = "rm -rf dist/ node_modules/ .turbo/"
 description = "Clean build artifacts"
 
 # Workspace-wide tasks
 [tasks.build-all]
-command = "zr workspace run build"
+cmd = "zr workspace run build"
 description = "Build all packages in workspace"
 
 [tasks.test-all]
-command = "zr workspace run test"
+cmd = "zr workspace run test"
 description = "Test all packages in workspace"
 
 [tasks.affected-build]
-command = "zr affected build"
+cmd = "zr affected build"
 description = "Build only affected packages"
 
 # Affected detection configuration

@@ -18,44 +18,44 @@ prefer_system = false # Don't use system versions, always use zr-managed
 
 # Tasks that use managed toolchains
 [tasks.node-version]
-command = "node --version"
+cmd = "node --version"
 description = "Check Node.js version"
 # Uses node@20.11.1 from zr toolchain
 
 [tasks.python-version]
-command = "python --version"
+cmd = "python --version"
 description = "Check Python version"
 # Uses python@3.12.0 from zr toolchain
 
 [tasks.install-deps]
-command = "npm install"
+cmd = "npm install"
 description = "Install npm dependencies"
 # Uses node@20.11.1
 
 [tasks.build]
-command = "npm run build"
+cmd = "npm run build"
 description = "Build the project"
 deps = ["install-deps"]
 
 [tasks.python-script]
-command = "python scripts/process.py"
+cmd = "python scripts/process.py"
 description = "Run Python script"
 # Uses python@3.12.0
 
 [tasks.go-build]
-command = "go build -o bin/app cmd/main.go"
+cmd = "go build -o bin/app cmd/main.go"
 description = "Build Go binary"
 # Uses go@1.22
 
 # Setup task that ensures toolchains are installed
 [tasks.setup]
-command = "echo 'Project setup complete!'"
+cmd = "echo 'Project setup complete!'"
 description = "Set up project environment"
 # zr setup will install all declared toolchains
 
 # Matrix example with different Node versions
 [tasks.test-matrix]
-command = "node --version && npm test"
+cmd = "node --version && npm test"
 description = "Test on multiple Node versions"
 matrix.toolchain = [
     { node = "18.19.0" },

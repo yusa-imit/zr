@@ -27,23 +27,23 @@ enabled = true
 
 # Tasks that use plugin features
 [tasks.build]
-command = "echo 'Building...' && sleep 2"
+cmd = "echo 'Building...' && sleep 2"
 description = "Build the project"
 # Plugin hooks will trigger on this task
 
 [tasks.deploy]
-command = "echo 'Deploying to $ENV...'"
+cmd = "echo 'Deploying to $ENV...'"
 description = "Deploy to environment"
 deps = ["build"]
 # env plugin provides .env variables
 
 [tasks.git-info]
-command = "echo 'Branch: $GIT_BRANCH, Commit: $GIT_COMMIT'"
+cmd = "echo 'Branch: $GIT_BRANCH, Commit: $GIT_COMMIT'"
 description = "Show git information"
 # git plugin provides GIT_* variables
 
 [tasks.notify]
-command = "echo 'Task completed!'"
+cmd = "echo 'Task completed!'"
 description = "Task with notification"
 # custom-notifier plugin will send notification
 
