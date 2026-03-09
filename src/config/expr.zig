@@ -42,6 +42,7 @@ const ExprContext = struct {
     allocator: std.mem.Allocator,
     task_env: ?[]const [2][]const u8,
     runtime_state: ?*const RuntimeState,
+    diag: ?*DiagContext,
 };
 
 /// Evaluate a condition expression string.
@@ -54,20 +55,33 @@ pub fn evalCondition(
     expr: []const u8,
     task_env: ?[]const [2][]const u8,
 ) EvalError!bool {
-    return evalConditionWithState(allocator, expr, task_env, null);
+    return evalConditionWithDiag(allocator, expr, task_env, null, null);
 }
 
-/// Evaluate a condition with optional runtime state.
+/// Evaluate a condition with optional runtime state (legacy, no diagnostics).
 pub fn evalConditionWithState(
     allocator: std.mem.Allocator,
     expr: []const u8,
     task_env: ?[]const [2][]const u8,
     runtime_state: ?*const RuntimeState,
 ) EvalError!bool {
+    return evalConditionWithDiag(allocator, expr, task_env, runtime_state, null);
+}
+
+/// Evaluate a condition with optional diagnostic context.
+/// If `diag` is provided, stack traces will be collected for error reporting.
+pub fn evalConditionWithDiag(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    runtime_state: ?*const RuntimeState,
+    diag: ?*DiagContext,
+) EvalError!bool {
     const ctx = ExprContext{
         .allocator = allocator,
         .task_env = task_env,
         .runtime_state = runtime_state,
+        .diag = diag,
     };
     return evalOr(&ctx, expr) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -78,6 +92,11 @@ pub fn evalConditionWithState(
 /// Parse OR expression (lowest precedence)
 fn evalOr(ctx: *const ExprContext, expr: []const u8) !bool {
     const trimmed = std.mem.trim(u8, expr, " \t\r\n");
+
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = trimmed, .expr_type = "OR" });
+        defer diag.pop();
+    }
 
     // Find || operator (must scan for it outside of quotes/parens)
     if (std.mem.indexOf(u8, trimmed, "||")) |pos| {
@@ -94,6 +113,11 @@ fn evalOr(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Parse AND expression
 fn evalAnd(ctx: *const ExprContext, expr: []const u8) !bool {
     const trimmed = std.mem.trim(u8, expr, " \t\r\n");
+
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = trimmed, .expr_type = "AND" });
+        defer diag.pop();
+    }
 
     // Find && operator
     if (std.mem.indexOf(u8, trimmed, "&&")) |pos| {
@@ -117,12 +141,12 @@ fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
 
     // Platform check: platform == "linux"
     if (std.mem.startsWith(u8, trimmed, "platform")) {
-        return evalPlatformCheck(trimmed);
+        return evalPlatformCheck(ctx, trimmed);
     }
 
     // Arch check: arch == "x86_64"
     if (std.mem.startsWith(u8, trimmed, "arch")) {
-        return evalArchCheck(trimmed);
+        return evalArchCheck(ctx, trimmed);
     }
 
     // File functions
@@ -180,7 +204,12 @@ fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
 }
 
 /// Evaluate platform == "linux" | "darwin" | "windows"
-fn evalPlatformCheck(expr: []const u8) !bool {
+fn evalPlatformCheck(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "platform" });
+        defer diag.pop();
+    }
+
     const after_platform = std.mem.trim(u8, expr["platform".len..], " \t");
     if (!std.mem.startsWith(u8, after_platform, "==")) {
         return error.InvalidExpression;
@@ -200,7 +229,12 @@ fn evalPlatformCheck(expr: []const u8) !bool {
 }
 
 /// Evaluate arch == "x86_64" | "aarch64"
-fn evalArchCheck(expr: []const u8) !bool {
+fn evalArchCheck(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "arch" });
+        defer diag.pop();
+    }
+
     const after_arch = std.mem.trim(u8, expr["arch".len..], " \t");
     if (!std.mem.startsWith(u8, after_arch, "==")) {
         return error.InvalidExpression;
@@ -219,7 +253,12 @@ fn evalArchCheck(expr: []const u8) !bool {
 }
 
 /// Evaluate file.exists("path")
-fn evalFileExists(_: *const ExprContext, expr: []const u8) !bool {
+fn evalFileExists(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "file.exists" });
+        defer diag.pop();
+    }
+
     const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
     const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
 
@@ -233,6 +272,11 @@ fn evalFileExists(_: *const ExprContext, expr: []const u8) !bool {
 
 /// Evaluate file.changed("glob") - checks git diff
 fn evalFileChanged(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "file.changed" });
+        defer diag.pop();
+    }
+
     const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
     const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
 
@@ -261,6 +305,11 @@ fn evalFileChanged(ctx: *const ExprContext, expr: []const u8) !bool {
 
 /// Evaluate env.VAR_NAME [operator "value"]
 fn evalEnvCheck(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "env" });
+        defer diag.pop();
+    }
+
     // Extract variable name: chars up to space, '=', '!', or end of string
     const after_prefix = expr["env.".len..];
     const var_name_end = blk: {
@@ -308,6 +357,11 @@ fn evalEnvCheck(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Returns true if target file is newer than source file (or directory).
 /// For directories, compares against the newest file in the directory tree.
 fn evalFileNewer(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "file.newer" });
+        defer diag.pop();
+    }
+
     const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
     const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
 
@@ -364,6 +418,11 @@ fn findNewestFileInDir(allocator: std.mem.Allocator, dir_path: []const u8) !i128
 /// Returns the hash of the file content as a hex string.
 /// Currently uses Wyhash for speed. Always returns true (used for change detection).
 fn evalFileHash(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "file.hash" });
+        defer diag.pop();
+    }
+
     const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
     const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
 
@@ -389,6 +448,11 @@ fn evalFileHash(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Executes a shell command and checks if it succeeds (exit code 0).
 /// Security: This is intentionally limited to checking success/failure only.
 fn evalShell(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "shell" });
+        defer diag.pop();
+    }
+
     const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
     const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
 
@@ -417,6 +481,11 @@ fn evalShell(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Evaluate semver.gte("version1", "version2")
 /// Returns true if version1 >= version2 (semantic versioning comparison).
 fn evalSemverGte(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "semver.gte" });
+        defer diag.pop();
+    }
+
     const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
     const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
 
@@ -434,8 +503,6 @@ fn evalSemverGte(ctx: *const ExprContext, expr: []const u8) !bool {
     const v1 = semver_util.Version.parse(v1_str) catch return false;
     const v2 = semver_util.Version.parse(v2_str) catch return false;
 
-    _ = ctx; // unused but required by signature
-
     return v1.gte(v2);
 }
 
@@ -443,6 +510,11 @@ fn evalSemverGte(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Returns true if the current git branch matches the specified pattern (or doesn't match for !=).
 /// Supports exact match or glob patterns (e.g., "feature/*").
 fn evalGitBranch(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "git.branch" });
+        defer diag.pop();
+    }
+
     const after_branch = std.mem.trim(u8, expr["git.branch".len..], " \t");
 
     // Check for == or != operator
@@ -489,6 +561,11 @@ fn evalGitBranch(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Evaluate git.tag == "v1.0.0" | "v*" | != "v*"
 /// Returns true if the current commit has a tag matching the specified pattern (or doesn't match for !=).
 fn evalGitTag(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "git.tag" });
+        defer diag.pop();
+    }
+
     const after_tag = std.mem.trim(u8, expr["git.tag".len..], " \t");
 
     // Check for == or != operator
@@ -544,6 +621,11 @@ fn evalGitTag(ctx: *const ExprContext, expr: []const u8) !bool {
 /// Evaluate git.dirty
 /// Returns true if the working directory has uncommitted changes.
 fn evalGitDirty(ctx: *const ExprContext) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = "git.dirty", .expr_type = "git.dirty" });
+        defer diag.pop();
+    }
+
     // Use git status --porcelain to check for changes
     const result = std.process.Child.run(.{
         .allocator = ctx.allocator,
@@ -591,6 +673,11 @@ fn matchGlob(str: []const u8, pattern: []const u8) bool {
 /// Returns true if the named stage exists in runtime state and succeeded.
 /// If runtime_state is null or stage not found, returns true (fail-open).
 fn evalStageRef(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "stages" });
+        defer diag.pop();
+    }
+
     // Parse: stages['name'].success
     const start_bracket = std.mem.indexOf(u8, expr, "[") orelse return error.InvalidExpression;
     const end_bracket = std.mem.indexOf(u8, expr[start_bracket..], "]") orelse return error.InvalidExpression;
@@ -619,6 +706,11 @@ fn evalStageRef(ctx: *const ExprContext, expr: []const u8) !bool {
 ///   tasks['build'].duration      -> true if task duration > 0 (truthy check)
 /// If runtime_state is null or task not found, returns true (fail-open).
 fn evalTaskRef(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "tasks" });
+        defer diag.pop();
+    }
+
     // Parse: tasks['name'].duration [< > <= >= == !=] [value]
     const start_bracket = std.mem.indexOf(u8, expr, "[") orelse return error.InvalidExpression;
     const end_bracket = std.mem.indexOf(u8, expr[start_bracket..], "]") orelse return error.InvalidExpression;
