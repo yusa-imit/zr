@@ -771,6 +771,27 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. All features are opt-in. No immediate action required.
 
+### v1.9.0 — Developer Tools & Ecosystem (status: READY)
+
+**sailor v1.9.0 released** (2026-03-11) — Developer tools and ecosystem improvements
+
+- **New features**:
+  - WidgetDebugger: Widget tree inspection with layout bounds visualization
+  - PerformanceProfiler: Frame timing & memory profiling with histogram display
+  - CompletionPopup: REPL tab completion popup (resolves repl.zig TODO)
+  - ThemeEditor: Live theme customization with RGB editing and preview (18 tests)
+  - Widget Gallery: Comprehensive catalog of 40+ widgets across 7 categories
+- **Impact on zr**: MEDIUM — Debugging and profiling tools useful for TUI development
+  - WidgetDebugger can help debug complex TUI layouts in graph/runner modes
+  - PerformanceProfiler can identify rendering bottlenecks in large task lists
+  - CompletionPopup enhances future interactive command modes
+  - ThemeEditor allows customizing TUI appearance
+- [ ] `build.zig.zon`에 sailor v1.9.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. Developer tools are opt-in. Consider using WidgetDebugger when enhancing TUI features.
+
+---
 
 **sailor v1.6.1 patch released** (2026-03-08) — Critical bug fixes for v1.6.0 widgets
 
