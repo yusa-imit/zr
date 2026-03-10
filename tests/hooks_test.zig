@@ -144,7 +144,6 @@ test "900: before hook with abort_task strategy fails task on hook failure" {
     const config =
         \\[tasks.test]
         \\cmd = "echo 'task should not run'"
-        \\allow_failure = true
         \\
         \\[[tasks.test.hooks]]
         \\cmd = "exit 1"
