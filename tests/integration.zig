@@ -21,6 +21,7 @@ comptime {
     _ = @import("failures_test.zig");
     _ = @import("graph_test.zig");
     _ = @import("history_test.zig");
+    _ = @import("hooks_test.zig");
     _ = @import("init_test.zig");
     _ = @import("interactive_run_test.zig");
     _ = @import("lint_test.zig");

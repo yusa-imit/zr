@@ -189,6 +189,8 @@ const WorkerCtx = struct {
     replay_mgr: ?*replay.ReplayManager,
     /// Conditional output expression (v1.18.0) — if specified and evaluates to false, suppress task output.
     output_if: ?[]const u8,
+    /// Task hooks for pre/post execution (v1.24.0).
+    task_hooks: []const loader.TaskHook,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -260,6 +262,28 @@ fn workerFn(ctx: WorkerCtx) void {
                 // (not all platforms support affinity)
             };
         }
+    }
+
+    // Execute "before" hooks (v1.24.0)
+    const before_ctx = hooks.HookContext{
+        .task_name = ctx.task_name,
+        .exit_code = null,
+        .duration_ms = null,
+        .error_message = null,
+    };
+    if (!executeHooks(ctx.allocator, ctx.task_hooks, .before, before_ctx)) {
+        // Before hook failed with abort_task strategy
+        const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+        ctx.results_mutex.lock();
+        defer ctx.results_mutex.unlock();
+        ctx.results.append(ctx.allocator, .{
+            .task_name = owned_name,
+            .success = false,
+            .exit_code = 255,
+            .duration_ms = 0,
+        }) catch ctx.allocator.free(owned_name);
+        if (!ctx.allow_failure) ctx.failed.store(true, .release);
+        return;
     }
 
     // Build environment with toolchain PATH injection
@@ -393,6 +417,29 @@ fn workerFn(ctx: WorkerCtx) void {
                 delay_ms *= 2;
             }
         }
+    }
+
+    // Check if task timed out (exit code 124 is timeout from process.run)
+    const was_timeout = (proc_result.exit_code == 124 and ctx.timeout_ms != null);
+
+    // Execute post-task hooks (v1.24.0)
+    const after_ctx = hooks.HookContext{
+        .task_name = ctx.task_name,
+        .exit_code = proc_result.exit_code,
+        .duration_ms = proc_result.duration_ms,
+        .error_message = if (!proc_result.success) "Task failed" else null,
+    };
+
+    // Execute "after" hooks (always run)
+    _ = executeHooks(ctx.allocator, ctx.task_hooks, .after, after_ctx);
+
+    // Execute specific hooks based on result
+    if (was_timeout) {
+        _ = executeHooks(ctx.allocator, ctx.task_hooks, .timeout, after_ctx);
+    } else if (proc_result.success) {
+        _ = executeHooks(ctx.allocator, ctx.task_hooks, .success, after_ctx);
+    } else {
+        _ = executeHooks(ctx.allocator, ctx.task_hooks, .failure, after_ctx);
     }
 
     // Allocate an owned copy of the name for TaskResult
@@ -1085,6 +1132,7 @@ pub fn run(
                 .timeline_tracker = &timeline_tracker,
                 .replay_mgr = &replay_mgr,
                 .output_if = task.output_if,
+                .task_hooks = task.hooks,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
