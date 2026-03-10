@@ -20,7 +20,8 @@ test "895: before hook executes before task" {
         \\point = "before"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -46,7 +47,8 @@ test "896: after hook executes after task" {
         \\point = "after"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -72,7 +74,8 @@ test "897: success hook executes only on task success" {
         \\point = "success"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -98,7 +101,8 @@ test "898: failure hook executes only on task failure" {
         \\point = "failure"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -129,7 +133,8 @@ test "900: before hook with abort_task strategy fails task on hook failure" {
         \\failure_strategy = "abort_task"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -157,7 +162,8 @@ test "901: before hook with continue_task strategy allows task to run" {
         \\failure_strategy = "continue_task"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -182,7 +188,8 @@ test "902: environment variables are accessible in hooks" {
         \\point = "before"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -215,7 +222,8 @@ test "903: multiple hooks execute in order" {
         \\point = "after"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -244,7 +252,8 @@ test "904: inline table env syntax for hooks" {
         \\env = { HOOK_VAR = "hook value" }
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -272,7 +281,8 @@ test "905: working_dir changes hook execution directory" {
         \\working_dir = "./subdir"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -298,7 +308,8 @@ test "906: ZR_EXIT_CODE and ZR_DURATION_MS available in after hooks" {
         \\point = "after"
     ;
 
-    _ = try writeTmpConfig(allocator, tmp.dir, config);
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
     const result = try runZr(allocator, &[_][]const u8{ "run", "test" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);

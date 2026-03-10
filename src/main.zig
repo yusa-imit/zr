@@ -219,7 +219,6 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
 
     var out_buf: [8192]u8 = undefined;
     const stdout = std.fs.File.stdout();
@@ -236,7 +235,8 @@ pub fn main() !void {
     out_writer.interface.flush() catch {};
     err_writer.interface.flush() catch {};
 
-    // Cleanup allocator before exit
+    // Manual cleanup to ensure it happens even on std.process.exit()
+    std.process.argsFree(allocator, args);
     _ = gpa.deinit();
 
     if (result) |exit_code| {
