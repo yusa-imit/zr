@@ -13,6 +13,7 @@ const toolchain_installer = @import("../toolchain/installer.zig");
 const affinity = @import("../util/affinity.zig");
 const timeline = @import("timeline.zig");
 const replay = @import("replay.zig");
+const hooks = @import("hooks.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -619,6 +620,54 @@ fn ensureToolchainsInstalled(allocator: std.mem.Allocator, task: loader.Task) Sc
     }
 }
 
+/// Execute hooks for a specific hook point.
+/// Returns false if any hook with abort_task strategy fails, otherwise returns true.
+fn executeHooks(
+    allocator: std.mem.Allocator,
+    task_hooks: []const loader.TaskHook,
+    point: hooks.HookPoint,
+    context: hooks.HookContext,
+) bool {
+    var executor = hooks.HookExecutor.init(allocator);
+
+    for (task_hooks) |task_hook| {
+        if (task_hook.point != point) continue;
+
+        // Convert TaskHook to Hook for execution
+        var env_map: ?std.StringHashMap([]const u8) = null;
+        if (task_hook.env.len > 0) {
+            env_map = std.StringHashMap([]const u8).init(allocator);
+            for (task_hook.env) |pair| {
+                env_map.?.put(pair[0], pair[1]) catch continue;
+            }
+        }
+        defer if (env_map) |*m| m.deinit();
+
+        const hook = hooks.Hook{
+            .cmd = task_hook.cmd,
+            .point = task_hook.point,
+            .failure_strategy = task_hook.failure_strategy,
+            .working_dir = task_hook.working_dir,
+            .env = env_map,
+        };
+
+        const result = executor.execute(&hook, context) catch {
+            // Hook execution failed catastrophically
+            if (task_hook.failure_strategy == .abort_task) {
+                return false;
+            }
+            continue;
+        };
+        defer result.deinit(allocator);
+
+        if (!result.success and task_hook.failure_strategy == .abort_task) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /// Run a single task synchronously (on the calling thread). Records result.
 /// Holds results_mutex while appending so it is safe to call concurrently with worker threads.
 /// Returns true if the task succeeded (or has allow_failure set).
@@ -650,12 +699,35 @@ fn runTaskSync(
         return true;
     }
 
+    // Execute "before" hooks
+    const before_ctx = hooks.HookContext{
+        .task_name = task.name,
+        .exit_code = null,
+        .duration_ms = null,
+        .error_message = null,
+    };
+    if (!executeHooks(allocator, task.hooks, .before, before_ctx)) {
+        // Before hook failed with abort_task strategy
+        const failed_result = TaskResult{
+            .task_name = try allocator.dupe(u8, task.name),
+            .success = false,
+            .exit_code = 255,
+            .duration_ms = 0,
+            .retry_count = 0,
+        };
+        results_mutex.lock();
+        defer results_mutex.unlock();
+        try results.append(allocator, failed_result);
+        return false;
+    }
+
     // Build environment with toolchain PATH injection
     const merged_env = buildEnvWithToolchains(allocator, env, toolchains);
     defer if (merged_env) |e| toolchain_path.freeToolchainEnv(allocator, e);
 
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
 
+    const task_start = std.time.milliTimestamp();
     var proc_result = process.run(allocator, .{
         .cmd = task.cmd,
         .cwd = task.cwd,
@@ -667,9 +739,11 @@ fn runTaskSync(
         .duration_ms = 0,
         .success = false,
     };
+    const task_duration: u64 = @intCast(std.time.milliTimestamp() - task_start);
 
     // Retry on failure up to retry_max times
     var retry_count: u32 = 0;
+    var was_timeout = false;
     if (!proc_result.success and task.retry_max > 0) {
         var delay_ms: u64 = task.retry_delay_ms;
         var attempt: u32 = 0;
@@ -693,6 +767,31 @@ fn runTaskSync(
                 delay_ms *= 2;
             }
         }
+    }
+
+    // Check if task timed out (exit code 124 is timeout from process.run)
+    if (proc_result.exit_code == 124 and task.timeout_ms != null) {
+        was_timeout = true;
+    }
+
+    // Execute post-task hooks
+    const after_ctx = hooks.HookContext{
+        .task_name = task.name,
+        .exit_code = proc_result.exit_code,
+        .duration_ms = task_duration,
+        .error_message = if (!proc_result.success) "Task failed" else null,
+    };
+
+    // Execute "after" hooks (always run)
+    _ = executeHooks(allocator, task.hooks, .after, after_ctx);
+
+    // Execute specific hooks based on result
+    if (was_timeout) {
+        _ = executeHooks(allocator, task.hooks, .timeout, after_ctx);
+    } else if (proc_result.success) {
+        _ = executeHooks(allocator, task.hooks, .success, after_ctx);
+    } else {
+        _ = executeHooks(allocator, task.hooks, .failure, after_ctx);
     }
 
     const owned_name = try allocator.dupe(u8, task.name);
