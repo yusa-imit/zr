@@ -706,7 +706,6 @@ fn executeHooks(
             }
             continue;
         };
-        defer result.deinit(allocator);
 
         // Print hook output to console
         if (result.stdout.len > 0) {
@@ -716,7 +715,10 @@ fn executeHooks(
             std.fs.File.stderr().writeAll(result.stderr) catch {};
         }
 
-        if (!result.success and task_hook.failure_strategy == .abort_task) {
+        const should_abort = !result.success and task_hook.failure_strategy == .abort_task;
+        result.deinit(allocator); // Explicitly free before potentially returning
+
+        if (should_abort) {
             return false;
         }
     }
