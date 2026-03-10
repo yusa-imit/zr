@@ -669,6 +669,7 @@ fn ensureToolchainsInstalled(allocator: std.mem.Allocator, task: loader.Task) Sc
 
 /// Execute hooks for a specific hook point.
 /// Returns false if any hook with abort_task strategy fails, otherwise returns true.
+/// Prints hook stdout/stderr to the console.
 fn executeHooks(
     allocator: std.mem.Allocator,
     task_hooks: []const loader.TaskHook,
@@ -706,6 +707,14 @@ fn executeHooks(
             continue;
         };
         defer result.deinit(allocator);
+
+        // Print hook output to console
+        if (result.stdout.len > 0) {
+            std.fs.File.stdout().writeAll(result.stdout) catch {};
+        }
+        if (result.stderr.len > 0) {
+            std.fs.File.stderr().writeAll(result.stderr) catch {};
+        }
 
         if (!result.success and task_hook.failure_strategy == .abort_task) {
             return false;
