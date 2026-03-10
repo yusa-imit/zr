@@ -216,7 +216,6 @@ comptime {
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(allocator);
@@ -236,6 +235,9 @@ pub fn main() !void {
     // Always flush both writers before exiting
     out_writer.interface.flush() catch {};
     err_writer.interface.flush() catch {};
+
+    // Cleanup allocator before exit
+    _ = gpa.deinit();
 
     if (result) |exit_code| {
         if (exit_code != 0) std.process.exit(exit_code);
