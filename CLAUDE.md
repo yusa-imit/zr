@@ -771,7 +771,7 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. All features are opt-in. No immediate action required.
 
-### v1.9.0 — Developer Tools & Ecosystem (status: READY)
+### v1.9.0 — Developer Tools & Ecosystem (status: DONE)
 
 **sailor v1.9.0 released** (2026-03-11) — Developer tools and ecosystem improvements
 
@@ -786,8 +786,8 @@ gh issue create --repo yusa-imit/sailor \
   - PerformanceProfiler can identify rendering bottlenecks in large task lists
   - CompletionPopup enhances future interactive command modes
   - ThemeEditor allows customizing TUI appearance
-- [ ] `build.zig.zon`에 sailor v1.9.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
+- [x] `build.zig.zon`에 sailor v1.9.0 의존성 업데이트 (2026-03-11)
+- [x] 기존 테스트 전체 통과 확인 (780 unit, 905 integration)
 
 **Note**: Non-breaking upgrade. Developer tools are opt-in. Consider using WidgetDebugger when enhancing TUI features.
 
