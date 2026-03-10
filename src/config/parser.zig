@@ -1130,9 +1130,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // This is an array-of-tables section, each entry is a hook
 
             // Flush previous hook if any
+            // If we were in a hook section for the current task, flush to task_hooks
+            // Otherwise, flush to pending_hooks for a future task
+            const prev_hook_dest = if (in_task_hooks and current_task != null and pending_task_name == null) &task_hooks else &pending_hooks;
             try flushCurrentHook(
                 allocator,
-                &pending_hooks,
+                prev_hook_dest,
                 current_hook_cmd,
                 current_hook_point,
                 current_hook_failure_strategy,
@@ -1152,7 +1155,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const before_hooks = after_tasks[0 .. hooks_idx - "[[tasks.".len];
 
             // Store the task name for when we see the main [tasks.X] section
-            pending_task_name = before_hooks;
+            // UNLESS we're already in that task (hooks after task definition)
+            if (current_task == null or !std.mem.eql(u8, current_task.?, before_hooks)) {
+                pending_task_name = before_hooks;
+            }
             in_task_hooks = true;
             in_task_matrix = false;
             in_task_env = false;
@@ -1165,6 +1171,16 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             current_hook_working_dir = null;
             current_hook_env.clearRetainingCapacity();
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.")) {
+            // Flush pending hook (if any) before transitioning to main task section (v1.24.0)
+            try flushCurrentHook(
+                allocator,
+                &pending_hooks,
+                current_hook_cmd,
+                current_hook_point,
+                current_hook_failure_strategy,
+                current_hook_working_dir,
+                &current_hook_env,
+            );
             // Flush pending stage (if any, with auto-generated name if needed)
             _ = try flushPendingStage(
                 allocator,
@@ -1816,11 +1832,22 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "working_dir")) {
                     current_hook_working_dir = value;
                 } else if (std.mem.eql(u8, key, "env")) {
-                    // env is a table, will be handled in next section
+                    // Parse inline table: env = { KEY = "value", FOO = "bar" }
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                try current_hook_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    }
                 } else {
-                    // Environment variables within [[tasks.X.hooks]] env section
-                    // Store as key=value pairs in current_hook_env
-                    try current_hook_env.append(allocator, .{ key, value });
+                    // Unknown field, ignore
                 }
             } else if (current_task != null) {
                 // Task-level key=value parsing
@@ -2163,9 +2190,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     }
 
     // Flush final pending hook (v1.24.0)
+    // If we're in a hook section for the current task, flush to task_hooks
+    // Otherwise, flush to pending_hooks for a future task
+    const final_hook_dest = if (in_task_hooks and current_task != null and pending_task_name == null) &task_hooks else &pending_hooks;
     try flushCurrentHook(
         allocator,
-        &pending_hooks,
+        final_hook_dest,
         current_hook_cmd,
         current_hook_point,
         current_hook_failure_strategy,
