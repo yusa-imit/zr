@@ -70,6 +70,15 @@ pub const HookExecutor = struct {
     }
 
     /// Execute a hook with the given context
+    ///
+    /// KNOWN ISSUE (v1.24.0): Integration tests for hooks leak ~64KB per test invocation.
+    /// - Unit tests in this file pass without leaks
+    /// - Integration tests (full subprocess) leak one 64KB block per test
+    /// - Likely cause: std.process.getEnvMap() arena allocation not being freed
+    /// - Pattern: addresses like 0x11e7e0000 (page-aligned, 64KB blocks)
+    /// - Investigation needed: compare subprocess env handling vs direct calls
+    /// - Minimal reproduction: /tmp/test_hook_leak.zig does NOT leak
+    /// - Tests affected: 895-906 (excluding 899 which is skipped)
     pub fn execute(
         self: *HookExecutor,
         hook: *const Hook,
@@ -90,6 +99,7 @@ pub const HookExecutor = struct {
         defer env_map.deinit();
 
         // Add hook-specific variables
+        // Note: EnvMap.put() duplicates strings internally, so we don't need to manage ownership
         try env_map.put("ZR_TASK_NAME", context.task_name);
         if (context.exit_code) |code| {
             const code_str = try std.fmt.allocPrint(self.allocator, "{d}", .{code});
