@@ -180,6 +180,39 @@ Shows Bun development with ultra-fast runtime and Elysia web framework.
 
 ---
 
+### [C# (.NET)](./csharp-dotnet/)
+Demonstrates C# development with .NET SDK, NuGet packages, and modern tooling.
+
+- Auto-generated tasks via `zr init --detect`
+- .NET SDK integration (build, test, run, restore, publish)
+- NuGet package management and restoration
+- Hot reload with `dotnet watch` for rapid development
+- Code formatting with `dotnet format`
+- Coverage reporting with XPlat Code Coverage
+- CI workflows with build, lint, test, and publish stages
+- Multi-environment profiles (Development, Production)
+
+**When to use:** .NET projects (Console, Web, API), ASP.NET Core applications, C# libraries, cross-platform .NET development
+
+---
+
+### [Ruby on Rails](./ruby-rails/)
+Shows Ruby development with Rails framework, Bundler, and quality tools.
+
+- Auto-generated tasks via `zr init --detect`
+- Rails integration (server, console, db-migrate, routes)
+- Bundler for gem dependency management
+- RSpec testing framework integration
+- RuboCop linting with auto-fix support
+- Brakeman security scanner for Rails code
+- Asset precompilation for production
+- CI workflows with linting, security, and test coverage
+- Multi-environment profiles (development, test, production)
+
+**When to use:** Ruby on Rails projects, Ruby web applications, API servers, full-stack Ruby development
+
+---
+
 ### [Migration from Make](./migration-from-make/)
 Complete guide to migrating from Makefile to zr with automated conversion and manual enhancements.
 
