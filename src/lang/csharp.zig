@@ -7,6 +7,7 @@ const DownloadSpec = provider.DownloadSpec;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
+// C# (.NET) language provider for .csproj and .sln projects
 pub const CSharpProvider: LanguageProvider = .{
     .name = "csharp",
     .resolveDownloadUrl = resolveDownloadUrl,
