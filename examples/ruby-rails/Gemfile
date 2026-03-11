@@ -1,0 +1,44 @@
+source "https://rubygems.org"
+
+ruby "3.3.0"
+
+# Core Rails
+gem "rails", "~> 8.0"
+
+# Database
+gem "sqlite3", "~> 2.0"
+
+# Server
+gem "puma", ">= 5.0"
+
+# JavaScript bundling
+gem "importmap-rails"
+
+# CSS framework
+gem "tailwindcss-rails"
+
+group :development, :test do
+  # Testing framework
+  gem "rspec-rails", "~> 7.0"
+
+  # Debugging
+  gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
+
+  # Static analysis
+  gem "brakeman", require: false
+  gem "rubocop-rails-omakase", require: false
+end
+
+group :development do
+  # Web console for debugging
+  gem "web-console"
+end
+
+group :test do
+  # Test helpers
+  gem "capybara"
+  gem "selenium-webdriver"
+
+  # Code coverage
+  gem "simplecov", require: false
+end
