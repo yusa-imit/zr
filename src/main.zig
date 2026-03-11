@@ -67,6 +67,7 @@ const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
 const schedule_cmd = @import("cli/schedule.zig");
+const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
@@ -104,6 +105,7 @@ comptime {
     _ = alias_cmd;
     _ = estimate_cmd;
     _ = schedule_cmd;
+    _ = monitor_cmd;
     _ = loader;
     _ = parser;
     _ = expr;
