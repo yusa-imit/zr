@@ -5,6 +5,7 @@ This document describes the complete `zr.toml` configuration schema.
 ## Table of Contents
 
 - [Tasks](#tasks)
+  - [Execution Hooks](#execution-hooks-v1240)
 - [Workflows](#workflows)
 - [Profiles](#profiles)
 - [Matrix Expansion](#matrix-expansion)
@@ -61,6 +62,7 @@ cmd = "npm run build"
 | `toolchain` | array | ❌ | [] | Required toolchains (e.g., `["node@20"]`) |
 | `tags` | array | ❌ | [] | Categorization tags |
 | `watch` | table | ❌ | null | Watch mode configuration (v1.17.0, see [Watch Mode Configuration](#watch-mode-configuration-v1170)) |
+| `hooks` | array | ❌ | [] | Execution hooks (v1.24.0, see [Execution Hooks](#execution-hooks-v1240)) |
 
 ### Dependencies
 
@@ -248,6 +250,109 @@ zr watch build src/ lib/
 - Set to `0` to disable debouncing (execute immediately on each change)
 - Useful for preventing excessive rebuilds during rapid editing
 - Changes within the debounce window are coalesced into a single execution
+
+---
+
+### Execution Hooks (v1.24.0)
+
+Hooks allow you to execute commands before, after, or on specific task events. Each task can have multiple hooks.
+
+**Basic Hook:**
+
+```toml
+[tasks.deploy]
+cmd = "kubectl apply -f manifests/"
+
+[[tasks.deploy.hooks]]
+cmd = "npm run test"
+point = "before"
+description = "Run tests before deployment"
+```
+
+**Hook Fields:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `cmd` | string | ✅ | — | Command to execute |
+| `point` | string | ✅ | — | Execution point: `before`, `after`, `success`, `failure`, `timeout` |
+| `description` | string | ❌ | null | Human-readable description |
+| `env` | table | ❌ | {} | Environment variable overrides |
+| `failure_strategy` | string | ❌ | "warn" | Behavior on hook failure: `warn`, `abort_task`, `abort_all` |
+
+**Execution Points:**
+
+- `before` — Execute before the task starts
+- `after` — Execute after the task completes (regardless of success/failure)
+- `success` — Execute only if the task succeeds
+- `failure` — Execute only if the task fails
+- `timeout` — Execute only if the task times out (requires `timeout_ms` field)
+
+**Failure Strategies:**
+
+```toml
+[[tasks.critical.hooks]]
+cmd = "echo 'Pre-check failed'"
+point = "before"
+failure_strategy = "abort_task"  # Stop task if hook fails
+```
+
+- `warn` (default) — Log warning and continue
+- `abort_task` — Stop the task but continue other tasks
+- `abort_all` — Stop all execution (fails the entire run)
+
+**Environment Variables:**
+
+Hooks can override environment variables:
+
+```toml
+[[tasks.notify.hooks]]
+cmd = "curl -X POST $WEBHOOK_URL -d 'Deployment started'"
+point = "before"
+env = { WEBHOOK_URL = "https://hooks.slack.com/services/..." }
+```
+
+**Multiple Hooks:**
+
+Tasks can have multiple hooks of different types:
+
+```toml
+[tasks.build]
+cmd = "cargo build --release"
+
+[[tasks.build.hooks]]
+cmd = "cargo fmt --check"
+point = "before"
+description = "Check code formatting"
+
+[[tasks.build.hooks]]
+cmd = "cargo clippy -- -D warnings"
+point = "before"
+description = "Run linter"
+
+[[tasks.build.hooks]]
+cmd = "echo 'Build succeeded!'"
+point = "success"
+
+[[tasks.build.hooks]]
+cmd = "echo 'Build failed!' >&2"
+point = "failure"
+failure_strategy = "warn"
+```
+
+**Execution Order:**
+
+1. All `before` hooks run sequentially (in definition order)
+2. Main task command executes
+3. Result-specific hooks run (`success`, `failure`, or `timeout`)
+4. All `after` hooks run (always, regardless of task outcome)
+
+**Use Cases:**
+
+- **Pre-checks:** Validate environment before running task
+- **Notifications:** Send messages on success/failure
+- **Cleanup:** Remove temporary files after task completion
+- **Logging:** Record execution events
+- **Rollback:** Revert changes if deployment fails
 
 ---
 
