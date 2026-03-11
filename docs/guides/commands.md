@@ -223,6 +223,90 @@ For **profiles**:
 
 ---
 
+### `edit` (v1.25.0)
+
+Interactively edit and create tasks, workflows, or profiles with guided prompts and live TOML preview.
+
+```bash
+zr edit <type>
+```
+
+**Examples:**
+```bash
+# Edit/create a task with interactive prompts
+zr edit task
+
+# Edit/create a workflow
+zr edit workflow
+
+# Edit/create a profile
+zr edit profile
+```
+
+**Interactive Prompts:**
+
+For **tasks**:
+- Task name (required)
+- Command (required)
+- Description (optional)
+- Dependencies (optional, comma-separated)
+
+For **workflows**:
+- Workflow name (required)
+
+For **profiles**:
+- Profile name (required)
+
+**Features:**
+
+- **Field Validation:** Required fields are enforced, optional fields can be skipped
+- **Context-Sensitive Help:** Each prompt shows helpful hints below the input
+- **Live TOML Preview:** Preview the generated TOML before confirming
+- **Automatic Appending:** Appends to existing `zr.toml` or creates a new one
+- **Graceful Cancellation:** Handles EOF and user cancellation cleanly
+
+**Example Session:**
+
+```bash
+$ zr edit task
+
+=== Create New Task ===
+
+Task name: build
+  💡 Unique task identifier
+> build
+
+Command: npm run build
+  💡 Shell command to execute
+> npm run build
+
+Description (optional): Build the application
+  💡 Human-readable description
+> Build the application
+
+Dependencies (optional): lint,test
+  💡 Comma-separated list of task names
+> lint,test
+
+--- Generated TOML ---
+[tasks.build]
+cmd = "npm run build"
+description = "Build the application"
+deps = ["lint", "test"]
+
+
+Add to zr.toml? [Y/n]: y
+✓ Configuration appended to zr.toml
+```
+
+**Notes:**
+- Validates task name uniqueness (warns if task already exists)
+- Properly escapes TOML strings
+- Supports cancellation at any prompt (Ctrl+D or EOF)
+- Shows live preview before writing to file
+
+---
+
 ### `validate`
 
 Validate `zr.toml` configuration.
