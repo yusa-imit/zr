@@ -60,6 +60,7 @@ const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
 const alias_cmd = @import("cli/alias.zig");
 const add_cmd = @import("cli/add.zig");
+const config_editor = @import("cli/config_editor.zig");
 const failures_cmd = @import("cli/failures.zig");
 const mcp_server = @import("mcp/server.zig");
 const lsp_server = @import("lsp/server.zig");
@@ -483,7 +484,7 @@ fn run(
         "doctor",     "setup",      "env",        "export",
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
-        "lsp",        "add",        "failures",
+        "lsp",        "add",        "edit",       "failures",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -862,6 +863,14 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "add")) {
         const add_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return add_cmd.cmdAdd(allocator, add_args, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "edit")) {
+        const edit_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        if (edit_args.len == 0) {
+            try color.printError(ew, effective_color, "Usage: zr edit <task|workflow|profile>\n", .{});
+            return 1;
+        }
+        const entity_type = edit_args[0];
+        return config_editor.cmdEdit(allocator, entity_type, edit_args[1..], effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "failures")) {
         const failures_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = failures_cmd.FailuresOptions{
@@ -940,6 +949,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("    --from-just          Migrate from justfile\n", .{});
     try w.print("    --from-task          Migrate from Taskfile.yml\n", .{});
     try w.print("  add <type> [name]      Interactively add a task, workflow, or profile\n", .{});
+    try w.print("  edit <type>            TUI editor for creating tasks, workflows, or profiles\n", .{});
     try w.print("  setup                  Set up project (install tools, run setup tasks)\n", .{});
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  lint                   Validate architecture constraints\n", .{});
