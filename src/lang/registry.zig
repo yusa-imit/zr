@@ -33,8 +33,9 @@ pub fn getProvider(kind: ToolKind) *const LanguageProvider {
 }
 
 /// Get all registered providers
+/// Returns a compile-time constant slice of all registered language providers
 pub fn getAllProviders() []const *const LanguageProvider {
-    const providers = [_]*const LanguageProvider{
+    const providers = &[_]*const LanguageProvider{
         &node.NodeProvider,
         &python.PythonProvider,
         &zig_lang.ZigProvider,
@@ -46,7 +47,7 @@ pub fn getAllProviders() []const *const LanguageProvider {
         &csharp.CSharpProvider,
         &ruby.RubyProvider,
     };
-    return &providers;
+    return providers;
 }
 
 /// Detect which languages are used in a project directory
