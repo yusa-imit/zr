@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-03-12
+
+### Added
+- **Live Resource Monitoring Dashboard** (`src/cli/monitor.zig`)
+  - MonitorDashboard component for real-time task execution monitoring
+  - ASCII bar charts for CPU usage (10 rows × 60 columns)
+  - ASCII bar charts for memory usage (8 rows × 60 columns)
+  - Task status table with color-coded status (running/completed/failed)
+  - Bottleneck detection algorithm (CPU > 80%, memory > 500MB)
+  - Circular buffer history (60 data points at 1Hz update interval)
+  - Foundation for future live TUI monitoring features
+
+### Developer Notes
+- Total unit tests: 796/804 (8 skipped, 0 leaks) — +4 new tests
+- Total integration tests: 919/920 (1 skipped, 0 leaks)
+- New tests: MonitorDashboard init/deinit, addTask, formatBytes, estimateBytesLen
+- Existing `--monitor` flag integration tests (916-920) continue to pass
+- Remote monitoring server (WebSocket) deferred to v1.31.0
+
 ## [1.22.0] - 2026-03-09
 
 ### Changed
