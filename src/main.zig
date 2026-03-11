@@ -74,6 +74,7 @@ const hash_util = @import("util/hash.zig");
 const glob = @import("util/glob.zig");
 const affected = @import("util/affected.zig");
 const resource = @import("exec/resource.zig");
+const resource_monitor = @import("exec/resource_monitor.zig");
 const control = @import("exec/control.zig");
 const toolchain_types = @import("toolchain/types.zig");
 const toolchain_installer = @import("toolchain/installer.zig");
@@ -156,6 +157,7 @@ comptime {
     _ = glob;
     _ = affected;
     _ = resource;
+    _ = resource_monitor;
     _ = control;
     _ = toolchain_types;
     _ = toolchain_installer;
