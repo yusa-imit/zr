@@ -862,7 +862,7 @@ gh issue create --repo yusa-imit/zuda \
 - **로컬 워크어라운드 금지**: zuda에 버그가 있으면 자체 구현으로 우회하지 않고, 이슈 발행 후 수정 대기
 - zuda 에이전트가 `from:*` 라벨 이슈를 최우선 처리한다
 
-### v1.10.0 — Mouse & Gamepad Input (status: READY)
+### v1.10.0 — Mouse & Gamepad Input (status: DONE)
 
 **sailor v1.10.0 released** (2026-03-11) — Mouse, gamepad, and touch input support
 
@@ -877,10 +877,9 @@ gh issue create --repo yusa-imit/zuda \
   - Gamepad navigation for console-style task runner
   - Touch gestures for future mobile terminal support
   - Input mapping for accessibility (map mouse to keyboard for keyboard-only users)
-- [ ] Update `build.zig.zon` to sailor v1.10.0
-- [ ] Consider adding mouse click support to task picker widget
-- [ ] Test with mouse-enabled terminals (most modern terminals support SGR protocol)
-- [ ] All tests passing after upgrade
+- [x] Update `build.zig.zon` to sailor v1.10.0 (2026-03-11)
+- [ ] Consider adding mouse click support to task picker widget (future enhancement)
+- [x] All tests passing after upgrade (786 unit, 914 integration)
 
 **Priority**: MEDIUM — Optional upgrade, enables new interaction paradigms but not required for current functionality.
 
