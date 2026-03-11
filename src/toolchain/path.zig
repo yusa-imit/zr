@@ -83,6 +83,8 @@ fn getToolchainBinDir(allocator: std.mem.Allocator, kind: ToolKind, version: Too
         .deno => allocator.dupe(u8, install_dir), // Deno binary is in root
         .bun => allocator.dupe(u8, install_dir), // Bun binary is in root
         .java => try std.fmt.allocPrint(allocator, "{s}/bin", .{install_dir}),
+        .csharp => allocator.dupe(u8, install_dir), // dotnet binary is in root
+        .ruby => try std.fmt.allocPrint(allocator, "{s}/bin", .{install_dir}),
     };
 }
 

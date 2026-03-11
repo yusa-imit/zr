@@ -10,6 +10,8 @@ pub const ToolKind = enum {
     deno,
     bun,
     java,
+    csharp,
+    ruby,
 
     pub fn fromString(s: []const u8) ?ToolKind {
         const map = std.StaticStringMap(ToolKind).initComptime(.{
@@ -21,6 +23,8 @@ pub const ToolKind = enum {
             .{ "deno", .deno },
             .{ "bun", .bun },
             .{ "java", .java },
+            .{ "csharp", .csharp },
+            .{ "ruby", .ruby },
         });
         return map.get(s);
     }
@@ -35,6 +39,8 @@ pub const ToolKind = enum {
             .deno => "deno",
             .bun => "bun",
             .java => "java",
+            .csharp => "csharp",
+            .ruby => "ruby",
         };
     }
 };
@@ -124,7 +130,7 @@ pub const InstalledTool = struct {
 };
 
 test "ToolKind fromString/toString roundtrip" {
-    const kinds = [_]ToolKind{ .node, .python, .zig, .go, .rust, .deno, .bun, .java };
+    const kinds = [_]ToolKind{ .node, .python, .zig, .go, .rust, .deno, .bun, .java, .csharp, .ruby };
     for (kinds) |k| {
         const s = k.toString();
         const parsed = ToolKind.fromString(s);

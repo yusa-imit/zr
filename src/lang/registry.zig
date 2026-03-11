@@ -13,6 +13,8 @@ const rust = @import("rust.zig");
 const deno = @import("deno.zig");
 const bun = @import("bun.zig");
 const java = @import("java.zig");
+const csharp = @import("csharp.zig");
+const ruby = @import("ruby.zig");
 
 /// Get the language provider for a given tool kind
 pub fn getProvider(kind: ToolKind) *const LanguageProvider {
@@ -25,6 +27,8 @@ pub fn getProvider(kind: ToolKind) *const LanguageProvider {
         .deno => &deno.DenoProvider,
         .bun => &bun.BunProvider,
         .java => &java.JavaProvider,
+        .csharp => &csharp.CSharpProvider,
+        .ruby => &ruby.RubyProvider,
     };
 }
 
@@ -39,6 +43,8 @@ pub fn getAllProviders() []const *const LanguageProvider {
         &deno.DenoProvider,
         &bun.BunProvider,
         &java.JavaProvider,
+        &csharp.CSharpProvider,
+        &ruby.RubyProvider,
     };
     return &providers;
 }
@@ -95,5 +101,5 @@ test "getProvider" {
 
 test "getAllProviders" {
     const providers = getAllProviders();
-    try std.testing.expectEqual(@as(usize, 8), providers.len);
+    try std.testing.expectEqual(@as(usize, 10), providers.len);
 }

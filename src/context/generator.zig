@@ -211,6 +211,8 @@ fn collectToolchains(
                 .deno => "deno",
                 .bun => "bun",
                 .java => "java",
+                .csharp => "csharp",
+                .ruby => "ruby",
             };
 
             const version_str = try std.fmt.allocPrint(
