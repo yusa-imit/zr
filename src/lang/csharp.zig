@@ -74,7 +74,7 @@ fn getBinaryPath(allocator: std.mem.Allocator, platform: PlatformInfo) ![]const 
 }
 
 fn detectProject(allocator: std.mem.Allocator, dir_path: []const u8) !ProjectInfo {
-    var dir = std.fs.openDirAbsolute(dir_path, .{}) catch {
+    var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch {
         return .{ .detected = false, .confidence = 0, .files_found = &.{} };
     };
     defer dir.close();
