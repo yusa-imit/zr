@@ -292,3 +292,10 @@ Record solutions to tricky bugs here. Future agents will check this before debug
   5. Thread task_control from SchedulerConfig → WorkerCtx → process.ProcessConfig
 - **Testing**: Update all test calls to cmdRun to include `null` parameter
 - **Prevention**: When adding new fields to scheduler/process config, consider the full path from CLI → scheduler → worker → process
+
+## Returning Pointer to Stack-Allocated Array (2026-03-11, commit 43eb876)
+- **Symptom**: Integration tests 736-739, 912-915 failed in CI with exit code 255 (crash), but passed locally
+- **Root cause**: `getAllProviders()` in registry.zig returned `&providers` where `providers` was a **stack-allocated array** (`const providers = [_]*const LanguageProvider{...}; return &providers;`). This is undefined behavior — the array is destroyed when the function returns, leaving a dangling pointer. Worked locally due to favorable stack layout but crashed in CI with different optimization/memory layout.
+- **Fix**: Use compile-time constant array: `const providers = &[_]*const LanguageProvider{...}; return providers;`. The `&[_]` syntax creates a compile-time constant pointer that lives in static storage.
+- **Prevention**: NEVER return `&local_var` from a function. Use `const x = &[_]T{...}` for compile-time constant arrays, not `const x = [_]T{...}`.
+- **Lesson**: Undefined behavior can be platform/optimization-dependent. Always check for stack pointer returns. Exit code 255 often indicates a crash from accessing freed/invalid memory.
