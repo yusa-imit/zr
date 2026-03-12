@@ -563,6 +563,51 @@ fn formatBytes(bytes: u64) [64]u8 {
 
 // --- Tests ---
 
+test "formatBytes: formats various byte sizes correctly" {
+    const bytes_512 = formatBytes(512);
+    const str_512 = std.mem.sliceTo(&bytes_512, 0);
+    try std.testing.expectEqualStrings("512 B", str_512);
+
+    const kb_1_5 = formatBytes(1536);
+    const str_kb = std.mem.sliceTo(&kb_1_5, 0);
+    try std.testing.expectEqualStrings("1.50 KB", str_kb);
+
+    const mb_2 = formatBytes(2 * 1024 * 1024);
+    const str_mb = std.mem.sliceTo(&mb_2, 0);
+    try std.testing.expectEqualStrings("2.00 MB", str_mb);
+
+    const gb_10 = formatBytes(10 * 1024 * 1024 * 1024);
+    const str_gb = std.mem.sliceTo(&gb_10, 0);
+    try std.testing.expectEqualStrings("10.00 GB", str_gb);
+
+    const zero = formatBytes(0);
+    const str_zero = std.mem.sliceTo(&zero, 0);
+    try std.testing.expectEqualStrings("0 B", str_zero);
+}
+
+test "formatBytes: handles boundary cases" {
+    // Test exactly 1 KB boundary
+    const kb_1 = formatBytes(1024);
+    const str_kb_1 = std.mem.sliceTo(&kb_1, 0);
+    try std.testing.expectEqualStrings("1.00 KB", str_kb_1);
+
+    // Test exactly 1 MB boundary
+    const mb_1 = formatBytes(1024 * 1024);
+    const str_mb_1 = std.mem.sliceTo(&mb_1, 0);
+    try std.testing.expectEqualStrings("1.00 MB", str_mb_1);
+
+    // Test exactly 1 GB boundary
+    const gb_1 = formatBytes(1024 * 1024 * 1024);
+    const str_gb_1 = std.mem.sliceTo(&gb_1, 0);
+    try std.testing.expectEqualStrings("1.00 GB", str_gb_1);
+
+    // Test max u64 value (should not overflow buffer)
+    const max = formatBytes(std.math.maxInt(u64));
+    const str_max = std.mem.sliceTo(&max, 0);
+    // Should format as GB without crashing
+    try std.testing.expect(std.mem.endsWith(u8, str_max, " GB"));
+}
+
 test "cmdList: text output lists tasks alphabetically" {
     const allocator = std.testing.allocator;
 
