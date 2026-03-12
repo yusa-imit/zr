@@ -911,3 +911,18 @@ gh issue create --repo yusa-imit/zuda \
   - Graphics protocol for inline images in task details
 - **tests**: Verify particle/blur rendering in TUI mode
 - **breaking**: None — all opt-in features
+
+### v1.12.0 — Enterprise & Accessibility
+- **status**: READY
+- **features**:
+  - Session recording & playback for debugging
+  - Audit logging for compliance
+  - High contrast WCAG AAA themes (4 themes: dark, light, amber, green)
+  - Screen reader enhancements (OSC8, ARIA, JSON modes)
+  - Keyboard-only navigation improvements (skip links, focus indicators)
+- **integration**:
+  - Audit log for task operations (create, update, delete, run)
+  - High contrast themes for accessibility settings
+  - Keyboard navigation hints for TUI mode
+- **tests**: None required (all opt-in features, no breaking changes)
+- **breaking**: None — all additive
