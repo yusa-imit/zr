@@ -8,6 +8,7 @@ const builtin = @import("builtin");
 const color = @import("../output/color.zig");
 const sailor = @import("sailor");
 const stui = sailor.tui;
+const tui_mouse = @import("tui_mouse.zig");
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -191,7 +192,7 @@ pub const TuiRunner = struct {
 
         // --- Header ---
         buf.setString(0, chunks[0].y, "zr Live Execution", stui.Style{ .bold = true });
-        buf.setString(18, chunks[0].y, "  [^v] Switch Task  [PgUp/PgDn] Scroll  [q] Quit",
+        buf.setString(18, chunks[0].y, "  [j/k/click] Switch  [scroll] Logs  [q] Quit",
             stui.Style{ .fg = .bright_cyan });
 
         // --- Task list ---
@@ -360,6 +361,11 @@ fn inputThread(runner: *TuiRunner) void {
     const original = enterRawMode() catch return;
     defer leaveRawMode(original);
 
+    // Enable mouse tracking
+    const stdout = std.io.getStdOut().writer();
+    tui_mouse.enableMouseTracking(stdout, .drag) catch {};
+    defer tui_mouse.disableMouseTracking(stdout) catch {};
+
     while (!runner.should_quit.load(.seq_cst)) {
         const byte = readByte() orelse break;
 
@@ -386,6 +392,56 @@ fn inputThread(runner: *TuiRunner) void {
                 const b2 = readByte() orelse continue;
                 if (b2 == '[') {
                     const b3 = readByte() orelse continue;
+
+                    // Check for mouse event (SGR format: ESC [ <...)
+                    if (b3 == '<') {
+                        // Read rest of mouse sequence
+                        var seq_buf: [32]u8 = undefined;
+                        seq_buf[0] = '<';
+                        var seq_len: usize = 1;
+
+                        while (seq_len < seq_buf.len) {
+                            const next = readByte() orelse break;
+                            seq_buf[seq_len] = next;
+                            seq_len += 1;
+
+                            // Mouse sequences end with 'M' or 'm'
+                            if (next == 'M' or next == 'm') {
+                                const mouse_event = sailor.tui.mouse.parseSGR(seq_buf[0..seq_len]);
+                                if (mouse_event) |evt| {
+                                    runner.mutex.lock();
+                                    defer runner.mutex.unlock();
+
+                                    // Handle mouse click in task list area
+                                    // Task list starts at y=2 (after header), ends before log area
+                                    if (evt.event_type == .press and evt.button == .left) {
+                                        const task_list_height = @min(runner.tasks.items.len + 2, 12);
+                                        if (evt.y >= 2 and evt.y < 2 + task_list_height) {
+                                            const clicked_idx = @as(usize, evt.y - 2);
+                                            if (clicked_idx < runner.tasks.items.len) {
+                                                runner.selected_task = clicked_idx;
+                                                runner.scroll_offset = 0;
+                                            }
+                                        }
+                                    }
+                                    // Handle scroll events
+                                    else if (evt.event_type == .scroll_up) {
+                                        if (runner.scroll_offset >= 1) {
+                                            runner.scroll_offset -= 1;
+                                        } else {
+                                            runner.scroll_offset = 0;
+                                        }
+                                    }
+                                    else if (evt.event_type == .scroll_down) {
+                                        runner.scroll_offset += 1;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+
                     switch (b3) {
                         'A' => {
                             runner.mutex.lock();
