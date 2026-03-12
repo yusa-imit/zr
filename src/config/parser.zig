@@ -330,6 +330,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Non-owning slices into content for env pairs — addTask dupes them
     var task_env = std.ArrayList([2][]const u8){};
     defer task_env.deinit(allocator);
+    // Template usage (v1.29.0) — non-owning slice for template name
+    var task_template: ?[]const u8 = null;
+    // Template parameters (v1.29.0) — non-owning slices into content for param pairs
+    var task_params = std.ArrayList([2][]const u8){};
+    defer task_params.deinit(allocator);
 
     // Subsection state (v1.19.0) — for handling subsections appearing before main task
     var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
@@ -619,6 +624,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_env.clearRetainingCapacity();
                 task_toolchain.clearRetainingCapacity();
                 task_tags.clearRetainingCapacity();
+                task_params.clearRetainingCapacity();
                 task_cmd = null;
                 task_cwd = null;
                 task_desc = null;
@@ -633,6 +639,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_max_cpu = null;
                 task_max_memory = null;
                 task_matrix_raw = null;
+                task_template = null;
                 current_task = null;
             }
             // Parse new workflow name from "[workflows.X]"
@@ -2094,6 +2101,26 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     // Parse single integer: numa_node = 0 (v1.13.0)
                     const trimmed_numa = std.mem.trim(u8, value, " \t\"");
                     task_numa_node = std.fmt.parseInt(u32, trimmed_numa, 10) catch null;
+                } else if (std.mem.eql(u8, key, "template")) {
+                    // Task template reference (v1.29.0)
+                    task_template = value;
+                } else if (std.mem.eql(u8, key, "params")) {
+                    // Task template parameters (v1.29.0)
+                    // Parse inline table: { port = "3000", host = "localhost" }
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const param_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const param_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (param_key.len > 0) {
+                                // Non-owning slices into content — addTaskImpl will dupe
+                                try task_params.append(allocator, .{ param_key, param_val });
+                            }
+                        }
+                    }
                 }
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)

@@ -879,6 +879,16 @@ pub const Task = struct {
     /// Hooks for task lifecycle events (before, after, success, failure, timeout).
     /// v1.24.0 feature for execution hooks.
     hooks: []TaskHook = &.{},
+    /// Template to use for this task (references a [templates.NAME] section).
+    /// If set, the task inherits all fields from the template, with task-specific
+    /// fields overriding template defaults.
+    /// v1.29.0 feature for task templates.
+    template: ?[]const u8 = null,
+    /// Parameters to substitute in the template command and fields.
+    /// Each entry is [param_name, param_value] (e.g., [["port", "3000"], ["host", "localhost"]]).
+    /// Template placeholders use ${param_name} syntax.
+    /// v1.29.0 feature for task templates.
+    params: [][2][]const u8 = &.{},
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -917,6 +927,12 @@ pub const Task = struct {
         if (self.watch) |*w| w.deinit(allocator);
         for (self.hooks) |*h| h.deinit(allocator);
         if (self.hooks.len > 0) allocator.free(self.hooks);
+        if (self.template) |t| allocator.free(t);
+        for (self.params) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (self.params.len > 0) allocator.free(self.params);
     }
 };
 
