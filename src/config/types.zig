@@ -767,6 +767,47 @@ pub const ConditionalDep = struct {
 
 /// Watch mode configuration for a task ([tasks.*.watch] section).
 /// v1.17.0 feature for advanced watch mode.
+/// Circuit breaker configuration for task retries.
+/// Automatically stops retrying if failure rate exceeds threshold.
+/// v1.30.0 feature for enhanced error recovery.
+pub const CircuitBreakerConfig = struct {
+    /// Failure threshold: if failure_count / (failure_count + success_count) > threshold, circuit opens.
+    /// Range: 0.0 to 1.0 (e.g., 0.5 = 50% failure rate trips the breaker).
+    failure_threshold: f64 = 0.5,
+    /// Time window in milliseconds to track failures (default: 60 seconds).
+    /// Failures older than this are not counted toward the threshold.
+    window_ms: u64 = 60_000,
+    /// Minimum number of attempts before circuit breaker can trip (prevents tripping on first failure).
+    /// Default: 3 attempts.
+    min_attempts: u32 = 3,
+    /// How long the circuit stays open before attempting to retry again (half-open state).
+    /// Default: 30 seconds.
+    reset_timeout_ms: u64 = 30_000,
+};
+
+/// Checkpoint configuration for long-running tasks.
+/// Enables saving progress and resuming from last checkpoint on failure.
+/// v1.30.0 feature for enhanced error recovery.
+pub const CheckpointConfig = struct {
+    /// Enable checkpointing for this task.
+    enabled: bool = false,
+    /// Interval in milliseconds between checkpoint saves (default: 5 minutes).
+    /// The task must emit a checkpoint marker to stdout for this to work.
+    /// Format: "CHECKPOINT: <state_data>" where state_data is task-specific.
+    interval_ms: u64 = 300_000,
+    /// Storage backend for checkpoints: "file" (default), "memory", "redis", "s3".
+    /// Only "file" is implemented in v1.30.0, others planned for future versions.
+    storage: []const u8 = "file",
+    /// Directory to store checkpoint files (default: .zr/checkpoints/).
+    /// Only used when storage = "file".
+    checkpoint_dir: []const u8 = ".zr/checkpoints",
+
+    pub fn deinit(self: *CheckpointConfig, allocator: std.mem.Allocator) void {
+        allocator.free(self.storage);
+        allocator.free(self.checkpoint_dir);
+    }
+};
+
 pub const WatchConfig = struct {
     /// Debounce delay in milliseconds before triggering task execution.
     /// Multiple rapid changes within this window are coalesced into one execution.
@@ -891,6 +932,14 @@ pub const Task = struct {
     /// Template placeholders use ${param_name} syntax.
     /// v1.29.0 feature for task templates.
     params: [][2][]const u8 = &.{},
+    /// Circuit breaker configuration for automatic retry failure rate limiting.
+    /// If null, circuit breaker is disabled (retries will continue up to retry_max).
+    /// v1.30.0 feature for enhanced error recovery.
+    circuit_breaker: ?CircuitBreakerConfig = null,
+    /// Checkpoint configuration for long-running tasks.
+    /// Enables saving progress and resuming from last checkpoint on failure.
+    /// v1.30.0 feature for enhanced error recovery.
+    checkpoint: ?CheckpointConfig = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -935,6 +984,7 @@ pub const Task = struct {
             allocator.free(pair[1]);
         }
         if (self.params.len > 0) allocator.free(self.params);
+        if (self.checkpoint) |*cp| cp.deinit(allocator);
     }
 };
 
@@ -962,6 +1012,10 @@ pub const Workflow = struct {
     name: []const u8,
     description: ?[]const u8,
     stages: []Stage,
+    /// Maximum total retry attempts allowed across all tasks in this workflow (null = unlimited).
+    /// This prevents retry storms where many tasks fail and retry simultaneously.
+    /// v1.30.0 feature for enhanced error recovery.
+    retry_budget: ?u32 = null,
 
     pub fn deinit(self: *Workflow, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
