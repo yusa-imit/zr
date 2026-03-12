@@ -40,8 +40,8 @@ outputs = ["bin/Release/"]
 
 # Enhanced tasks
 
-[tasks.watch]
-description = "Run with hot reload"
+[tasks.dev]
+description = "Run with hot reload (watch mode)"
 cmd = "dotnet watch run"
 cache = false
 

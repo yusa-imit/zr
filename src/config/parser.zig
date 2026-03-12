@@ -1055,8 +1055,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Extract task name: "[tasks.X.watch]" → X
             const watch_marker = ".watch]";
             const watch_idx = std.mem.indexOf(u8, trimmed, watch_marker) orelse return error.MalformedSectionHeader;
-            const after_tasks = trimmed["[tasks.".len..];
-            const before_watch = after_tasks[0 .. watch_idx - "[tasks.".len];
+
+            // Check if task name would be empty (e.g., [tasks.watch])
+            if (watch_idx <= "[tasks.".len) {
+                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                return error.ReservedTaskName;
+            }
+
+            const before_watch = trimmed["[tasks.".len .. watch_idx];
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -1080,8 +1086,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Extract task name: "[tasks.X.matrix]" → X
             const matrix_marker = ".matrix]";
             const matrix_idx = std.mem.indexOf(u8, trimmed, matrix_marker) orelse return error.MalformedSectionHeader;
-            const after_tasks = trimmed["[tasks.".len..];
-            const before_matrix = after_tasks[0 .. matrix_idx - "[tasks.".len];
+
+            // Check if task name would be empty (e.g., [tasks.matrix])
+            if (matrix_idx <= "[tasks.".len) {
+                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                return error.ReservedTaskName;
+            }
+
+            const before_matrix = trimmed["[tasks.".len .. matrix_idx];
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_matrix;
@@ -1098,8 +1110,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Extract task name: "[tasks.X.env]" → X
             const env_marker = ".env]";
             const env_idx = std.mem.indexOf(u8, trimmed, env_marker) orelse return error.MalformedSectionHeader;
-            const after_tasks = trimmed["[tasks.".len..];
-            const before_env = after_tasks[0 .. env_idx - "[tasks.".len];
+
+            // Check if task name would be empty (e.g., [tasks.env])
+            if (env_idx <= "[tasks.".len) {
+                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                return error.ReservedTaskName;
+            }
+
+            const before_env = trimmed["[tasks.".len .. env_idx];
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_env;
@@ -1116,8 +1134,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Extract task name: "[tasks.X.toolchain]" → X
             const toolchain_marker = ".toolchain]";
             const toolchain_idx = std.mem.indexOf(u8, trimmed, toolchain_marker) orelse return error.MalformedSectionHeader;
-            const after_tasks = trimmed["[tasks.".len..];
-            const before_toolchain = after_tasks[0 .. toolchain_idx - "[tasks.".len];
+
+            // Check if task name would be empty (e.g., [tasks.toolchain])
+            if (toolchain_idx <= "[tasks.".len) {
+                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                return error.ReservedTaskName;
+            }
+
+            const before_toolchain = trimmed["[tasks.".len .. toolchain_idx];
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_toolchain;
@@ -1151,8 +1175,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Extract task name: "[[tasks.X.hooks]]" → X
             const hooks_marker = ".hooks]]";
             const hooks_idx = std.mem.indexOf(u8, trimmed, hooks_marker) orelse return error.MalformedSectionHeader;
-            const after_tasks = trimmed["[[tasks.".len..];
-            const before_hooks = after_tasks[0 .. hooks_idx - "[[tasks.".len];
+
+            // Check if task name would be empty (e.g., [[tasks.hooks]])
+            if (hooks_idx <= "[[tasks.".len) {
+                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                return error.ReservedTaskName;
+            }
+
+            const before_hooks = trimmed["[[tasks.".len .. hooks_idx];
 
             // Store the task name for when we see the main [tasks.X] section
             // UNLESS we're already in that task (hooks after task definition)
