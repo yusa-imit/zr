@@ -9,6 +9,7 @@ const color = @import("../output/color.zig");
 const unicode = @import("../util/unicode.zig");
 const sailor = @import("sailor");
 const stui = sailor.tui;
+const tui_mouse = @import("tui_mouse.zig");
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -205,7 +206,7 @@ fn drawScreen(
         "zr Interactive Mode — 0 items";
 
     buf.setString(0, 0, header, stui.Style{ .bold = true });
-    buf.setString(0, 1, "[j/k/^v] Move  [g/G] Top/Bottom  [PgUp/PgDn] Page  [Enter] Run  [q] Quit",
+    buf.setString(0, 1, "[j/k/arrows/click] Move  [g/G] Top/Bottom  [Enter] Run  [q] Quit",
         stui.Style{ .fg = .bright_cyan });
 
     if (items.len == 0) {
@@ -325,6 +326,10 @@ fn cmdInteractiveInner(
     };
     defer leaveRawMode(original_termios);
 
+    // Enable mouse tracking (click + drag mode)
+    try tui_mouse.enableMouseTracking(w, .drag);
+    defer tui_mouse.disableMouseTracking(w) catch {};
+
     var selected: usize = 0;
     const item_count = items.items.len;
 
@@ -373,6 +378,42 @@ fn cmdInteractiveInner(
                 const b2 = readByte() orelse continue;
                 if (b2 == '[') {
                     const b3 = readByte() orelse continue;
+
+                    // Check for mouse event (SGR format: ESC [ <...)
+                    if (b3 == '<') {
+                        // Read rest of mouse sequence
+                        var seq_buf: [32]u8 = undefined;
+                        seq_buf[0] = '<';
+                        var seq_len: usize = 1;
+
+                        while (seq_len < seq_buf.len) {
+                            const next = readByte() orelse break;
+                            seq_buf[seq_len] = next;
+                            seq_len += 1;
+
+                            // Mouse sequences end with 'M' or 'm'
+                            if (next == 'M' or next == 'm') {
+                                const mouse_event = sailor.tui.mouse.parseSGR(seq_buf[0..seq_len]);
+                                if (mouse_event) |evt| {
+                                    // Handle mouse click in list area
+                                    // List starts at y=3, each item is 1 row
+                                    if (evt.event_type == .press and evt.button == .left) {
+                                        if (evt.y >= 3) {
+                                            const clicked_idx = evt.y - 3;
+                                            if (clicked_idx < item_count) {
+                                                selected = clicked_idx;
+                                                try drawScreen(allocator, w, items.items, selected, use_color);
+                                                try w.flush();
+                                            }
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+
                     switch (b3) {
                         // Arrow up
                         'A' => {
