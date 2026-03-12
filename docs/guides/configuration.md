@@ -693,22 +693,115 @@ tasks = ["clean"]
 
 ## Templates
 
-Define reusable task templates with parameters.
+Define reusable task templates with parameters for common patterns.
+
+### Basic Template Definition
+
+Templates are defined using the `[templates.NAME]` section format:
 
 ```toml
-[template.test-service]
-cmd = "npm test"
-dir = "${param.service_dir}"
-env = { SERVICE_NAME = "${param.name}" }
-
-[tasks.test-frontend]
-template = "test-service"
-params = { name = "frontend", service_dir = "./services/frontend" }
-
-[tasks.test-backend]
-template = "test-service"
-params = { name = "backend", service_dir = "./services/backend" }
+[templates.test-watch]
+description = "Run tests in watch mode"
+params = ["port"]
+cmd = "npm test -- --watch --port={{port}}"
+cwd = "./tests"
+timeout = "60s"
 ```
+
+### Parameter Substitution
+
+Parameters are defined in the `params` array and referenced using `{{param_name}}` syntax in any string field:
+
+```toml
+[templates.server]
+params = ["port", "host", "env"]
+cmd = "node server.js --port={{port}} --host={{host}}"
+env = { NODE_ENV = "{{env}}" }
+```
+
+### Applying Templates to Tasks
+
+Tasks can apply a template using the `template` field and provide parameter values via `params`:
+
+```toml
+[tasks.dev-server]
+template = "server"
+params = { port = "3000", host = "localhost", env = "development" }
+
+[tasks.prod-server]
+template = "server"
+params = { port = "8080", host = "0.0.0.0", env = "production" }
+```
+
+When a task applies a template:
+1. Parameter values are substituted into the template's fields
+2. The task's fields override the template's fields
+3. Dependencies, environment variables, and other settings are merged
+
+### Interactive Template Application
+
+Use the `zr template` commands to work with templates:
+
+```bash
+# List all available templates
+zr template list
+
+# Show detailed information about a template
+zr template show test-watch
+
+# Apply a template interactively (prompts for parameter values)
+zr template apply server my-task
+```
+
+### Template Fields
+
+Templates support the same fields as tasks:
+
+- **Basic**: `cmd`, `description`, `cwd`
+- **Dependencies**: `deps`, `deps_serial`, `deps_if`, `deps_optional`
+- **Execution**: `timeout`, `allow_failure`, `retry`, `condition`
+- **Environment**: `env`, `toolchain`
+- **Resources**: `max_cpu`, `max_memory`, `max_concurrent`
+- **Cache**: `cache`, `cache_policy`
+- **Hooks**: `on_before`, `on_after`, `on_success`, `on_failure`, `on_timeout`
+
+### Complex Template Example
+
+```toml
+[templates.microservice-deploy]
+description = "Deploy a microservice to Kubernetes"
+params = ["service_name", "namespace", "tag"]
+cmd = "kubectl apply -f deployment.yaml"
+cwd = "./k8s/{{service_name}}"
+timeout = "5m"
+deps = ["build-{{service_name}}", "test-{{service_name}}"]
+env = { IMAGE_TAG = "{{tag}}", NAMESPACE = "{{namespace}}" }
+allow_failure = false
+retry = { max = 3, delay = "10s", backoff = "exponential" }
+
+# Apply template for different services
+[tasks.deploy-api]
+template = "microservice-deploy"
+params = { service_name = "api", namespace = "production", tag = "v1.2.3" }
+
+[tasks.deploy-worker]
+template = "microservice-deploy"
+params = { service_name = "worker", namespace = "production", tag = "v1.2.3" }
+```
+
+### Template Best Practices
+
+1. **Keep templates generic** — Use parameters for values that vary between instances
+2. **Document parameters** — Use descriptive names and add a `description` field
+3. **Set sensible defaults** — Provide default values in the template where appropriate
+4. **Test templates thoroughly** — Ensure parameter substitution works correctly
+5. **Version templates carefully** — Changes to templates affect all tasks using them
+
+### Limitations
+
+- Parameter substitution only works in string fields (not arrays or numbers)
+- Templates cannot reference other templates (no template inheritance)
+- Parameters must be provided for all declared params (no optional parameters)
 
 ---
 
