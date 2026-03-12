@@ -1244,6 +1244,138 @@ test "parseMemoryBytes: various formats" {
     try std.testing.expectEqual(@as(?u64, null), parseMemoryBytes("invalid"));
 }
 
+/// Apply template fields to an existing task with parameter substitution.
+/// This function modifies the task in-place by:
+/// 1. Looking up the template from config.templates
+/// 2. Converting params array to HashMap
+/// 3. Substituting parameters in template fields
+/// 4. Freeing original task fields and replacing with template-expanded values
+/// Task-specific fields (non-empty cmd, non-null description, etc.) override template defaults.
+fn applyTemplateToTask(
+    config: *Config,
+    allocator: std.mem.Allocator,
+    task: *Task,
+    template_name: []const u8,
+    params: []const [2][]const u8,
+) !void {
+    // Look up template
+    const template = config.templates.get(template_name) orelse return error.TemplateNotFound;
+
+    // Convert params array to HashMap
+    var params_map = std.StringHashMap([]const u8).init(allocator);
+    defer params_map.deinit();
+    for (params) |pair| {
+        try params_map.put(pair[0], pair[1]);
+    }
+
+    // Validate that all required parameters are provided
+    for (template.params) |param| {
+        if (!params_map.contains(param)) {
+            return error.MissingTemplateParameter;
+        }
+    }
+
+    // Substitute parameters in cmd (only if task cmd is empty or still default)
+    if (task.cmd.len == 0 or std.mem.eql(u8, task.cmd, "")) {
+        const expanded_cmd = try Config.substituteParams(allocator, template.cmd, params_map);
+        allocator.free(task.cmd);
+        task.cmd = expanded_cmd;
+    }
+
+    // Substitute parameters in cwd (only if task cwd is null and template has one)
+    if (task.cwd == null and template.cwd != null) {
+        task.cwd = try Config.substituteParams(allocator, template.cwd.?, params_map);
+    }
+
+    // Substitute parameters in description (only if task description is null and template has one)
+    if (task.description == null and template.description != null) {
+        task.description = try Config.substituteParams(allocator, template.description.?, params_map);
+    }
+
+    // Apply template defaults for fields not explicitly set in the task
+    if (task.timeout_ms == null and template.timeout_ms != null) {
+        task.timeout_ms = template.timeout_ms;
+    }
+
+    if (!task.allow_failure and template.allow_failure) {
+        task.allow_failure = template.allow_failure;
+    }
+
+    if (task.retry_max == 0 and template.retry_max > 0) {
+        task.retry_max = template.retry_max;
+        task.retry_delay_ms = template.retry_delay_ms;
+        task.retry_backoff = template.retry_backoff;
+    }
+
+    if (task.condition == null and template.condition != null) {
+        task.condition = try Config.substituteParams(allocator, template.condition.?, params_map);
+    }
+
+    if (task.max_concurrent == 0 and template.max_concurrent > 0) {
+        task.max_concurrent = template.max_concurrent;
+    }
+
+    if (!task.cache and template.cache) {
+        task.cache = template.cache;
+    }
+
+    if (task.max_cpu == null and template.max_cpu != null) {
+        task.max_cpu = template.max_cpu;
+    }
+
+    if (task.max_memory == null and template.max_memory != null) {
+        task.max_memory = template.max_memory;
+    }
+
+    // Merge dependencies (template deps + task deps)
+    if (template.deps.len > 0) {
+        const total_deps = task.deps.len + template.deps.len;
+        const merged_deps = try allocator.alloc([]const u8, total_deps);
+        @memcpy(merged_deps[0..task.deps.len], task.deps);
+        for (template.deps, 0..) |dep, i| {
+            merged_deps[task.deps.len + i] = try allocator.dupe(u8, dep);
+        }
+        allocator.free(task.deps);
+        task.deps = merged_deps;
+    }
+
+    // Merge serial dependencies
+    if (template.deps_serial.len > 0) {
+        const total_serial = task.deps_serial.len + template.deps_serial.len;
+        const merged_serial = try allocator.alloc([]const u8, total_serial);
+        @memcpy(merged_serial[0..task.deps_serial.len], task.deps_serial);
+        for (template.deps_serial, 0..) |dep, i| {
+            merged_serial[task.deps_serial.len + i] = try allocator.dupe(u8, dep);
+        }
+        allocator.free(task.deps_serial);
+        task.deps_serial = merged_serial;
+    }
+
+    // Merge environment variables (template env + task env, task takes precedence)
+    if (template.env.len > 0) {
+        const total_env = task.env.len + template.env.len;
+        const merged_env = try allocator.alloc([2][]const u8, total_env);
+        @memcpy(merged_env[0..task.env.len], task.env);
+        for (template.env, 0..) |pair, i| {
+            merged_env[task.env.len + i] = .{
+                try allocator.dupe(u8, pair[0]),
+                try allocator.dupe(u8, pair[1]),
+            };
+        }
+        allocator.free(task.env);
+        task.env = merged_env;
+    }
+
+    // Merge toolchain
+    if (template.toolchain.len > 0 and task.toolchain.len == 0) {
+        const toolchain_copy = try allocator.alloc([]const u8, template.toolchain.len);
+        for (template.toolchain, 0..) |tool, i| {
+            toolchain_copy[i] = try allocator.dupe(u8, tool);
+        }
+        task.toolchain = toolchain_copy;
+    }
+}
+
 pub fn addTaskImpl(
     config: *Config,
     allocator: std.mem.Allocator,
@@ -1499,7 +1631,7 @@ pub fn addTaskImpl(
         params_duped += 1;
     }
 
-    const task = Task{
+    var task = Task{
         .name = task_name,
         .cmd = task_cmd,
         .cwd = task_cwd,
@@ -1530,6 +1662,11 @@ pub fn addTaskImpl(
         .template = task_template,
         .params = task_params,
     };
+
+    // Apply template if specified
+    if (task_template) |tmpl_name| {
+        try applyTemplateToTask(config, allocator, &task, tmpl_name, task_params);
+    }
 
     // Check for duplicate task definition and reject it
     // The errdefer cleanup above will handle freeing all allocated memory
@@ -1728,4 +1865,154 @@ test "expandTemplate: with all template fields" {
     try std.testing.expectEqual(@as(?u64, 5000), task.timeout_ms);
     try std.testing.expectEqual(true, task.allow_failure);
     try std.testing.expectEqual(true, task.cache);
+}
+
+test "applyTemplateToTask: automatic template application" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Create a template
+    const template_name = try allocator.dupe(u8, "web-server");
+    const template_cmd = try allocator.dupe(u8, "node server.js --port=${port} --host=${host}");
+    const template_desc = try allocator.dupe(u8, "Start web server on ${host}:${port}");
+    const template_params = try allocator.alloc([]const u8, 2);
+    template_params[0] = try allocator.dupe(u8, "port");
+    template_params[1] = try allocator.dupe(u8, "host");
+
+    const template = TaskTemplate{
+        .name = template_name,
+        .cmd = template_cmd,
+        .description = template_desc,
+        .params = template_params,
+        .timeout_ms = 60000,
+        .allow_failure = false,
+    };
+
+    try config.templates.put(template_name, template);
+
+    // Create a task with template reference using addTaskImpl
+    const params_array = [_][2][]const u8{
+        .{ "port", "3000" },
+        .{ "host", "localhost" },
+    };
+
+    try addTaskImpl(
+        &config,
+        allocator,
+        "dev-server",
+        "", // empty cmd - will be filled by template
+        null,
+        null,
+        &[_][]const u8{},
+        &[_][]const u8{},
+        &[_]ConditionalDep{},
+        &[_][]const u8{},
+        &[_][2][]const u8{},
+        null,
+        false,
+        0,
+        1000,
+        false,
+        null,
+        null,
+        null,
+        0,
+        false,
+        null,
+        null,
+        &[_][]const u8{},
+        &[_][]const u8{},
+        &[_]u32{},
+        null,
+        null,
+        &[_][]const u8{},
+        &[_][]const u8{},
+        null,
+        &[_]TaskHook{},
+        "web-server", // template name
+        &params_array,
+    );
+
+    // Verify the task was created with template-expanded fields
+    const task = config.tasks.get("dev-server") orelse return error.TaskNotCreated;
+    try std.testing.expectEqualStrings("node server.js --port=3000 --host=localhost", task.cmd);
+    try std.testing.expectEqualStrings("Start web server on localhost:3000", task.description.?);
+    try std.testing.expectEqual(@as(?u64, 60000), task.timeout_ms);
+    try std.testing.expectEqual(false, task.allow_failure);
+}
+
+test "applyTemplateToTask: task overrides template defaults" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Create a template with defaults
+    const template_name = try allocator.dupe(u8, "test-runner");
+    const template_cmd = try allocator.dupe(u8, "npm test -- ${pattern}");
+    const template_params = try allocator.alloc([]const u8, 1);
+    template_params[0] = try allocator.dupe(u8, "pattern");
+
+    const template_deps = try allocator.alloc([]const u8, 1);
+    template_deps[0] = try allocator.dupe(u8, "build");
+
+    const template = TaskTemplate{
+        .name = template_name,
+        .cmd = template_cmd,
+        .params = template_params,
+        .deps = template_deps,
+        .timeout_ms = 30000,
+        .allow_failure = false,
+    };
+
+    try config.templates.put(template_name, template);
+
+    // Create a task with explicit cmd (should override template)
+    const params_array = [_][2][]const u8{
+        .{ "pattern", "**/*.test.js" },
+    };
+
+    try addTaskImpl(
+        &config,
+        allocator,
+        "test-unit",
+        "jest --coverage", // explicit cmd overrides template
+        null,
+        null,
+        &[_][]const u8{},
+        &[_][]const u8{},
+        &[_]ConditionalDep{},
+        &[_][]const u8{},
+        &[_][2][]const u8{},
+        120000, // explicit timeout overrides template
+        false,
+        0,
+        1000,
+        false,
+        null,
+        null,
+        null,
+        0,
+        false,
+        null,
+        null,
+        &[_][]const u8{},
+        &[_][]const u8{},
+        &[_]u32{},
+        null,
+        null,
+        &[_][]const u8{},
+        &[_][]const u8{},
+        null,
+        &[_]TaskHook{},
+        "test-runner",
+        &params_array,
+    );
+
+    // Verify task uses explicit values, not template defaults
+    const task = config.tasks.get("test-unit") orelse return error.TaskNotCreated;
+    try std.testing.expectEqualStrings("jest --coverage", task.cmd); // explicit cmd wins
+    try std.testing.expectEqual(@as(?u64, 120000), task.timeout_ms); // explicit timeout wins
+    try std.testing.expectEqual(@as(usize, 1), task.deps.len); // template deps merged
+    try std.testing.expectEqualStrings("build", task.deps[0]);
 }
