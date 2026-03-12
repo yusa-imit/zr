@@ -62,6 +62,7 @@ const alias_cmd = @import("cli/alias.zig");
 const add_cmd = @import("cli/add.zig");
 const config_editor = @import("cli/config_editor.zig");
 const failures_cmd = @import("cli/failures.zig");
+const template_cmd = @import("cli/template.zig");
 const mcp_server = @import("mcp/server.zig");
 const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
@@ -489,6 +490,7 @@ fn run(
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
+        "template",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -904,6 +906,26 @@ fn run(
             return failures_cmd.cmdFailuresClear(allocator, opts);
         } else {
             return failures_cmd.cmdFailures(allocator, opts);
+        }
+    } else if (std.mem.eql(u8, cmd, "template")) {
+        const template_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        if (template_args.len == 0) {
+            try color.printError(ew, effective_color, "Usage: zr template <list|show|apply> [args...]\n", .{});
+            return 1;
+        }
+        const subcommand = template_args[0];
+        const sub_args = if (template_args.len > 1) template_args[1..] else &[_][]const u8{};
+
+        if (std.mem.eql(u8, subcommand, "list")) {
+            return template_cmd.listTemplates(allocator, sub_args);
+        } else if (std.mem.eql(u8, subcommand, "show")) {
+            return template_cmd.showTemplate(allocator, sub_args);
+        } else if (std.mem.eql(u8, subcommand, "apply")) {
+            return template_cmd.applyTemplate(allocator, sub_args);
+        } else {
+            try color.printError(ew, effective_color, "Unknown template subcommand: {s}\n", .{subcommand});
+            try color.printError(ew, effective_color, "Usage: zr template <list|show|apply> [args...]\n", .{});
+            return 1;
         }
     }
 
