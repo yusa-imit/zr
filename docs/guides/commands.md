@@ -108,13 +108,15 @@ zr graph [OPTIONS]
 ```bash
 zr graph  # DOT format
 zr graph --ascii  # ASCII art tree
+zr graph --format tui  # Interactive TUI with mouse support
 zr graph --format json  # JSON output
 zr graph --format html > graph.html  # HTML visualization
 ```
 
 **Options:**
 - `--ascii` — ASCII tree view
-- `--format <fmt>` — Output format: `dot`, `json`, `html`
+- `--format <fmt>` — Output format: `dot`, `ascii`, `tui`, `json`, `html`
+- `--format tui` — Interactive TUI with tree navigation (use `j/k` or click to navigate, mouse scroll to move, `q` to quit)
 
 ---
 
@@ -640,6 +642,13 @@ zr i
 
 Shows a full-screen TUI with task selection, filtering, and execution.
 
+**Navigation:**
+- `j/k` or `↑/↓` arrow keys: Move selection
+- Mouse click: Select task directly
+- `Enter`: Execute selected task
+- `g/G`: Jump to top/bottom
+- `q`: Quit
+
 ---
 
 ### `live`
@@ -651,6 +660,13 @@ zr live <task>
 ```
 
 Shows real-time task output in a TUI interface with scroll support.
+
+**Navigation:**
+- `j/k` or `↑/↓` arrow keys: Switch between tasks
+- Mouse click: Select task in task list
+- Mouse scroll: Scroll through task logs
+- `PgUp/PgDn`: Page up/down in logs
+- `q`: Quit
 
 ---
 
