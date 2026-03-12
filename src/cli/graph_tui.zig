@@ -6,6 +6,7 @@ const stui = sailor.tui;
 const color = @import("../output/color.zig");
 const graph_mod = @import("graph.zig");
 const GraphNode = graph_mod.GraphNode;
+const tui_mouse = @import("tui_mouse.zig");
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -181,6 +182,10 @@ pub fn graphTui(
     const original = try enterRawMode();
     defer leaveRawMode(original);
 
+    // Enable mouse tracking (click + drag mode)
+    try tui_mouse.enableMouseTracking(w, .drag);
+    defer tui_mouse.disableMouseTracking(w) catch {};
+
     var selected: usize = 0;
     var offset: usize = 0;
     var quit = false;
@@ -201,7 +206,7 @@ pub fn graphTui(
             .withSelected(selected)
             .withOffset(offset)
             .withBlock(stui.widgets.Block.init()
-                .withTitle("Dependency Graph (↑↓: navigate, Enter: expand/collapse, q: quit)", .top_center)
+                .withTitle("Dependency Graph (j/k/click: navigate, scroll: move, q: quit)", .top_center)
                 .withBorders(.all))
             .withSelectedStyle(stui.Style{ .fg = .bright_green, .bold = true })
             .withNodeStyle(stui.Style{});
@@ -214,7 +219,7 @@ pub fn graphTui(
         // Handle input
         if (readByte()) |byte| {
             switch (byte) {
-                'q', 'Q', 27 => quit = true, // q or ESC
+                'q', 'Q' => quit = true, // q to quit
                 'j', 'J' => { // Down arrow (j or down arrow)
                     const visible_count = tree.visibleCount();
                     if (selected + 1 < visible_count) {
@@ -235,6 +240,68 @@ pub fn graphTui(
                 '\n', '\r' => { // Enter - toggle expand/collapse
                     // For now, just update selection
                     // Full expand/collapse requires mutable tree nodes
+                },
+                0x1b => { // ESC sequence - check for mouse event
+                    const b2 = readByte() orelse continue;
+                    if (b2 == '[') {
+                        const b3 = readByte() orelse continue;
+
+                        // Check for mouse event (SGR format: ESC [ <...)
+                        if (b3 == '<') {
+                            // Read rest of mouse sequence
+                            var seq_buf: [32]u8 = undefined;
+                            seq_buf[0] = '<';
+                            var seq_len: usize = 1;
+
+                            while (seq_len < seq_buf.len) {
+                                const next = readByte() orelse break;
+                                seq_buf[seq_len] = next;
+                                seq_len += 1;
+
+                                // Mouse sequences end with 'M' or 'm'
+                                if (next == 'M' or next == 'm') {
+                                    const mouse_event = sailor.tui.mouse.parseSGR(seq_buf[0..seq_len]);
+                                    if (mouse_event) |evt| {
+                                        // Handle mouse click in tree area
+                                        // Tree starts at y=1 (after title), each item is 1 row
+                                        if (evt.event_type == .press and evt.button == .left) {
+                                            if (evt.y >= 1 and evt.y < height) {
+                                                // Calculate clicked node index
+                                                const clicked_idx = @as(usize, evt.y - 1) + offset;
+                                                const visible_count = tree.visibleCount();
+                                                if (clicked_idx < visible_count) {
+                                                    selected = clicked_idx;
+                                                }
+                                            }
+                                        }
+                                        // Handle scroll events
+                                        else if (evt.event_type == .scroll_up) {
+                                            if (selected > 0) {
+                                                selected -= 1;
+                                                if (selected < offset) {
+                                                    offset = selected;
+                                                }
+                                            }
+                                        }
+                                        else if (evt.event_type == .scroll_down) {
+                                            const visible_count = tree.visibleCount();
+                                            if (selected + 1 < visible_count) {
+                                                selected += 1;
+                                                if (selected >= offset + height - 3) {
+                                                    offset += 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+
+                        // Regular escape sequence (arrow keys, etc.)
+                        quit = true;
+                    }
                 },
                 else => {},
             }
