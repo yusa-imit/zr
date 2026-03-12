@@ -402,6 +402,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Workflow parsing state — non-owning slices into content
     var current_workflow: ?[]const u8 = null;
     var workflow_desc: ?[]const u8 = null;
+    var workflow_retry_budget: ?u32 = null;
     // Stages accumulate here; each Stage is owned (duped) when built
     var workflow_stages = std.ArrayList(Stage){};
     defer {
@@ -604,7 +605,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_on_failure = null;
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
             }
@@ -647,7 +648,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (err == error.MalformedSectionHeader) return err;
                 return err;
             };
-            workflow_desc = null;
+            workflow_desc = null; workflow_retry_budget = null;
         } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.indexOf(u8, trimmed, ".tasks.") != null) {
             in_workspace = false;
             // Section: [profiles.X.tasks.Y] — per-task override within profile X
@@ -760,11 +761,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
                 current_workflow = null;
-                workflow_desc = null;
+                workflow_desc = null; workflow_retry_budget = null;
             }
 
             // Parse new profile name: "[profiles.X]" → X
@@ -793,9 +794,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_approval = false;
             stage_on_failure = null;
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
                 for (workflow_stages.items) |*s| s.deinit(allocator);
-                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null;
+                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
             }
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
@@ -840,9 +841,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
             }
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
                 for (workflow_stages.items) |*s| s.deinit(allocator);
-                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null;
+                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
             }
             if (current_profile) |pname| {
                 if (current_profile_task) |ptask| {
@@ -1239,11 +1240,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_on_failure = null;
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
                 current_workflow = null;
-                workflow_desc = null;
+                workflow_desc = null; workflow_retry_budget = null;
             }
             // Flush pending profile (if any)
             if (current_profile) |pname| {
@@ -1599,6 +1600,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "description") and stage_name == null) {
                     // Workflow-level description (not inside a stage)
                     workflow_desc = value;
+                } else if (std.mem.eql(u8, key, "retry_budget") and stage_name == null) {
+                    // Workflow-level retry budget (v1.30.0)
+                    workflow_retry_budget = std.fmt.parseInt(u32, value, 10) catch null;
                 }
             } else if (in_tools) {
                 // Inside [tools] section — parse tool = "version" pairs
@@ -2241,7 +2245,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending workflow
     if (current_workflow) |wf_name_slice| {
-        try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items);
+        try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
         for (workflow_stages.items) |*s| s.deinit(allocator);
         workflow_stages.clearRetainingCapacity();
     }

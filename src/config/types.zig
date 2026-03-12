@@ -514,6 +514,7 @@ pub const Config = struct {
         name: []const u8,
         description: ?[]const u8,
         stages: []const Stage,
+        retry_budget: ?u32,
     ) !void {
         const wf_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(wf_name);
@@ -564,6 +565,7 @@ pub const Config = struct {
             .name = wf_name,
             .description = wf_desc,
             .stages = wf_stages,
+            .retry_budget = retry_budget,
         };
 
         try self.workflows.put(wf_name, wf);

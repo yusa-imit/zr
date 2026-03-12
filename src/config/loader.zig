@@ -166,7 +166,7 @@ test "addWorkflow: programmatic workflow construction" {
             .condition = null,
         },
     };
-    try config.addWorkflow("my-workflow", "desc", &stages);
+    try config.addWorkflow("my-workflow", "desc", &stages, null);
 
     const wf = config.workflows.get("my-workflow").?;
     try std.testing.expectEqualStrings("desc", wf.description.?);
