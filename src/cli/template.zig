@@ -233,16 +233,32 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
             try out_w.interface.print("  {s}: ", .{param});
             try out_w.interface.flush();
 
-            // Read parameter value from stdin
-            var buffer: [1024]u8 = undefined;
-            const bytes_read = try stdin.read(&buffer);
-            if (bytes_read == 0) {
-                try err_w.interface.print("\nError: unexpected end of input\n", .{});
-                return 1;
+            // Read parameter value from stdin line by line
+            var buffer = std.ArrayList(u8){};
+            defer buffer.deinit(allocator);
+
+            var read_buf: [1]u8 = undefined;
+            while (true) {
+                const n = stdin.read(&read_buf) catch |err| {
+                    if (err == error.EndOfStream or err == error.NotOpenForReading) {
+                        try err_w.interface.print("\nError: unexpected end of input\n", .{});
+                        return 1;
+                    }
+                    return err;
+                };
+                if (n == 0) {
+                    // EOF
+                    try err_w.interface.print("\nError: unexpected end of input\n", .{});
+                    return 1;
+                }
+                const ch = read_buf[0];
+                if (ch == '\n') break;
+                if (ch != '\r') {
+                    try buffer.append(allocator, ch);
+                }
             }
 
-            // Trim newline and whitespace
-            const value = std.mem.trimRight(u8, buffer[0..bytes_read], &std.ascii.whitespace);
+            const value = std.mem.trim(u8, buffer.items, &std.ascii.whitespace);
             if (value.len == 0) {
                 try err_w.interface.print("Error: parameter value cannot be empty\n", .{});
                 return 1;
@@ -272,11 +288,31 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
     try out_w.interface.print("\nAdd this to zr.toml? (y/n): ", .{});
     try out_w.interface.flush();
 
-    var confirm_buffer: [10]u8 = undefined;
-    const confirm_bytes = try stdin.read(&confirm_buffer);
-    if (confirm_bytes == 0) return 1;
+    var confirm_buffer = std.ArrayList(u8){};
+    defer confirm_buffer.deinit(allocator);
 
-    const confirm = std.mem.trimRight(u8, confirm_buffer[0..confirm_bytes], &std.ascii.whitespace);
+    var read_buf: [1]u8 = undefined;
+    while (true) {
+        const n = stdin.read(&read_buf) catch |err| {
+            if (err == error.EndOfStream or err == error.NotOpenForReading) {
+                try out_w.interface.print("Cancelled.\n", .{});
+                return 0;
+            }
+            return err;
+        };
+        if (n == 0) {
+            // EOF
+            try out_w.interface.print("Cancelled.\n", .{});
+            return 0;
+        }
+        const ch = read_buf[0];
+        if (ch == '\n') break;
+        if (ch != '\r') {
+            try confirm_buffer.append(allocator, ch);
+        }
+    }
+
+    const confirm = std.mem.trim(u8, confirm_buffer.items, &std.ascii.whitespace);
     if (!std.mem.eql(u8, confirm, "y") and !std.mem.eql(u8, confirm, "Y")) {
         try out_w.interface.print("Cancelled.\n", .{});
         return 0;
