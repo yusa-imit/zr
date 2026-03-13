@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-03-13
+
+### Added
+- **Checkpoint/Resume for Long-Running Tasks** (`src/exec/checkpoint.zig`)
+  - CheckpointStorage interface with vtable for pluggable backends
+  - FileSystemStorage backend with JSON format
+  - Task stdout monitoring for "CHECKPOINT: <data>" markers
+  - Automatic checkpoint save (respecting interval_ms config)
+  - Resume protocol via ZR_CHECKPOINT environment variable
+  - Scheduler integration with worker thread support
+  - 3 new integration tests (938-940)
+  - Comprehensive documentation in configuration.md
+
+### Developer Notes
+- Total unit tests: 819/827 (8 skipped, 0 leaks)
+- Total integration tests: 939/940 (1 skipped, 0 leaks)
+- Checkpoint monitoring only works when inherit_stdio=false
+- Interactive tasks cannot emit checkpoints (limitation documented)
+
+## [1.30.0] - 2026-03-13
+
+### Added
+- **Enhanced Error Recovery** (`src/exec/scheduler.zig`)
+  - Circuit breaker pattern with failure threshold tracking
+  - Circuit states: closed → open (threshold exceeded) → half-open (reset timeout)
+  - Workflow-level retry budget for limiting total retry attempts
+  - Per-task circuit breaker state isolation
+  - 9 new unit tests for circuit breaker and retry budget
+  - 5 new integration tests (933-937)
+  - Comprehensive documentation in configuration.md
+
+### Developer Notes
+- Total unit tests: 816/824 (8 skipped, 0 leaks)
+- Total integration tests: 937/937 (936 passed, 1 skipped, 0 leaks)
+- Circuit breaker state resets between zr run invocations
+
+## [1.29.0] - 2026-03-13
+
+### Added
+- **Task Template System** (`src/cli/template.zig`)
+  - Reusable task templates with parameter substitution
+  - template and params fields in Task struct
+  - Automatic template application with field merging
+  - CLI commands: zr template list/show/apply
+  - 12 new integration tests (921-932)
+  - Comprehensive documentation in configuration.md
+
+### Developer Notes
+- Total unit tests: 807/815 (8 skipped, 0 leaks)
+- Total integration tests: 931/932 (1 skipped, 0 leaks)
+
+## [1.28.0] - 2026-03-12
+
+### Added
+- **Interactive TUI with Mouse Support** (`src/cli/tui_mouse.zig`)
+  - Mouse input integration module with InputEvent union
+  - SGR mouse event parsing (click/drag/scroll)
+  - Interactive task picker mouse support (left-click to select)
+  - Graph TUI mouse support (click nodes, scroll to navigate)
+  - Live execution TUI mouse support (click tasks, scroll logs)
+  - Thread-safe mouse tracking in background inputThread
+  - 5 new unit tests for mouse input handling
+  - Updated documentation with navigation instructions
+
+### Developer Notes
+- Total unit tests: 801/809 (8 skipped, 0 leaks)
+- Total integration tests: 919/920 (1 skipped, 0 leaks)
+- Leveraged sailor v1.10.0 mouse input features
+
 ## [1.27.0] - 2026-03-12
 
 ### Added
