@@ -14,6 +14,7 @@ const affinity = @import("../util/affinity.zig");
 const timeline = @import("timeline.zig");
 const replay = @import("replay.zig");
 const hooks = @import("hooks.zig");
+const types = @import("../config/types.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -42,6 +43,117 @@ pub const SchedulerConfig = struct {
     /// Optional task control for pause/cancel/retry operations.
     /// If provided, allows interactive control of task execution.
     task_control: ?*control.TaskControl = null,
+};
+
+/// Circuit breaker state for a task (v1.30.0).
+/// Tracks failure rate and determines when to stop retrying.
+const CircuitBreakerState = struct {
+    config: types.CircuitBreakerConfig,
+    failure_count: u32 = 0,
+    success_count: u32 = 0,
+    last_failure_time: ?i64 = null, // Unix timestamp in milliseconds
+    is_open: bool = false,
+
+    fn init(config: types.CircuitBreakerConfig) CircuitBreakerState {
+        return .{ .config = config };
+    }
+
+    /// Record a successful execution.
+    fn recordSuccess(self: *CircuitBreakerState, now_ms: i64) void {
+        self.success_count += 1;
+        self.pruneOldFailures(now_ms);
+        self.updateState(now_ms);
+    }
+
+    /// Record a failed execution.
+    fn recordFailure(self: *CircuitBreakerState, now_ms: i64) void {
+        self.failure_count += 1;
+        self.last_failure_time = now_ms;
+        self.pruneOldFailures(now_ms);
+        self.updateState(now_ms);
+    }
+
+    /// Remove failures older than the time window.
+    fn pruneOldFailures(self: *CircuitBreakerState, now_ms: i64) void {
+        if (self.last_failure_time) |last| {
+            if (now_ms - last > self.config.window_ms) {
+                // All failures are outside the window
+                self.failure_count = 0;
+                self.success_count = 0;
+            }
+        }
+    }
+
+    /// Update circuit state based on current failure rate.
+    fn updateState(self: *CircuitBreakerState, now_ms: i64) void {
+        // First check if circuit should reset (half-open state)
+        if (self.is_open) {
+            if (self.last_failure_time) |last| {
+                if (now_ms - last >= self.config.reset_timeout_ms) {
+                    // Half-open state: allow one retry attempt
+                    self.is_open = false;
+                    self.failure_count = 0;
+                    self.success_count = 0;
+                    return;
+                }
+            }
+        }
+
+        // Then check if circuit should trip based on failure rate
+        const total = self.failure_count + self.success_count;
+        if (total < self.config.min_attempts) {
+            self.is_open = false;
+            return;
+        }
+
+        const failure_rate = @as(f64, @floatFromInt(self.failure_count)) / @as(f64, @floatFromInt(total));
+
+        if (failure_rate >= self.config.failure_threshold) {
+            self.is_open = true;
+        } else {
+            self.is_open = false;
+        }
+    }
+
+    /// Check if circuit breaker should prevent retries.
+    fn shouldPreventRetry(self: *const CircuitBreakerState) bool {
+        return self.is_open;
+    }
+};
+
+/// Retry budget tracker for workflows (v1.30.0).
+/// Prevents retry storms by limiting total retries across all tasks.
+const RetryBudgetTracker = struct {
+    budget: u32,
+    used: std.atomic.Value(u32),
+    mutex: std.Thread.Mutex = .{},
+
+    fn init(budget: u32) RetryBudgetTracker {
+        return .{
+            .budget = budget,
+            .used = std.atomic.Value(u32).init(0),
+        };
+    }
+
+    /// Try to consume retry budget. Returns true if retry is allowed.
+    fn tryConsume(self: *RetryBudgetTracker) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const current = self.used.load(.acquire);
+        if (current >= self.budget) {
+            return false;
+        }
+        self.used.store(current + 1, .release);
+        return true;
+    }
+
+    /// Get remaining retry budget.
+    fn remaining(self: *const RetryBudgetTracker) u32 {
+        const current = self.used.load(.acquire);
+        if (current >= self.budget) return 0;
+        return self.budget - current;
+    }
 };
 
 /// A single level in the dry-run execution plan.
@@ -191,6 +303,10 @@ const WorkerCtx = struct {
     output_if: ?[]const u8,
     /// Task hooks for pre/post execution (v1.24.0).
     task_hooks: []const loader.TaskHook,
+    /// Circuit breaker state for retry failure rate limiting (v1.30.0).
+    circuit_breaker: ?*CircuitBreakerState,
+    /// Retry budget tracker for workflow-level retry limiting (v1.30.0).
+    retry_budget: ?*RetryBudgetTracker,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -382,9 +498,37 @@ fn workerFn(ctx: WorkerCtx) void {
     // Retry on failure up to retry_max times
     var retry_count: u32 = 0;
     if (!proc_result.success and ctx.retry_max > 0) {
+        // Record initial failure for circuit breaker (v1.30.0)
+        if (ctx.circuit_breaker) |cb| {
+            const now_ms = std.time.milliTimestamp();
+            cb.recordFailure(now_ms);
+        }
+
         var delay_ms: u64 = ctx.retry_delay_ms;
         var attempt: u32 = 0;
         while (!proc_result.success and attempt < ctx.retry_max) : (attempt += 1) {
+            // Check circuit breaker state (v1.30.0)
+            if (ctx.circuit_breaker) |cb| {
+                if (cb.shouldPreventRetry()) {
+                    // Circuit breaker is open — stop retrying
+                    if (ctx.timeline_tracker) |tt| {
+                        tt.recordEvent(.retry_started, ctx.task_name, "circuit breaker tripped") catch {};
+                    }
+                    break;
+                }
+            }
+
+            // Check retry budget (v1.30.0)
+            if (ctx.retry_budget) |rb| {
+                if (!rb.tryConsume()) {
+                    // Retry budget exhausted — stop retrying
+                    if (ctx.timeline_tracker) |tt| {
+                        tt.recordEvent(.retry_started, ctx.task_name, "retry budget exhausted") catch {};
+                    }
+                    break;
+                }
+            }
+
             retry_count += 1;
 
             // Record retry event (v1.14.0)
@@ -413,9 +557,28 @@ fn workerFn(ctx: WorkerCtx) void {
                 .duration_ms = 0,
                 .success = false,
             };
+
+            // Update circuit breaker with retry result (v1.30.0)
+            if (ctx.circuit_breaker) |cb| {
+                const now_ms = std.time.milliTimestamp();
+                if (proc_result.success) {
+                    cb.recordSuccess(now_ms);
+                } else {
+                    cb.recordFailure(now_ms);
+                }
+            }
+
             if (ctx.retry_backoff and delay_ms > 0) {
                 delay_ms *= 2;
             }
+        }
+    }
+
+    // Record final success for circuit breaker (v1.30.0)
+    if (proc_result.success and ctx.circuit_breaker != null) {
+        if (ctx.circuit_breaker) |cb| {
+            const now_ms = std.time.milliTimestamp();
+            cb.recordSuccess(now_ms);
         }
     }
 
@@ -980,6 +1143,16 @@ pub fn run(
     var completed = std.StringHashMap(bool).init(allocator);
     defer completed.deinit();
 
+    // Initialize circuit breaker states for tasks that have circuit_breaker config (v1.30.0)
+    var circuit_breakers = std.StringHashMap(CircuitBreakerState).init(allocator);
+    defer circuit_breakers.deinit();
+
+    // Initialize retry budget tracker from workflow config (v1.30.0)
+    // Note: For now, we only support task execution (not workflow stages)
+    // Workflow retry budget will be fully implemented when workflow execution is refactored
+    var retry_budget_tracker: ?RetryBudgetTracker = null;
+    // TODO: Extract retry_budget from workflow config when executing workflow stages
+
     // Execute level by level (sequentially between levels, parallel within a level)
     for (levels.levels.items) |level| {
         // Stop processing further levels if a previous level had a failure
@@ -1114,6 +1287,18 @@ pub fn run(
             else
                 null;
 
+            // Initialize circuit breaker for this task if configured (v1.30.0)
+            var circuit_breaker_ptr: ?*CircuitBreakerState = null;
+            if (task.circuit_breaker) |cb_config| {
+                const result = circuit_breakers.getOrPut(task_name) catch null;
+                if (result) |gop| {
+                    if (!gop.found_existing) {
+                        gop.value_ptr.* = CircuitBreakerState.init(cb_config);
+                    }
+                    circuit_breaker_ptr = gop.value_ptr;
+                }
+            }
+
             const ctx = WorkerCtx{
                 .allocator = allocator,
                 .task_name = owned_task_name,
@@ -1144,6 +1329,8 @@ pub fn run(
                 .replay_mgr = &replay_mgr,
                 .output_if = task.output_if,
                 .task_hooks = task.hooks,
+                .circuit_breaker = circuit_breaker_ptr,
+                .retry_budget = if (retry_budget_tracker) |*rb| rb else null,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
@@ -1600,4 +1787,113 @@ test "max_concurrent: field parsed and defaults to 0" {
     try config.addTask("build", "true", null, null, &[_][]const u8{});
     const task = config.tasks.get("build").?;
     try std.testing.expectEqual(@as(u32, 0), task.max_concurrent);
+}
+
+// v1.30.0 — Circuit Breaker Tests
+test "CircuitBreakerState: init with default config" {
+    const config = types.CircuitBreakerConfig{};
+    const cb = CircuitBreakerState.init(config);
+    try std.testing.expectEqual(@as(u32, 0), cb.failure_count);
+    try std.testing.expectEqual(@as(u32, 0), cb.success_count);
+    try std.testing.expect(!cb.is_open);
+}
+
+test "CircuitBreakerState: record success" {
+    const config = types.CircuitBreakerConfig{};
+    var cb = CircuitBreakerState.init(config);
+    const now_ms: i64 = std.time.milliTimestamp();
+    cb.recordSuccess(now_ms);
+    try std.testing.expectEqual(@as(u32, 1), cb.success_count);
+    try std.testing.expectEqual(@as(u32, 0), cb.failure_count);
+    try std.testing.expect(!cb.is_open);
+}
+
+test "CircuitBreakerState: record failure" {
+    const config = types.CircuitBreakerConfig{};
+    var cb = CircuitBreakerState.init(config);
+    const now_ms: i64 = std.time.milliTimestamp();
+    cb.recordFailure(now_ms);
+    try std.testing.expectEqual(@as(u32, 1), cb.failure_count);
+    try std.testing.expectEqual(@as(u32, 0), cb.success_count);
+}
+
+test "CircuitBreakerState: opens after threshold exceeded" {
+    const config = types.CircuitBreakerConfig{
+        .failure_threshold = 0.5, // 50% failure rate
+        .min_attempts = 3,
+    };
+    var cb = CircuitBreakerState.init(config);
+    const now_ms: i64 = std.time.milliTimestamp();
+
+    // First 3 attempts: 2 failures, 1 success = 66% failure rate
+    cb.recordFailure(now_ms);
+    cb.recordFailure(now_ms + 100);
+    cb.recordSuccess(now_ms + 200);
+
+    // Circuit should be open (66% > 50% threshold, 3 >= min_attempts)
+    try std.testing.expect(cb.is_open);
+    try std.testing.expect(cb.shouldPreventRetry());
+}
+
+test "CircuitBreakerState: stays closed below threshold" {
+    const config = types.CircuitBreakerConfig{
+        .failure_threshold = 0.5, // 50% failure rate
+        .min_attempts = 3,
+    };
+    var cb = CircuitBreakerState.init(config);
+    const now_ms: i64 = std.time.milliTimestamp();
+
+    // 3 attempts: 1 failure, 2 success = 33% failure rate
+    cb.recordFailure(now_ms);
+    cb.recordSuccess(now_ms + 100);
+    cb.recordSuccess(now_ms + 200);
+
+    // Circuit should stay closed (33% < 50% threshold)
+    try std.testing.expect(!cb.is_open);
+    try std.testing.expect(!cb.shouldPreventRetry());
+}
+
+test "CircuitBreakerState: resets after timeout" {
+    const config = types.CircuitBreakerConfig{
+        .failure_threshold = 0.5,
+        .min_attempts = 2,
+        .reset_timeout_ms = 100, // 100ms reset timeout
+    };
+    var cb = CircuitBreakerState.init(config);
+    const now_ms: i64 = std.time.milliTimestamp();
+
+    // Open the circuit with 2 failures
+    cb.recordFailure(now_ms);
+    cb.recordFailure(now_ms + 10);
+    try std.testing.expect(cb.is_open);
+
+    // After reset timeout, circuit should close (half-open state)
+    cb.updateState(now_ms + 150);
+    try std.testing.expect(!cb.is_open);
+    try std.testing.expectEqual(@as(u32, 0), cb.failure_count); // Reset
+    try std.testing.expectEqual(@as(u32, 0), cb.success_count); // Reset
+}
+
+// v1.30.0 — Retry Budget Tests
+test "RetryBudgetTracker: init with budget" {
+    var tracker = RetryBudgetTracker.init(5);
+    try std.testing.expectEqual(@as(u32, 5), tracker.remaining());
+}
+
+test "RetryBudgetTracker: consume budget" {
+    var tracker = RetryBudgetTracker.init(3);
+    try std.testing.expect(tracker.tryConsume());
+    try std.testing.expectEqual(@as(u32, 2), tracker.remaining());
+    try std.testing.expect(tracker.tryConsume());
+    try std.testing.expectEqual(@as(u32, 1), tracker.remaining());
+    try std.testing.expect(tracker.tryConsume());
+    try std.testing.expectEqual(@as(u32, 0), tracker.remaining());
+}
+
+test "RetryBudgetTracker: exhausted budget prevents retry" {
+    var tracker = RetryBudgetTracker.init(2);
+    try std.testing.expect(tracker.tryConsume()); // 1 remaining
+    try std.testing.expect(tracker.tryConsume()); // 0 remaining
+    try std.testing.expect(!tracker.tryConsume()); // Exhausted
+    try std.testing.expectEqual(@as(u32, 0), tracker.remaining());
 }
