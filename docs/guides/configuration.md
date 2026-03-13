@@ -64,6 +64,7 @@ cmd = "npm run build"
 | `watch` | table | ❌ | null | Watch mode configuration (v1.17.0, see [Watch Mode Configuration](#watch-mode-configuration-v1170)) |
 | `hooks` | array | ❌ | [] | Execution hooks (v1.24.0, see [Execution Hooks](#execution-hooks-v1240)) |
 | `circuit_breaker` | table | ❌ | null | Circuit breaker configuration (v1.30.0, see [Circuit Breaker](#circuit-breaker-v1300)) |
+| `checkpoint` | table | ❌ | null | Checkpoint/resume configuration (v1.31.0, see [Checkpoint/Resume](#checkpointresume-v1310)) |
 
 ### Dependencies
 
@@ -186,6 +187,95 @@ With this config:
 - If retry succeeds, circuit closes; if it fails, circuit reopens
 
 **Note:** Circuit breaker state is per-task and resets between `zr run` invocations. For persistent circuit breaker state across runs, consider using external monitoring tools.
+
+### Checkpoint/Resume (v1.31.0)
+
+Checkpoints allow long-running tasks to save their progress and resume from the last checkpoint if interrupted or restarted.
+
+```toml
+[tasks.long-training]
+cmd = "./train-model.sh"
+timeout_ms = 3600000  # 1 hour
+
+[tasks.long-training.checkpoint]
+enabled = true
+interval_ms = 60000           # Save checkpoint every 60 seconds
+storage = "filesystem"        # Storage backend (only "filesystem" currently)
+checkpoint_dir = ".zr/checkpoints"  # Directory for checkpoint files
+```
+
+**Checkpoint Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | false | Enable checkpoint/resume for this task |
+| `interval_ms` | integer | 60000 | Minimum interval between checkpoints (ms) |
+| `storage` | string | "filesystem" | Storage backend (currently only "filesystem") |
+| `checkpoint_dir` | string | ".zr/checkpoints" | Directory to store checkpoint files |
+
+**How Checkpointing Works:**
+
+1. **Task Emits Checkpoint Markers**: Your task prints a JSON marker to stdout:
+   ```bash
+   echo "CHECKPOINT: {\"step\": 42, \"loss\": 0.123}"
+   ```
+
+2. **zr Captures and Saves**: The scheduler monitors stdout, parses the marker, and saves the checkpoint to disk (respecting `interval_ms` to avoid excessive I/O).
+
+3. **Resume on Next Run**: When the task runs again, zr loads the last checkpoint and passes it via the `ZR_CHECKPOINT` environment variable:
+   ```bash
+   # In your script:
+   if [ -n "$ZR_CHECKPOINT" ]; then
+     # Parse checkpoint JSON and resume
+     STEP=$(echo "$ZR_CHECKPOINT" | jq -r '.state.step')
+     echo "Resuming from step $STEP"
+   else
+     echo "Starting fresh"
+   fi
+   ```
+
+**Example: Machine Learning Training**
+
+```toml
+[tasks.train-neural-net]
+cmd = "./train.py"
+timeout_ms = 7200000  # 2 hours
+
+[tasks.train-neural-net.checkpoint]
+enabled = true
+interval_ms = 120000  # Checkpoint every 2 minutes
+```
+
+Python script (`train.py`):
+```python
+import json
+import os
+import sys
+
+# Resume from checkpoint if available
+start_epoch = 0
+if 'ZR_CHECKPOINT' in os.environ:
+    checkpoint = json.loads(os.environ['ZR_CHECKPOINT'])
+    start_epoch = checkpoint.get('state', {}).get('epoch', 0)
+    print(f"Resuming from epoch {start_epoch}")
+
+for epoch in range(start_epoch, 100):
+    # Training logic...
+    loss = train_epoch(epoch)
+
+    # Emit checkpoint marker
+    checkpoint_data = {"epoch": epoch + 1, "loss": loss}
+    print(f"CHECKPOINT: {json.dumps(checkpoint_data)}", flush=True)
+```
+
+**Limitations:**
+
+- Checkpoint monitoring only works when `inherit_stdio=false` (default for most tasks)
+- Interactive tasks (`inherit_stdio=true`) cannot emit checkpoints
+- Checkpoint state is task-local (not shared across different tasks)
+- Only JSON format is supported for checkpoint markers
+
+**Note:** The checkpoint marker line is removed from task output to avoid cluttering logs. Only the actual task output is displayed.
 
 ### Conditional Execution
 
