@@ -117,11 +117,109 @@ pub const FileSystemStorage = struct {
         defer file.close();
 
         const content = try file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
-        allocator.free(content); // Free immediately since we don't parse yet
+        defer allocator.free(content);
 
-        // TODO: Implement JSON parsing to deserialize checkpoint state
-        // For now, return null to indicate checkpoint loading not implemented yet
-        return null;
+        // Parse JSON manually (simple field extraction)
+        var state = CheckpointState{
+            .task_name = undefined,
+            .started_at = 0,
+            .checkpointed_at = 0,
+            .state = undefined,
+            .progress_pct = 0,
+            .metadata = undefined,
+        };
+
+        // Extract fields using simple JSON parsing
+        // Format: {"task_name":"...","started_at":123,"checkpointed_at":456,"progress_pct":50,"state":{...},"metadata":{...}}
+        var task_name_start: ?usize = null;
+        var task_name_end: ?usize = null;
+        var state_start: ?usize = null;
+        var state_end: ?usize = null;
+        var metadata_start: ?usize = null;
+        var metadata_end: ?usize = null;
+
+        // Find task_name field
+        if (std.mem.indexOf(u8, content, "\"task_name\":\"")) |idx| {
+            task_name_start = idx + 13;
+            if (std.mem.indexOfPos(u8, content, task_name_start.?, "\"")) |end_idx| {
+                task_name_end = end_idx;
+                state.task_name = try allocator.dupe(u8, content[task_name_start.?..task_name_end.?]);
+            }
+        }
+
+        // Find started_at field
+        if (std.mem.indexOf(u8, content, "\"started_at\":")) |idx| {
+            const num_start = idx + 13;
+            var num_end = num_start;
+            while (num_end < content.len and content[num_end] >= '0' and content[num_end] <= '9') : (num_end += 1) {}
+            state.started_at = std.fmt.parseInt(i64, content[num_start..num_end], 10) catch 0;
+        }
+
+        // Find checkpointed_at field
+        if (std.mem.indexOf(u8, content, "\"checkpointed_at\":")) |idx| {
+            const num_start = idx + 18;
+            var num_end = num_start;
+            while (num_end < content.len and content[num_end] >= '0' and content[num_end] <= '9') : (num_end += 1) {}
+            state.checkpointed_at = std.fmt.parseInt(i64, content[num_start..num_end], 10) catch 0;
+        }
+
+        // Find progress_pct field
+        if (std.mem.indexOf(u8, content, "\"progress_pct\":")) |idx| {
+            const num_start = idx + 15;
+            var num_end = num_start;
+            while (num_end < content.len and content[num_end] >= '0' and content[num_end] <= '9') : (num_end += 1) {}
+            state.progress_pct = std.fmt.parseInt(u8, content[num_start..num_end], 10) catch 0;
+        }
+
+        // Find state field (JSON object)
+        if (std.mem.indexOf(u8, content, "\"state\":")) |idx| {
+            state_start = idx + 8;
+            var depth: i32 = 0;
+            var i = state_start.?;
+            while (i < content.len) : (i += 1) {
+                if (content[i] == '{') depth += 1;
+                if (content[i] == '}') {
+                    depth -= 1;
+                    if (depth == 0) {
+                        state_end = i + 1;
+                        break;
+                    }
+                }
+            }
+            if (state_end) |end| {
+                state.state = try allocator.dupe(u8, content[state_start.?..end]);
+            }
+        }
+
+        // Find metadata field (JSON object)
+        if (std.mem.indexOf(u8, content, "\"metadata\":")) |idx| {
+            metadata_start = idx + 11;
+            var depth: i32 = 0;
+            var i = metadata_start.?;
+            while (i < content.len) : (i += 1) {
+                if (content[i] == '{') depth += 1;
+                if (content[i] == '}') {
+                    depth -= 1;
+                    if (depth == 0) {
+                        metadata_end = i + 1;
+                        break;
+                    }
+                }
+            }
+            if (metadata_end) |end| {
+                state.metadata = try allocator.dupe(u8, content[metadata_start.?..end]);
+            }
+        }
+
+        // Validate all fields were parsed
+        if (task_name_start == null or state_start == null or metadata_start == null) {
+            if (task_name_start != null) allocator.free(state.task_name);
+            if (state_start != null and state.state.len > 0) allocator.free(state.state);
+            if (metadata_start != null and state.metadata.len > 0) allocator.free(state.metadata);
+            return error.InvalidCheckpointFormat;
+        }
+
+        return state;
     }
 
     fn deleteImpl(ptr: *anyopaque, task_name: []const u8, allocator: Allocator) anyerror!void {
@@ -233,4 +331,57 @@ test "FileSystemStorage: delete nonexistent checkpoint" {
 
     // Should not error on deleting nonexistent checkpoint
     try storage.delete("nonexistent", allocator);
+}
+
+test "FileSystemStorage: save and load checkpoint" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const temp_dir = "zig-cache/test-checkpoints-3";
+    std.fs.cwd().deleteTree(temp_dir) catch {};
+    defer std.fs.cwd().deleteTree(temp_dir) catch {};
+
+    var fs_storage = try FileSystemStorage.init(temp_dir, allocator);
+    defer fs_storage.storage().deinit(allocator);
+
+    const storage = fs_storage.storage();
+
+    // Save a checkpoint with actual data
+    const state = CheckpointState{
+        .task_name = try allocator.dupe(u8, "build-task"),
+        .started_at = 1000,
+        .checkpointed_at = 2000,
+        .state = try allocator.dupe(u8, "{\"step\":3,\"files\":[\"a.o\",\"b.o\"]}"),
+        .progress_pct = 75,
+        .metadata = try allocator.dupe(u8, "{\"attempt\":2}"),
+    };
+    defer {
+        allocator.free(state.task_name);
+        allocator.free(state.state);
+        allocator.free(state.metadata);
+    }
+
+    try storage.save(state, allocator);
+
+    // Load the checkpoint back
+    const loaded = try storage.load("build-task", allocator);
+    try testing.expect(loaded != null);
+
+    if (loaded) |l| {
+        defer {
+            allocator.free(l.task_name);
+            allocator.free(l.state);
+            allocator.free(l.metadata);
+        }
+
+        try testing.expectEqualStrings("build-task", l.task_name);
+        try testing.expectEqual(@as(i64, 1000), l.started_at);
+        try testing.expectEqual(@as(i64, 2000), l.checkpointed_at);
+        try testing.expectEqual(@as(u8, 75), l.progress_pct);
+        try testing.expectEqualStrings("{\"step\":3,\"files\":[\"a.o\",\"b.o\"]}", l.state);
+        try testing.expectEqualStrings("{\"attempt\":2}", l.metadata);
+    }
+
+    // Clean up
+    try storage.delete("build-task", allocator);
 }

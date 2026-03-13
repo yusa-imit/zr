@@ -15,6 +15,7 @@ const timeline = @import("timeline.zig");
 const replay = @import("replay.zig");
 const hooks = @import("hooks.zig");
 const types = @import("../config/types.zig");
+const checkpoint = @import("checkpoint.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -307,6 +308,8 @@ const WorkerCtx = struct {
     circuit_breaker: ?*CircuitBreakerState,
     /// Retry budget tracker for workflow-level retry limiting (v1.30.0).
     retry_budget: ?*RetryBudgetTracker,
+    /// Checkpoint configuration for resumable tasks (v1.31.0).
+    checkpoint_config: ?*const types.CheckpointConfig,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -406,6 +409,20 @@ fn workerFn(ctx: WorkerCtx) void {
     const merged_env = buildEnvWithToolchains(ctx.allocator, ctx.env, ctx.toolchains);
     defer if (merged_env) |env| toolchain_path.freeToolchainEnv(ctx.allocator, env);
 
+    // Load checkpoint if enabled (v1.31.0)
+    var checkpoint_state: ?checkpoint.CheckpointState = null;
+    defer if (checkpoint_state) |*cs| cs.deinit(ctx.allocator);
+
+    if (ctx.checkpoint_config) |ckpt_cfg| {
+        if (ckpt_cfg.enabled) {
+            var fs_storage = checkpoint.FileSystemStorage.init(ckpt_cfg.checkpoint_dir, ctx.allocator) catch null;
+            if (fs_storage) |*storage| {
+                defer storage.storage().deinit(ctx.allocator);
+                checkpoint_state = storage.storage().load(ctx.task_name, ctx.allocator) catch null;
+            }
+        }
+    }
+
     // Check cache hit — skip execution if already succeeded with same cmd+env
     if (ctx.cache) {
         if (ctx.cache_key) |key| {
@@ -450,8 +467,39 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
-    // Cast merged_env to the const slice type expected by ProcessConfig
-    const proc_env: ?[]const [2][]const u8 = if (merged_env) |env| env else null;
+    // Add checkpoint state to environment if available (v1.31.0)
+    var final_env: ?[][2][]u8 = merged_env;
+    var checkpoint_env_added = false;
+    defer if (checkpoint_env_added) {
+        // Free the ZR_CHECKPOINT env var we added
+        if (final_env) |env| {
+            ctx.allocator.free(env[env.len - 1][0]);
+            ctx.allocator.free(env[env.len - 1][1]);
+        }
+    };
+
+    if (checkpoint_state) |ckpt| {
+        // Add ZR_CHECKPOINT=<json_state> to environment
+        const base_env = final_env orelse &[_][2][]u8{};
+        const new_env = ctx.allocator.alloc([2][]u8, base_env.len + 1) catch null;
+        if (new_env) |env| {
+            // Copy existing env
+            for (base_env, 0..) |pair, i| {
+                env[i] = pair;
+            }
+            // Add ZR_CHECKPOINT
+            env[env.len - 1][0] = ctx.allocator.dupe(u8, "ZR_CHECKPOINT") catch "";
+            env[env.len - 1][1] = ctx.allocator.dupe(u8, ckpt.state) catch "";
+
+            // Free old env array (but not the individual strings, they're still in new_env)
+            if (final_env) |old| ctx.allocator.free(old);
+            final_env = env;
+            checkpoint_env_added = true;
+        }
+    }
+
+    // Cast final_env to the const slice type expected by ProcessConfig
+    const proc_env: ?[]const [2][]const u8 = if (final_env) |env| env else null;
 
     // Handle dependency-only tasks (tasks without cmd)
     if (ctx.cmd.len == 0) {
@@ -1331,6 +1379,7 @@ pub fn run(
                 .task_hooks = task.hooks,
                 .circuit_breaker = circuit_breaker_ptr,
                 .retry_budget = if (retry_budget_tracker) |*rb| rb else null,
+                .checkpoint_config = if (task.checkpoint) |*cp| cp else null,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
