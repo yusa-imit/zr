@@ -254,6 +254,73 @@ pub const ScheduleResult = struct {
     }
 };
 
+/// Context for checkpoint output callback (v1.31.0)
+const CheckpointCallbackCtx = struct {
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    checkpoint_config: *const types.CheckpointConfig,
+    last_save_ms: *std.atomic.Value(i64), // Atomic timestamp of last checkpoint save
+};
+
+/// Output callback that monitors stdout for "CHECKPOINT: {json}" markers
+fn checkpointOutputCallback(line: []const u8, is_stderr: bool, ctx_opaque: ?*anyopaque) void {
+    if (is_stderr) return; // Only monitor stdout for checkpoints
+
+    const ctx: *CheckpointCallbackCtx = @ptrCast(@alignCast(ctx_opaque orelse return));
+
+    // Look for "CHECKPOINT: " prefix
+    const marker = "CHECKPOINT: ";
+    const idx = std.mem.indexOf(u8, line, marker) orelse return;
+
+    // Extract JSON part (everything after the marker)
+    const json_start = idx + marker.len;
+    if (json_start >= line.len) return;
+    const json_str = line[json_start..];
+
+    // Check if enough time has elapsed since last save (respect interval_ms)
+    const now_ms = std.time.milliTimestamp();
+    const last_save = ctx.last_save_ms.load(.acquire);
+    if (now_ms - last_save < ctx.checkpoint_config.interval_ms) {
+        return; // Too soon, skip this checkpoint
+    }
+
+    // Create checkpoint state
+    const state = checkpoint.CheckpointState{
+        .task_name = ctx.allocator.dupe(u8, ctx.task_name) catch return,
+        .started_at = last_save, // Use last save time as start time
+        .checkpointed_at = now_ms,
+        .state = ctx.allocator.dupe(u8, json_str) catch {
+            ctx.allocator.free(ctx.task_name);
+            return;
+        },
+        .progress_pct = 0, // Progress must be in JSON state
+        .metadata = ctx.allocator.dupe(u8, "{}") catch {
+            ctx.allocator.free(ctx.task_name);
+            ctx.allocator.free(json_str);
+            return;
+        },
+    };
+    errdefer {
+        ctx.allocator.free(state.task_name);
+        ctx.allocator.free(state.state);
+        ctx.allocator.free(state.metadata);
+    }
+
+    // Save checkpoint
+    var fs_storage = checkpoint.FileSystemStorage.init(ctx.checkpoint_config.checkpoint_dir, ctx.allocator) catch return;
+    defer fs_storage.storage().deinit(ctx.allocator);
+
+    fs_storage.storage().save(state, ctx.allocator) catch {};
+
+    // Free the state strings (save() duplicates them)
+    ctx.allocator.free(state.task_name);
+    ctx.allocator.free(state.state);
+    ctx.allocator.free(state.metadata);
+
+    // Update last save timestamp
+    ctx.last_save_ms.store(now_ms, .release);
+}
+
 /// Context passed to each worker thread.
 const WorkerCtx = struct {
     allocator: std.mem.Allocator,
@@ -525,6 +592,26 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // Set up checkpoint callback if enabled (v1.31.0)
+    // Note: Checkpointing only works in non-interactive mode (inherit_stdio=false)
+    var checkpoint_callback_ctx: ?CheckpointCallbackCtx = null;
+    var last_save_ms = std.atomic.Value(i64).init(std.time.milliTimestamp());
+    defer {
+        // No cleanup needed for atomic value
+        _ = &last_save_ms;
+    }
+
+    if (ctx.checkpoint_config) |ckpt_cfg| {
+        if (ckpt_cfg.enabled and !should_show_output) {
+            checkpoint_callback_ctx = CheckpointCallbackCtx{
+                .allocator = ctx.allocator,
+                .task_name = ctx.task_name,
+                .checkpoint_config = ckpt_cfg,
+                .last_save_ms = &last_save_ms,
+            };
+        }
+    }
+
     // Run the process with retry logic
     var proc_result = process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
@@ -537,6 +624,8 @@ fn workerFn(ctx: WorkerCtx) void {
         .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
         .monitor_use_color = ctx.use_color,
         .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
+        .output_callback = if (checkpoint_callback_ctx != null) checkpointOutputCallback else null,
+        .output_ctx = if (checkpoint_callback_ctx) |*c| @ptrCast(c) else null,
     }) catch process.ProcessResult{
         .exit_code = 1,
         .duration_ms = 0,
@@ -600,6 +689,8 @@ fn workerFn(ctx: WorkerCtx) void {
                 .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
                 .monitor_use_color = ctx.use_color,
                 .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
+                .output_callback = if (checkpoint_callback_ctx != null) checkpointOutputCallback else null,
+                .output_ctx = if (checkpoint_callback_ctx) |*c| @ptrCast(c) else null,
             }) catch process.ProcessResult{
                 .exit_code = 1,
                 .duration_ms = 0,
