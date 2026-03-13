@@ -820,6 +820,88 @@ gh issue create --repo yusa-imit/sailor \
 **Note**: Patch release, no breaking changes. Safe to upgrade when/if data visualization widgets are needed.
 ---
 
+### v1.10.0 — Mouse & Gamepad Input (status: READY)
+
+**sailor v1.10.0 released** (2026-03-12) — Mouse and gamepad input support
+
+- **New features**:
+  - Mouse event handling (click, drag, scroll, double-click with coordinate detection)
+  - Widget-level mouse interaction protocol (clickable, draggable, scrollable traits)
+  - Gamepad/controller input support (D-pad, buttons, analog sticks with dead zones)
+  - Touch gesture recognition (swipe, pinch, tap for future terminal emulators)
+  - Input mapping configuration (rebind mouse/gamepad to keyboard equivalents)
+- **Impact on zr**: LOW — CLI tool doesn't need mouse/gamepad input currently
+  - Mouse support could enhance future TUI graph mode (click to select tasks)
+  - Gamepad support not relevant for task runner
+- [ ] `build.zig.zon`에 sailor v1.10.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. Mouse/gamepad features are opt-in. Consider for future interactive TUI features if needed.
+
+### v1.11.0 — Terminal Graphics & Effects (status: READY)
+
+**sailor v1.11.0 released** (2026-03-12) — Terminal graphics protocols and visual effects
+
+- **New features**:
+  - Sixel graphics protocol support (inline images in compatible terminals)
+  - Kitty graphics protocol support (high-performance image rendering)
+  - Animated widget transitions (fade, slide, grow/shrink animations)
+  - Particle effects system (confetti, sparkles, stars, hearts, snowflakes, bubbles for celebrations)
+  - Blur/transparency effects (4 blur modes, 3 transparency modes, composite effects)
+- **Impact on zr**: LOW — Graphics effects not essential for task runner
+  - Sixel/Kitty protocols could display task output images in TUI mode
+  - Particle effects for successful task completion celebrations
+  - Transitions could enhance TUI navigation smoothness
+- [ ] `build.zig.zon`에 sailor v1.11.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+
+**Note**: Non-breaking upgrade. Graphics features are opt-in and terminal-dependent. Consider for enhanced TUI visual feedback.
+
+### v1.12.0 — Enterprise & Accessibility (status: READY)
+
+**sailor v1.12.0 released** (2026-03-13) — Enterprise features and accessibility enhancements
+
+- **New features**:
+  - Session recording & playback (record TUI interactions to file, replay for debugging)
+  - Audit logging (log all user interactions for compliance, 10 event types, 4 severity levels)
+  - High contrast themes (WCAG AAA compliance: dark 21:1, light 21:1, amber 13.7:1, green 15.2:1)
+  - Screen reader enhancements (ARIA-like semantic hints, OSC8/ARIA/JSON output modes)
+  - Keyboard-only navigation improvements (skip links, 5 focus indicator styles)
+- **Impact on zr**: MEDIUM — Enterprise and accessibility features useful for production use
+  - Session recording enables reproducing TUI bugs from user reports
+  - Audit logging tracks task execution commands for compliance
+  - High contrast themes improve accessibility
+  - Screen reader support makes zr usable for visually impaired users
+- [ ] `build.zig.zon`에 sailor v1.12.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+- [ ] (Optional) Add audit logging for task execution commands
+- [ ] (Optional) Enable high contrast themes in TUI mode
+
+**Note**: Non-breaking upgrade. Enterprise features are opt-in. Consider audit logging and accessibility for production deployments.
+
+### v1.13.0 — Advanced Text Editing & Rich Input (status: READY)
+
+**sailor v1.13.0 released** (2026-03-14) — Multi-cursor editing and rich text input
+
+- **New features**:
+  - Syntax highlighting system (extensible lexer/parser for Zig, C, Python, JavaScript, JSON, Markdown)
+  - Code editor widget (line numbers, selection, undo/redo, syntax highlighting integration)
+  - Autocomplete widget (fuzzy matching, suggestion list, custom providers)
+  - Multi-cursor editing (simultaneous editing at multiple positions, column selection mode)
+  - Rich text input (inline formatting: bold/italic/underline/strikethrough, emoji picker with 8 categories, live markdown preview)
+- **Impact on zr**: LOW — Text editing not core to task runner, but useful for future features
+  - Code editor widget could enhance TOML file editing in TUI mode
+  - Autocomplete useful for interactive command mode (task names, workflow names)
+  - Rich text input for task descriptions with formatting
+  - Multi-cursor editing not relevant for zr use case
+- [ ] `build.zig.zon`에 sailor v1.13.0 의존성 업데이트
+- [ ] 기존 테스트 전체 통과 확인
+- [ ] (Optional) Consider autocomplete for interactive task selection
+
+**Note**: Non-breaking upgrade. Text editing widgets are opt-in. Consider autocomplete for enhanced user experience in future interactive features.
+
+---
+
 ## zuda Migration
 
 zr은 현재 자체 구현한 자료구조/알고리즘을 `zuda` 라이브러리(https://github.com/yusa-imit/zuda)로 점진적으로 대체할 예정이다.
