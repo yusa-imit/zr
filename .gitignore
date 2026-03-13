@@ -4,6 +4,13 @@
 .zig-cache
 zig-out
 
+# Build artifacts
+main
+*.wasm
+docs/*.html
+docs/*.js
+docs/*.tar
+
 # Claude Code
 .claude/settings.local.json
 .claude/teams/
