@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.32.0] - 2026-03-14
+
+### Changed
+- **Sailor Library Migration** (v1.10.0 → v1.12.0)
+  - Upgraded sailor dependency from v1.10.0 to v1.12.0
+  - v1.11.0 features (terminal graphics & effects):
+    - Particle effects system (confetti, sparkles for celebrations)
+    - Blur/transparency effects for visual depth
+    - Sixel/Kitty graphics protocol support for inline images
+    - Animated widget transitions
+  - v1.12.0 features (enterprise & accessibility):
+    - Session recording & playback for debugging TUI interactions
+    - Audit logging infrastructure for compliance tracking
+    - High contrast WCAG AAA themes (dark, light, amber, green)
+    - Screen reader enhancements (OSC8 hyperlinks, ARIA attributes, JSON modes)
+    - Keyboard-only navigation improvements (skip links, focus indicators)
+
+### Developer Notes
+- All features are opt-in and non-breaking
+- Total unit tests: 819/827 (8 skipped, 0 leaks)
+- Total integration tests: 939/940 (1 skipped, 0 leaks)
+- CI status: GREEN (all cross-compile targets passing)
+
 ## [1.31.0] - 2026-03-13
 
 ### Added
