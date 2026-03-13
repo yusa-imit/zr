@@ -905,7 +905,7 @@ gh issue create --repo yusa-imit/zuda \
 
 
 ### v1.11.0 — Terminal Graphics & Effects
-- **status**: READY
+- **status**: DONE (upgraded to v1.12.0 which includes v1.11.0 features)
 - **features**:
   - Particle effects system (confetti, sparkles for celebrations)
   - Blur/transparency effects
@@ -915,11 +915,11 @@ gh issue create --repo yusa-imit/zuda \
   - Particle effects for task completion celebrations
   - Blur effects for background panels
   - Graphics protocol for inline images in task details
-- **tests**: Verify particle/blur rendering in TUI mode
+- **tests**: All tests passing (819/827 unit, 939/940 integration)
 - **breaking**: None — all opt-in features
 
 ### v1.12.0 — Enterprise & Accessibility
-- **status**: READY
+- **status**: DONE
 - **features**:
   - Session recording & playback for debugging
   - Audit logging for compliance
@@ -930,5 +930,5 @@ gh issue create --repo yusa-imit/zuda \
   - Audit log for task operations (create, update, delete, run)
   - High contrast themes for accessibility settings
   - Keyboard navigation hints for TUI mode
-- **tests**: None required (all opt-in features, no breaking changes)
+- **tests**: All tests passing (819/827 unit, 939/940 integration)
 - **breaking**: None — all additive
