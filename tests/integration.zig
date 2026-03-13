@@ -17,6 +17,7 @@ comptime {
     _ = @import("doctor_test.zig");
     _ = @import("edit_test.zig");
     _ = @import("env_test.zig");
+    _ = @import("error_recovery_test.zig");
     _ = @import("estimate_test.zig");
     _ = @import("export_test.zig");
     _ = @import("failures_test.zig");
