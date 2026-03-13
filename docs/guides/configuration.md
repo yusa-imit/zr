@@ -63,6 +63,7 @@ cmd = "npm run build"
 | `tags` | array | ❌ | [] | Categorization tags |
 | `watch` | table | ❌ | null | Watch mode configuration (v1.17.0, see [Watch Mode Configuration](#watch-mode-configuration-v1170)) |
 | `hooks` | array | ❌ | [] | Execution hooks (v1.24.0, see [Execution Hooks](#execution-hooks-v1240)) |
+| `circuit_breaker` | table | ❌ | null | Circuit breaker configuration (v1.30.0, see [Circuit Breaker](#circuit-breaker-v1300)) |
 
 ### Dependencies
 
@@ -128,6 +129,63 @@ retry_max = 3
 retry_delay_ms = 1000
 retry_backoff = true  # 1s, 2s, 4s
 ```
+
+### Circuit Breaker (v1.30.0)
+
+Circuit breakers automatically stop retrying tasks when failure rate exceeds a threshold, preventing retry storms and wasted resources.
+
+```toml
+[tasks.external-api]
+cmd = "curl https://api.example.com/data"
+retry_max = 10
+retry_delay_ms = 1000
+retry_backoff = true
+
+[tasks.external-api.circuit_breaker]
+failure_threshold = 0.5      # Open circuit at 50% failure rate
+min_attempts = 3             # Minimum attempts before circuit can open
+window_ms = 60000            # 1-minute time window for failure rate calculation
+reset_timeout_ms = 30000     # 30-second cooldown before retry attempt (half-open state)
+```
+
+**Circuit Breaker Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `failure_threshold` | float | 0.5 | Failure rate (0.0-1.0) that trips the circuit |
+| `min_attempts` | integer | 3 | Minimum attempts before circuit can trip |
+| `window_ms` | integer | 60000 | Time window in ms for tracking failures |
+| `reset_timeout_ms` | integer | 30000 | Cooldown period before half-open retry |
+
+**Circuit States:**
+
+- **Closed**: Normal operation, retries allowed
+- **Open**: Circuit tripped, retries blocked (failure rate ≥ threshold)
+- **Half-Open**: After reset timeout, one retry attempt allowed to test recovery
+
+**Example: Protecting against flaky external services**
+
+```toml
+[tasks.weather-api]
+cmd = "curl https://weather-api.example.com/current"
+retry_max = 5
+retry_delay_ms = 2000
+retry_backoff = true
+
+[tasks.weather-api.circuit_breaker]
+failure_threshold = 0.6  # Trip at 60% failure rate
+min_attempts = 2         # Trip after 2 attempts if both fail
+window_ms = 120000       # 2-minute window
+reset_timeout_ms = 60000 # 1-minute cooldown
+```
+
+With this config:
+- If 2 out of 2 attempts fail (100% > 60% threshold), circuit opens
+- Circuit stays open for 1 minute (reset_timeout_ms)
+- After 1 minute, one retry is attempted (half-open state)
+- If retry succeeds, circuit closes; if it fails, circuit reopens
+
+**Note:** Circuit breaker state is per-task and resets between `zr run` invocations. For persistent circuit breaker state across runs, consider using external monitoring tools.
 
 ### Conditional Execution
 
@@ -412,6 +470,72 @@ name = "test"
 tasks = ["test-all"]
 on_failure = "notify-slack"
 ```
+
+### Retry Budget (v1.30.0)
+
+Retry budgets limit the total number of retries across all tasks in a workflow, preventing retry storms when multiple tasks fail simultaneously.
+
+```toml
+[workflows.integration-tests]
+description = "Run integration test suite"
+retry_budget = 5  # Maximum 5 total retries across all tasks
+
+[[workflows.integration-tests.stages]]
+name = "test"
+tasks = ["db-test", "api-test", "ui-test"]
+```
+
+**Workflow Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retry_budget` | integer | null | Maximum total retries across all tasks (null = unlimited) |
+
+**How Retry Budget Works:**
+
+1. Each task in the workflow can have `retry_max` configured
+2. Workflow `retry_budget` limits total retries across **all** tasks
+3. When a task fails and attempts to retry, it consumes from the workflow budget
+4. If budget is exhausted, no more retries are allowed for any task
+
+**Example: Preventing retry storms**
+
+```toml
+[workflows.flaky-suite]
+description = "Run flaky test suite with retry budget"
+retry_budget = 10  # Max 10 retries total
+
+[[workflows.flaky-suite.stages]]
+name = "unit-tests"
+tasks = ["unit-fast", "unit-slow", "unit-integration"]
+
+[tasks.unit-fast]
+cmd = "npm run test:unit:fast"
+retry_max = 3  # Can retry up to 3 times
+
+[tasks.unit-slow]
+cmd = "npm run test:unit:slow"
+retry_max = 5  # Can retry up to 5 times
+
+[tasks.unit-integration]
+cmd = "npm run test:integration"
+retry_max = 4  # Can retry up to 4 times
+```
+
+In this workflow:
+- Without retry budget: up to 3+5+4 = 12 total retries possible
+- With `retry_budget = 10`: stops at 10 total retries
+- If `unit-fast` uses 4 retries and `unit-slow` uses 6 retries, workflow stops (budget exhausted)
+- Remaining tasks (`unit-integration`) cannot retry even if they fail
+
+**Use Cases:**
+
+- **CI/CD pipelines**: Limit retry attempts to avoid long-running builds
+- **Flaky test suites**: Allow some retries but prevent infinite loops
+- **Resource-intensive tasks**: Control total resource consumption from retries
+- **External API calls**: Limit total API calls when multiple tasks call the same service
+
+**Note:** Retry budget is enforced per workflow execution. Each `zr run workflow` starts with a fresh budget.
 
 ### Syntax Limitations
 
