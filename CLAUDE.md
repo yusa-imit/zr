@@ -910,14 +910,16 @@ gh issue create --repo yusa-imit/sailor \
 
 **Note**: Non-breaking upgrade. Text editing widgets are opt-in. Consider autocomplete for enhanced user experience in future interactive features.
 
-#### v1.13.1 Patch (2026-03-14)
+#### v1.13.1 Patch (status: DONE, 2026-03-14)
 
 **Critical bug fix** for data visualization widgets (Histogram, TimeSeriesChart, ScatterPlot):
 - **Fixed**: Integer overflow panic when rendering analytics data (#9 from:zr)
 - **Impact**: `zr analytics --tui` now works without crashes
 - **Cause**: Large data values (u64 bin counts, f64 coordinates) were converted to u16 terminal coordinates without overflow protection
 - **Solution**: Values are now clamped to valid u16 range before casting
-- **Action**: No migration needed — patch release, fully backward compatible
+- [x] Updated build.zig.zon to sailor v1.13.1 (2026-03-14)
+- [x] All tests passing (820/828 unit, 942/943 integration)
+- **Action**: Migration complete — patch release, fully backward compatible
 
 ---
 
