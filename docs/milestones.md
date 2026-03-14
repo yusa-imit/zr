@@ -120,14 +120,14 @@ Implement real-time task output capture and streaming. Address TODOs in schedule
 - **Current**: Not yet integrated (blocked on zuda releases)
 - **Repository**: https://github.com/yusa-imit/zuda
 
-| Custom Implementation | File | zuda Replacement | Status |
-|----------------------|------|-----------------|--------|
-| DAG | `src/graph/dag.zig` | `zuda.containers.graphs.AdjacencyList` | PENDING |
-| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | `zuda.algorithms.graph.topological_sort` | PENDING |
-| Cycle Detection | `src/graph/cycle_detect.zig` | `zuda.algorithms.graph.cycle_detection` | PENDING |
-| Work-Stealing Deque | `src/exec/workstealing.zig` | `zuda.containers.queues.StealingQueue` | PENDING |
-| Levenshtein Distance | `src/util/levenshtein.zig` | `zuda.algorithms.dynamic_programming.edit_distance` | PENDING |
-| Glob Pattern Matching | `src/util/glob.zig` | `zuda.algorithms.string.glob_match` | PENDING |
+| Custom Implementation | File | zuda Replacement | Issue | Status |
+|----------------------|------|-----------------|-------|--------|
+| DAG | `src/graph/dag.zig` | `zuda.containers.graphs.AdjacencyList` | #23 | PENDING |
+| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | `zuda.algorithms.graph.topological_sort` | #24 | PENDING |
+| Cycle Detection | `src/graph/cycle_detect.zig` | `zuda.algorithms.graph.cycle_detection` | #24 | PENDING |
+| Work-Stealing Deque | `src/exec/workstealing.zig` | `zuda.containers.queues.StealingQueue` | #22 | PENDING |
+| Levenshtein Distance | `src/util/levenshtein.zig` | `zuda.algorithms.dynamic_programming.edit_distance` | #21 | PENDING |
+| Glob Pattern Matching | `src/util/glob.zig` | `zuda.algorithms.string.glob_match` | #25 | PENDING |
 
 **Migration exclusions** (domain-specific, kept in zr):
 - `src/util/string_pool.zig` — zr-specific string interning
