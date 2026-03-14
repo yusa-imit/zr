@@ -44,6 +44,10 @@ pub const SchedulerConfig = struct {
     /// Optional task control for pause/cancel/retry operations.
     /// If provided, allows interactive control of task execution.
     task_control: ?*control.TaskControl = null,
+    /// Optional workflow-level retry budget (v1.34.0).
+    /// If set, limits the total number of retries across all tasks in the workflow.
+    /// This is typically extracted from workflow.retry_budget when executing workflow stages.
+    retry_budget: ?u32 = null,
 };
 
 /// Circuit breaker state for a task (v1.30.0).
@@ -1286,11 +1290,11 @@ pub fn run(
     var circuit_breakers = std.StringHashMap(CircuitBreakerState).init(allocator);
     defer circuit_breakers.deinit();
 
-    // Initialize retry budget tracker from workflow config (v1.30.0)
-    // Note: For now, we only support task execution (not workflow stages)
-    // Workflow retry budget will be fully implemented when workflow execution is refactored
+    // Initialize retry budget tracker from workflow config (v1.34.0)
     var retry_budget_tracker: ?RetryBudgetTracker = null;
-    // TODO: Extract retry_budget from workflow config when executing workflow stages
+    if (sched_config.retry_budget) |budget| {
+        retry_budget_tracker = RetryBudgetTracker.init(budget);
+    }
 
     // Execute level by level (sequentially between levels, parallel within a level)
     for (levels.levels.items) |level| {

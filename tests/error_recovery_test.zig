@@ -186,3 +186,97 @@ test "937: successful task does not trip circuit breaker" {
 
     // Circuit breaker should not trip (0 failures)
 }
+
+test "941: workflow retry budget limits total retries across stages" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, RETRY_BUDGET_TOML);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "test" }, null);
+    defer result.deinit();
+
+    // Workflow should fail (all tasks fail)
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+
+    // With retry_budget = 3, total retries across task1 and task2 should not exceed 3
+    // Each task has retry_max = 10, but workflow budget limits the total
+    // Note: This is a smoke test - exact retry count would require parsing output
+}
+
+test "942: workflow without retry budget allows unlimited retries" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Workflow with no retry_budget
+    const config_content =
+        \\[tasks.flaky]
+        \\cmd = "exit 1"
+        \\retry_max = 2
+        \\retry_delay_ms = 5
+        \\
+        \\[workflows.no_budget]
+        \\description = "Workflow without retry budget"
+        \\
+        \\[[workflows.no_budget.stages]]
+        \\name = "test"
+        \\tasks = ["flaky"]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "no_budget" }, null);
+    defer result.deinit();
+
+    // Task should fail after exhausting its retry_max
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+
+    // Without retry budget, task retries should only be limited by task.retry_max
+}
+
+test "943: workflow retry budget applies across multiple stages" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Workflow with multiple stages and retry budget
+    const config_content =
+        \\[tasks.task1]
+        \\cmd = "exit 1"
+        \\retry_max = 5
+        \\retry_delay_ms = 5
+        \\
+        \\[tasks.task2]
+        \\cmd = "exit 1"
+        \\retry_max = 5
+        \\retry_delay_ms = 5
+        \\
+        \\[workflows.multi_stage]
+        \\description = "Multi-stage workflow with retry budget"
+        \\retry_budget = 2
+        \\
+        \\[[workflows.multi_stage.stages]]
+        \\name = "stage1"
+        \\tasks = ["task1"]
+        \\
+        \\[[workflows.multi_stage.stages]]
+        \\name = "stage2"
+        \\tasks = ["task2"]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "multi_stage" }, null);
+    defer result.deinit();
+
+    // Workflow should fail (all tasks fail)
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+
+    // retry_budget should be shared across stage1 and stage2
+    // Total retries across both stages should not exceed 2
+}

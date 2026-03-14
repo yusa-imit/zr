@@ -459,6 +459,7 @@ pub fn cmdWorkflow(
         var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
             .inherit_stdio = true,
             .max_jobs = max_jobs,
+            .retry_budget = wf.retry_budget,
         }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
