@@ -4,18 +4,22 @@ const collector = @import("../analytics/collector.zig");
 const html_gen = @import("../analytics/html.zig");
 const json_gen = @import("../analytics/json.zig");
 const platform = @import("../util/platform.zig");
+const analytics_tui = @import("analytics_tui.zig");
 
 pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, global_json: bool) !u8 {
     var json_output = global_json;
     var output_path: ?[]const u8 = null;
     var limit: ?usize = null;
     var no_open = false;
+    var tui_mode = false;
 
     // Parse flags
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "--json") or std.mem.eql(u8, arg, "--format=json")) {
+        if (std.mem.eql(u8, arg, "--tui")) {
+            tui_mode = true;
+        } else if (std.mem.eql(u8, arg, "--json") or std.mem.eql(u8, arg, "--format=json")) {
             json_output = true;
         } else if (std.mem.startsWith(u8, arg, "--format=")) {
             // other --format values: ignore (default to HTML)
@@ -51,6 +55,11 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
             try printHelp();
             return 1;
         }
+    }
+
+    // If TUI mode requested, delegate to TUI module
+    if (tui_mode) {
+        return analytics_tui.cmdAnalyticsTui(allocator, args);
     }
 
     // Collect analytics data
@@ -161,6 +170,7 @@ fn printHelp() !void {
         \\Generate build analysis reports from execution history.
         \\
         \\Options:
+        \\  --tui               Launch interactive TUI dashboard
         \\  --json              Output JSON format instead of HTML
         \\  -o, --output <path> Save report to file (default: open in browser)
         \\  -n, --limit <N>     Analyze only the last N executions
@@ -169,6 +179,7 @@ fn printHelp() !void {
         \\
         \\Examples:
         \\  zr analytics                    # Generate HTML report and open in browser
+        \\  zr analytics --tui              # Launch interactive TUI dashboard
         \\  zr analytics --json             # Output JSON to stdout
         \\  zr analytics -o report.html     # Save HTML to file
         \\  zr analytics --limit 100        # Analyze last 100 executions only
