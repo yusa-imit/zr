@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-03-14
+
+### Added
+- **Workflow Retry Budget Integration** (v1.34.0)
+  - Added `retry_budget` field to `SchedulerConfig` struct for workflow-level retry limiting
+  - Initialize `RetryBudgetTracker` from workflow config when executing stages
+  - Updated `cmdWorkflow` to extract and pass workflow `retry_budget` to scheduler
+  - Retry budget is now shared across all stages in multi-stage workflows
+  - 3 new integration tests (941-943) covering workflow retry scenarios
+  - Documentation updated with multi-stage workflow examples
+
+### Changed
+- Workflow retry budget (from v1.30.0 infrastructure) is now fully functional
+- Multi-stage workflows can limit total retries across all stages with a single `retry_budget` value
+
+### Developer Notes
+- Total unit tests: 820/828 (8 skipped, 0 leaks)
+- Total integration tests: 942/943 (1 skipped, 0 leaks)
+- CI status: GREEN (all tests passing)
+
+## [1.33.0] - 2026-03-14
+
+### Added
+- **Advanced TUI Data Visualization** (v1.33.0)
+  - Created `src/cli/analytics_tui.zig` with three data visualization widgets
+  - Histogram for task duration distribution (5 bins)
+  - TimeSeriesChart for build time trends (last 50 executions)
+  - ScatterPlot for cache hit rate vs build time correlation
+  - FlexBox layout for responsive three-panel dashboard
+  - Viewport clipping for efficient large graph rendering
+  - Added `--tui` flag to `zr analytics` command
+
+### Changed
+- Graph rendering now uses viewport clipping for better performance with large graphs
+- Virtual buffer (2x terminal height) reduces memory usage
+
+### Developer Notes
+- Total unit tests: 820/828 (8 skipped, 0 leaks)
+- Total integration tests: 939/940 (1 skipped, 0 leaks)
+- Uses sailor v1.6.0/v1.7.0 data visualization widgets
+
 ## [1.32.0] - 2026-03-14
 
 ### Changed
