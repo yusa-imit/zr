@@ -215,8 +215,8 @@ fn renderTimeSeriesChart(allocator: std.mem.Allocator, buffer: *stui.Buffer, are
     var i: usize = 0;
     while (i < max_points and i < report.task_stats.items.len) : (i += 1) {
         const stat = report.task_stats.items[i];
-        // Use execution count as proxy for timestamp (simplified)
-        const timestamp: i64 = report.date_range_start + @as(i64, @intCast(i * 60)); // Assume 60s intervals
+        // Use index as X coordinate (not Unix timestamp - too large for u16)
+        const timestamp: i64 = @as(i64, @intCast(i));
         const duration = @as(f64, @floatFromInt(@as(u64, @intFromFloat(stat.avg_duration_ms))));
         try timestamps.append(allocator, timestamp);
         try values.append(allocator, duration);

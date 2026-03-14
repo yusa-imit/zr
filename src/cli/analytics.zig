@@ -59,7 +59,17 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
 
     // If TUI mode requested, delegate to TUI module
     if (tui_mode) {
-        return analytics_tui.cmdAnalyticsTui(allocator, args);
+        // Filter out --tui flag before passing to TUI module
+        var filtered_args = std.ArrayList([]const u8){};
+        defer filtered_args.deinit(allocator);
+
+        for (args) |arg| {
+            if (!std.mem.eql(u8, arg, "--tui")) {
+                try filtered_args.append(allocator, arg);
+            }
+        }
+
+        return analytics_tui.cmdAnalyticsTui(allocator, filtered_args.items);
     }
 
     // Collect analytics data
