@@ -102,18 +102,19 @@ Leader (orchestrator)
 4. `.claude/memory/debugging.md` — 알려진 이슈와 해결법
 5. `.claude/memory/patterns.md` — 검증된 코드 패턴
 6. `.claude/memory/zig-0.15-migration.md` — Zig 0.15 breaking changes
+7. `docs/milestones.md` — 활성 마일스톤, 차단 항목, 의존성 마이그레이션 상태
 
 **9단계 실행 사이클**:
 
 | Phase | 내용 | 비고 |
 |-------|------|------|
-| 1. 상태 파악 | `/status` 실행, git log·빌드·테스트 상태 점검 | CLAUDE.md에서 다음 작업 식별 |
+| 1. 상태 파악 | `/status` 실행, git log·빌드·테스트 상태 점검 | `docs/milestones.md`에서 다음 작업 식별 |
 | 1.5. 이슈 확인 | `gh issue list --state open --limit 10` | 아래 **이슈 우선순위 프로토콜** 참조 |
 | 2. 계획 | 구현 전략을 내부적으로 수립 (텍스트 출력) | `EnterPlanMode`/`ExitPlanMode` 사용 금지 — 비대화형 세션에서 블로킹됨 |
 | 3. 구현 → 검증 → 커밋 (반복) | 아래 **구현 루프** 참조 | 단위별로 즉시 커밋+푸시 |
 | 4. 코드 리뷰 | `/review` — PRD 준수·메모리 안전성·테스트 커버리지 확인 | 이슈 발견 시 수정 후 재커밋 |
 | 5. 릴리즈 판단 | 릴리즈 조건 충족 시 **자동 릴리즈** | 아래 **Release & Patch Policy** 참조 |
-| 6. 메모리 갱신 | `.claude/memory/` 파일 업데이트 | 별도 커밋: `chore: update session memory` → push |
+| 6. 메모리 갱신 | `.claude/memory/` + `docs/milestones.md` 업데이트 | 완료된 마일스톤 상태 갱신, 별도 커밋 |
 | 7. 세션 요약 | 구조화된 요약 출력 | 아래 템플릿 참조 |
 
 **구현 루프** (Phase 3 상세):
@@ -131,7 +132,7 @@ Leader (orchestrator)
 - 테스트 실패 중이면 새 기능 추가 전에 수정
 - 사이클당 하나의 집중 작업만 수행
 - 이전 세션의 미완료 작업이 있으면 먼저 완료
-- Post-v1.0 우선순위: Sailor Migration (READY) > Bug 이슈 > Post-v1.0 Priorities 항목
+- Post-v1.0 우선순위: Bug 이슈 > `migration` 라벨 이슈 (sailor/zuda) > Post-v1.0 Priorities 항목
 
 **이슈 우선순위 프로토콜** (Phase 1.5):
 
@@ -144,8 +145,9 @@ gh issue list --state open --limit 10 --json number,title,labels,createdAt
 | 우선순위 | 조건 | 행동 |
 |---------|------|------|
 | 1 (최우선) | `bug` 라벨 | 다른 작업보다 **항상 우선** 처리 |
-| 2 (높음) | `feature-request` + 현재 우선순위 범위 내 | 현재 작업과 **병행** |
-| 3 (낮음) | `feature-request` + 미래 범위 | **적어두고 넘어감** |
+| 2 (높음) | `migration` 라벨 (`from:sailor`, `from:zuda` 등) | 의존성 마이그레이션 — 현재 작업보다 **우선** 처리 |
+| 3 (보통) | `feature-request` + 현재 우선순위 범위 내 | 현재 작업과 **병행** |
+| 4 (낮음) | `feature-request` + 미래 범위 | **적어두고 넘어감** |
 
 - 이슈 처리 후: `gh issue close <number> --comment "Fixed in <commit-hash>"`
 - 진행 상황 공유: `gh issue comment <number> --body "Working on this"`
@@ -287,128 +289,13 @@ Types: `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `perf`, `ci`
 
 ## Completed Phases (v1.0.0)
 
-All 13 phases from the PRD are **COMPLETE**:
-
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Foundation (MVP) | ✅ TOML parser, DAG, parallel execution, CLI |
-| 2 | Workflow & Control | ✅ Workflows, expressions, watch, matrix, profiles |
-| 3 | Resource & UX | ✅ TUI, resource limits, shell completion, dry-run |
-| 4 | Extensibility | ✅ Plugins (native + WASM), remote cache, Docker |
-| 5 | Toolchain Management | ✅ 8 languages, auto-install, PATH injection |
-| 6 | Monorepo Intelligence | ✅ Affected detection, graph viz, constraints |
-| 7 | Multi-repo & Remote Cache | ✅ S3/GCS/Azure/HTTP, cross-repo tasks |
-| 8 | Enterprise & Community | ✅ CODEOWNERS, versioning, analytics, conformance |
-| 9 | Infrastructure + DX | ✅ LanguageProvider, JSON-RPC, "Did you mean?" |
-| 10 | MCP Server | ✅ 9 tools, `zr init --detect` |
-| 11 | LSP Server | ✅ Diagnostics, completion, hover |
-| 12 | Performance & Stability | ✅ Binary optimization, fuzz testing, benchmarks |
-| 13 | v1.0 Release | ✅ Documentation, migration guides, README |
-
-**Current stats**: 716/724 unit tests (8 skipped), 837/837 integration tests, 0 memory leaks, CI green
+All 13 PRD phases complete (v1.0.0). See `docs/PRD.md` for details.
 
 ---
 
 ## Post-v1.0 Milestones
 
-마일스톤 하나가 완료되면 마이너 릴리즈를 발행한다. (Release & Patch Policy 참조)
-마일스톤이 2개 이하로 남으면 **마일스톤 수립 프로세스**를 실행하여 보충한다.
-
-- [x] **v1.1.0 — Sailor v1.0.2 Migration** (DONE): 의존성 업데이트, API 리팩토링, 로컬 TTY workaround 유지, 테마 시스템 검토
-- [x] **v1.2.0 — TOML Parser Improvements** (DONE): 엄격한 검증, malformed section 헤더 감지, 에러 메시지 개선
-- [x] **v1.3.0 — TUI Graph Visualization** (DONE): Tree widget 기반 그래프 TUI 모드, sailor v1.0.3 마이그레이션
-- [x] **v1.4.0 — Plugin Registry Client** (DONE, released 2026-03-02): HTTP client, 원격 검색 `--remote` 플래그, 우아한 폴백, 통합 테스트, API 문서
-- [x] **v1.5.0 — Remote Cache v2** (DONE, released 2026-03-02): gzip 압축, 증분 동기화, 캐시 통계 대시보드
-- [x] **v1.6.0 — Interactive Configuration** (DONE, released 2026-03-02): `zr add task/workflow/profile` 대화형 명령어, 스마트 stdin 처리, 통합 테스트 (6개), issue #11 해결
-- [x] **v1.7.0 — Performance Enhancements** (DONE, released 2026-03-02): 문자열 인터닝 (StringPool), 객체 풀링 (ObjectPool), hyperfine 기반 자동화 벤치마크 스크립트, 30-50% 메모리 감소
-- [x] **v1.8.0 — Toolchain Auto-Update** (DONE, released 2026-03-02): `zr tools upgrade --check-updates`, `--cleanup` 플래그로 버전 충돌 자동 해결
-- [x] **v1.9.0 — Sailor v1.1.0 Accessibility** (DONE, released 2026-03-02): Unicode width 개선 (CJK/emoji), TUI 키보드 내비게이션, 접근성 기능 (위치 표시, 의미론적 레이블, 푸터 상태)
-- [x] **v1.10.0 — Task Dependencies v2** (DONE, released 2026-03-02): 조건부 의존성 (`deps_if`), 선택적 의존성 (`deps_optional`), 표현식 엔진 통합, 16 unit tests + 5 integration tests
-- [x] **v1.11.0 — Plugin Registry Index Server** (DONE): 독립 인덱스 서버 구축 (GitHub 의존성 제거), REST API, 플러그인 메타데이터, 검색 엔드포인트, `zr registry serve` 명령어, JSON 파일 기반 저장소, 2 integration tests
-- [x] **v1.12.0 — TOML Parser v2** (DONE, released 2026-03-03): Auto-generate stage names for anonymous `[[workflows.name.stages]]`, 검증 경고 제거, 3 unit tests + 3 integration tests
-- [x] **v1.13.0 — Parallel Execution Optimizations** (DONE): Work-stealing deque, NUMA topology detection, cross-platform CPU affinity, cpu_affinity/numa_node task fields, scheduler integration, documentation
-- [x] **v1.14.0 — Enhanced Error Diagnostics**: Task execution timeline, failure replay mode (expression stack traces deferred to v1.15.0)
-- [x] **v1.15.0 — Workspace Enhancements**: Workspace-wide cache invalidation, member-specific cache clearing, sailor v1.5.0 migration
-- [x] **v1.16.0 — Task Execution Analytics**: DONE (2026-03-07) — Resource usage tracking (peak memory, avg CPU), enhanced analytics reports (HTML/JSON), 2 integration tests, documentation updated, all 875 tests pass
-- [x] **v1.17.0 — Advanced Watch Mode** (RELEASED 2026-03-08): Debouncing for rapid file changes (configurable delay), pattern-based watch filters (glob patterns for file inclusion/exclusion), multi-pattern watch support (watch multiple paths per task), watch mode configuration in zr.toml ([tasks.*.watch] section), integration with existing native file watchers
-  - ✅ WatchConfig struct (debounce_ms, patterns, exclude_patterns, mode) — 97779fd
-  - ✅ TOML parser support for [tasks.*.watch] section — cabca59
-  - ✅ Enhanced watcher with debouncing and pattern filtering — e7fb3cc
-  - ✅ CLI integration (run.zig watch mode) — e7fb3cc
-  - ✅ Unit tests: 3 new tests for pattern filtering — e7fb3cc
-  - ✅ Integration tests: 9 tests (watch_test.zig) — 51f3da2
-  - ✅ Documentation: Complete guide in configuration.md — 611669b
-  - Tests: 746/754 unit (8 skipped, 0 leaks), 881/881 integration (100%)
-- [x] **v1.18.0 — Conditional Task Execution** (RELEASED 2026-03-08): Extended expression engine with git predicates (git.branch, git.tag, git.dirty), task skip conditions (skip_if field), conditional outputs (output_if). Note: Comprehensive error diagnostics deferred to v1.20.0 (Expression Diagnostics Integration)
-  - ✅ Git predicates: git.branch, git.tag, git.dirty with != operator — 8209382, 1fc6f16
-  - ✅ skip_if evaluation in scheduler — ca2acf8
-  - ✅ output_if evaluation in scheduler — ca2acf8
-  - ✅ Parser fixes (state bleed, git predicate operators) — 1fc6f16
-  - ✅ Integration tests (9 tests: 882-890) — 8209382
-  - ✅ CI fix (git init default branch) — d81cd2d
-  - Tests: 746/754 unit (8 skipped, 0 leaks), 890/890 integration (100%)
-- [x] **v1.19.0 — Parser Enhancements v3** (DONE, released 2026-03-09): Inline workflow stages syntax (`stages = [{ name, tasks }]`, closes #19), dependency-only tasks without cmd field (closes #20), subsection ordering fix (allows [tasks.X.matrix/env/toolchain] before main section), unit tests (417, 420, 421 passing)
-  - ✅ Inline workflow stages syntax — b7418c0
-  - ✅ Cmd-less dependency tasks — b7418c0
-  - ✅ Subsection ordering fix — 714341a
-  - Tests: 750/758 unit (8 skipped, 0 leaks), 894/894 integration (100%)
-- [x] **v1.20.0 — Expression Diagnostics Integration** (DONE, released 2026-03-09): Integrate expr_diagnostics.zig into expression evaluator, refactor 17 eval functions to accept DiagContext parameter, enhanced stack traces for expression failures, expression debugging documentation
-  - ✅ Add diag parameter to ExprContext struct — 614fe90
-  - ✅ New public API evalConditionWithDiag() accepting optional DiagContext — 614fe90
-  - ✅ Push/pop stack tracking in all 17 eval functions — 614fe90
-  - ✅ Expression Debugging guide in configuration.md — 30c2372
-  - Tests: 750/758 unit (8 skipped, 0 leaks), 894/894 integration (100%)
-- [x] **v1.21.0 — TUI Testing & Enhancements**: DONE (RELEASED 2026-03-09) — MockTerminal snapshot tests for all TUI modes (runner, graph, list), 19 new unit tests, documentation updated. Event bus and command pattern deferred to future versions as optional enhancements.
-- [x] **v1.22.0 — Sailor v1.6.0 & v1.7.0 Migration**: DONE (RELEASED 2026-03-09) — Upgraded sailor from v1.5.0 to v1.7.0. New features: data visualization widgets (ScatterPlot, Histogram, TimeSeriesChart), advanced layout (FlexBox, viewport clipping, shadow effects, layout caching). All features are opt-in and non-breaking. Tests: 769/777 unit (8 skipped, 0 leaks), 894/894 integration (100%)
-- [x] **v1.23.0 — Shell Auto-Completion v2**: DONE (2026-03-10) — Enhanced shell completion with context-aware suggestions (dynamic task names from zr.toml, profile name completion via `zr list --profiles`, workspace member completion via `zr list --members`), improved flag completion for --profile/-p with dynamic suggestions, support for bash/zsh/fish with helper functions, 2 new unit tests, all 771 unit tests + 894 integration tests pass
-- [x] **v1.24.0 — Execution Hooks**: DONE (2026-03-11) — Pre/post task hooks (on_before, on_after, on_success, on_failure, on_timeout), complete TOML parser support, scheduler integration, memory leak fixes (GPA cleanup, test leaks fixed), Tests: 780/788 unit (8 skipped, 0 leaks), 905/906 integration (100%, 0 leaks)
-- [x] **v1.25.0 — Interactive TUI Config Editor**: DONE (2026-03-11) — Interactive prompt-based config editor with `zr edit task/workflow/profile` commands, field validation (required/optional), context-sensitive help hints, live TOML preview, auto-append to zr.toml, Tests: 780/788 unit (8 skipped), 905/906 integration (100%). Note: Simple prompts implementation (full TUI widgets deferred until sailor provides Form API)
-- [x] **v1.26.0 — Language Provider Expansion**: DONE (2026-03-11) — Added C# (.NET) and Ruby providers (Go, Rust, Java already existed). C# provider: dotnet SDK, NuGet, common tasks (build/test/restore/publish/watch). Ruby provider: Gemfile, Rake, RSpec, Rails detection. Both: auto-detection, version management, PATH injection. Example projects: csharp-dotnet/, ruby-rails/. Integration tests: 4 new tests (912-915). Documentation: examples/README.md updated. Tests: 786/794 unit (8 skipped), 914/915 integration (1 skipped). Commits: df9ffd7, b0fcf85, be40b3a
-- [x] **v1.27.0 — Real-time Resource Monitoring**: DONE (2026-03-12) — Live TUI dashboard component (src/cli/monitor.zig) with ASCII bar charts for CPU/memory, task status table, bottleneck detection. Tests: 796/804 unit (8 skipped, 0 leaks), 919/920 integration (1 skipped). Commits: 5f558a0 (monitor TUI), 1ec1b33 (integration tests), 94dd2ea (infrastructure). Note: Remote monitoring server (WebSocket) deferred to v1.31.0
-- [x] **v1.28.0 — Interactive TUI with Mouse Support**: COMPLETE (2026-03-12) — Leveraged sailor v1.10.0 mouse input features
-  - ✅ src/cli/tui_mouse.zig — Mouse event parsing module (SGR protocol, InputEvent union, enable/disable tracking) — 42e70ac
-  - ✅ Mouse click support for task selection in interactive picker (tui.zig) — 41e2a00
-  - ✅ Clickable graph nodes in graph TUI (graph_tui.zig) with scroll support — 7f45b2c
-  - ✅ Mouse click for task switching and scroll for logs in live execution TUI (tui_runner.zig) — 4857058
-  - ✅ Unit tests: 5 tests in tui_mouse.zig, existing MockTerminal tests in graph_tui.zig
-  - ✅ Documentation: Updated commands.md with navigation instructions for all TUI modes — a5672fc
-  - Tests: 801/809 unit (8 skipped, 0 leaks), 919/920 integration (1 skipped, 0 leaks)
-- [x] **v1.29.0 — Task Template System**: COMPLETE (RELEASED 2026-03-13) — Reusable task templates with parameter substitution, template and params fields in Task struct, TOML parser support, automatic template application with field merging, CLI commands (list/show/apply), 12 integration tests (921-932), comprehensive documentation. Tests: 807/815 unit (8 skipped, 0 leaks), 931/932 integration (1 skipped, 0 leaks). Commits: 7539e22, 1120b29, 10de3dd, 0a77b0f, a725647, 129dc47
-- [x] **v1.30.0 — Enhanced Error Recovery**: COMPLETE (2026-03-13) — Circuit breaker pattern (failure threshold, window tracking, state transitions), retry budget for workflow-level limiting, enhanced scheduler with error recovery logic, 9 unit tests, 5 integration tests (933-937), comprehensive documentation. Checkpoint/resume deferred to v1.31.0+. Tests: 816/824 unit (8 skipped, 0 leaks), 937/937 integration (936 passed, 1 skipped, 0 leaks). Commits: e058986, 0aa7763, 60c08c2, 6771097, 26f65fd
-- [x] **v1.31.0 — Checkpoint/Resume for Long-Running Tasks**: COMPLETE (RELEASED 2026-03-13) — Checkpoint storage infrastructure (CheckpointStorage interface, FileSystemStorage backend), task stdout monitoring for "CHECKPOINT: <data>" markers, resume protocol via ZR_CHECKPOINT env var, scheduler integration, 3 integration tests (938-940), comprehensive documentation. Tests: 819/827 unit (8 skipped, 0 leaks), 939/940 integration (1 skipped, 0 leaks). Commits: 535c514, a1abe54, a7d5ab9, f661219
-- [x] **v1.32.0 — Sailor v1.11.0 & v1.12.0 Migration**: COMPLETE (2026-03-14) — Upgraded sailor from v1.10.0 to v1.12.0. v1.11.0 features: particle effects, blur/transparency, Sixel/Kitty graphics protocol, animated transitions. v1.12.0 features: session recording/playback, audit logging, WCAG AAA themes (dark/light/amber/green), screen reader enhancements (OSC8/ARIA/JSON modes), keyboard-only navigation improvements. All features opt-in and non-breaking. Tests: 819/827 unit (8 skipped, 0 leaks), 939/940 integration (1 skipped, 0 leaks). Commit: b46fbf5
-- [x] **v1.33.0 — Advanced TUI Data Visualization**: COMPLETE (2026-03-14) — Integrated sailor v1.6.0/v1.7.0 data visualization widgets into TUI modes
-  - ✅ Added analytics_tui.zig with three data visualization widgets — 3f53e27
-    - Histogram for task duration distribution (5 bins: 0-100ms, 100-500ms, 500ms-1s, 1-5s, 5s+)
-    - TimeSeriesChart for build time trends (last 50 executions)
-    - ScatterPlot for cache hit rate vs build time correlation
-  - ✅ FlexBox layout for responsive three-panel dashboard — 3f53e27
-  - ✅ Viewport clipping for efficient large graph rendering — 252ea69
-    - Virtual buffer (2x terminal height) for full tree
-    - Viewport.renderClipped() to copy only visible portion
-  - ✅ --tui flag for `zr analytics` command — 3f53e27
-  - Tests: 820/828 unit (8 skipped, 0 leaks), 939/940 integration (1 skipped, 0 leaks)
-- [x] **v1.34.0 — Workflow Retry Budget Integration**: COMPLETE (2026-03-14) — Workflow-level retry budget now fully functional. Added retry_budget field to SchedulerConfig, initialize RetryBudgetTracker from workflow config, cmdWorkflow passes retry_budget to scheduler, 3 integration tests (941-943), documentation updated with multi-stage example. Tests: 820/828 unit (8 skipped, 0 leaks), 942/943 integration (100%).
-- [ ] **v1.35.0 — zuda Levenshtein Migration**: Migrate from custom src/util/levenshtein.zig to zuda.algorithms.dynamic_programming.edit_distance (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (main.zig "Did you mean?" suggestions, cli/validate.zig), verify unit tests pass, remove custom implementation. Blocked until zuda releases edit_distance module.
-- [ ] **v1.36.0 — zuda WorkStealingDeque Migration**: Migrate from custom src/exec/workstealing.zig to zuda.containers.queues.StealingQueue (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. Blocked until zuda releases StealingQueue module.
-- [ ] **v1.37.0 — Enhanced Task Output Capture & Streaming**: Implement real-time task output capture and streaming. Address TODOs in scheduler.zig for stdout/stderr capture. Features: (1) Stream task output to file (`output_file` field), (2) Real-time output display in TUI (`--live` flag enhancement), (3) Output buffer management with configurable size limits, (4) Post-execution output retrieval via `zr show <task> --output`, (5) Output filtering and search. Implementation: Create src/exec/output_capture.zig with OutputCapture struct, integrate with scheduler worker threads, add TOML fields (output_file, output_mode: stream|buffer|discard), update TUI runner to display live output, add integration tests (5-8 tests). Tests: Unit tests for OutputCapture, integration tests for file output and TUI streaming.
-
-### 마일스톤 수립 프로세스
-
-미완료 마일스톤이 **2개 이하**가 되면, 에이전트가 자율적으로 새 마일스톤을 수립한다.
-
-**입력 소스** (우선순위 순):
-1. `gh issue list --state open --label feature-request` — 사용자 요청 기능
-2. `docs/PRD.md` — 아직 구현되지 않은 PRD 항목 (Phase 5-8의 미구현 세부사항)
-3. 의존성 업데이트 — sailor, Zig 새 버전 등
-4. 기술 부채 — Known Limitations, TODO, 성능 병목
-5. 경쟁 도구 분석 — just, task, make 대비 누락된 기능
-
-**수립 규칙**:
-- 마일스톤 하나는 **단일 테마**로 구성 (여러 작은 기능을 하나의 주제로 묶음)
-- 1-2주 내 완료 가능한 범위로 스코프 설정
-- 버전 번호는 마지막 마일스톤의 다음 번호로 자동 부여
-- 수립 후 이 섹션의 체크리스트에 추가하고 커밋: `chore: add milestone v1.X.0`
+See `docs/milestones.md` for active milestones, completed releases, and roadmap.
 
 ---
 
@@ -450,6 +337,38 @@ rm -rf zig-out .zig-cache
 10. **No scope creep** — 현재 Phase 체크리스트 범위를 벗어나는 작업 금지
 11. **Respect CI** — CI 파이프라인이 존재하면 `ci.yml` 호환성 유지
 12. **Never force push** — 파괴적 git 명령어 금지, `main` 브랜치 직접 수정 금지
+13. **Agent activity logging** — Subagent/Team 호출 시 반드시 `.claude/logs/agent-activity.jsonl`에 로그 기록 (아래 Agent Activity Logging 섹션 참조)
+
+---
+
+## Agent Activity Logging
+
+Subagent(Task 도구) 또는 Team(TeamCreate)을 호출할 때마다 `.claude/logs/agent-activity.jsonl`에 로그를 기록한다.
+
+**로그 형식** (JSON Lines — 한 줄에 하나의 JSON 객체):
+```json
+{"timestamp":"2026-03-14T12:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Fix build error in scheduler","project":"zr"}
+{"timestamp":"2026-03-14T12:05:00Z","action":"team_create","team_name":"v1.35-impl","members":["zig-developer","test-writer"],"task":"Implement v1.35.0 zuda migration","project":"zr"}
+{"timestamp":"2026-03-14T13:00:00Z","action":"team_delete","team_name":"v1.35-impl","project":"zr"}
+```
+
+**필드**:
+
+| 필드 | 필수 | 설명 |
+|------|------|------|
+| `timestamp` | ✅ | ISO 8601 형식 (UTC) |
+| `action` | ✅ | `subagent` \| `team_create` \| `team_delete` |
+| `agent_type` | subagent 시 | 에이전트 타입 (`zig-developer`, `code-reviewer`, `Explore` 등) |
+| `team_name` | team 시 | 팀 이름 |
+| `members` | team_create 시 | 팀 멤버 이름 배열 |
+| `task` | ✅ | 작업 설명 (Task 도구의 description 또는 prompt 요약) |
+| `project` | ✅ | 프로젝트 이름 (`zr`) |
+
+**규칙**:
+1. `.claude/logs/` 디렉토리가 없으면 생성
+2. 파일에 append (기존 로그 유지)
+3. 로그는 git에 커밋+push 필수 — 커밋 메시지: `chore: update agent activity log`
+4. 세션 종료 전 미커밋 로그가 있으면 반드시 커밋+push
 
 ---
 
@@ -498,7 +417,7 @@ gh issue list --state open --label bug --limit 5
 6. Discord 알림
 
 **마이너 (v1.X.0)**:
-1. CLAUDE.md 마일스톤 체크리스트에서 해당 항목 `[x]` 완료 표시
+1. `docs/milestones.md`에서 해당 마일스톤을 Completed 섹션으로 이동
 2. `build.zig.zon`의 version 업데이트
 3. CHANGELOG.md에 릴리즈 항목 추가
 4. 커밋: `chore: bump version to v1.X.0`
@@ -512,527 +431,49 @@ gh issue list --state open --label bug --limit 5
 
 ---
 
-## Sailor Migration
+## Sailor Library
 
-zr은 `sailor` 라이브러리(https://github.com/yusa-imit/sailor)를 점진적으로 도입한다.
-각 버전이 READY 상태가 되면, 해당 세션에서 마이그레이션을 수행한다.
+- **Current**: v1.13.1 (all migrations through v1.13.1 complete)
+- **Tracking**: See `docs/milestones.md` for version-by-version status
 
-### 마이그레이션 프로토콜
+### Migration Protocol
+1. 세션 시작 시 `status: READY`인 마이그레이션 확인
+2. READY 상태이면 현재 작업보다 우선 수행
+3. 완료 후 status → DONE, 커밋
+4. `zig build test && zig build integration-test` 통과 필수
 
-1. 세션 시작 시 이 섹션을 확인한다
-2. `status: READY`인 미완료 마이그레이션이 있으면, 현재 작업보다 **우선** 수행한다
-3. 마이그레이션 완료 후 `status: DONE`으로 변경하고 커밋한다
-4. `zig build test && zig build integration-test` 통과 확인 필수
-
-### sailor 이슈 발행 프로토콜
-
-sailor 라이브러리를 사용하는 중 버그를 발견하거나, 필요한 기능이 없을 때 GitHub Issue를 발행한다.
-
-**버그 발행**:
+### Issue Filing (Bug)
 ```bash
 gh issue create --repo yusa-imit/sailor \
-  --title "bug: <간단한 설명>" \
+  --title "bug: <description>" \
   --label "bug,from:zr" \
-  --body "## 증상
-<어떤 문제가 발생했는지>
-
-## 재현 방법
-<코드 또는 단계>
-
-## 기대 동작
-<어떻게 동작해야 하는지>
-
-## 환경
-- sailor 버전: <version>
-- Zig 버전: 0.15.2
-- OS: <os>"
+  --body "## 증상\n<issue>\n## 재현 방법\n<steps>\n## 기대 동작\n<expected>\n## 환경\n- sailor: <version>\n- Zig: 0.15.2"
 ```
 
-**기능 요청 발행**:
+### Issue Filing (Feature)
 ```bash
 gh issue create --repo yusa-imit/sailor \
-  --title "feat: <필요한 기능>" \
+  --title "feat: <description>" \
   --label "feature-request,from:zr" \
-  --body "## 필요한 이유
-<zr에서 왜 이 기능이 필요한지>
-
-## 제안하는 API
-<원하는 함수 시그니처나 사용 예시>
-
-## 현재 워크어라운드
-<없으면 '없음'>"
+  --body "## 필요한 이유\n<why>\n## 제안 API\n<api>\n## 워크어라운드\n<workaround>"
 ```
 
-**발행 조건**:
-- sailor의 기존 API로 해결할 수 없는 문제일 때만 발행
-- 동일한 이슈가 이미 열려있는지 먼저 확인: `gh issue list --repo yusa-imit/sailor --state open --search "<keyword>"`
-- 이슈 발행 후 현재 작업으로 복귀 (sailor 수정을 직접 하지 않음)
-
-**로컬 워크어라운드 금지 (CRITICAL)**:
-- sailor에 버그가 있으면 **절대로 로컬에서 자체 구현으로 우회하지 않는다**
-- 반드시 sailor repo에 이슈를 발행하고, sailor 에이전트가 수정할 때까지 기다린다
-- sailor 에이전트(cron job)가 `from:*` 라벨 이슈를 최우선으로 처리한다
-- 수정이 릴리스되면 `zig fetch --save`로 sailor 의존성을 업데이트한다
-- 해당 기능이 아직 안 되면 그 기능을 사용하는 코드를 작성하지 않고 다른 작업으로 넘어간다
-- 예시: sailor.tui의 Style.apply()가 Zig 0.15.2에서 컴파일 안 됨 → 이슈 발행 (#5) → 수정될 때까지 Style.apply()를 사용하는 코드 작성하지 않음
-
-### v0.1.0 — arg, color (status: DONE)
-
-- [x] `build.zig.zon`에 sailor v0.4.0 의존성 추가 (`f09ea11`)
-- [x] `build.zig`에서 sailor 모듈 import 설정 (`f09ea11`)
-- [x] `src/main.zig`의 hand-rolled arg parsing → `sailor.arg` 교체 (`ac681a2`)
-- [x] `src/output/color.zig` → `sailor.color` 래퍼로 전환 (`6200809`)
-- [x] 기존 테스트 전체 통과 확인 (676 unit + 805 integration)
-
-### v0.2.0 — progress (status: DONE)
-
-- [x] `src/output/progress.zig` → `sailor.progress` 래퍼로 전환 (`4b9c8cf`)
-- [x] 기존 테스트 전체 통과 확인
-
-### v0.3.0 — fmt (status: DONE)
-
-- [x] `--format json` 출력 로직 → `sailor.fmt.json` 활용 (`263ef3b`)
-- [x] 기존 테스트 전체 통과 확인
-
-### v0.4.0 — tui (status: DONE)
-
-- [x] `src/cli/tui.zig` → `sailor.tui` 위젯 기반으로 재작성 (`280e26b`)
-- [x] `src/cli/tui_runner.zig` → `sailor.tui` 레이아웃 + List/Block 위젯
-- [x] 기존 테스트 전체 통과 확인
-- **Note**: sailor.tui의 `Style.apply()` → Zig 0.15.2 `adaptToNewApi` 비호환. 해결: sailor Buffer로 compose, 렌더링은 `color.Code.*` ANSI 상수 사용
-
-### v0.5.0 — advanced widgets (status: DEPENDENCY UPDATED, widgets deferred)
-
-- [x] `build.zig.zon`에 sailor v0.5.1 의존성 업데이트 (`ab9441f`)
-- [x] Windows cross-compile 검증 (sailor#3 해결)
-- [x] 기존 테스트 전체 통과 확인 (670 unit, 792 integration)
-- **Note**: Advanced widget features (Tree, Chart, Dialog, Notification) are optional enhancements beyond v1.0.0 scope. To be implemented in future versions when needed.
-- Local TTY detection kept in color.zig (sailor.term.isatty() doesn't handle std.fs.File cross-compile)
-
-### v1.0.0 — production ready (status: DONE)
-
-**sailor v1.0.2 released** (2026-02-28) — latest stable, includes cross-compile fix + example fixes
-
-- **Major upgrade**: Full TUI framework, theme system, animations, comprehensive API
-- [x] `build.zig.zon`에 sailor v1.0.2 의존성 업데이트 (`d16289b`)
-- [x] [Getting Started Guide](https://github.com/yusa-imit/sailor/blob/v1.0.2/docs/GUIDE.md) 참조하여 모범 사례 적용 — 현재 zr 구현이 이미 모범 사례 준수
-- [x] [API Reference](https://github.com/yusa-imit/sailor/blob/v1.0.2/docs/API.md) 기반으로 기존 코드 리팩토링 — API 호환성 확인 완료
-- [x] 로컬 TTY workaround 유지 (color.zig) — sailor.term.isatty()는 posix.fd_t 사용, Windows VT 활성화는 여전히 zr에서 처리 필요
-- [x] 테마 시스템 검토 — sailor.tui.theme 제공 (6개 내장 테마), zr CLI는 현재 구현으로 충분 (TUI 전용 기능)
-- [x] 기존 테스트 전체 통과 확인 (670 unit, 805 integration)
-- **Note**: Theme system and animations are part of `sailor.tui` (TUI apps), not applicable to zr's CLI output which uses `sailor.color` directly
-
-### v1.0.3 — bug fix release (status: DONE)
-
-**sailor v1.0.3 released** (2026-03-02) — Zig 0.15.2 compatibility patch
-
-- **Bug fix**: Tree widget ArrayList API updated for Zig 0.15.2
-- **Impact on zr**: None (zr doesn't use Tree widget yet)
-- [x] `build.zig.zon`에 sailor v1.0.3 의존성 업데이트 (✓ complete, no breaking changes)
-- [x] 기존 테스트 전체 통과 확인 (670/678 unit, 810/810 integration)
-
-**Note**: Optional upgrade completed. Tree widget fix doesn't affect zr's current functionality, but unblocks future v1.3.0 TUI widgets milestone.
-
-### v1.1.0 — Accessibility & Internationalization (status: DONE)
-
-**sailor v1.1.0 released** (2026-03-02) — Accessibility and i18n features
-
-- **New features**:
-  - Accessibility module (screen reader hints, semantic labels)
-  - Focus management system (tab order, focus ring)
-  - Keyboard navigation protocol (custom key bindings)
-  - Unicode width calculation (CJK, emoji proper sizing)
-  - Bidirectional text support (RTL rendering for Arabic/Hebrew)
-- **Impact on zr**: Low priority for CLI tool, but beneficial for future TUI features
-  - Unicode width fixes improve CJK character display in TUI mode
-  - Keyboard navigation useful for future interactive TUI widgets
-- [x] `build.zig.zon`에 sailor v1.1.0 의존성 업데이트 (2026-03-02)
-- [x] 기존 테스트 전체 통과 확인 (685 unit, 819 integration)
-- [ ] (Optional) Consider keyboard bindings for TUI graph mode — deferred to future TUI enhancements
-
-**Note**: Non-breaking upgrade. Accessibility features are opt-in. Unicode width improvements automatically benefit any CJK/emoji display.
-
-### v1.2.0 — Layout & Composition (status: DONE)
-
-**sailor v1.2.0 released** (2026-03-02) — Advanced layout and composition features
-
-- **New features**:
-  - Grid layout system (CSS Grid-inspired 2D constraint solver)
-  - ScrollView widget (virtual scrolling for large content)
-  - Overlay/z-index system (non-modal popups, tooltips, dropdown menus)
-  - Widget composition helpers (split panes, resizable borders)
-  - Responsive breakpoints (adaptive layouts based on terminal size)
-- **Impact on zr**: Medium priority — enables advanced TUI layouts
-  - Grid layout useful for complex dashboard layouts in TUI graph mode
-  - ScrollView enables handling large task lists in TUI
-  - Split panes for side-by-side views (graph + logs)
-  - Responsive breakpoints for adaptive layouts on different terminal sizes
-- [x] `build.zig.zon`에 sailor v1.2.0 의존성 업데이트 (2026-03-02)
-- [ ] (Optional) Consider using Grid layout for TUI graph dashboard — deferred to future TUI enhancements
-- [ ] (Optional) Add ScrollView for large task lists in TUI mode — deferred to future TUI enhancements
-- [x] 기존 테스트 전체 통과 확인 (685 unit, 819 integration)
-
-**Note**: Non-breaking upgrade. Layout features are opt-in. Current TUI implementation doesn't require immediate migration, but these features enable future enhancements.
-
-### v1.3.0 — Performance & Developer Experience (status: DONE)
-
-**sailor v1.3.0 released** (2026-03-02) — Performance optimization and debugging tools
-
-- **New features**:
-  - RenderBudget: Frame time tracking with automatic frame skip for 60fps
-  - LazyBuffer: Dirty region tracking (only render changed cells)
-  - EventBatcher: Coalesce rapid events (resize storms, key bursts)
-  - DebugOverlay: Visual debugging (layout rects, FPS, event log)
-  - ThemeWatcher: Hot-reload JSON themes without restart
-- **Impact on zr**: Medium priority — improves TUI performance
-  - Lazy rendering reduces overhead for large graphs (skip unchanged cells)
-  - Event batching handles terminal resize gracefully
-  - DebugOverlay useful for developing TUI features
-  - ThemeWatcher enables live theme iteration
-- [x] `build.zig.zon`에 sailor v1.3.0 의존성 업데이트 (2026-03-02)
-- [x] 기존 테스트 전체 통과 확인 (716 unit, 837 integration)
-- [ ] (Optional) Add DebugOverlay toggle for TUI development — deferred to future TUI enhancements
-
-**Note**: Non-breaking upgrade. Performance features are opt-in. Current TUI implementation automatically benefits from event batching improvements without code changes.
-
-**Note**: Non-breaking upgrade. Performance features are opt-in. Current CLI mode unaffected. TUI mode can benefit from lazy rendering when displaying large graphs.
-
-### v1.4.0 — Advanced Input & Forms (status: DONE)
-
-**sailor v1.4.0 released** (2026-03-03) — Form widgets and input validation
-
-- **New features**:
-  - Form widget: Field validation, submit/cancel handlers, error display
-  - Select/Dropdown widget: Single/multi-select with keyboard navigation
-  - Checkbox widget: Single and grouped checkboxes with state management
-  - RadioGroup widget: Mutually exclusive selection
-  - Validators module: Comprehensive input validation (email, URL, IPv4, numeric, patterns)
-  - Input masks: SSN, phone, dates, credit card formatting
-- **Impact on zr**: Low-Medium priority — enables interactive config editing
-  - Form widget useful for interactive configuration editor TUI
-  - Validators useful for validating task parameters in TUI mode
-  - Checkbox/RadioGroup for task selection and filtering UI
-  - Select widget for choosing targets, toolchains, cache backends
-- [x] `build.zig.zon`에 sailor v1.4.0 의존성 업데이트 (2026-03-06, commit dc3d07d)
-- [ ] (Optional) Add interactive config editor TUI using Form widget — deferred to future enhancements
-- [ ] (Optional) Use Select widget for task picker in TUI mode — deferred to future enhancements
-- [x] 기존 테스트 전체 통과 확인 (733 unit, 859 integration)
-
-**Note**: Non-breaking upgrade. Form features are opt-in. Current CLI/TUI implementation works without changes. These features enable future interactive configuration and task selection UIs.
-
-### v1.5.0 — State Management & Testing (status: DONE)
-
-**sailor v1.5.0 released** (2026-03-07) — Testing utilities and state management
-
-- **New features**:
-  - Widget snapshot testing: assertSnapshot() method for pixel-perfect verification
-  - Example test suite: 10 comprehensive integration test patterns
-  - Previously released: Event bus, Command pattern, MockTerminal, EventSimulator
-- **Impact on zr**: HIGH — Critical for TUI testing
-  - MockTerminal available for future TUI unit tests (not yet integrated)
-  - assertSnapshot() can verify exact rendering output
-  - Example test patterns serve as reference for zr's TUI test expansion
-  - Event bus useful for cross-component TUI communication (future)
-  - Command pattern enables undo/redo in TUI (future interactive features)
-- [x] `build.zig.zon`에 sailor v1.5.0 의존성 업데이트 (2026-03-07)
-- [x] Review example test patterns for improving zr's TUI test suite
-- [x] 기존 테스트 전체 통과 확인 (743 unit, 873 integration)
-
-**Note**: Non-breaking upgrade. Testing utilities are opt-in. Current tests work without changes. This release provides better tools for TUI test coverage expansion.
-
-### v1.6.0 — Data Visualization & Advanced Charts (status: READY)
-
-**sailor v1.6.0 released** (2026-03-08) — Advanced data visualization widgets
-
-- **New features**:
-  - ScatterPlot: X-Y coordinate plotting with markers and multiple series
-  - Histogram: Frequency distribution bars (vertical/horizontal)
-  - TimeSeriesChart: Time-based line chart with Unix timestamp support
-  - Heatmap & PieChart (previously released in v1.5.0)
-- **Impact on zr**: LOW — Optional for future analytics
-  - Histogram useful for task duration distributions
-  - TimeSeriesChart for build time trends over time
-  - ScatterPlot for cache hit rate vs. build time correlation
-  - Not critical for current functionality
-- [ ] `build.zig.zon`에 sailor v1.6.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-
-**Note**: Non-breaking upgrade. All widgets are opt-in. No immediate action required.
-
-### v1.7.0 — Advanced Layout & Rendering (status: READY)
-
-**sailor v1.7.0 released** (2026-03-09) — Advanced layout and rendering features
-
-- **New features**:
-  - FlexBox layout: CSS flexbox-inspired with justify/align (16 tests)
-  - Viewport clipping: Efficient rendering of large virtual buffers (14 tests)
-  - Shadow & 3D border effects: Visual depth for widgets (15 tests)
-  - Custom widget traits: Extensible widget protocol
-  - Layout caching: LRU cache for constraint computation (13 tests)
-- **Impact on zr**: MEDIUM — Layout improvements for future TUI enhancements
-  - FlexBox useful for responsive task list layouts
-  - Viewport clipping enables efficient log/output scrolling
-  - Shadow effects add visual polish to TUI mode
-  - Layout caching improves performance for complex dashboards
-- [ ] `build.zig.zon`에 sailor v1.7.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-
-**Note**: Non-breaking upgrade. All features are opt-in. No immediate action required.
-
-### v1.8.0 — Network & Async Integration (status: READY)
-
-**sailor v1.8.0 released** (2026-03-10) — Network and async widgets
-
-- **New features**:
-  - HttpClient widget: Download progress visualization with speed/stats (16 tests)
-  - WebSocket widget: Live data feed with auto-scroll (16 tests)
-  - AsyncEventLoop: Non-blocking I/O for network operations (8 tests)
-  - TaskRunner widget: Parallel operation status indicator (20 tests)
-  - LogViewer widget: Tail -f style with filtering and search (20 tests)
-- **Impact on zr**: LOW — Network widgets not currently needed for local task runner
-  - AsyncEventLoop useful for future remote task execution features
-  - TaskRunner could replace custom progress tracking in parallel mode
-  - LogViewer could display task output logs in TUI mode
-- [ ] `build.zig.zon`에 sailor v1.8.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-
-**Note**: Non-breaking upgrade. All features are opt-in. No immediate action required.
-
-### v1.9.0 — Developer Tools & Ecosystem (status: DONE)
-
-**sailor v1.9.0 released** (2026-03-11) — Developer tools and ecosystem improvements
-
-- **New features**:
-  - WidgetDebugger: Widget tree inspection with layout bounds visualization
-  - PerformanceProfiler: Frame timing & memory profiling with histogram display
-  - CompletionPopup: REPL tab completion popup (resolves repl.zig TODO)
-  - ThemeEditor: Live theme customization with RGB editing and preview (18 tests)
-  - Widget Gallery: Comprehensive catalog of 40+ widgets across 7 categories
-- **Impact on zr**: MEDIUM — Debugging and profiling tools useful for TUI development
-  - WidgetDebugger can help debug complex TUI layouts in graph/runner modes
-  - PerformanceProfiler can identify rendering bottlenecks in large task lists
-  - CompletionPopup enhances future interactive command modes
-  - ThemeEditor allows customizing TUI appearance
-- [x] `build.zig.zon`에 sailor v1.9.0 의존성 업데이트 (2026-03-11)
-- [x] 기존 테스트 전체 통과 확인 (780 unit, 905 integration)
-
-**Note**: Non-breaking upgrade. Developer tools are opt-in. Consider using WidgetDebugger when enhancing TUI features.
+### No Local Workaround (CRITICAL)
+- sailor 버그 시 **절대** 로컬 우회 금지 → 이슈 발행 후 수정 대기
+- 수정 릴리스 후 `zig fetch --save`로 업데이트
 
 ---
 
-**sailor v1.6.1 patch released** (2026-03-08) — Critical bug fixes for v1.6.0 widgets
+## zuda Library
 
-- **Bug fixes**:
-  - PieChart: Fixed integer overflow in coordinate calculation (prevented panics)
-  - Multiple widgets: Fixed API compilation errors (Color.rgb, buffer.set, u16 casts)
-- **Impact on zr**: None (zr doesn't use v1.6.0 widgets yet)
-- [ ] Optional: Update to v1.6.1 for stable data visualization widgets
+- **Current**: Not yet integrated (blocked on zuda releases)
+- **Tracking**: See `docs/milestones.md` for migration targets
 
-**Note**: Patch release, no breaking changes. Safe to upgrade when/if data visualization widgets are needed.
----
+### Migration Protocol
+1. `from:zuda` 라벨 이슈 도착 시 status → READY
+2. `zig fetch --save`로 의존성 추가
+3. 자체 구현 → zuda import로 교체 (래퍼 전환 또는 삭제)
+4. `zig build test && zig build integration-test` 통과 확인
 
-### v1.10.0 — Mouse & Gamepad Input (status: READY)
-
-**sailor v1.10.0 released** (2026-03-12) — Mouse and gamepad input support
-
-- **New features**:
-  - Mouse event handling (click, drag, scroll, double-click with coordinate detection)
-  - Widget-level mouse interaction protocol (clickable, draggable, scrollable traits)
-  - Gamepad/controller input support (D-pad, buttons, analog sticks with dead zones)
-  - Touch gesture recognition (swipe, pinch, tap for future terminal emulators)
-  - Input mapping configuration (rebind mouse/gamepad to keyboard equivalents)
-- **Impact on zr**: LOW — CLI tool doesn't need mouse/gamepad input currently
-  - Mouse support could enhance future TUI graph mode (click to select tasks)
-  - Gamepad support not relevant for task runner
-- [ ] `build.zig.zon`에 sailor v1.10.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-
-**Note**: Non-breaking upgrade. Mouse/gamepad features are opt-in. Consider for future interactive TUI features if needed.
-
-### v1.11.0 — Terminal Graphics & Effects (status: READY)
-
-**sailor v1.11.0 released** (2026-03-12) — Terminal graphics protocols and visual effects
-
-- **New features**:
-  - Sixel graphics protocol support (inline images in compatible terminals)
-  - Kitty graphics protocol support (high-performance image rendering)
-  - Animated widget transitions (fade, slide, grow/shrink animations)
-  - Particle effects system (confetti, sparkles, stars, hearts, snowflakes, bubbles for celebrations)
-  - Blur/transparency effects (4 blur modes, 3 transparency modes, composite effects)
-- **Impact on zr**: LOW — Graphics effects not essential for task runner
-  - Sixel/Kitty protocols could display task output images in TUI mode
-  - Particle effects for successful task completion celebrations
-  - Transitions could enhance TUI navigation smoothness
-- [ ] `build.zig.zon`에 sailor v1.11.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-
-**Note**: Non-breaking upgrade. Graphics features are opt-in and terminal-dependent. Consider for enhanced TUI visual feedback.
-
-### v1.12.0 — Enterprise & Accessibility (status: READY)
-
-**sailor v1.12.0 released** (2026-03-13) — Enterprise features and accessibility enhancements
-
-- **New features**:
-  - Session recording & playback (record TUI interactions to file, replay for debugging)
-  - Audit logging (log all user interactions for compliance, 10 event types, 4 severity levels)
-  - High contrast themes (WCAG AAA compliance: dark 21:1, light 21:1, amber 13.7:1, green 15.2:1)
-  - Screen reader enhancements (ARIA-like semantic hints, OSC8/ARIA/JSON output modes)
-  - Keyboard-only navigation improvements (skip links, 5 focus indicator styles)
-- **Impact on zr**: MEDIUM — Enterprise and accessibility features useful for production use
-  - Session recording enables reproducing TUI bugs from user reports
-  - Audit logging tracks task execution commands for compliance
-  - High contrast themes improve accessibility
-  - Screen reader support makes zr usable for visually impaired users
-- [ ] `build.zig.zon`에 sailor v1.12.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-- [ ] (Optional) Add audit logging for task execution commands
-- [ ] (Optional) Enable high contrast themes in TUI mode
-
-**Note**: Non-breaking upgrade. Enterprise features are opt-in. Consider audit logging and accessibility for production deployments.
-
-### v1.13.0 — Advanced Text Editing & Rich Input (status: READY)
-
-**sailor v1.13.0 released** (2026-03-14) — Multi-cursor editing and rich text input
-
-- **New features**:
-  - Syntax highlighting system (extensible lexer/parser for Zig, C, Python, JavaScript, JSON, Markdown)
-  - Code editor widget (line numbers, selection, undo/redo, syntax highlighting integration)
-  - Autocomplete widget (fuzzy matching, suggestion list, custom providers)
-  - Multi-cursor editing (simultaneous editing at multiple positions, column selection mode)
-  - Rich text input (inline formatting: bold/italic/underline/strikethrough, emoji picker with 8 categories, live markdown preview)
-- **Impact on zr**: LOW — Text editing not core to task runner, but useful for future features
-  - Code editor widget could enhance TOML file editing in TUI mode
-  - Autocomplete useful for interactive command mode (task names, workflow names)
-  - Rich text input for task descriptions with formatting
-  - Multi-cursor editing not relevant for zr use case
-- [ ] `build.zig.zon`에 sailor v1.13.0 의존성 업데이트
-- [ ] 기존 테스트 전체 통과 확인
-- [ ] (Optional) Consider autocomplete for interactive task selection
-
-**Note**: Non-breaking upgrade. Text editing widgets are opt-in. Consider autocomplete for enhanced user experience in future interactive features.
-
-#### v1.13.1 Patch (status: DONE, 2026-03-14)
-
-**Critical bug fix** for data visualization widgets (Histogram, TimeSeriesChart, ScatterPlot):
-- **Fixed**: Integer overflow panic when rendering analytics data (#9 from:zr)
-- **Impact**: `zr analytics --tui` now works without crashes
-- **Cause**: Large data values (u64 bin counts, f64 coordinates) were converted to u16 terminal coordinates without overflow protection
-- **Solution**: Values are now clamped to valid u16 range before casting
-- [x] Updated build.zig.zon to sailor v1.13.1 (2026-03-14)
-- [x] All tests passing (820/828 unit, 942/943 integration)
-- **Action**: Migration complete — patch release, fully backward compatible
-
----
-
-## zuda Migration
-
-zr은 현재 자체 구현한 자료구조/알고리즘을 `zuda` 라이브러리(https://github.com/yusa-imit/zuda)로 점진적으로 대체할 예정이다.
-zuda의 해당 구현이 완료되면 `from:zuda` 라벨 이슈가 발행된다.
-
-### 마이그레이션 대상
-
-| 자체 구현 | 파일 | zuda 대체 | status |
-|-----------|------|-----------|--------|
-| DAG | `src/graph/dag.zig` | `zuda.containers.graphs.AdjacencyList` | PENDING |
-| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | `zuda.algorithms.graph.topological_sort` | PENDING |
-| Cycle Detection | `src/graph/cycle_detect.zig` | `zuda.algorithms.graph.cycle_detection` | PENDING |
-| Work-Stealing Deque | `src/exec/workstealing.zig` | `zuda.containers.queues.StealingQueue` | PENDING |
-| Levenshtein Distance | `src/util/levenshtein.zig` | `zuda.algorithms.dynamic_programming.edit_distance` | PENDING |
-| Glob Pattern Matching | `src/util/glob.zig` | `zuda.algorithms.string.glob_match` | PENDING |
-
-### 마이그레이션 제외 (domain-specific)
-
-- `src/util/string_pool.zig` — zr 전용 문자열 인터닝
-- `src/util/object_pool.zig` — zr 전용 객체 풀
-- `src/graph/ascii.zig` — zr 전용 ASCII 그래프 렌더러
-
-### 마이그레이션 프로토콜
-
-1. zuda에서 `from:zuda` 라벨 이슈가 도착하면 해당 마이그레이션의 status를 `READY`로 변경
-2. 마이그레이션 수행:
-   - `build.zig.zon`에 zuda 의존성 추가 (`zig fetch --save <url>`)
-   - `build.zig`에서 zuda 모듈 import 설정
-   - 자체 구현 파일의 코드를 zuda import로 교체
-   - 자체 구현 파일은 래퍼로 전환하거나 삭제
-3. `zig build test && zig build integration-test` 전체 통과 확인
-4. status를 `DONE`으로 변경하고 커밋
-
-### zuda 이슈 발행 프로토콜
-
-zuda 라이브러리를 사용하는 중 버그를 발견하거나, 필요한 기능이 없을 때:
-
-```bash
-gh issue create --repo yusa-imit/zuda \
-  --title "bug: <간단한 설명>" \
-  --label "bug,from:zr" \
-  --body "## 증상
-<어떤 문제가 발생했는지>
-
-## 재현 방법
-<코드 또는 단계>
-
-## 환경
-- zuda: <version>
-- zig: $(zig version)
-- OS: $(uname -s)"
-```
-
-- zuda의 기존 API로 해결할 수 없는 문제일 때만 발행
-- 동일한 이슈가 이미 열려있는지 먼저 확인
-- **로컬 워크어라운드 금지**: zuda에 버그가 있으면 자체 구현으로 우회하지 않고, 이슈 발행 후 수정 대기
-- zuda 에이전트가 `from:*` 라벨 이슈를 최우선 처리한다
-
-### v1.10.0 — Mouse & Gamepad Input (status: DONE)
-
-**sailor v1.10.0 released** (2026-03-11) — Mouse, gamepad, and touch input support
-
-- **New features**:
-  - Mouse event handling: SGR protocol, click/drag/scroll/double-click (19 tests)
-  - Widget mouse interaction: Clickable, Draggable, Scrollable, Hoverable traits (17 tests)
-  - Gamepad/controller input: Buttons, analog sticks, triggers, multi-controller (13 tests)
-  - Touch gesture recognition: Tap, swipe, pinch, multi-touch support (18 tests)
-  - Input mapping: Remap mouse/gamepad/touch to keyboard events (16 tests)
-- **Impact on zr**: HIGH — Enables interactive TUI features
-  - Mouse click support for task selection in TUI mode
-  - Gamepad navigation for console-style task runner
-  - Touch gestures for future mobile terminal support
-  - Input mapping for accessibility (map mouse to keyboard for keyboard-only users)
-- [x] Update `build.zig.zon` to sailor v1.10.0 (2026-03-11)
-- [ ] Consider adding mouse click support to task picker widget (future enhancement)
-- [x] All tests passing after upgrade (786 unit, 914 integration)
-
-**Priority**: MEDIUM — Optional upgrade, enables new interaction paradigms but not required for current functionality.
-
-**Note**: Non-breaking upgrade. Mouse/gamepad/touch support is opt-in via event polling.
-
----
-
-
-### v1.11.0 — Terminal Graphics & Effects
-- **status**: DONE (upgraded to v1.12.0 which includes v1.11.0 features)
-- **features**:
-  - Particle effects system (confetti, sparkles for celebrations)
-  - Blur/transparency effects
-  - Sixel/Kitty graphics protocol support
-  - Animated widget transitions
-- **integration**:
-  - Particle effects for task completion celebrations
-  - Blur effects for background panels
-  - Graphics protocol for inline images in task details
-- **tests**: All tests passing (819/827 unit, 939/940 integration)
-- **breaking**: None — all opt-in features
-
-### v1.12.0 — Enterprise & Accessibility
-- **status**: DONE
-- **features**:
-  - Session recording & playback for debugging
-  - Audit logging for compliance
-  - High contrast WCAG AAA themes (4 themes: dark, light, amber, green)
-  - Screen reader enhancements (OSC8, ARIA, JSON modes)
-  - Keyboard-only navigation improvements (skip links, focus indicators)
-- **integration**:
-  - Audit log for task operations (create, update, delete, run)
-  - High contrast themes for accessibility settings
-  - Keyboard navigation hints for TUI mode
-- **tests**: All tests passing (819/827 unit, 939/940 integration)
-- **breaking**: None — all additive
+### No Local Workaround (CRITICAL)
+- zuda 버그 시 자체 구현으로 우회 금지 → 이슈 발행 후 수정 대기
