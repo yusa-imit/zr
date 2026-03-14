@@ -193,14 +193,19 @@ pub fn graphTui(
     while (!quit) {
         // Get terminal size
         const term_size = try sailor.term.getSize();
-        const width = term_size.cols;
-        const height = term_size.rows;
+        const term_width = term_size.cols;
+        const term_height = term_size.rows;
 
-        // Create buffer and render tree
-        var buf = try stui.Buffer.init(allocator, width, height);
-        defer buf.deinit();
+        // Calculate virtual buffer size (large enough for the full tree)
+        // Use 2x terminal height for vertical scrolling, same width for horizontal
+        const virtual_height = term_height * 2;
+        const virtual_width = term_width;
 
-        const area = stui.layout.Rect{ .x = 0, .y = 0, .width = width, .height = height };
+        // Create large virtual buffer for entire tree
+        var virtual_buf = try stui.Buffer.init(allocator, virtual_width, virtual_height);
+        defer virtual_buf.deinit();
+
+        const virtual_area = stui.layout.Rect{ .x = 0, .y = 0, .width = virtual_width, .height = virtual_height };
 
         const tree = stui.widgets.Tree.init(tree_nodes)
             .withSelected(selected)
@@ -211,10 +216,19 @@ pub fn graphTui(
             .withSelectedStyle(stui.Style{ .fg = .bright_green, .bold = true })
             .withNodeStyle(stui.Style{});
 
-        tree.render(&buf, area);
+        tree.render(&virtual_buf, virtual_area);
 
-        // Render buffer to terminal
-        try renderBuffer(&buf, w, use_color);
+        // Create viewport for visible portion (uses sailor v1.7.0 viewport clipping)
+        const viewport = stui.viewport.Viewport.init(0, 0, term_width, term_height);
+
+        // Create terminal buffer and clip visible portion from virtual buffer
+        var term_buf = try stui.Buffer.init(allocator, term_width, term_height);
+        defer term_buf.deinit();
+
+        viewport.renderClipped(&virtual_buf, &term_buf);
+
+        // Render clipped buffer to terminal
+        try renderBuffer(&term_buf, w, use_color);
 
         // Handle input
         if (readByte()) |byte| {
@@ -224,7 +238,7 @@ pub fn graphTui(
                     const visible_count = tree.visibleCount();
                     if (selected + 1 < visible_count) {
                         selected += 1;
-                        if (selected >= offset + height - 3) {
+                        if (selected >= offset + term_height - 3) {
                             offset += 1;
                         }
                     }
@@ -265,7 +279,7 @@ pub fn graphTui(
                                         // Handle mouse click in tree area
                                         // Tree starts at y=1 (after title), each item is 1 row
                                         if (evt.event_type == .press and evt.button == .left) {
-                                            if (evt.y >= 1 and evt.y < height) {
+                                            if (evt.y >= 1 and evt.y < term_height) {
                                                 // Calculate clicked node index
                                                 const clicked_idx = @as(usize, evt.y - 1) + offset;
                                                 const visible_count = tree.visibleCount();
@@ -287,7 +301,7 @@ pub fn graphTui(
                                             const visible_count = tree.visibleCount();
                                             if (selected + 1 < visible_count) {
                                                 selected += 1;
-                                                if (selected >= offset + height - 3) {
+                                                if (selected >= offset + term_height - 3) {
                                                     offset += 1;
                                                 }
                                             }
