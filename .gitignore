@@ -16,6 +16,7 @@ docs/*.tar
 .claude/teams/
 .claude/tasks/
 .claude/projects/
+.claude/scratchpad.md
 
 # zr runtime files
 .zr_history
