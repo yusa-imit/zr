@@ -116,8 +116,10 @@ test "40: codeowners shows code ownership" {
 
     var result = try runZr(allocator, &.{ "codeowners" }, tmp_path);
     defer result.deinit();
-    // May fail if no CODEOWNERS file, but should not crash
-    _ = result.exit_code;
+
+    // May fail if no CODEOWNERS file exists, but should not crash
+    // Verify we get output explaining the issue or showing help
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
 }
 
 test "43: version shows version information" {
@@ -130,8 +132,10 @@ test "43: version shows version information" {
 
     var result = try runZr(allocator, &.{"version"}, tmp_path);
     defer result.deinit();
+
     // May fail without package.json, but should not crash
-    _ = result.exit_code;
+    // Verify command completes and provides some output
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
 }
 
 test "44: publish --dry-run simulates publish" {
@@ -147,8 +151,10 @@ test "44: publish --dry-run simulates publish" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--dry-run" }, tmp_path);
     defer result.deinit();
-    // May fail without git, but should not crash
-    _ = result.exit_code;
+
+    // May fail without git repo, but should not crash
+    // Verify command completes and provides feedback
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
 }
 
 test "53: watch requires task argument" {
@@ -182,7 +188,10 @@ test "54: interactive command error handling" {
     // Should work or gracefully handle non-interactive environment
     var result = try runZr(allocator, &.{ "--config", config, "interactive" }, tmp_path);
     defer result.deinit();
-    _ = result.exit_code; // Just ensure it doesn't crash
+
+    // Interactive mode should either succeed or exit gracefully
+    // In CI/non-interactive environments, it may exit with error, which is acceptable
+    // Just verify it doesn't crash (runZr returned successfully)
 }
 
 test "55: live requires task argument" {

@@ -42,9 +42,12 @@ test "setup: detects and runs setup task" {
 
     var result = try runZr(allocator, &.{ "--config", config, "setup" }, tmp_path);
     defer result.deinit();
-    // Setup tries to spawn 'zr run' as subprocess, which may fail if zr not in PATH
-    // Just check it runs without crashing
-    _ = result.exit_code;
+
+    // Setup command should complete without crashing
+    // Exit code depends on whether it finds and runs a setup task
+    // As long as it doesn't crash (runZr returns successfully), the test passes
+    // Verify we got some output or at least didn't panic
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0 or result.exit_code == 0);
 }
 
 test "setup: handles missing config file" {
