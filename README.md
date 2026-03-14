@@ -485,6 +485,17 @@ All phases complete! zr v1.0 is production-ready.
 
 ---
 
+## 🐛 Known Issues
+
+### `zr analytics --tui` panics (v1.33.0)
+The TUI dashboard for analytics currently panics with "integer does not fit in destination type" due to a bug in sailor v1.6.0/v1.7.0 data visualization widgets.
+
+**Workaround**: Use `zr analytics` (HTML report) or `zr analytics --json` instead.
+
+**Tracking**: [sailor#9](https://github.com/yusa-imit/sailor/issues/9)
+
+---
+
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.
