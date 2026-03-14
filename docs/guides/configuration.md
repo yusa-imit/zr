@@ -625,7 +625,26 @@ In this workflow:
 - **Resource-intensive tasks**: Control total resource consumption from retries
 - **External API calls**: Limit total API calls when multiple tasks call the same service
 
-**Note:** Retry budget is enforced per workflow execution. Each `zr run workflow` starts with a fresh budget.
+**Note:** Retry budget is enforced per workflow execution. Each `zr workflow <name>` starts with a fresh budget.
+
+**Multi-Stage Workflows (v1.34.0):**
+
+The retry budget is shared across **all stages** in the workflow. For example:
+
+```toml
+[workflows.deploy]
+retry_budget = 5  # Shared across both stages
+
+[[workflows.deploy.stages]]
+name = "build"
+tasks = ["compile", "test"]
+
+[[workflows.deploy.stages]]
+name = "deploy"
+tasks = ["docker-push", "k8s-apply"]
+```
+
+If the "build" stage consumes 3 retries, only 2 retries remain for the "deploy" stage. This prevents excessive retries even when failures occur across different stages.
 
 ### Syntax Limitations
 
