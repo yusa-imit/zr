@@ -6,6 +6,7 @@ const tui_runner = @import("tui_runner.zig");
 const loader = @import("../config/loader.zig");
 const process = @import("../exec/process.zig");
 const scheduler = @import("../exec/scheduler.zig");
+const output_capture = @import("../exec/output_capture.zig");
 const builtin = @import("builtin");
 
 /// Context for streaming output callback.
@@ -14,14 +15,23 @@ const StreamCtx = struct {
     task_name: []const u8,
     allocator: std.mem.Allocator,
     mutex: std.Thread.Mutex,
+    capture: ?*output_capture.OutputCapture, // Optional output capture for file/buffer
 };
 
 /// Callback invoked by process.run() for each output line.
+/// Writes to both TUI (for live display) and OutputCapture (for persistence).
 fn outputCallback(line: []const u8, is_stderr: bool, ctx: ?*anyopaque) void {
     const stream_ctx: *StreamCtx = @ptrCast(@alignCast(ctx.?));
     stream_ctx.mutex.lock();
     defer stream_ctx.mutex.unlock();
+
+    // Update TUI display
     stream_ctx.runner.appendTaskLog(stream_ctx.task_name, line, is_stderr) catch {};
+
+    // Write to OutputCapture if configured
+    if (stream_ctx.capture) |cap| {
+        cap.writeLine(line, is_stderr) catch {};
+    }
 }
 
 /// Execute tasks with TUI live log streaming and sequential execution.
@@ -105,12 +115,39 @@ pub fn cmdLive(
         runner.setTaskStatus(task_name, .running);
         try runner.render(w, use_color, 24);
 
+        // Initialize OutputCapture if configured
+        var capture_ptr: ?*output_capture.OutputCapture = null;
+        var capture_instance: ?output_capture.OutputCapture = null;
+        defer if (capture_instance) |*cap| cap.deinit();
+
+        if (task.output_mode) |mode_str| {
+            // Parse output mode
+            const mode: output_capture.OutputMode = if (std.mem.eql(u8, mode_str, "stream"))
+                .stream
+            else if (std.mem.eql(u8, mode_str, "buffer"))
+                .buffer
+            else
+                .discard;
+
+            if (mode != .discard) {
+                const capture_config = output_capture.OutputCaptureConfig{
+                    .mode = mode,
+                    .output_file = task.output_file,
+                    .max_buffer_size = 1024 * 1024, // 1MB default
+                };
+                const cap = try output_capture.OutputCapture.init(allocator, capture_config);
+                capture_instance = cap;
+                capture_ptr = &capture_instance.?;
+            }
+        }
+
         // Create streaming context
         var stream_ctx = StreamCtx{
             .runner = &runner,
             .task_name = task_name,
             .allocator = allocator,
             .mutex = output_mutex,
+            .capture = capture_ptr,
         };
 
         // Execute task with output streaming

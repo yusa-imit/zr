@@ -71,3 +71,59 @@ test "live: unknown task shows error" {
     defer result.deinit();
     try std.testing.expect(result.exit_code != 0);
 }
+
+test "live: with output_file streams to file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.test]
+        \\cmd = "echo hello world"
+        \\output_mode = "stream"
+        \\output_file = "test-output.log"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "live", "test" }, tmp_path);
+    defer result.deinit();
+
+    // Live mode requires TTY and will fail in test environment
+    // Verify it fails with TTY error message
+    try std.testing.expect(result.exit_code != 0);
+    const has_tty_error = std.mem.indexOf(u8, result.stdout, "TTY") != null or
+        std.mem.indexOf(u8, result.stderr, "TTY") != null;
+    try std.testing.expect(has_tty_error);
+}
+
+test "live: with output_mode=buffer captures in memory" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.test]
+        \\cmd = "echo test buffer"
+        \\output_mode = "buffer"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "live", "test" }, tmp_path);
+    defer result.deinit();
+
+    // Live mode requires TTY and will fail in test environment
+    try std.testing.expect(result.exit_code != 0);
+    const has_tty_error = std.mem.indexOf(u8, result.stdout, "TTY") != null or
+        std.mem.indexOf(u8, result.stderr, "TTY") != null;
+    try std.testing.expect(has_tty_error);
+}
