@@ -132,6 +132,8 @@ pub const OutputCapture = struct {
         if (self.file) |file| {
             try file.writeAll(line);
             try file.writeAll("\n");
+            // Flush to disk immediately to ensure data is persisted (v1.37.0 bugfix)
+            try file.sync();
         }
     }
 

@@ -668,20 +668,24 @@ fn workerFn(ctx: WorkerCtx) void {
 
     const needs_callback = combined_ctx.checkpoint_ctx != null or combined_ctx.output_capture != null;
 
+    // Determine stdio mode: if output capture is enabled, never inherit stdio
+    // (we need to capture the output via callback). Otherwise, use should_show_output.
+    const inherit_stdio_mode = if (combined_ctx.output_capture != null) false else should_show_output;
+
     // Run the process with retry logic
     var proc_result = process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
         .cwd = ctx.cwd,
         .env = proc_env,
-        .inherit_stdio = should_show_output,
+        .inherit_stdio = inherit_stdio_mode,
         .timeout_ms = ctx.timeout_ms,
         .task_control = ctx.task_control,
         .enable_monitor = ctx.monitor,
         .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
         .monitor_use_color = ctx.use_color,
         .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
-        .output_callback = if (needs_callback and !should_show_output) combinedOutputCallback else null,
-        .output_ctx = if (needs_callback and !should_show_output) @ptrCast(&combined_ctx) else null,
+        .output_callback = if (needs_callback) combinedOutputCallback else null,
+        .output_ctx = if (needs_callback) @ptrCast(&combined_ctx) else null,
     }) catch process.ProcessResult{
         .exit_code = 1,
         .duration_ms = 0,
@@ -738,15 +742,15 @@ fn workerFn(ctx: WorkerCtx) void {
                 .cmd = ctx.cmd,
                 .cwd = ctx.cwd,
                 .env = proc_env,
-                .inherit_stdio = should_show_output,
+                .inherit_stdio = inherit_stdio_mode,
                 .timeout_ms = ctx.timeout_ms,
                 .task_control = ctx.task_control,
                 .enable_monitor = ctx.monitor,
                 .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
                 .monitor_use_color = ctx.use_color,
                 .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
-                .output_callback = if (needs_callback and !should_show_output) combinedOutputCallback else null,
-                .output_ctx = if (needs_callback and !should_show_output) @ptrCast(&combined_ctx) else null,
+                .output_callback = if (needs_callback) combinedOutputCallback else null,
+                .output_ctx = if (needs_callback) @ptrCast(&combined_ctx) else null,
             }) catch process.ProcessResult{
                 .exit_code = 1,
                 .duration_ms = 0,
