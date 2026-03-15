@@ -836,27 +836,40 @@ fn run(
         return estimate_cmd.cmdEstimate(allocator, task_name, config_path, limit, effective_w, ew, effective_color, estimate_format);
     } else if (std.mem.eql(u8, cmd, "show")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "Usage: zr show <task>\n", .{});
+            try color.printError(ew, effective_color, "Usage: zr show <task> [--output]\n", .{});
             try effective_w.writeAll("\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
             try effective_w.writeAll("  Display detailed information about a task\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
             try effective_w.writeAll("  --help, -h        Show this help message\n");
+            try effective_w.writeAll("  --output          Display captured task output from previous execution\n");
             return 1;
         }
         const task_name = effective_args[2];
 
         // Check for --help flag
         if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
-            try effective_w.writeAll("Usage: zr show <task>\n\n");
+            try effective_w.writeAll("Usage: zr show <task> [--output]\n\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
             try effective_w.writeAll("  Display detailed information about a task\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
             try effective_w.writeAll("  --help, -h        Show this help message\n");
+            try effective_w.writeAll("  --output          Display captured task output from previous execution\n");
             return 0;
         }
 
-        return show_cmd.cmdShow(allocator, task_name, config_path, effective_w, ew, effective_color);
+        // Check for --output flag
+        var output_flag = false;
+        if (effective_args.len >= 4) {
+            for (effective_args[3..]) |arg| {
+                if (std.mem.eql(u8, arg, "--output")) {
+                    output_flag = true;
+                    break;
+                }
+            }
+        }
+
+        return show_cmd.cmdShow(allocator, task_name, config_path, effective_w, ew, effective_color, output_flag);
     } else if (std.mem.eql(u8, cmd, "schedule")) {
         const schedule_args = if (effective_args.len > 2) effective_args[2..] else &[_][]const u8{};
         return schedule_cmd.cmdSchedule(allocator, schedule_args, config_path, effective_w, ew, effective_color);

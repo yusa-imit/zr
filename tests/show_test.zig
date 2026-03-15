@@ -479,3 +479,116 @@ test "593: show with --format toml shows unsupported format error" {
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "format") != null or std.mem.indexOf(u8, result.stderr, "toml") != null);
 }
+
+test "948: show with --output flag when output_file exists" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create an output file with captured task output
+    const output_file_path = try std.fs.path.join(allocator, &.{ tmp_path, "task_output.txt" });
+    defer allocator.free(output_file_path);
+
+    const output_file = try tmp.dir.createFile("task_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Task output line 1\nTask output line 2\nBuild successful!");
+
+    // Create config with task that has output_file configured
+    const show_output_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\description = "Build task with output capture"
+        \\output_file = "task_output.txt"
+        \\output_mode = "stream"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_output_toml);
+
+    // Show task with --output flag should display the captured output
+    var result = try runZr(allocator, &.{ "show", "build", "--output" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed and display task output
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should contain the captured output
+    try std.testing.expect(std.mem.indexOf(u8, output, "Task output line 1") != null or
+                          std.mem.indexOf(u8, output, "Build successful") != null or
+                          std.mem.indexOf(u8, output, "task_output.txt") != null);
+}
+
+test "949: show with --output flag when output_file doesn't exist (task configured but file not there)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with task that has output_file configured but file doesn't exist
+    const show_output_toml =
+        \\[tasks.test]
+        \\cmd = "npm test"
+        \\description = "Test task with output capture"
+        \\output_file = "nonexistent_output.txt"
+        \\output_mode = "stream"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_output_toml);
+
+    // Show task with --output flag when file doesn't exist should fail
+    var result = try runZr(allocator, &.{ "show", "test", "--output" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with error message
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const error_output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should contain error about missing file or file not found
+    try std.testing.expect(std.mem.indexOf(u8, error_output, "not found") != null or
+                          std.mem.indexOf(u8, error_output, "No such file") != null or
+                          std.mem.indexOf(u8, error_output, "cannot open") != null or
+                          std.mem.indexOf(u8, error_output, "nonexistent") != null);
+}
+
+test "950: show with --output flag when task has no output_file configured (error message)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with task that has NO output_file configured
+    const show_output_toml =
+        \\[tasks.lint]
+        \\cmd = "eslint ."
+        \\description = "Lint task without output capture"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_output_toml);
+
+    // Show task with --output flag but no output_file configured should fail
+    var result = try runZr(allocator, &.{ "show", "lint", "--output" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with error message
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    const error_output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should contain error about output not configured
+    try std.testing.expect(std.mem.indexOf(u8, error_output, "output_file") != null or
+                          std.mem.indexOf(u8, error_output, "not configured") != null or
+                          std.mem.indexOf(u8, error_output, "no output") != null or
+                          std.mem.indexOf(u8, error_output, "not enabled") != null);
+}

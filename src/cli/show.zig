@@ -11,6 +11,7 @@ pub fn cmdShow(
     w: *std.Io.Writer,
     ew: *std.Io.Writer,
     use_color: bool,
+    output_flag: bool,
 ) !u8 {
     // Load config
     var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
@@ -24,6 +25,41 @@ pub fn cmdShow(
         );
         return 1;
     };
+
+    // Handle --output flag: display captured task output
+    if (output_flag) {
+        if (task.output_file == null) {
+            try color.printError(ew, use_color,
+                "show: Task '{s}' has no output_file configured\n\n  Hint: Add 'output_file = \"path/to/file\"' to the task configuration\n",
+                .{task_name},
+            );
+            return 1;
+        }
+
+        const output_path = task.output_file.?;
+        const file = std.fs.cwd().openFile(output_path, .{}) catch |err| {
+            if (err == error.FileNotFound) {
+                try color.printError(ew, use_color,
+                    "show: Output file not found: {s}\n\n  Hint: Run the task first to generate output\n",
+                    .{output_path},
+                );
+            } else {
+                try color.printError(ew, use_color,
+                    "show: Cannot open output file: {s}\n  Error: {}\n",
+                    .{output_path, err},
+                );
+            }
+            return 1;
+        };
+        defer file.close();
+
+        // Read and display file contents
+        const contents = try file.readToEndAlloc(allocator, 10 * 1024 * 1024); // 10MB limit
+        defer allocator.free(contents);
+
+        try w.writeAll(contents);
+        return 0;
+    }
 
     // Print task details
     try color.printBold(w, use_color, "Task: {s}\n", .{task_name});
@@ -186,6 +222,6 @@ test "cmdShow nonexistent task returns error" {
     var err_w = stderr_f.writer(&err_buf);
 
     // Test with non-existent task - this will fail to load config but that's okay for this test
-    const exit_code = try cmdShow(allocator, "nonexistent", "zr.toml", &out_w.interface, &err_w.interface, false);
+    const exit_code = try cmdShow(allocator, "nonexistent", "zr.toml", &out_w.interface, &err_w.interface, false, false);
     try std.testing.expectEqual(@as(u8, 1), exit_code);
 }
