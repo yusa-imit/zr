@@ -14,6 +14,7 @@ const process = @import("exec/process.zig");
 const timeline = @import("exec/timeline.zig");
 const replay = @import("exec/replay.zig");
 const checkpoint = @import("exec/checkpoint.zig");
+const output_capture = @import("exec/output_capture.zig");
 const color = @import("output/color.zig");
 const progress = @import("output/progress.zig");
 const monitor = @import("output/monitor.zig");
@@ -123,6 +124,7 @@ comptime {
     _ = timeline;
     _ = replay;
     _ = checkpoint;
+    _ = output_capture;
     _ = color;
     _ = progress;
     _ = monitor;
