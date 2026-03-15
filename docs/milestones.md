@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.34.0 (Workflow Retry Budget Integration)
+- **Latest**: v1.37.0 (Enhanced Task Output Capture & Streaming)
 - **Next**: v1.35.0 — zuda Levenshtein Migration (blocked on zuda release)
 - **Blockers**: v1.35.0 and v1.36.0 blocked on zuda releases
 
@@ -18,9 +18,9 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Blocked until zuda releases StealingQueue module.**
 
-### v1.37.0 — Enhanced Task Output Capture & Streaming
+### v1.38.0 — Task Output Search & Filtering
 
-Implement real-time task output capture and streaming. Address TODOs in scheduler.zig for stdout/stderr capture. Features: (1) Stream task output to file (`output_file` field), (2) Real-time output display in TUI (`--live` flag enhancement), (3) Output buffer management with configurable size limits, (4) Post-execution output retrieval via `zr show <task> --output`, (5) Output filtering and search. Implementation: Create `src/exec/output_capture.zig` with OutputCapture struct, integrate with scheduler worker threads, add TOML fields (`output_file`, `output_mode`: stream|buffer|discard), update TUI runner to display live output, add integration tests (5-8 tests). Tests: Unit tests for OutputCapture, integration tests for file output and TUI streaming.
+Enhance task output capture with search and filtering capabilities. Features: (1) `zr show <task> --output --search <pattern>` to grep output files, (2) `--filter <regex>` to display only matching lines, (3) `--tail N` to show last N lines, (4) `--head N` to show first N lines, (5) Color highlighting for search matches, (6) Support for regex patterns. Implementation: Extend `src/cli/show.zig` with output processing functions, add search/filter flags to cmdShow, integrate with OutputCapture buffer for in-memory search. Tests: 6-8 integration tests for search patterns, filters, and edge cases.
 
 ---
 
@@ -28,6 +28,7 @@ Implement real-time task output capture and streaming. Address TODOs in schedule
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.37.0 | Enhanced Task Output Capture & Streaming | 2026-03-16 | OutputCapture module with stream/buffer/discard modes, scheduler integration, TUI live display, `zr show --output` command, 13 integration tests |
 | v1.34.0 | Workflow Retry Budget Integration | 2026-03-14 | Workflow-level retry budget fully functional with scheduler integration and multi-stage support |
 | v1.33.0 | Advanced TUI Data Visualization | 2026-03-14 | Sailor v1.6.0/v1.7.0 data visualization widgets (Histogram, TimeSeriesChart, ScatterPlot) with FlexBox layout |
 | v1.32.0 | Sailor v1.11.0 & v1.12.0 Migration | 2026-03-14 | Particle effects, blur/transparency, session recording, audit logging, WCAG AAA themes, screen reader enhancements |
