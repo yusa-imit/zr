@@ -16,6 +16,7 @@ const replay = @import("replay.zig");
 const hooks = @import("hooks.zig");
 const types = @import("../config/types.zig");
 const checkpoint = @import("checkpoint.zig");
+const output_capture = @import("output_capture.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -266,11 +267,39 @@ const CheckpointCallbackCtx = struct {
     last_save_ms: *std.atomic.Value(i64), // Atomic timestamp of last checkpoint save
 };
 
-/// Output callback that monitors stdout for "CHECKPOINT: {json}" markers
-fn checkpointOutputCallback(line: []const u8, is_stderr: bool, ctx_opaque: ?*anyopaque) void {
-    if (is_stderr) return; // Only monitor stdout for checkpoints
+/// Combined context for both checkpoint and output capture callbacks (v1.37.0)
+const CombinedCallbackCtx = struct {
+    checkpoint_ctx: ?*CheckpointCallbackCtx = null,
+    output_capture: ?*output_capture.OutputCapture = null,
+};
 
-    const ctx: *CheckpointCallbackCtx = @ptrCast(@alignCast(ctx_opaque orelse return));
+/// Parse output mode string into enum (v1.37.0)
+fn parseOutputMode(mode_str: ?[]const u8) ?output_capture.OutputMode {
+    const str = mode_str orelse return null;
+    if (std.mem.eql(u8, str, "stream")) return .stream;
+    if (std.mem.eql(u8, str, "buffer")) return .buffer;
+    if (std.mem.eql(u8, str, "discard")) return .discard;
+    return null; // Invalid mode string
+}
+
+/// Combined output callback for both checkpoint monitoring and output capture (v1.37.0)
+fn combinedOutputCallback(line: []const u8, is_stderr: bool, ctx_opaque: ?*anyopaque) void {
+    const ctx: *CombinedCallbackCtx = @ptrCast(@alignCast(ctx_opaque orelse return));
+
+    // Call checkpoint callback if enabled
+    if (ctx.checkpoint_ctx) |ckpt_ctx| {
+        checkpointOutputCallbackImpl(line, is_stderr, ckpt_ctx);
+    }
+
+    // Call output capture if enabled
+    if (ctx.output_capture) |oc| {
+        oc.writeLine(line, is_stderr) catch {};
+    }
+}
+
+/// Implementation of checkpoint output monitoring (v1.31.0)
+fn checkpointOutputCallbackImpl(line: []const u8, is_stderr: bool, ctx: *CheckpointCallbackCtx) void {
+    if (is_stderr) return; // Only monitor stdout for checkpoints
 
     // Look for "CHECKPOINT: " prefix
     const marker = "CHECKPOINT: ";
@@ -381,6 +410,10 @@ const WorkerCtx = struct {
     retry_budget: ?*RetryBudgetTracker,
     /// Checkpoint configuration for resumable tasks (v1.31.0).
     checkpoint_config: ?*const types.CheckpointConfig,
+    /// Output file path for stream mode (v1.37.0).
+    output_file: ?[]const u8,
+    /// Output capture mode (v1.37.0).
+    output_mode: ?output_capture.OutputMode,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -494,6 +527,19 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // Initialize OutputCapture if configured (v1.37.0)
+    var output_cap: ?output_capture.OutputCapture = null;
+    defer if (output_cap) |*oc| oc.deinit();
+
+    if (ctx.output_mode) |mode| {
+        const capture_config = output_capture.OutputCaptureConfig{
+            .mode = mode,
+            .output_file = ctx.output_file,
+            .max_buffer_size = 1024 * 1024, // 1MB default
+        };
+        output_cap = output_capture.OutputCapture.init(ctx.allocator, capture_config) catch null;
+    }
+
     // Check cache hit — skip execution if already succeeded with same cmd+env
     if (ctx.cache) {
         if (ctx.cache_key) |key| {
@@ -596,8 +642,7 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
-    // Set up checkpoint callback if enabled (v1.31.0)
-    // Note: Checkpointing only works in non-interactive mode (inherit_stdio=false)
+    // Set up combined callback context for checkpoint + output capture (v1.31.0, v1.37.0)
     var checkpoint_callback_ctx: ?CheckpointCallbackCtx = null;
     var last_save_ms = std.atomic.Value(i64).init(std.time.milliTimestamp());
     defer {
@@ -616,6 +661,13 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    var combined_ctx = CombinedCallbackCtx{
+        .checkpoint_ctx = if (checkpoint_callback_ctx != null) &checkpoint_callback_ctx.? else null,
+        .output_capture = if (output_cap) |*oc| oc else null,
+    };
+
+    const needs_callback = combined_ctx.checkpoint_ctx != null or combined_ctx.output_capture != null;
+
     // Run the process with retry logic
     var proc_result = process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
@@ -628,8 +680,8 @@ fn workerFn(ctx: WorkerCtx) void {
         .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
         .monitor_use_color = ctx.use_color,
         .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
-        .output_callback = if (checkpoint_callback_ctx != null) checkpointOutputCallback else null,
-        .output_ctx = if (checkpoint_callback_ctx) |*c| @ptrCast(c) else null,
+        .output_callback = if (needs_callback and !should_show_output) combinedOutputCallback else null,
+        .output_ctx = if (needs_callback and !should_show_output) @ptrCast(&combined_ctx) else null,
     }) catch process.ProcessResult{
         .exit_code = 1,
         .duration_ms = 0,
@@ -693,8 +745,8 @@ fn workerFn(ctx: WorkerCtx) void {
                 .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
                 .monitor_use_color = ctx.use_color,
                 .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
-                .output_callback = if (checkpoint_callback_ctx != null) checkpointOutputCallback else null,
-                .output_ctx = if (checkpoint_callback_ctx) |*c| @ptrCast(c) else null,
+                .output_callback = if (needs_callback and !should_show_output) combinedOutputCallback else null,
+                .output_ctx = if (needs_callback and !should_show_output) @ptrCast(&combined_ctx) else null,
             }) catch process.ProcessResult{
                 .exit_code = 1,
                 .duration_ms = 0,
@@ -786,6 +838,20 @@ fn workerFn(ctx: WorkerCtx) void {
                 std.ArrayList(timeline.TimelineEvent){};
             defer task_events.deinit(ctx.allocator);
 
+            // Get captured output if available (v1.37.0)
+            var stdout_buf: []const u8 = &[_]u8{};
+            const stderr_buf: []const u8 = &[_]u8{};
+            var needs_free = false;
+            defer if (needs_free) ctx.allocator.free(stdout_buf);
+
+            if (output_cap) |*oc| {
+                if (oc.config.mode == .buffer) {
+                    stdout_buf = oc.getBuffer() catch &[_]u8{};
+                    needs_free = (stdout_buf.len > 0);
+                    // Note: we don't separate stdout/stderr in buffer mode yet
+                }
+            }
+
             // Capture failure with individual parameters
             rm.captureFailure(
                 ctx.task_name,
@@ -793,8 +859,8 @@ fn workerFn(ctx: WorkerCtx) void {
                 ctx.cwd,
                 ctx.env,
                 proc_result.exit_code,
-                &[_]u8{}, // TODO: capture stdout from process.run
-                &[_]u8{}, // TODO: capture stderr from process.run
+                stdout_buf,
+                stderr_buf,
                 task_events.items,
             ) catch {};
         }
@@ -1475,6 +1541,8 @@ pub fn run(
                 .circuit_breaker = circuit_breaker_ptr,
                 .retry_budget = if (retry_budget_tracker) |*rb| rb else null,
                 .checkpoint_config = if (task.checkpoint) |*cp| cp else null,
+                .output_file = task.output_file,
+                .output_mode = parseOutputMode(task.output_mode),
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
