@@ -1,2 +1,5 @@
 {"timestamp":"2026-03-14T21:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write unit tests for OutputCapture module in src/exec/output_capture.zig","project":"zr"}
 {"timestamp":"2026-03-14T21:45:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement OutputCapture module to pass all 18 unit tests","project":"zr"}
+{"timestamp":"2026-03-14T18:01:22Z","action":"subagent","agent_type":"test-writer","task":"Write failing tests for v1.37.0 output capture feature","project":"zr"}
+{"timestamp":"2026-03-15T06:15:00Z","action":"subagent","agent_type":"test-writer","task":"Create tests for zuda Levenshtein migration (Issue #21)","project":"zr"}
+{"timestamp":"2026-03-15T09:15:00Z","action":"subagent","agent_type":"test-writer","task":"Create OutputCapture unit tests for v1.37.0 (stream, buffer, discard modes, thread safety)","project":"zr"}
