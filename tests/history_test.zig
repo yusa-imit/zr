@@ -551,10 +551,13 @@ test "473: history with --format=csv outputs CSV format" {
 
     var result = try runZr(allocator, &.{ "history", "--format=csv" }, tmp_path);
     defer result.deinit();
-    // CSV format may not be implemented yet - just check command runs
-    _ = result.exit_code;
+    // Should succeed with exit code 0 (CSV format may show regular format if not implemented)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
+    // Should show some history output
+    try std.testing.expect(std.mem.indexOf(u8, output, "Recent") != null or
+        std.mem.indexOf(u8, output, "task") != null);
 }
 
 test "482: history --limit with --format json outputs limited records" {

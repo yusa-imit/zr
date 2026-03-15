@@ -287,8 +287,10 @@ test "60: run with --profile and nonexistent profile" {
 
     var result = try runZr(allocator, &.{ "--config", config, "--profile", "nonexistent", "run", "hello" }, tmp_path);
     defer result.deinit();
-    // Should either warn or fail gracefully
-    _ = result.exit_code;
+    // Should fail with exit code 1 and show error about missing profile
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "profile") != null and
+        std.mem.indexOf(u8, result.stderr, "nonexistent") != null);
 }
 
 test "101: --jobs flag with invalid numeric value fails" {

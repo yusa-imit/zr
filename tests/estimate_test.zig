@@ -17,8 +17,11 @@ test "52: estimate without history gracefully handles missing data" {
 
     var result = try runZr(allocator, &.{ "--config", config, "estimate", "hello" }, tmp_path);
     defer result.deinit();
-    // Should not crash even without history data
-    _ = result.exit_code;
+    // Should succeed with exit code 0 even without history data (shows warning)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show a warning about missing history
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "No execution history") != null or
+        std.mem.indexOf(u8, result.stdout, "No execution history") != null);
 }
 
 test "61: estimate command with history data" {
