@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.37.0 (Enhanced Task Output Capture & Streaming)
+- **Latest**: v1.38.0 (Task Output Search & Filtering)
 - **Next**: v1.35.0 — zuda Levenshtein Migration (blocked on zuda release)
 - **Blockers**: v1.35.0 and v1.36.0 blocked on zuda releases
 
@@ -18,16 +18,13 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Blocked until zuda releases StealingQueue module.**
 
-### v1.38.0 — Task Output Search & Filtering
-
-Enhance task output capture with search and filtering capabilities. Features: (1) `zr show <task> --output --search <pattern>` to grep output files, (2) `--filter <regex>` to display only matching lines, (3) `--tail N` to show last N lines, (4) `--head N` to show first N lines, (5) Color highlighting for search matches, (6) Support for regex patterns. Implementation: Extend `src/cli/show.zig` with output processing functions, add search/filter flags to cmdShow, integrate with OutputCapture buffer for in-memory search. Tests: 6-8 integration tests for search patterns, filters, and edge cases.
-
 ---
 
 ## Completed Milestones
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.38.0 | Task Output Search & Filtering | 2026-03-16 | Search/filter/head/tail flags for show --output, color highlighting, 7 integration tests |
 | v1.37.0 | Enhanced Task Output Capture & Streaming | 2026-03-16 | OutputCapture module with stream/buffer/discard modes, scheduler integration, TUI live display, `zr show --output` command, 13 integration tests |
 | v1.34.0 | Workflow Retry Budget Integration | 2026-03-14 | Workflow-level retry budget fully functional with scheduler integration and multi-stage support |
 | v1.33.0 | Advanced TUI Data Visualization | 2026-03-14 | Sailor v1.6.0/v1.7.0 data visualization widgets (Histogram, TimeSeriesChart, ScatterPlot) with FlexBox layout |
