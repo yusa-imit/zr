@@ -592,3 +592,249 @@ test "950: show with --output flag when task has no output_file configured (erro
                           std.mem.indexOf(u8, error_output, "no output") != null or
                           std.mem.indexOf(u8, error_output, "not enabled") != null);
 }
+
+test "961: show with --output --search filters output by pattern" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create output file with multiple lines
+    const output_file = try tmp.dir.createFile("build_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Building project...\nERROR: Compilation failed\nWARNING: Deprecated API used\nERROR: Missing dependency\nBuild completed with errors\n");
+
+    const show_toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\output_file = "build_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Search for ERROR
+    var result = try runZr(allocator, &.{ "show", "build", "--output", "--search", "ERROR" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "ERROR: Compilation failed") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "ERROR: Missing dependency") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Building project") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "WARNING") == null);
+}
+
+test "962: show with --output --filter filters output by pattern" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const output_file = try tmp.dir.createFile("test_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Test 1: PASS\nTest 2: FAIL\nTest 3: PASS\nTest 4: FAIL\nAll tests completed\n");
+
+    const show_toml =
+        \\[tasks.test]
+        \\cmd = "npm test"
+        \\output_file = "test_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Filter for FAIL
+    var result = try runZr(allocator, &.{ "show", "test", "--output", "--filter", "FAIL" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Test 2: FAIL") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Test 4: FAIL") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "PASS") == null);
+}
+
+test "963: show with --output --head limits to first N lines" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const output_file = try tmp.dir.createFile("log_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\n");
+
+    const show_toml =
+        \\[tasks.log]
+        \\cmd = "cat log.txt"
+        \\output_file = "log_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Head 3 lines
+    var result = try runZr(allocator, &.{ "show", "log", "--output", "--head", "3" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 4") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 10") == null);
+}
+
+test "964: show with --output --tail limits to last N lines" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const output_file = try tmp.dir.createFile("deploy_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Step 1: Prepare\nStep 2: Build\nStep 3: Test\nStep 4: Package\nStep 5: Deploy\nStep 6: Verify\nStep 7: Complete\n");
+
+    const show_toml =
+        \\[tasks.deploy]
+        \\cmd = "deploy.sh"
+        \\output_file = "deploy_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Tail 3 lines
+    var result = try runZr(allocator, &.{ "show", "deploy", "--output", "--tail", "3" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Step 5: Deploy") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Step 6: Verify") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Step 7: Complete") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Step 1") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Step 2") == null);
+}
+
+test "965: show with --output --search and --head combines filters" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const output_file = try tmp.dir.createFile("combined_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("DEBUG: Starting\nINFO: Processing item 1\nINFO: Processing item 2\nINFO: Processing item 3\nINFO: Processing item 4\nINFO: Processing item 5\nDEBUG: Done\n");
+
+    const show_toml =
+        \\[tasks.process]
+        \\cmd = "process.sh"
+        \\output_file = "combined_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Search for INFO and show only first 2
+    var result = try runZr(allocator, &.{ "show", "process", "--output", "--search", "INFO", "--head", "2" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "INFO: Processing item 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "INFO: Processing item 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "INFO: Processing item 3") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "DEBUG") == null);
+}
+
+test "966: show with --output --filter and --tail combines filters" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const output_file = try tmp.dir.createFile("warnings_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("INFO: Start\nWARN: Issue 1\nWARN: Issue 2\nWARN: Issue 3\nWARN: Issue 4\nWARN: Issue 5\nINFO: End\n");
+
+    const show_toml =
+        \\[tasks.check]
+        \\cmd = "check.sh"
+        \\output_file = "warnings_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Filter for WARN and show only last 2
+    var result = try runZr(allocator, &.{ "show", "check", "--output", "--filter", "WARN", "--tail", "2" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "WARN: Issue 4") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "WARN: Issue 5") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "WARN: Issue 1") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "INFO") == null);
+}
+
+test "967: show with --output --search with no matches returns empty output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const output_file = try tmp.dir.createFile("nomatch_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Line 1: Info\nLine 2: Debug\nLine 3: Trace\n");
+
+    const show_toml =
+        \\[tasks.run]
+        \\cmd = "run.sh"
+        \\output_file = "nomatch_output.txt"
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(show_toml);
+
+    // Search for pattern that doesn't exist
+    var result = try runZr(allocator, &.{ "show", "run", "--output", "--search", "NONEXISTENT" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Output should be empty (only newlines possibly)
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Info") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Debug") == null);
+}

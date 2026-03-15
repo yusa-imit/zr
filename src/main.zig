@@ -841,35 +841,66 @@ fn run(
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
             try effective_w.writeAll("  Display detailed information about a task\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
-            try effective_w.writeAll("  --help, -h        Show this help message\n");
-            try effective_w.writeAll("  --output          Display captured task output from previous execution\n");
+            try effective_w.writeAll("  --help, -h           Show this help message\n");
+            try effective_w.writeAll("  --output             Display captured task output from previous execution\n");
+            try effective_w.writeAll("  --search <pattern>   Search for pattern in output (requires --output)\n");
+            try effective_w.writeAll("  --filter <pattern>   Filter output to lines matching pattern (requires --output)\n");
+            try effective_w.writeAll("  --head <N>           Show only first N lines (requires --output)\n");
+            try effective_w.writeAll("  --tail <N>           Show only last N lines (requires --output)\n");
             return 1;
         }
         const task_name = effective_args[2];
 
         // Check for --help flag
         if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
-            try effective_w.writeAll("Usage: zr show <task> [--output]\n\n");
+            try effective_w.writeAll("Usage: zr show <task> [--output] [OPTIONS]\n\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
             try effective_w.writeAll("  Display detailed information about a task\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
-            try effective_w.writeAll("  --help, -h        Show this help message\n");
-            try effective_w.writeAll("  --output          Display captured task output from previous execution\n");
+            try effective_w.writeAll("  --help, -h           Show this help message\n");
+            try effective_w.writeAll("  --output             Display captured task output from previous execution\n");
+            try effective_w.writeAll("  --search <pattern>   Search for pattern in output (requires --output)\n");
+            try effective_w.writeAll("  --filter <pattern>   Filter output to lines matching pattern (requires --output)\n");
+            try effective_w.writeAll("  --head <N>           Show only first N lines (requires --output)\n");
+            try effective_w.writeAll("  --tail <N>           Show only last N lines (requires --output)\n");
             return 0;
         }
 
-        // Check for --output flag
+        // Parse flags for show command
         var output_flag = false;
+        var output_opts = show_cmd.ShowOutputOptions{};
+
         if (effective_args.len >= 4) {
-            for (effective_args[3..]) |arg| {
+            var i: usize = 3;
+            while (i < effective_args.len) : (i += 1) {
+                const arg = effective_args[i];
                 if (std.mem.eql(u8, arg, "--output")) {
                     output_flag = true;
-                    break;
+                } else if (std.mem.eql(u8, arg, "--search")) {
+                    if (i + 1 < effective_args.len) {
+                        i += 1;
+                        output_opts.search_pattern = effective_args[i];
+                    }
+                } else if (std.mem.eql(u8, arg, "--filter")) {
+                    if (i + 1 < effective_args.len) {
+                        i += 1;
+                        output_opts.filter_regex = effective_args[i];
+                    }
+                } else if (std.mem.eql(u8, arg, "--tail")) {
+                    if (i + 1 < effective_args.len) {
+                        i += 1;
+                        output_opts.tail_lines = std.fmt.parseInt(usize, effective_args[i], 10) catch null;
+                    }
+                } else if (std.mem.eql(u8, arg, "--head")) {
+                    if (i + 1 < effective_args.len) {
+                        i += 1;
+                        output_opts.head_lines = std.fmt.parseInt(usize, effective_args[i], 10) catch null;
+                    }
                 }
             }
         }
 
-        return show_cmd.cmdShow(allocator, task_name, config_path, effective_w, ew, effective_color, output_flag);
+        return show_cmd.cmdShow(allocator, task_name, config_path, effective_w, ew, effective_color, output_flag, output_opts);
     } else if (std.mem.eql(u8, cmd, "schedule")) {
         const schedule_args = if (effective_args.len > 2) effective_args[2..] else &[_][]const u8{};
         return schedule_cmd.cmdSchedule(allocator, schedule_args, config_path, effective_w, ew, effective_color);

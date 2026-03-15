@@ -192,6 +192,7 @@ fn handleShowTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRe
     var stdout_writer = stdout_file.writer(&stdout_buf);
     var stderr_writer = stderr_file.writer(&stderr_buf);
 
+    const output_opts = show.ShowOutputOptions{};
     const exit_code = show.cmdShow(
         allocator,
         task_name,
@@ -200,6 +201,7 @@ fn handleShowTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRe
         &stderr_writer.interface,
         false, // use_color = false
         false, // output_flag = false (MCP always shows metadata, not output)
+        output_opts,
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}

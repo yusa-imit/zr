@@ -4,14 +4,127 @@ const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const types = @import("../config/types.zig");
 
+fn processOutput(
+    allocator: Allocator,
+    contents: []const u8,
+    opts: ShowOutputOptions,
+    w: anytype,
+    use_color: bool,
+) !void {
+    // Split contents into lines
+    var lines = std.ArrayList([]const u8){};
+    defer lines.deinit(allocator);
+
+    var line_iter = std.mem.splitScalar(u8, contents, '\n');
+    while (line_iter.next()) |line| {
+        // Skip empty lines (from trailing newline)
+        if (line.len > 0) {
+            try lines.append(allocator, line);
+        }
+    }
+
+    // Apply search pattern filter
+    var filtered_lines = std.ArrayList([]const u8){};
+    defer filtered_lines.deinit(allocator);
+
+    if (opts.search_pattern) |pattern| {
+        for (lines.items) |line| {
+            if (std.mem.indexOf(u8, line, pattern) != null) {
+                try filtered_lines.append(allocator, line);
+            }
+        }
+    } else if (opts.filter_regex) |_| {
+        // For now, treat regex filter as simple substring match
+        // Full regex support would require additional dependency
+        for (lines.items) |line| {
+            if (opts.filter_regex) |pattern| {
+                if (std.mem.indexOf(u8, line, pattern) != null) {
+                    try filtered_lines.append(allocator, line);
+                }
+            }
+        }
+    } else {
+        // No filter, use all lines
+        try filtered_lines.appendSlice(allocator, lines.items);
+    }
+
+    // Apply head/tail limits
+    var output_lines = std.ArrayList([]const u8){};
+    defer output_lines.deinit(allocator);
+
+    if (opts.head_lines) |n| {
+        const count = @min(n, filtered_lines.items.len);
+        try output_lines.appendSlice(allocator, filtered_lines.items[0..count]);
+    } else if (opts.tail_lines) |n| {
+        const count = @min(n, filtered_lines.items.len);
+        const start = filtered_lines.items.len - count;
+        try output_lines.appendSlice(allocator, filtered_lines.items[start..]);
+    } else {
+        // No limit, use all filtered lines
+        try output_lines.appendSlice(allocator, filtered_lines.items);
+    }
+
+    // Output with highlighting
+    for (output_lines.items) |line| {
+        if (opts.search_pattern) |pattern| {
+            try highlightMatches(line, pattern, w, use_color);
+            try w.writeAll("\n");
+        } else {
+            try w.writeAll(line);
+            try w.writeAll("\n");
+        }
+    }
+}
+
+fn highlightMatches(
+    line: []const u8,
+    pattern: []const u8,
+    w: anytype,
+    use_color: bool,
+) !void {
+    var pos: usize = 0;
+    while (pos < line.len) {
+        if (std.mem.indexOf(u8, line[pos..], pattern)) |match_start| {
+            const abs_start = pos + match_start;
+            const abs_end = abs_start + pattern.len;
+
+            // Write text before match
+            try w.writeAll(line[pos..abs_start]);
+
+            // Write highlighted match
+            if (use_color) {
+                try w.writeAll("\x1b[1;33m"); // Bold yellow
+            }
+            try w.writeAll(line[abs_start..abs_end]);
+            if (use_color) {
+                try w.writeAll("\x1b[0m"); // Reset
+            }
+
+            pos = abs_end;
+        } else {
+            // No more matches, write rest of line
+            try w.writeAll(line[pos..]);
+            break;
+        }
+    }
+}
+
+pub const ShowOutputOptions = struct {
+    search_pattern: ?[]const u8 = null,
+    filter_regex: ?[]const u8 = null,
+    tail_lines: ?usize = null,
+    head_lines: ?usize = null,
+};
+
 pub fn cmdShow(
     allocator: Allocator,
     task_name: []const u8,
     config_path: []const u8,
-    w: *std.Io.Writer,
-    ew: *std.Io.Writer,
+    w: anytype,
+    ew: anytype,
     use_color: bool,
     output_flag: bool,
+    output_opts: ShowOutputOptions,
 ) !u8 {
     // Load config
     var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
@@ -57,7 +170,8 @@ pub fn cmdShow(
         const contents = try file.readToEndAlloc(allocator, 10 * 1024 * 1024); // 10MB limit
         defer allocator.free(contents);
 
-        try w.writeAll(contents);
+        // Process output based on options
+        try processOutput(allocator, contents, output_opts, w, use_color);
         return 0;
     }
 
@@ -221,7 +335,74 @@ test "cmdShow nonexistent task returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
+    const opts = ShowOutputOptions{};
     // Test with non-existent task - this will fail to load config but that's okay for this test
-    const exit_code = try cmdShow(allocator, "nonexistent", "zr.toml", &out_w.interface, &err_w.interface, false, false);
+    const exit_code = try cmdShow(allocator, "nonexistent", "zr.toml", &out_w.interface, &err_w.interface, false, false, opts);
     try std.testing.expectEqual(@as(u8, 1), exit_code);
+}
+
+test "processOutput with search pattern" {
+    const allocator = std.testing.allocator;
+    const contents = "line 1 ERROR\nline 2 OK\nline 3 ERROR\nline 4 OK\n";
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .search_pattern = "ERROR" };
+    try processOutput(allocator, contents, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 1 ERROR") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 3 ERROR") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 2 OK") == null);
+}
+
+test "processOutput with head limit" {
+    const allocator = std.testing.allocator;
+    const contents = "line 1\nline 2\nline 3\nline 4\nline 5\n";
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .head_lines = 2 };
+    try processOutput(allocator, contents, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 3") == null);
+}
+
+test "processOutput with tail limit" {
+    const allocator = std.testing.allocator;
+    const contents = "line 1\nline 2\nline 3\nline 4\nline 5\n";
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .tail_lines = 2 };
+    try processOutput(allocator, contents, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 4") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 5") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line 1") == null);
+}
+
+test "highlightMatches highlights all occurrences" {
+    const allocator = std.testing.allocator;
+    _ = allocator;
+    const line = "ERROR at position 5, another ERROR at position 30";
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    try highlightMatches(line, "ERROR", &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expectEqualStrings(line, output);
 }
