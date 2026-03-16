@@ -433,9 +433,16 @@ Subagent(Task 도구) 또는 Team(TeamCreate)을 호출할 때마다 `.claude/lo
 
 세션 사이클의 **Step 5 (릴리즈 판단)** 에서 아래 조건을 확인하고, 충족 시 자율적으로 릴리즈를 수행한다.
 
+### 버전 안전 규칙 (CRITICAL)
+
+- **버전은 반드시 단조 증가**해야 한다. 새 버전은 `build.zig.zon`의 현재 버전보다 **반드시 높아야** 한다.
+- 릴리즈 전 반드시 현재 버전을 확인: `grep 'version' build.zig.zon`
+- 새 태그가 `git tag -l 'v*' --sort=-v:refname | head -1`보다 **낮으면 즉시 중단**.
+- 버전 다운그레이드는 **절대 금지** — semver에서 1.43.0 → 1.0.0은 회귀이다.
+
 ### 릴리즈 판단 기준 (Step 5에서 매 세션 확인)
 
-**패치 릴리즈 (v1.0.X)** — 다음 중 하나라도 해당하면 즉시 발행:
+**패치 릴리즈 (v{CURRENT}.X)** — 다음 중 하나라도 해당하면 즉시 발행:
 - 사용자 보고 버그(`bug` 라벨 이슈)를 수정한 커밋이 마지막 릴리즈 태그 이후에 존재
 - 빌드/테스트 실패 또는 크로스 컴파일 깨짐을 수정한 커밋
 - 설치 스크립트, 문서의 치명적 오류 수정
@@ -465,17 +472,19 @@ gh issue list --state open --label bug --limit 5
 
 ### 릴리즈 절차
 
-**패치 (v1.0.X)**:
-1. `zig build test && zig build integration-test` 통과 확인
-2. 태그: `git tag -a v1.0.X -m "Release v1.0.X: <수정 요약>"`
-3. 푸시: `git push origin v1.0.X`
-4. GitHub Release: `gh release create v1.0.X --title "v1.0.X: <요약>" --notes "<릴리즈 노트>"`
-5. 관련 이슈 닫기
-6. Discord 알림
+**패치 (v{CURRENT_MINOR}.X)**:
+1. **버전 확인**: `grep 'version' build.zig.zon` — 새 버전이 현재보다 높은지 검증
+2. `zig build test && zig build integration-test` 통과 확인
+3. `build.zig.zon`의 version 패치 번호 증가
+4. 커밋 + 태그 + 푸시
+5. GitHub Release 생성
+6. 관련 이슈 닫기
+7. Discord 알림
 
 **마이너 (v1.X.0)**:
-1. `docs/milestones.md`에서 해당 마일스톤을 Completed 섹션으로 이동
-2. `build.zig.zon`의 version 업데이트
+1. **버전 확인**: 새 마이너 버전이 현재 `build.zig.zon` 버전보다 높은지 검증
+2. `docs/milestones.md`에서 해당 마일스톤을 Completed 섹션으로 이동
+3. `build.zig.zon`의 version 업데이트
 3. CHANGELOG.md에 릴리즈 항목 추가
 4. 커밋: `chore: bump version to v1.X.0`
 5. `zig build test && zig build integration-test` 통과 확인
