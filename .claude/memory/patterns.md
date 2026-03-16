@@ -247,3 +247,48 @@ const ws = Workspace{ .members = patterns[0..], .ignore = &.{} };
 ```
 
 Note: `&patterns` gives wrong type — use `patterns[0..]` to coerce to slice.
+
+## TOML Syntax Highlighting Lexer
+
+**Token types**: Table headers, keys, strings, numbers (int/float/hex/oct/bin), booleans, nulls, comments, whitespace, datetime, inline tables, arrays, operators (=, comma, dot).
+
+**Lexer design** (`TomlLexer` struct):
+```zig
+pub const TomlLexer = struct {
+    input: []const u8,
+    pos: usize = 0,
+    line: usize = 1,
+    column: usize = 1,
+    allocator: Allocator,
+    tokens: std.ArrayList(Token),
+
+    pub fn tokenize(self: *TomlLexer) !void {
+        while (self.pos < self.input.len) {
+            const ch = self.input[self.pos];
+            // Dispatch: comments, whitespace, table headers, operators, strings, numbers, keywords/keys
+        }
+    }
+};
+```
+
+**Line tracking**: Increment `line` on `\n`, reset `column` to 1. Advance both on other chars.
+
+**String handling**: Distinguish single vs triple quotes. Triple quotes consume everything until closing triple. Single quotes: handle escape sequences only in `"..."`, not `'...'`.
+
+**Number parsing**: Check prefix for `0x`/`0o`/`0b` → special branches. Then scan digits, optional `.` for float, optional `e`/`E` for exponent, optional `T`/`t`/` ` for ISO 8601 datetime.
+
+**Table headers**: Check if at line start (only whitespace/newline before). Distinguish `[name]` (regular) vs `[[name]]` (array-of-tables) by peeking second char.
+
+**Colorize pattern** (ANSI codes):
+```zig
+pub fn colorizeToken(token: Token) struct { prefix, suffix: []const u8 } {
+    return switch (token.type) {
+        .@"table_header" => .{ .prefix = "\x1b[1;33m", .suffix = "\x1b[0m" }, // bold yellow
+        .@"key" => .{ .prefix = "\x1b[1;35m", .suffix = "\x1b[0m" }, // bold magenta
+        .@"string" => .{ .prefix = "\x1b[1;32m", .suffix = "\x1b[0m" }, // bold green
+        // ...
+    };
+}
+```
+
+**Integration**: `highlightToml(allocator, input)` → lexes, applies colors, returns owned string. Caller must free.
