@@ -106,8 +106,13 @@ fn renderDashboard(allocator: std.mem.Allocator, report: *types.AnalyticsReport)
         for (0..buf.width) |x| {
             if (buf.getConst(@intCast(x), @intCast(y))) |cell| {
                 if (cell.char != 0) {
-                    const ch: [1]u8 = .{@intCast(cell.char)};
-                    _ = try stdout.write(&ch);
+                    // Handle UTF-8 characters properly
+                    var utf8_buf: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(@as(u21, @intCast(cell.char)), &utf8_buf) catch {
+                        _ = try stdout.write("?");
+                        continue;
+                    };
+                    _ = try stdout.write(utf8_buf[0..len]);
                 } else {
                     _ = try stdout.write(" ");
                 }

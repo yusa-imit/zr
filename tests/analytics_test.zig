@@ -435,3 +435,37 @@ test "875: history file stores resource usage fields" {
     }
     try std.testing.expect(found_valid_line);
 }
+
+test "958: analytics with --tui flag invokes TUI mode" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.sample]
+        \\cmd = "echo sample"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "sample" }, tmp_path);
+    defer run_result.deinit();
+
+    // Test TUI mode (may fail on non-TTY but should handle gracefully)
+    var result = try runZr(allocator, &.{ "--config", config, "analytics", "--tui" }, tmp_path);
+    defer result.deinit();
+
+    // TUI mode should either:
+    // 1. Succeed and display TUI (exit code 0)
+    // 2. Fail gracefully with clear error message about TTY requirement
+    const is_tty_error = std.mem.indexOf(u8, result.stderr, "TTY") != null or
+        std.mem.indexOf(u8, result.stderr, "terminal") != null or
+        std.mem.indexOf(u8, result.stderr, "not supported") != null;
+
+    try std.testing.expect(result.exit_code == 0 or is_tty_error);
+}

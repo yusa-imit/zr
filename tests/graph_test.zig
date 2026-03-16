@@ -1514,3 +1514,42 @@ test "712: graph with --format invalid-format falls back to default" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "959: graph with --format=tui invokes interactive TUI mode" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[workspace]
+        \\members = ["proj1", "proj2"]
+        \\
+        \\[tasks.proj1]
+        \\cmd = "echo proj1"
+        \\
+        \\[tasks.proj2]
+        \\cmd = "echo proj2"
+        \\deps = ["proj1"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Test TUI mode (may fail on non-TTY but should handle gracefully)
+    var result = try runZr(allocator, &.{ "--config", config, "graph", "--format=tui" }, tmp_path);
+    defer result.deinit();
+
+    // TUI mode should either:
+    // 1. Succeed and display interactive TUI (exit code 0)
+    // 2. Fail gracefully with clear error about TTY/terminal requirement
+    // 3. Show error about Windows not being supported
+    const has_graceful_error = std.mem.indexOf(u8, result.stderr, "TTY") != null or
+        std.mem.indexOf(u8, result.stderr, "terminal") != null or
+        std.mem.indexOf(u8, result.stderr, "not supported") != null or
+        std.mem.indexOf(u8, result.stderr, "Windows") != null;
+
+    try std.testing.expect(result.exit_code == 0 or (result.exit_code == 1 and has_graceful_error));
+}
