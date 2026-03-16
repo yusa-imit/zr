@@ -3,30 +3,33 @@
 ## Current Status
 
 - **Latest**: v1.44.0 (Version Fix after v1.0.0 downgrade incident)
-- **Next**: v1.40.0 — Sailor v1.13.0 Syntax Highlighting & Code Editor
-- **Blockers**: v1.35.0 and v1.36.0 blocked on zuda releases
+- **Next release**: v1.45.0 (next version = current + 1, milestone TBD at release)
+- **Next actionable milestone**: Sailor Syntax Highlighting & Code Editor (READY)
+- **Blocked milestones**: zuda Levenshtein, zuda WorkStealingDeque (waiting on zuda releases)
 
 ---
 
 ## Active Milestones
 
-### v1.35.0 — zuda Levenshtein Migration
+> **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
-Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **Blocked until zuda releases edit_distance module.**
+### zuda Levenshtein Migration (was v1.35.0)
 
-### v1.36.0 — zuda WorkStealingDeque Migration
+Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **BLOCKED until zuda releases edit_distance module.**
 
-Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Blocked until zuda releases StealingQueue module.**
+### zuda WorkStealingDeque Migration (was v1.36.0)
 
-### v1.40.0 — Sailor v1.13.0 Syntax Highlighting & Code Editor
+Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **BLOCKED until zuda releases StealingQueue module.**
 
-Leverage sailor v1.13.0 syntax highlighting and code editor features (already available in current sailor v1.15.0 dependency). Features: syntax-highlighted TOML editing in TUI config editor, syntax-highlighted error messages with code snippets, enhanced code display in documentation viewer. All features are opt-in and non-breaking.
+### Sailor Syntax Highlighting & Code Editor (was v1.40.0)
 
-### v1.41.0 — Remote Execution & Distributed Builds
+Leverage sailor v1.13.0 syntax highlighting and code editor features (already available in current sailor v1.15.0 dependency). Features: syntax-highlighted TOML editing in TUI config editor, syntax-highlighted error messages with code snippets, enhanced code display in documentation viewer. All features are opt-in and non-breaking. **READY — next actionable milestone.**
+
+### Remote Execution & Distributed Builds (was v1.41.0)
 
 Add remote task execution capabilities via SSH/HTTP. Features: `remote` field in task config for SSH target specification, task distribution across multiple machines, remote cache integration for artifact sharing, connection pooling and retry logic, progress monitoring for remote tasks. Enables distributed builds for large monorepos and CI/CD optimization.
 
-### v1.42.0 — Task Retry Strategies & Backoff Policies
+### Task Retry Strategies & Backoff Policies (was v1.42.0)
 
 Enhance retry mechanism with configurable strategies. Features: exponential backoff, jitter, max_attempts per task, retry_on conditions (exit codes, output patterns), backoff_multiplier and max_backoff_ms config, integration with circuit breaker from v1.30.0. Improves reliability for flaky tests and network-dependent tasks.
 
@@ -92,8 +95,10 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 **수립 규칙**:
 - 마일스톤 하나는 **단일 테마**로 구성 (여러 작은 기능을 하나의 주제로 묶음)
 - 1-2주 내 완료 가능한 범위로 스코프 설정
-- 버전 번호는 마지막 마일스톤의 다음 번호로 자동 부여
-- 수립 후 이 파일의 Active Milestones에 추가하고 커밋: `chore: add milestone v1.X.0`
+- 마일스톤은 **이름(테마)으로 관리**하며, 버전 번호는 **릴리즈 시점에 결정**한다
+- 릴리즈 시 버전: `build.zig.zon`의 현재 버전 + 1 (마일스톤에 미리 적힌 번호는 참고용)
+- **건너뛰기 금지**: 차단된 마일스톤을 건너뛰고 미래 버전을 릴리즈하지 않는다. 차단된 마일스톤은 차단 해제 시까지 대기하고, 다른 작업을 먼저 릴리즈한다 (순차 번호로)
+- 수립 후 이 파일의 Active Milestones에 추가하고 커밋: `chore: add milestone <이름>`
 
 ---
 
