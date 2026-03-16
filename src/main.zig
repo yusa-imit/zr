@@ -32,6 +32,7 @@ const plugin_search = @import("plugin/search.zig");
 const wasm_runtime = @import("plugin/wasm_runtime.zig");
 const types = @import("config/types.zig");
 const toml_highlight = @import("config/toml_highlight.zig");
+const error_display = @import("config/error_display.zig");
 const common = @import("cli/common.zig");
 const completion = @import("cli/completion.zig");
 const init = @import("cli/init.zig");
@@ -143,6 +144,7 @@ comptime {
     _ = wasm_runtime;
     _ = types;
     _ = toml_highlight;
+    _ = error_display;
     _ = common;
     _ = completion;
     _ = init;
