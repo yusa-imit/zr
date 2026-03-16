@@ -11,6 +11,7 @@ const cycle_detect = @import("graph/cycle_detect.zig");
 const graph_ascii = @import("graph/ascii.zig");
 const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
+const remote = @import("exec/remote.zig");
 const timeline = @import("exec/timeline.zig");
 const replay = @import("exec/replay.zig");
 const checkpoint = @import("exec/checkpoint.zig");
@@ -1312,5 +1313,10 @@ test "workspace command: run missing task name returns error" {
     const fake_args = [_][]const u8{ "zr", "workspace", "run" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+// Force remote module test discovery by referencing it
+comptime {
+    _ = remote.RemoteExecutor;
 }
 
