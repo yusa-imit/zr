@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.43.0] - 2026-03-16
+
+### Changed
+- **Sailor v1.15.0 Migration**
+  - Upgraded sailor dependency from v1.14.0 to v1.15.0
+  - Fixed async_loop.zig dangling pointer and race conditions (thread safety)
+  - Implemented XTGETTCAP terminal capability querying
+  - Replaced environment variable detection with proper capability negotiation
+  - Enhanced Sixel and Kitty graphics protocol detection
+  - Added 13 new edge case tests for Windows, Linux, macOS
+  - Improved terminal size detection on all platforms
+  - Better handling of non-TTY environments
+  - Fixed 6 memory leaks in repl.zig and editor.zig
+  - Multi-platform native testing in CI (not just cross-compilation)
+  - Tests run on real VMs: ubuntu-latest, macos-13, macos-latest, windows-latest
+  - All optimization modes tested (Debug, ReleaseSafe, ReleaseSmall, ReleaseFast)
+  - No breaking changes — drop-in replacement for v1.14.0
+
+### Developer Notes
+- Total unit tests: 845/853 (8 skipped, 0 leaks)
+- Total integration tests: 957/958 (1 skipped, 0 leaks)
+- CI status: GREEN (all tests passing)
+- Sailor library: 1243 tests passing, 6 cross-compile targets verified
+
 ## [1.39.0] - 2026-03-16
 
 ### Changed

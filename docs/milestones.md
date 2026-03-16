@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.39.0 (Sailor v1.14.0 Migration)
+- **Latest**: v1.43.0 (Sailor v1.15.0 Migration)
 - **Next**: v1.35.0 — zuda Levenshtein Migration (blocked on zuda release)
 - **Blockers**: v1.35.0 and v1.36.0 blocked on zuda releases
 
@@ -36,6 +36,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.43.0 | Sailor v1.15.0 Migration | 2026-03-16 | Thread safety fixes, XTGETTCAP terminal capability detection, platform-specific testing, memory leak fixes, multi-platform CI |
 | v1.39.0 | Sailor v1.14.0 Migration | 2026-03-16 | Memory pooling, render profiling, virtual widget rendering, incremental layout solver, buffer compression |
 | v1.38.0 | Task Output Search & Filtering | 2026-03-16 | Search/filter/head/tail flags for show --output, color highlighting, 7 integration tests |
 | v1.37.0 | Enhanced Task Output Capture & Streaming | 2026-03-16 | OutputCapture module with stream/buffer/discard modes, scheduler integration, TUI live display, `zr show --output` command, 13 integration tests |
@@ -99,7 +100,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 
 ### Sailor Library
 
-- **Current in zr**: v1.13.1 (all migrations complete)
+- **Current in zr**: v1.15.0 (all migrations complete)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -126,6 +127,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 | v1.13.0 | READY | Syntax highlighting, code editor, autocomplete, multi-cursor, rich text |
 | v1.13.1 | DONE | Integer overflow fix for data visualization widgets |
 | v1.14.0 | DONE | Memory pooling, render profiling, virtual widget rendering, incremental layout, buffer compression |
+| v1.15.0 | DONE | Thread safety fixes, XTGETTCAP terminal capability detection, memory leak audit, multi-platform CI |
 
 ### zuda Library
 
