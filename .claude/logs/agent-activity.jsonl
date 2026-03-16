@@ -11,3 +11,6 @@
 {"timestamp":"2026-03-16T15:00:00Z","action":"subagent","agent_type":"none","task":"FEATURE MODE: Verified Phase 9-13 complete, added milestones v1.40-v1.42","project":"zr"}
 {"timestamp":"2026-03-16T14:30:00Z","action":"team_delete","team_name":"version-policy-update","project":"zr"}
 {"timestamp":"2026-03-16T15:14:53Z","action":"direct_work","task":"Add TUI integration tests + fix UTF-8 bug in analytics_tui","project":"zr","files_changed":["tests/analytics_test.zig","tests/graph_test.zig","src/cli/analytics_tui.zig"],"tests_added":2,"bugs_fixed":1}
+{"timestamp":"2026-03-17T19:15:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement error_display.zig showErrorSnippet() function","project":"zr"}
+{"timestamp":"2026-03-17T11:30:00Z","action":"subagent","agent_type":"test-writer","task":"Write TOML syntax highlighting tests (21 tests for lexer and config editor)","project":"zr"}
+{"timestamp":"2026-03-17T14:30:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement TOML syntax highlighting in config editor","project":"zr"}
