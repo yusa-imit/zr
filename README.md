@@ -4,7 +4,9 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.43.0-green.svg)](https://github.com/yusa-imit/zr/releases)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.0.0)
+
+> **🎉 v1.0 Released!** Production-ready developer platform with MCP/LSP integration, 10 language providers, and migration tools for Make/Just/Task. See [CHANGELOG](CHANGELOG.md) for details.
 
 ---
 
@@ -78,6 +80,8 @@ zr init --from-make   # Convert Makefile → zr.toml
 zr init --from-just   # Convert Justfile → zr.toml
 zr init --from-task   # Convert Taskfile.yml → zr.toml
 ```
+
+📖 **See the [Migration Guide](docs/guides/migration.md) for detailed instructions and troubleshooting.**
 
 ---
 
@@ -429,8 +433,8 @@ zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 
 ### Test Status
 
-- **Unit tests**: 675/683 passing (8 skipped)
-- **Integration tests**: 805/805 passing (100%)
+- **Unit tests**: 845/853 passing (8 skipped, 0 failures)
+- **Integration tests**: 957/958 passing (1 skipped, 0 failures)
 - **CI targets**: 6 (x86_64/aarch64 × linux-gnu/macos-none/windows-msvc)
 - **Memory leaks**: 0
 
@@ -487,12 +491,9 @@ All phases complete! zr v1.0 is production-ready.
 
 ## 🐛 Known Issues
 
-### `zr analytics --tui` panics (v1.33.0)
-The TUI dashboard for analytics currently panics with "integer does not fit in destination type" due to a bug in sailor v1.6.0/v1.7.0 data visualization widgets.
+None! All known issues have been resolved in v1.0. 🎉
 
-**Workaround**: Use `zr analytics` (HTML report) or `zr analytics --json` instead.
-
-**Tracking**: [sailor#9](https://github.com/yusa-imit/sailor/issues/9)
+If you encounter any problems, please [open an issue](https://github.com/yusa-imit/zr/issues).
 
 ---
 
