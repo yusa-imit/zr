@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- **Latest**: v1.43.0 (Sailor v1.15.0 Migration)
-- **Next**: v1.35.0 — zuda Levenshtein Migration (blocked on zuda release)
+- **Latest**: v1.44.0 (Version Fix after v1.0.0 downgrade incident)
+- **Next**: v1.40.0 — Sailor v1.13.0 Syntax Highlighting & Code Editor
 - **Blockers**: v1.35.0 and v1.36.0 blocked on zuda releases
 
 ---
@@ -18,9 +18,9 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Blocked until zuda releases StealingQueue module.**
 
-### v1.40.0 — Sailor v1.13.0 Migration (Syntax Highlighting & Code Editor)
+### v1.40.0 — Sailor v1.13.0 Syntax Highlighting & Code Editor
 
-Upgrade sailor dependency from v1.14.0 to v1.13.0 (note: sailor uses reverse versioning for features). New features: syntax highlighting engine, code editor widget with multi-cursor support, autocomplete widget, rich text formatting. All features are opt-in and non-breaking. Potential applications: enhanced TOML editing in TUI config editor, syntax-highlighted error messages, code snippets in documentation viewer.
+Leverage sailor v1.13.0 syntax highlighting and code editor features (already available in current sailor v1.15.0 dependency). Features: syntax-highlighted TOML editing in TUI config editor, syntax-highlighted error messages with code snippets, enhanced code display in documentation viewer. All features are opt-in and non-breaking.
 
 ### v1.41.0 — Remote Execution & Distributed Builds
 
@@ -36,6 +36,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.44.0 | Version Fix (v1.0.0 revert) | 2026-03-16 | Reverted erroneous v1.0.0 version downgrade, added version monotonicity guard to release policy |
 | v1.43.0 | Sailor v1.15.0 Migration | 2026-03-16 | Thread safety fixes, XTGETTCAP terminal capability detection, platform-specific testing, memory leak fixes, multi-platform CI |
 | v1.39.0 | Sailor v1.14.0 Migration | 2026-03-16 | Memory pooling, render profiling, virtual widget rendering, incremental layout solver, buffer compression |
 | v1.38.0 | Task Output Search & Filtering | 2026-03-16 | Search/filter/head/tail flags for show --output, color highlighting, 7 integration tests |
@@ -116,10 +117,10 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 | v1.3.0 | DONE | RenderBudget, LazyBuffer, EventBatcher, DebugOverlay |
 | v1.4.0 | DONE | Form widget, Select/Dropdown, Checkbox, RadioGroup, Validators |
 | v1.5.0 | DONE | MockTerminal snapshot testing, Event bus, Command pattern |
-| v1.6.0 | READY | ScatterPlot, Histogram, TimeSeriesChart (data visualization) |
+| v1.6.0 | DONE | ScatterPlot, Histogram, TimeSeriesChart (data visualization, consumed in v1.22.0) |
 | v1.6.1 | DONE | PieChart overflow fix, API compilation fixes |
-| v1.7.0 | READY | FlexBox layout, viewport clipping, shadow effects, layout caching |
-| v1.8.0 | READY | HttpClient, WebSocket, AsyncEventLoop, TaskRunner, LogViewer |
+| v1.7.0 | DONE | FlexBox layout, viewport clipping, shadow effects, layout caching (consumed in v1.22.0) |
+| v1.8.0 | DONE | HttpClient, WebSocket, AsyncEventLoop, TaskRunner, LogViewer (features available, no zr milestone needed) |
 | v1.9.0 | DONE | WidgetDebugger, PerformanceProfiler, CompletionPopup, ThemeEditor |
 | v1.10.0 | DONE | Mouse event handling (SGR), widget mouse interaction, gamepad/touch |
 | v1.11.0 | DONE | Particle effects, blur/transparency, Sixel/Kitty graphics, transitions |

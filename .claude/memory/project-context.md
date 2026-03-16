@@ -5,99 +5,79 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.0.0 (released 2026-02-28)
+- **Version**: v1.44.0 (build.zig.zon) | Latest Release: v1.43.0 (2026-03-16)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
-## Current Status (2026-03-16)
+## Current Status
 
-- **Version**: v1.39.0 (released - Sailor v1.14.0 Migration)
+- **Build version**: v1.44.0 (fixup release)
 - **Unit tests**: 845/853 (8 skipped, 0 failed, 0 memory leaks)
 - **Integration tests**: 957/958 (1 skipped, 0 failed, 0 memory leaks)
 - **CI**: GREEN — all 6 cross-compile targets passing
-- **GitHub Issues**: 5 open (all enhancement requests for zuda migrations)
-- **Binary**: ~1.2MB ReleaseSmall, ~4ms cold start, ~1.8MB RSS
-- **Latest work**: Test quality improvements (STABILIZATION session 2026-03-16)
-  - Enhanced 8 weak integration tests with meaningful assertions
-  - All tests now verify: no crashes, output produced, error messages contain keywords
-  - Identified cmdPublish bug (returns void instead of error) - documented in tests
+- **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
+- **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
+- **Sailor version**: v1.15.0 (all migrations complete)
+- **Source**: ~63,645 lines, 90+ modules, 10 language providers
 
-## All Phases COMPLETE
+## All PRD Phases COMPLETE ✅
 
-| Phase | Name | Key Deliverables |
-|-------|------|------------------|
-| 1 | Foundation (MVP) | TOML parser, DAG, parallel execution, CLI (run/list/graph) |
-| 2 | Workflow & Control | Workflows, expressions, watch mode, matrix, profiles, caching |
-| 3 | Resource & UX | TUI, resource limits (cgroups/Job Objects), shell completion, dry-run |
-| 4 | Extensibility | Plugins (native + WASM), Docker plugin, remote cache |
-| 5 | Toolchain Management | 8 languages, auto-install, PATH injection, `zr tools` CLI |
-| 6 | Monorepo Intelligence | Affected detection, graph viz (ASCII/DOT/JSON/HTML), constraints |
-| 7 | Multi-repo & Remote Cache | S3/GCS/Azure/HTTP backends, cross-repo tasks, synthetic workspace |
-| 8 | Enterprise & Community | CODEOWNERS, versioning, analytics, conformance, benchmarks |
-| 9 | Infrastructure + DX | LanguageProvider (8 langs), JSON-RPC, "Did you mean?", error improvements |
-| 10 | MCP Server | 9 MCP tools, `zr init --detect` auto-generation |
-| 11 | LSP Server | Diagnostics, completion, hover/go-to-definition |
-| 12 | Performance & Stability | Binary optimization, fuzz testing, benchmark dashboard |
-| 13 | v1.0 Release | 6 user guides, migration tools, README overhaul, install scripts |
+13 phases fully implemented. See `docs/PRD.md` for detailed requirements.
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 1–13 | MVP through v1.0 Release | ✅ COMPLETE |
 
 ## Architecture (High-Level)
 
 ```
 CLI Interface → Config Engine → Task Graph Engine → Execution Engine → Plugin System
                      ↓                                      ↓
-              Expression Engine                    Toolchain Manager
+              Expression Engine                    Toolchain Manager (10 langs)
                      ↓                                      ↓
               LanguageProvider                    Remote Cache (S3/GCS/Azure/HTTP)
 ```
 
 ### Key Modules (src/)
 - `main.zig` (~550 lines) — Entry point + CLI dispatcher (34+ commands)
-- `cli/` (34 modules) — Command handlers for all features
-- `config/` (5 modules) — TOML loader, parser, types, matrix, expression engine
+- `cli/` (34 modules) — Command handlers (run, list, graph, watch, plugins, etc.)
+- `config/` (5 modules) — TOML loader, parser, expression engine, matrix expansion
+- `exec/` (7 modules) — Scheduler, worker pool, resource monitoring, hooks, timeline
 - `graph/` — DAG, topological sort, cycle detection, visualization
-- `exec/` — Scheduler, worker pool, process management, resource monitoring
-- `plugin/` (7 modules) — Dynamic loading, git/registry install, built-ins (Docker, env, git, cache), WASM runtime
+- `plugin/` (8 modules) — Dynamic loading, registry client, built-ins, WASM runtime
 - `watch/` — Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
-- `toolchain/` — Types, installer, downloader, PATH injection
-- `cache/` — Local store + remote backends (S3/GCS/Azure/HTTP)
-- `multirepo/` — Sync, status, graph, run, synthetic workspace
-- `output/` — Terminal rendering, color (sailor.color), progress (sailor.progress)
-- `util/` — Glob, semver, hash, platform wrappers, affected detection
+- `toolchain/` — Installer, downloader, PATH injection (10 languages)
+- `cache/` — Local + remote backends (S3/GCS/Azure/HTTP)
+- `multirepo/` — Sync, status, graph, workspace orchestration
+- `output/` — Terminal rendering (sailor.color, sailor.progress)
+- `util/` — Glob, platform wrappers, affected detection, semver, hash
 
-## Sailor Library Integration
+## Sailor Library
 
-- **Current version**: v1.14.0 (in build.zig.zon) ✅
-- **Latest available**: v1.14.0 (all migrations complete through v1.14.0)
-- **Status**: All sailor migrations DONE - memory pooling, render profiling, virtual widgets, incremental layout, buffer compression
-- Modules using sailor: arg parsing (main.zig), color (color.zig), progress (progress.zig), JSON formatting (cli/), TUI widgets (tui.zig, tui_runner.zig)
+- **Current in zr**: v1.15.0 ✅
+- **Status**: All migrations complete (v1.1.0 → v1.15.0)
+- **Latest available**: v1.15.0 (stability release with thread safety fixes)
+- **Key features**: Syntax highlighting, session recording, accessibility (WCAG AAA), mouse input, particle effects, data visualization
 
-## Post-v1.0 Development (In Progress)
+## Post-v1.0 Milestones
 
-### Completed Milestones
-- v1.1.0 - v1.8.0: See CHANGELOG.md
+**Completed**: v1.1.0 – v1.43.0 (see CHANGELOG.md for details)
 
-### Current Work (v1.9.0)
-- **Sailor v1.1.0 Accessibility Features**
-  - ✅ Unicode width calculation (CJK/emoji support)
-  - ✅ Enhanced keyboard navigation (Home/End/PgUp/PgDn/g/G)
-  - 🔄 Accessibility metadata (screen reader hints) - in progress
-  - 🔄 Focus management for TUI widgets - planned
+**Blocked** (waiting for zuda releases):
+- v1.35.0, v1.36.0 — zuda WorkStealingDeque, TaskPool migrations
 
-### Next Priorities
-1. Complete v1.9.0 accessibility features
-2. v1.10.0 — Task Dependencies v2 (conditional deps, optional deps)
-3. v1.11.0 — Plugin Registry Index Server
-4. v1.12.0 — TOML Workflow Parser Fix
+**Active/Ready**:
+- v1.40.0 — Syntax highlighting via sailor v1.13.0 features (already in v1.15.0)
+- v1.41.0, v1.42.0 — Post-release enhancements
 
 ## Documentation
 
-- `docs/PRD.md` — Product Requirements Document (v3.0, 2085 lines)
-- `docs/guides/` — 6 user guides (getting-started, configuration, commands, mcp-integration, lsp-setup, adding-language)
-- `docs/PLUGIN_GUIDE.md` — Plugin user guide
-- `docs/PLUGIN_DEV_GUIDE.md` — Plugin developer guide
-- `CONTRIBUTING.md` — Contributor onboarding guide
-- `CHANGELOG.md` — Complete version history
-- `examples/` — 15 example projects (Docker/K8s, Make migration, 8 language providers, plugin)
+- `docs/PRD.md` — Complete product spec (13 phases)
+- `docs/guides/` — 6 user guides (getting-started, configuration, commands, MCP, LSP, language-provider)
+- `docs/milestones.md` — Active milestones, roadmap, dependency tracking
+- `CHANGELOG.md` — Complete version history (v1.0.0 → v1.43.0)
+- `CONTRIBUTING.md` — Contributor onboarding
+- `examples/` — 19 example projects (15 language providers, plugin, Docker/K8s)
 
 ## Performance Targets (All Met)
 
@@ -108,3 +88,7 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 | Memory (core) | < 10MB | ~2-3MB RSS |
 | Binary size | < 5MB | ~1.2MB |
 | Cross-compile | 6 targets | 6/6 passing |
+
+## Next Action
+
+Check `docs/milestones.md` for v1.40.0+ priorities. Current blockers: zuda library releases.
