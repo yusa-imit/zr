@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.45.0] - 2026-03-17
+
+### Added
+- **TOML Syntax Highlighting**
+  - Syntax-highlighted TOML code snippets in error messages using sailor v1.13.0+ features
+  - Error display utility (`src/util/error_display.zig`) for beautiful diagnostic output
+  - Color-coded TOML elements: sections (cyan), keys (yellow), strings (green), numbers (magenta), booleans (blue), comments (dim)
+  - Context lines with line numbers for better error localization
+  - Integrated with `zr validate` command for enhanced validation feedback
+  - Works seamlessly with sailor's existing color system and accessibility features
+
+### Developer Notes
+- Total unit tests: 877/885 (8 skipped, 0 leaks)
+- Total integration tests: 959/960 (1 skipped, 0 leaks)
+- CI status: GREEN (all tests passing)
+- Leverages sailor v1.15.0 syntax highlighting capabilities
+- No breaking changes — purely additive feature
+
 ## [1.43.0] - 2026-03-16
 
 ### Changed

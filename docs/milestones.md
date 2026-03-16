@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Latest**: v1.44.0 (Version Fix after v1.0.0 downgrade incident)
-- **Next release**: v1.45.0 (next version = current + 1, milestone TBD at release)
-- **Next actionable milestone**: Sailor Syntax Highlighting & Code Editor (READY)
+- **Latest**: v1.45.0 (TOML Syntax Highlighting)
+- **Next release**: v1.46.0 (next version = current + 1, milestone TBD at release)
+- **Next actionable milestone**: Remote Execution & Distributed Builds (READY)
 - **Blocked milestones**: zuda Levenshtein, zuda WorkStealingDeque (waiting on zuda releases)
 
 ---
@@ -21,10 +21,6 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **BLOCKED until zuda releases StealingQueue module.**
 
-### Sailor Syntax Highlighting & Code Editor (was v1.40.0)
-
-Leverage sailor v1.13.0 syntax highlighting and code editor features (already available in current sailor v1.15.0 dependency). Features: syntax-highlighted TOML editing in TUI config editor, syntax-highlighted error messages with code snippets, enhanced code display in documentation viewer. All features are opt-in and non-breaking. **READY — next actionable milestone.**
-
 ### Remote Execution & Distributed Builds (was v1.41.0)
 
 Add remote task execution capabilities via SSH/HTTP. Features: `remote` field in task config for SSH target specification, task distribution across multiple machines, remote cache integration for artifact sharing, connection pooling and retry logic, progress monitoring for remote tasks. Enables distributed builds for large monorepos and CI/CD optimization.
@@ -39,6 +35,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.45.0 | TOML Syntax Highlighting | 2026-03-17 | Syntax-highlighted TOML error messages, error_display utility, color-coded diagnostics for validate command |
 | v1.44.0 | Version Fix (v1.0.0 revert) | 2026-03-16 | Reverted erroneous v1.0.0 version downgrade, added version monotonicity guard to release policy |
 | v1.43.0 | Sailor v1.15.0 Migration | 2026-03-16 | Thread safety fixes, XTGETTCAP terminal capability detection, platform-specific testing, memory leak fixes, multi-platform CI |
 | v1.39.0 | Sailor v1.14.0 Migration | 2026-03-16 | Memory pooling, render profiling, virtual widget rendering, incremental layout solver, buffer compression |
