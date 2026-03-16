@@ -9,15 +9,18 @@
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
-## Current Status (2026-03-09)
+## Current Status (2026-03-16)
 
-- **Version**: v1.20.0 (released - Expression Diagnostics Integration)
-- **Unit tests**: 750/758 (8 skipped, 0 failed, 0 memory leaks)
-- **Integration tests**: 894/894 (100% pass rate)
+- **Version**: v1.39.0 (released - Sailor v1.14.0 Migration)
+- **Unit tests**: 845/853 (8 skipped, 0 failed, 0 memory leaks)
+- **Integration tests**: 957/958 (1 skipped, 0 failed, 0 memory leaks)
 - **CI**: GREEN — all 6 cross-compile targets passing
-- **GitHub Issues**: 0 open
+- **GitHub Issues**: 5 open (all enhancement requests for zuda migrations)
 - **Binary**: ~1.2MB ReleaseSmall, ~4ms cold start, ~1.8MB RSS
-- **Latest fix**: Example configs corrected (removed invalid cache subsections, fixed 'command' → 'cmd')
+- **Latest work**: Test quality improvements (STABILIZATION session 2026-03-16)
+  - Enhanced 8 weak integration tests with meaningful assertions
+  - All tests now verify: no crashes, output produced, error messages contain keywords
+  - Identified cmdPublish bug (returns void instead of error) - documented in tests
 
 ## All Phases COMPLETE
 
@@ -63,9 +66,9 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 
 ## Sailor Library Integration
 
-- **Current version**: v0.5.1 (in build.zig.zon)
-- **Latest available**: v1.0.2 (released 2026-02-28)
-- **Migration pending**: Update to v1.0.2 for theme system, animations, local TTY workaround removal
+- **Current version**: v1.14.0 (in build.zig.zon) ✅
+- **Latest available**: v1.14.0 (all migrations complete through v1.14.0)
+- **Status**: All sailor migrations DONE - memory pooling, render profiling, virtual widgets, incremental layout, buffer compression
 - Modules using sailor: arg parsing (main.zig), color (color.zig), progress (progress.zig), JSON formatting (cli/), TUI widgets (tui.zig, tui_runner.zig)
 
 ## Post-v1.0 Development (In Progress)
