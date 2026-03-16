@@ -1,3 +1,19 @@
+## analytics_tui UTF-8 Rendering Bug (2026-03-17, commit 8aabf15)
+**Symptom**: `zr analytics --tui` crashes with "integer does not fit in destination type" panic
+**Root cause**: Line 109 of `analytics_tui.zig` was casting `cell.char` (u32) directly to u8 with `@intCast`, causing overflow when UTF-8 characters > 255 (e.g., box-drawing chars) were rendered
+**Fix**: Replace naive cast with proper UTF-8 encoding:
+```zig
+var utf8_buf: [4]u8 = undefined;
+const len = std.unicode.utf8Encode(@as(u21, @intCast(cell.char)), &utf8_buf) catch {
+    _ = try stdout.write("?");
+    continue;
+};
+_ = try stdout.write(utf8_buf[0..len]);
+```
+**Lesson**: Never cast u32 → u8 without bounds checking. Use `std.unicode.utf8Encode()` for proper UTF-8 character handling.
+
+---
+
 ## Schedule Remove Command Bug (2026-02-25, commit 61f0c26)
 **Symptom**: `schedule remove` command returned exit code 255 (crash), integration tests 83 and 176 failing
 **Root cause**:
