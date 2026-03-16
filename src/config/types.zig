@@ -420,7 +420,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -434,7 +434,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -447,7 +447,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -460,7 +460,7 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, env, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, env, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with retry settings (for tests or programmatic use).
@@ -475,7 +475,7 @@ pub const Config = struct {
         retry_delay_ms: u64,
         retry_backoff: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with a condition expression (for tests or programmatic use).
@@ -485,7 +485,7 @@ pub const Config = struct {
         cmd: []const u8,
         condition: ?[]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with conditional dependencies (for tests or programmatic use).
@@ -495,7 +495,7 @@ pub const Config = struct {
         cmd: []const u8,
         deps_if: []const ConditionalDep,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a task with optional dependencies (for tests or programmatic use).
@@ -505,7 +505,7 @@ pub const Config = struct {
         cmd: []const u8,
         deps_optional: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
     }
 
     /// Add a workflow (for tests or programmatic use).
@@ -652,6 +652,9 @@ pub const Config = struct {
             &[_][2][]const u8{}, // params - already used for substitution, no need to store
             null, // output_file not supported in templates yet
             null, // output_mode not supported in templates yet
+            null, // remote not supported in templates yet
+            null, // remote_cwd not supported in templates yet
+            &[_][2][]const u8{}, // remote_env not supported in templates yet
         );
 
         // Free the allocated strings (addTaskImpl dupes them)
@@ -952,6 +955,17 @@ pub const Task = struct {
     /// Default is null (use inherit mode based on context).
     /// v1.37.0 feature for enhanced task output capture.
     output_mode: ?[]const u8 = null,
+    /// Remote execution target: SSH (user@host:port or ssh://user@host:port) or HTTP/HTTPS endpoint.
+    /// If null, task runs locally.
+    /// v1.45.0 feature for remote execution.
+    remote: ?[]const u8 = null,
+    /// Remote working directory for execution (null = remote home or default).
+    /// v1.45.0 feature for remote execution.
+    remote_cwd: ?[]const u8 = null,
+    /// Remote environment variables (separate from local env).
+    /// Each entry is [key, value] (owned, duped).
+    /// v1.45.0 feature for remote execution.
+    remote_env: ?[][2][]const u8 = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -999,6 +1013,15 @@ pub const Task = struct {
         if (self.checkpoint) |*cp| cp.deinit(allocator);
         if (self.output_file) |of| allocator.free(of);
         if (self.output_mode) |om| allocator.free(om);
+        if (self.remote) |r| allocator.free(r);
+        if (self.remote_cwd) |rc| allocator.free(rc);
+        if (self.remote_env) |re| {
+            for (re) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            allocator.free(re);
+        }
     }
 };
 
@@ -1481,6 +1504,9 @@ pub fn addTaskImpl(
     params: []const [2][]const u8,
     output_file: ?[]const u8,
     output_mode: ?[]const u8,
+    remote: ?[]const u8,
+    remote_cwd: ?[]const u8,
+    remote_env: []const [2][]const u8,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -1708,6 +1734,40 @@ pub fn addTaskImpl(
     const task_output_mode = if (output_mode) |om| try allocator.dupe(u8, om) else null;
     errdefer if (task_output_mode) |om| allocator.free(om);
 
+    // Dupe remote execution fields (v1.45.0)
+    const task_remote = if (remote) |r| try allocator.dupe(u8, r) else null;
+    errdefer if (task_remote) |r| allocator.free(r);
+
+    const task_remote_cwd = if (remote_cwd) |rc| try allocator.dupe(u8, rc) else null;
+    errdefer if (task_remote_cwd) |rc| allocator.free(rc);
+
+    // Dupe remote env pairs (v1.45.0)
+    const task_remote_env = if (remote_env.len > 0) blk: {
+        const re = try allocator.alloc([2][]const u8, remote_env.len);
+        var re_duped: usize = 0;
+        errdefer {
+            for (re[0..re_duped]) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            allocator.free(re);
+        }
+        for (remote_env, 0..) |pair, i| {
+            re[i][0] = try allocator.dupe(u8, pair[0]);
+            errdefer allocator.free(re[i][0]);
+            re[i][1] = try allocator.dupe(u8, pair[1]);
+            re_duped += 1;
+        }
+        break :blk re;
+    } else null;
+    errdefer if (task_remote_env) |re| {
+        for (re) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(re);
+    };
+
     var task = Task{
         .name = task_name,
         .cmd = task_cmd,
@@ -1740,6 +1800,9 @@ pub fn addTaskImpl(
         .params = task_params,
         .output_file = task_output_file,
         .output_mode = task_output_mode,
+        .remote = task_remote,
+        .remote_cwd = task_remote_cwd,
+        .remote_env = task_remote_env,
     };
 
     // Apply template if specified
@@ -2013,6 +2076,9 @@ test "applyTemplateToTask: automatic template application" {
         &params_array,
         null, // output_file
         null, // output_mode
+        null, // remote
+        null, // remote_cwd
+        &[_][2][]const u8{}, // remote_env
     );
 
     // Verify the task was created with template-expanded fields
@@ -2090,6 +2156,9 @@ test "applyTemplateToTask: task overrides template defaults" {
         &params_array,
         null, // output_file
         null, // output_mode
+        null, // remote
+        null, // remote_cwd
+        &[_][2][]const u8{}, // remote_env
     );
 
     // Verify task uses explicit values, not template defaults

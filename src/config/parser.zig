@@ -338,6 +338,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Output capture (v1.37.0) — non-owning slices for output file and mode
     var task_output_file: ?[]const u8 = null;
     var task_output_mode: ?[]const u8 = null;
+    // Remote execution (v1.45.0) — non-owning slices for remote target and cwd
+    var task_remote: ?[]const u8 = null;
+    var task_remote_cwd: ?[]const u8 = null;
+    var task_remote_env = std.ArrayList([2][]const u8){};
+    defer task_remote_env.deinit(allocator);
 
     // Subsection state (v1.19.0) — for handling subsections appearing before main task
     var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
@@ -619,7 +624,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -644,6 +649,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_max_memory = null;
                 task_matrix_raw = null;
                 task_template = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
                 current_task = null;
             }
             // Parse new workflow name from "[workflows.X]"
@@ -748,7 +758,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -760,7 +770,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_cmd = null; task_cwd = null; task_desc = null;
                 task_timeout_ms = null; task_allow_failure = false;
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
+                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
+                current_task = null;
             }
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
@@ -807,11 +819,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
+                current_task = null;
             }
             if (current_profile) |pname| {
                 if (current_profile_task) |ptask| {
@@ -837,11 +851,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
+                current_task = null;
             }
             if (current_workflow) |wf_name_slice| {
                 try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
@@ -1017,11 +1033,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null; current_task = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 current_task = null;
             }
             // Flush pending plugin (if any)
@@ -1314,7 +1331,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
                 }
             }
 
@@ -2134,6 +2151,28 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "output_mode")) {
                     // Output mode: stream, buffer, or discard (v1.37.0)
                     task_output_mode = value;
+                } else if (std.mem.eql(u8, key, "remote")) {
+                    // Remote execution target: SSH (user@host:port or ssh://user@host:port) or HTTP/HTTPS (v1.45.0)
+                    task_remote = value;
+                } else if (std.mem.eql(u8, key, "remote_cwd")) {
+                    // Remote working directory (v1.45.0)
+                    task_remote_cwd = value;
+                } else if (std.mem.eql(u8, key, "remote_env")) {
+                    // Remote environment variables: { KEY = "value", FOO = "bar" } (v1.45.0)
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                // Non-owning slices into content — addTaskImpl will dupe
+                                try task_remote_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    }
                 }
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)
@@ -2280,7 +2319,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         if (task_matrix_raw) |mraw| {
             try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
         } else {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
         }
     }
 
@@ -4076,4 +4115,220 @@ test "parse task hook with timeout and after points" {
     // After hook
     try std.testing.expectEqualStrings("echo 'Task completed'", task.hooks[1].cmd);
     try std.testing.expectEqual(types.HookPoint.after, task.hooks[1].point);
+}
+
+// Remote execution tests (Phase 1.1: Config Schema Extension)
+
+test "parse task with SSH remote target (short format: user@host:port)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.deploy]
+        \\cmd = "npm run deploy"
+        \\remote = "user@example.com:22"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("deploy").?;
+    try std.testing.expectEqualStrings("npm run deploy", task.cmd);
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("user@example.com:22", task.remote.?);
+}
+
+test "parse task with SSH remote target (URI format: ssh://user@host:port)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "cargo build --release"
+        \\remote = "ssh://builder@10.0.1.5:2222"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expectEqualStrings("cargo build --release", task.cmd);
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("ssh://builder@10.0.1.5:2222", task.remote.?);
+}
+
+test "parse task with HTTP remote target (http://host:port)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.run-job]
+        \\cmd = "python train.py"
+        \\remote = "http://gpu-cluster:8080"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("run-job").?;
+    try std.testing.expectEqualStrings("python train.py", task.cmd);
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("http://gpu-cluster:8080", task.remote.?);
+}
+
+test "parse task with HTTPS remote target (https://host:port)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.sync]
+        \\cmd = "rsync -av data/"
+        \\remote = "https://secure-server:9443"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("sync").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("https://secure-server:9443", task.remote.?);
+}
+
+test "parse task with remote_cwd field" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.test-remote]
+        \\cmd = "pytest tests/"
+        \\remote = "ssh://ci@test-vm:22"
+        \\remote_cwd = "/home/ci/project"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("test-remote").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("ssh://ci@test-vm:22", task.remote.?);
+    try std.testing.expect(task.remote_cwd != null);
+    try std.testing.expectEqualStrings("/home/ci/project", task.remote_cwd.?);
+}
+
+test "parse task with remote_env field" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.deploy-prod]
+        \\cmd = "npm run deploy"
+        \\remote = "user@prod-server:22"
+        \\remote_env = { ENVIRONMENT = "production", LOG_LEVEL = "info" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("deploy-prod").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expect(task.remote_env != null);
+    try std.testing.expectEqual(@as(usize, 2), task.remote_env.?.len);
+
+    // Check that the environment variables are parsed
+    var found_env = false;
+    var found_log = false;
+    for (task.remote_env.?) |pair| {
+        if (std.mem.eql(u8, pair[0], "ENVIRONMENT")) {
+            try std.testing.expectEqualStrings("production", pair[1]);
+            found_env = true;
+        }
+        if (std.mem.eql(u8, pair[0], "LOG_LEVEL")) {
+            try std.testing.expectEqualStrings("info", pair[1]);
+            found_log = true;
+        }
+    }
+    try std.testing.expect(found_env);
+    try std.testing.expect(found_log);
+}
+
+test "parse task with remote_cwd and remote_env together" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.full-remote]
+        \\cmd = "make clean && make test"
+        \\remote = "ssh://dev@build-machine:22"
+        \\remote_cwd = "/workspace/project"
+        \\remote_env = { BUILD_TYPE = "debug", JOBS = "8" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("full-remote").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("ssh://dev@build-machine:22", task.remote.?);
+    try std.testing.expect(task.remote_cwd != null);
+    try std.testing.expectEqualStrings("/workspace/project", task.remote_cwd.?);
+    try std.testing.expect(task.remote_env != null);
+    try std.testing.expectEqual(@as(usize, 2), task.remote_env.?.len);
+}
+
+test "remote field is optional (defaults to null for local execution)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.local-task]
+        \\cmd = "echo 'Running locally'"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("local-task").?;
+    try std.testing.expect(task.remote == null);
+    try std.testing.expect(task.remote_cwd == null);
+    try std.testing.expect(task.remote_env == null);
+}
+
+test "parse task with remote and local cwd (both defined)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.hybrid]
+        \\cmd = "python script.py"
+        \\remote = "http://worker:5000"
+        \\cwd = "/local/path"
+        \\remote_cwd = "/remote/path"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("hybrid").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("http://worker:5000", task.remote.?);
+    try std.testing.expect(task.cwd != null);
+    try std.testing.expectEqualStrings("/local/path", task.cwd.?);
+    try std.testing.expect(task.remote_cwd != null);
+    try std.testing.expectEqualStrings("/remote/path", task.remote_cwd.?);
+}
+
+test "parse task with SSH URI without port defaults to 22" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.ssh-default]
+        \\cmd = "ls -la"
+        \\remote = "ssh://user@example.com"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("ssh-default").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("ssh://user@example.com", task.remote.?);
+}
+
+test "parse task with HTTP remote and env vars set" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.http-task]
+        \\cmd = "java -jar app.jar"
+        \\remote = "https://api-gateway:8443"
+        \\remote_env = { JVM_OPTS = "-Xmx2g" }
+        \\env = { LOCAL_VAR = "local_value" }
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("http-task").?;
+    try std.testing.expect(task.remote != null);
+    try std.testing.expectEqualStrings("https://api-gateway:8443", task.remote.?);
+
+    // Check local env vars
+    try std.testing.expectEqual(@as(usize, 1), task.env.len);
+    try std.testing.expectEqualStrings("LOCAL_VAR", task.env[0][0]);
+    try std.testing.expectEqualStrings("local_value", task.env[0][1]);
+
+    // Check remote env vars
+    try std.testing.expect(task.remote_env != null);
+    try std.testing.expectEqual(@as(usize, 1), task.remote_env.?.len);
+    try std.testing.expectEqualStrings("JVM_OPTS", task.remote_env.?[0][0]);
+    try std.testing.expectEqualStrings("-Xmx2g", task.remote_env.?[0][1]);
 }
