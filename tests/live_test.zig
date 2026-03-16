@@ -39,8 +39,11 @@ test "live: with task name and config" {
 
     var result = try runZr(allocator, &.{ "--config", config, "live", "hello" }, tmp_path);
     defer result.deinit();
-    // Live command runs the task - may succeed or fail depending on TUI support
-    _ = result.exit_code;
+    // Live command should succeed (exit 0) or fail gracefully (exit 1)
+    // Should not crash
+    try std.testing.expect(result.exit_code <= 1);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "live: missing config file" {

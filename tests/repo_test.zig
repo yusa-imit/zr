@@ -14,8 +14,12 @@ test "37: repo info shows repository status" {
 
     var result = try runZr(allocator, &.{ "repo", "info" }, tmp_path);
     defer result.deinit();
-    // May fail if not in git repo, but should not crash
-    _ = result.exit_code;
+    // May fail if not in git repo (exit 1), but should not crash (exit > 1)
+    // Valid exit codes: 0 (success) or 1 (not a git repo)
+    try std.testing.expect(result.exit_code <= 1);
+    // Should produce output explaining the status or error
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "87: repo sync without zr-repos.toml fails gracefully" {

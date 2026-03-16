@@ -26,9 +26,10 @@ test "publish: requires config file" {
 
     var result = try runZr(allocator, &.{"publish"}, tmp_path);
     defer result.deinit();
-    // Publish prints error but may return 0 (cmdPublish returns void, errors are just printed)
-    // Check for error message in output
-    _ = result.exit_code;
+    // NOTE: cmdPublish prints errors but returns void (exit 0) - this is a known limitation
+    // Check that error message is printed
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Error") != null or std.mem.indexOf(u8, output, "Failed") != null);
 }
 
 test "publish: --dry-run with valid config" {
@@ -53,8 +54,10 @@ test "publish: --dry-run with valid config" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--dry-run" }, tmp_path);
     defer result.deinit();
-    // Should handle gracefully
-    _ = result.exit_code;
+    // Dry-run should succeed or show what would be published
+    try std.testing.expect(result.exit_code <= 1);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "publish: --bump requires value" {
@@ -70,8 +73,11 @@ test "publish: --bump requires value" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--bump" }, tmp_path);
     defer result.deinit();
-    // Publish prints error but may return 0
-    _ = result.exit_code;
+    // NOTE: cmdPublish prints errors but returns void (exit 0)
+    // Check that error message about missing bump value is printed
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Error") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "bump") != null);
 }
 
 test "publish: invalid bump type shows error" {
@@ -87,6 +93,9 @@ test "publish: invalid bump type shows error" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--bump", "invalid" }, tmp_path);
     defer result.deinit();
-    // Publish prints error but may return 0
-    _ = result.exit_code;
+    // NOTE: cmdPublish prints errors but returns void (exit 0)
+    // Check that error message about invalid bump type is printed
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Error") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Invalid") != null or std.mem.indexOf(u8, output, "bump") != null);
 }

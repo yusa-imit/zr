@@ -824,9 +824,11 @@ test "467: list with --format=yaml outputs YAML format" {
 
     var result = try runZr(allocator, &.{ "list", "--format=yaml" }, tmp_path);
     defer result.deinit();
-    // YAML format uses "tasks:" prefix and indentation
-    // Note: Current implementation may not support YAML format yet
-    _ = result.exit_code; // Accept any exit code for now
+    // YAML format should either succeed (exit 0) or report unsupported format (exit 1)
+    // Should not crash
+    try std.testing.expect(result.exit_code <= 1);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "478: list with multiple --tags filters applies OR logic" {

@@ -53,8 +53,11 @@ test "59: workspace run with empty workspace" {
 
     var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "hello" }, tmp_path);
     defer result.deinit();
-    // Should handle gracefully (either error or run on single project)
-    _ = result.exit_code;
+    // Should either fail with error (exit 1) or succeed on single project (exit 0)
+    // Should not crash
+    try std.testing.expect(result.exit_code <= 1);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "97: workspace list command without workspace section fails" {
@@ -97,8 +100,10 @@ test "98: workspace run with --parallel flag" {
 
     var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "hello", "--parallel" }, tmp_path);
     defer result.deinit();
-    // Should succeed or handle parallel flag appropriately
-    _ = result.exit_code;
+    // With empty members, should succeed (run current project) or fail gracefully
+    try std.testing.expect(result.exit_code <= 1);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "116: workspace run with filtered members using glob pattern" {
