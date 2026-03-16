@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.38.0 (Task Output Search & Filtering)
+- **Latest**: v1.39.0 (Sailor v1.14.0 Migration)
 - **Next**: v1.35.0 — zuda Levenshtein Migration (blocked on zuda release)
 - **Blockers**: v1.35.0 and v1.36.0 blocked on zuda releases
 
@@ -24,6 +24,7 @@ Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.Steal
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.39.0 | Sailor v1.14.0 Migration | 2026-03-16 | Memory pooling, render profiling, virtual widget rendering, incremental layout solver, buffer compression |
 | v1.38.0 | Task Output Search & Filtering | 2026-03-16 | Search/filter/head/tail flags for show --output, color highlighting, 7 integration tests |
 | v1.37.0 | Enhanced Task Output Capture & Streaming | 2026-03-16 | OutputCapture module with stream/buffer/discard modes, scheduler integration, TUI live display, `zr show --output` command, 13 integration tests |
 | v1.34.0 | Workflow Retry Budget Integration | 2026-03-14 | Workflow-level retry budget fully functional with scheduler integration and multi-stage support |
@@ -112,6 +113,7 @@ Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.Steal
 | v1.12.0 | DONE | Session recording, audit logging, WCAG AAA themes, screen reader |
 | v1.13.0 | READY | Syntax highlighting, code editor, autocomplete, multi-cursor, rich text |
 | v1.13.1 | DONE | Integer overflow fix for data visualization widgets |
+| v1.14.0 | DONE | Memory pooling, render profiling, virtual widget rendering, incremental layout, buffer compression |
 
 ### zuda Library
 

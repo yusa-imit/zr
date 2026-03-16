@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-03-16
+
+### Changed
+- **Sailor v1.14.0 Migration**
+  - Upgraded sailor dependency from v1.13.1 to v1.14.0
+  - Memory pooling system reduces allocations for frequently created objects
+  - Render profiling tools identify slow widgets and detect bottlenecks
+  - Virtual widget rendering only renders widgets in viewport, skips off-screen
+  - Incremental layout solver caches layout results, only recomputes on changes
+  - Buffer compression reduces memory footprint for large TUI applications
+  - All features are opt-in and backward compatible
+
+### Developer Notes
+- Total unit tests: 845/853 (8 skipped, 0 leaks)
+- Total integration tests: 967/968 (1 skipped, 0 leaks)
+- CI status: GREEN (all tests passing)
+- No breaking changes from sailor v1.14.0
+
 ## [1.34.0] - 2026-03-14
 
 ### Added
