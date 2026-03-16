@@ -4,9 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.0.0)
-
-> **🎉 v1.0 Released!** Production-ready developer platform with MCP/LSP integration, 10 language providers, and migration tools for Make/Just/Task. See [CHANGELOG](CHANGELOG.md) for details.
+[![Version](https://img.shields.io/badge/version-1.44.0-green.svg)](https://github.com/yusa-imit/zr/releases)
 
 ---
 
@@ -490,8 +488,6 @@ All phases complete! zr v1.0 is production-ready.
 ---
 
 ## 🐛 Known Issues
-
-None! All known issues have been resolved in v1.0. 🎉
 
 If you encounter any problems, please [open an issue](https://github.com/yusa-imit/zr/issues).
 
