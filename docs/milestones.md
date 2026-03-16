@@ -18,6 +18,18 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Blocked until zuda releases StealingQueue module.**
 
+### v1.40.0 — Sailor v1.13.0 Migration (Syntax Highlighting & Code Editor)
+
+Upgrade sailor dependency from v1.14.0 to v1.13.0 (note: sailor uses reverse versioning for features). New features: syntax highlighting engine, code editor widget with multi-cursor support, autocomplete widget, rich text formatting. All features are opt-in and non-breaking. Potential applications: enhanced TOML editing in TUI config editor, syntax-highlighted error messages, code snippets in documentation viewer.
+
+### v1.41.0 — Remote Execution & Distributed Builds
+
+Add remote task execution capabilities via SSH/HTTP. Features: `remote` field in task config for SSH target specification, task distribution across multiple machines, remote cache integration for artifact sharing, connection pooling and retry logic, progress monitoring for remote tasks. Enables distributed builds for large monorepos and CI/CD optimization.
+
+### v1.42.0 — Task Retry Strategies & Backoff Policies
+
+Enhance retry mechanism with configurable strategies. Features: exponential backoff, jitter, max_attempts per task, retry_on conditions (exit codes, output patterns), backoff_multiplier and max_backoff_ms config, integration with circuit breaker from v1.30.0. Improves reliability for flaky tests and network-dependent tasks.
+
 ---
 
 ## Completed Milestones
