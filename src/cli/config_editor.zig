@@ -3,6 +3,7 @@ const sailor = @import("sailor");
 const config_types = @import("../config/types.zig");
 const config_parser = @import("../config/parser.zig");
 const color_mod = @import("../output/color.zig");
+const toml_highlight = @import("../config/toml_highlight.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -124,9 +125,16 @@ pub const ConfigEditor = struct {
         const toml = try self.generateToml();
         defer self.allocator.free(toml);
 
-        // Show preview
+        // Show preview with syntax highlighting
         try w.writeAll("\n--- Generated TOML ---\n");
-        try w.writeAll(toml);
+        if (use_color) {
+            // Highlight TOML syntax
+            const highlighted = toml_highlight.highlightToml(self.allocator, toml) catch toml;
+            defer if (highlighted.ptr != toml.ptr) self.allocator.free(highlighted);
+            try w.writeAll(highlighted);
+        } else {
+            try w.writeAll(toml);
+        }
         try w.writeAll("\n\n");
         try w.flush();
 
@@ -293,4 +301,58 @@ pub fn cmdEdit(
     defer editor.deinit();
 
     return try editor.run(w, ew, use_color);
+}
+
+test "ConfigEditor.generateToml produces valid TOML" {
+    const allocator = std.testing.allocator;
+    var editor = try ConfigEditor.init(allocator, .task);
+    defer editor.deinit();
+
+    // Populate fields
+    if (editor.fields.items.len > 0) {
+        try editor.fields.items[0].value.appendSlice(allocator, "build");
+    }
+    if (editor.fields.items.len > 1) {
+        try editor.fields.items[1].value.appendSlice(allocator, "npm run build");
+    }
+    if (editor.fields.items.len > 2) {
+        try editor.fields.items[2].value.appendSlice(allocator, "Build the project");
+    }
+
+    const toml = try editor.generateToml();
+    defer allocator.free(toml);
+
+    try std.testing.expect(std.mem.indexOf(u8, toml, "[tasks.build]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, toml, "cmd = ") != null);
+}
+
+test "ConfigEditor generates workflow TOML" {
+    const allocator = std.testing.allocator;
+    var editor = try ConfigEditor.init(allocator, .workflow);
+    defer editor.deinit();
+
+    if (editor.fields.items.len > 0) {
+        try editor.fields.items[0].value.appendSlice(allocator, "release");
+    }
+
+    const toml = try editor.generateToml();
+    defer allocator.free(toml);
+
+    try std.testing.expect(std.mem.indexOf(u8, toml, "[[workflows]]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, toml, "[[workflows.stages]]") != null);
+}
+
+test "ConfigEditor generates profile TOML" {
+    const allocator = std.testing.allocator;
+    var editor = try ConfigEditor.init(allocator, .profile);
+    defer editor.deinit();
+
+    if (editor.fields.items.len > 0) {
+        try editor.fields.items[0].value.appendSlice(allocator, "production");
+    }
+
+    const toml = try editor.generateToml();
+    defer allocator.free(toml);
+
+    try std.testing.expect(std.mem.indexOf(u8, toml, "[profiles.production]") != null);
 }

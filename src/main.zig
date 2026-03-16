@@ -31,6 +31,7 @@ const plugin_registry = @import("plugin/registry.zig");
 const plugin_search = @import("plugin/search.zig");
 const wasm_runtime = @import("plugin/wasm_runtime.zig");
 const types = @import("config/types.zig");
+const toml_highlight = @import("config/toml_highlight.zig");
 const common = @import("cli/common.zig");
 const completion = @import("cli/completion.zig");
 const init = @import("cli/init.zig");
@@ -141,6 +142,7 @@ comptime {
     _ = plugin_search;
     _ = wasm_runtime;
     _ = types;
+    _ = toml_highlight;
     _ = common;
     _ = completion;
     _ = init;
@@ -222,6 +224,7 @@ comptime {
     _ = @import("lsp/diagnostics.zig");
     _ = @import("lsp/handlers.zig");
     _ = @import("lsp/server.zig");
+    _ = config_editor;
 }
 
 pub fn main() !void {
