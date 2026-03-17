@@ -232,7 +232,9 @@ pub const SSHExecutor = struct {
         try child.spawn();
 
         var stdout_list: std.ArrayListUnmanaged(u8) = .{};
+        errdefer stdout_list.deinit(self.allocator);
         var stderr_list: std.ArrayListUnmanaged(u8) = .{};
+        errdefer stderr_list.deinit(self.allocator);
 
         const read_buf_size = 4096;
         var buf: [read_buf_size]u8 = undefined;
@@ -464,7 +466,7 @@ pub const RemoteExecutor = struct {
         task: types.Task,
     ) !SerializedTask {
         var json_list: std.ArrayListUnmanaged(u8) = .{};
-        errdefer json_list.deinit(self.allocator);
+        defer json_list.deinit(self.allocator);
 
         var writer = json_list.writer(self.allocator);
 
