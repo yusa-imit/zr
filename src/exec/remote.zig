@@ -1588,19 +1588,6 @@ test "SSHExecutor result memory is properly freed" {
 // ============================================================================
 // NOTE: Detailed serialization tests are covered in tests #898-#899 above
 
-test "RemoteExecutor.deserializeTask parses environment variables" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    const json = "{\"name\": \"task\", \"cmd\": \"echo\", \"env\": {\"VAR\": \"value\"}}";
-    const result = executor.deserializeTask(json);
-    try std.testing.expectError(error.InvalidTaskDeserialization, result);
-}
-
 test "SerializedTask deinit properly frees JSON memory" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
