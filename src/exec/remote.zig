@@ -192,6 +192,11 @@ pub const SSHExecutor = struct {
             else => 1,
         };
 
+        // SSH exit code 255 indicates connection/authentication failure
+        if (exit_code == 255) {
+            return error.SSHConnectionFailed;
+        }
+
         return RemoteTaskResult{
             .exit_code = exit_code,
             .stdout = try self.allocator.dupe(u8, stdout_list.items),
