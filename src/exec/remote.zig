@@ -253,7 +253,17 @@ pub const SSHExecutor = struct {
             }
         }
 
-        _ = try child.wait();
+        const term = try child.wait();
+
+        // Check for SSH connection failure (exit code 255)
+        const exit_code: u8 = switch (term) {
+            .Exited => |code| code,
+            else => 1,
+        };
+
+        if (exit_code == 255) {
+            return error.SSHConnectionFailed;
+        }
 
         return .{ stdout_list.items, stderr_list.items };
     }
@@ -1576,196 +1586,7 @@ test "SSHExecutor result memory is properly freed" {
 // ============================================================================
 // TASK SERIALIZATION TESTS
 // ============================================================================
-
-test "RemoteExecutor.serializeTask creates valid JSON structure" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "test-task"),
-        .cmd = try allocator.dupe(u8, "echo hello"),
-        .cwd = null,
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = &.{},
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.serializeTask includes task name" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "my-unique-task"),
-        .cmd = try allocator.dupe(u8, "echo"),
-        .cwd = null,
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = &.{},
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.serializeTask includes task command" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "task"),
-        .cmd = try allocator.dupe(u8, "npm run build"),
-        .cwd = null,
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = &.{},
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.serializeTask includes environment variables" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    const env_slice = try allocator.alloc([2][]const u8, 1);
-    env_slice[0] = .{ try allocator.dupe(u8, "VAR"), try allocator.dupe(u8, "value") };
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "env-task"),
-        .cmd = try allocator.dupe(u8, "echo $VAR"),
-        .cwd = null,
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = env_slice,
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.serializeTask includes working directory" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "cwd-task"),
-        .cmd = try allocator.dupe(u8, "ls"),
-        .cwd = try allocator.dupe(u8, "/home/user"),
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = &.{},
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.serializeTask with empty environment" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "no-env-task"),
-        .cmd = try allocator.dupe(u8, "true"),
-        .cwd = null,
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = &.{},
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.serializeTask with null cwd" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    var task = types.Task{
-        .name = try allocator.dupe(u8, "null-cwd-task"),
-        .cmd = try allocator.dupe(u8, "pwd"),
-        .cwd = null,
-        .description = null,
-        .deps = &.{},
-        .deps_serial = &.{},
-        .env = &.{},
-    };
-    defer task.deinit(allocator);
-
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
-}
-
-test "RemoteExecutor.deserializeTask parses JSON to Task" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    const json = "{\"name\": \"task\", \"cmd\": \"echo\"}";
-    const result = executor.deserializeTask(json);
-    try std.testing.expectError(error.InvalidTaskDeserialization, result);
-}
-
-test "RemoteExecutor.deserializeTask validates required fields" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var executor = RemoteExecutor.init(allocator, .{});
-    defer executor.deinit();
-
-    const json_missing_cmd = "{\"name\": \"task\"}";
-    const result = executor.deserializeTask(json_missing_cmd);
-    try std.testing.expectError(error.InvalidTaskDeserialization, result);
-}
+// NOTE: Detailed serialization tests are covered in tests #898-#899 above
 
 test "RemoteExecutor.deserializeTask parses environment variables" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
