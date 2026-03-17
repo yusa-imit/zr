@@ -14,3 +14,9 @@
 {"timestamp":"2026-03-17T19:15:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement error_display.zig showErrorSnippet() function","project":"zr"}
 {"timestamp":"2026-03-17T11:30:00Z","action":"subagent","agent_type":"test-writer","task":"Write TOML syntax highlighting tests (21 tests for lexer and config editor)","project":"zr"}
 {"timestamp":"2026-03-17T14:30:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement TOML syntax highlighting in config editor","project":"zr"}
+{"timestamp":"2026-03-17T06:30:00Z","action":"subagent","agent_type":"test-writer","task":"Write tests for remote execution config schema extension","project":"zr"}
+{"timestamp":"2026-03-17T06:35:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement remote execution config schema to pass 11 failing tests","project":"zr"}
+{"timestamp":"2026-03-17T06:42:00Z","action":"subagent","agent_type":"test-writer","task":"Write tests for remote executor module (SSH/HTTP task execution)","project":"zr"}
+{"timestamp":"2026-03-17T06:52:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement remote executor module to pass 22 failing tests","project":"zr"}
+{"timestamp":"2026-03-17T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write SSHExecutor tests for remote execution","project":"zr"}
+{"timestamp":"2026-03-17T11:30:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement SSHExecutor.execute(), captureOutput(), serializeTask(), deserializeTask()","project":"zr"}
