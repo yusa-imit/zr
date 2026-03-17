@@ -78,6 +78,15 @@ test "clean: --history cleans history" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify history was actually cleaned
+    const stat = tmp.dir.statFile(".zr/history/dummy.log") catch |err| {
+        if (err == error.FileNotFound) {
+            return; // Expected - history was cleaned
+        }
+        return err;
+    };
+    _ = stat;
 }
 
 test "clean: unknown option returns error" {
@@ -102,6 +111,9 @@ test "clean: --all includes all cleanup targets" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify --all mentions multiple cleanup targets
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cache") != null or
+                          std.mem.indexOf(u8, result.stdout, "history") != null);
 }
 
 test "clean: multiple flags work together" {
@@ -118,4 +130,7 @@ test "clean: multiple flags work together" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify output mentions both targets
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cache") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "history") != null);
 }

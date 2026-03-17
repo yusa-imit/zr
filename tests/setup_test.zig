@@ -43,11 +43,9 @@ test "setup: detects and runs setup task" {
     var result = try runZr(allocator, &.{ "--config", config, "setup" }, tmp_path);
     defer result.deinit();
 
-    // Setup command should complete without crashing
-    // Exit code depends on whether it finds and runs a setup task
-    // As long as it doesn't crash (runZr returns successfully), the test passes
-    // Verify we got some output or at least didn't panic
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0 or result.exit_code == 0);
+    // Setup command should execute the setup task successfully
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "running setup") != null);
 }
 
 test "setup: handles missing config file" {
