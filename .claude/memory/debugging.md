@@ -1,3 +1,21 @@
+## Weak Test Assertions (2026-03-18, commit 706a591)
+**Symptom**: Tests passing unconditionally due to trivially satisfiable assertions
+**Examples found**:
+1. `setup_test.zig:50` — `expect(stdout.len > 0 or stderr.len > 0 or exit_code == 0)` always passes
+2. `clean_test.zig:63,91,107` — Only checking exit_code == 0 without verifying behavior
+**Fix**: Replace with meaningful assertions:
+```zig
+// Bad: Trivially true
+try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0 or result.exit_code == 0);
+
+// Good: Verifies actual behavior
+try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+try std.testing.expect(std.mem.indexOf(u8, result.stdout, "expected output") != null);
+```
+**Lesson**: Tests must verify actual behavior, not just "didn't crash". Every assertion should be able to fail if implementation is wrong.
+
+---
+
 ## analytics_tui UTF-8 Rendering Bug (2026-03-17, commit 8aabf15)
 **Symptom**: `zr analytics --tui` crashes with "integer does not fit in destination type" panic
 **Root cause**: Line 109 of `analytics_tui.zig` was casting `cell.char` (u32) directly to u8 with `@intCast`, causing overflow when UTF-8 characters > 255 (e.g., box-drawing chars) were rendered
