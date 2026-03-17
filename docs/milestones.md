@@ -103,7 +103,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 
 ### Sailor Library
 
-- **Current in zr**: v1.15.0 (all migrations complete)
+- **Current in zr**: v1.16.0 (all migrations complete)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -131,6 +131,7 @@ Enhance retry mechanism with configurable strategies. Features: exponential back
 | v1.13.1 | DONE | Integer overflow fix for data visualization widgets |
 | v1.14.0 | DONE | Memory pooling, render profiling, virtual widget rendering, incremental layout, buffer compression |
 | v1.15.0 | DONE | Thread safety fixes, XTGETTCAP terminal capability detection, memory leak audit, multi-platform CI |
+| v1.16.0 | DONE | Terminal capability database, bracketed paste mode, synchronized output protocol, hyperlink support (OSC 8), focus tracking |
 
 ### zuda Library
 

@@ -17,7 +17,7 @@
 - **CI**: GREEN — all 6 cross-compile targets passing
 - **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
-- **Sailor version**: v1.15.0 (all migrations complete)
+- **Sailor version**: v1.16.0 (all migrations complete)
 - **Source**: ~63,645 lines, 90+ modules, 10 language providers
 
 ## All PRD Phases COMPLETE ✅
@@ -54,10 +54,10 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 
 ## Sailor Library
 
-- **Current in zr**: v1.15.0 ✅
-- **Status**: All migrations complete (v1.1.0 → v1.15.0)
-- **Latest available**: v1.15.0 (stability release with thread safety fixes)
-- **Key features**: Syntax highlighting, session recording, accessibility (WCAG AAA), mouse input, particle effects, data visualization
+- **Current in zr**: v1.16.0 ✅
+- **Status**: All migrations complete (v1.1.0 → v1.16.0)
+- **Latest available**: v1.16.0 (terminal capabilities release)
+- **Key features**: Terminal capability database, bracketed paste mode, synchronized output, hyperlink support (OSC 8), focus tracking, syntax highlighting, session recording, accessibility (WCAG AAA), mouse input, particle effects, data visualization
 
 ## Post-v1.0 Milestones
 
