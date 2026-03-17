@@ -1,8 +1,15 @@
 const std = @import("std");
 const config_mod = @import("../config/loader.zig");
 const toolchain = @import("../toolchain/installer.zig");
+const run = @import("run.zig");
 
-pub fn cmdSetup(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+pub fn cmdSetup(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
     _ = args; // --help could be added later
 
     // Step 1: Load config
@@ -81,25 +88,25 @@ pub fn cmdSetup(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         std.debug.print(" → Running setup task: {s}\n", .{task_name});
         std.debug.print("\n   Hint: Executing `zr run {s}`\n\n", .{task_name});
 
-        // Execute the task via shell (delegate to `zr run`)
-        var child = std.process.Child.init(&[_][]const u8{ "zr", "run", task_name }, allocator);
-        child.stdin_behavior = .Inherit;
-        child.stdout_behavior = .Inherit;
-        child.stderr_behavior = .Inherit;
+        // Execute the task directly via cmdRun
+        const exit_code = try run.cmdRun(
+            allocator,
+            task_name,
+            null, // profile_name
+            false, // dry_run
+            1, // max_jobs
+            "zr.toml", // config_path
+            false, // json_output
+            false, // monitor
+            w,
+            ew,
+            use_color,
+            null, // task_control
+        );
 
-        const term = try child.spawnAndWait();
-
-        switch (term) {
-            .Exited => |code| {
-                if (code != 0) {
-                    std.debug.print("\n ✗ Setup task failed with exit code {d}\n", .{code});
-                    return code;
-                }
-            },
-            else => {
-                std.debug.print("\n ✗ Setup task terminated abnormally\n", .{});
-                return 1;
-            },
+        if (exit_code != 0) {
+            std.debug.print("\n ✗ Setup task failed with exit code {d}\n", .{exit_code});
+            return exit_code;
         }
 
         std.debug.print("\n ✓ Setup task completed\n\n", .{});

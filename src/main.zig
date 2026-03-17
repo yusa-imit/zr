@@ -769,7 +769,7 @@ fn run(
         return doctor_cmd.cmdDoctor(allocator, opts);
     } else if (std.mem.eql(u8, cmd, "setup")) {
         const setup_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return setup_cmd.cmdSetup(allocator, setup_args);
+        return setup_cmd.cmdSetup(allocator, setup_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "env")) {
         const env_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return env_cmd.cmdEnv(allocator, env_args, config_path, effective_w, ew, effective_color);
