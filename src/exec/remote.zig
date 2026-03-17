@@ -992,8 +992,8 @@ test "serializeTask converts Task to JSON" {
     };
     defer task.deinit(allocator);
 
-    const serialized = try executor.serializeTask(task);
-    defer allocator.free(serialized.json);
+    var serialized = try executor.serializeTask(task);
+    defer serialized.deinit(allocator);
 
     // Verify JSON contains expected fields
     try std.testing.expect(std.mem.indexOf(u8, serialized.json, "\"name\":\"test-task\"") != null);
