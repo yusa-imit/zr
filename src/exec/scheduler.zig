@@ -17,6 +17,7 @@ const hooks = @import("hooks.zig");
 const types = @import("../config/types.zig");
 const checkpoint = @import("checkpoint.zig");
 const output_capture = @import("output_capture.zig");
+const remote = @import("remote.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -414,6 +415,12 @@ const WorkerCtx = struct {
     output_file: ?[]const u8,
     /// Output capture mode (v1.37.0).
     output_mode: ?output_capture.OutputMode,
+    /// Remote execution target (v1.46.0).
+    remote_target: ?[]const u8,
+    /// Remote working directory (v1.46.0).
+    remote_cwd: ?[]const u8,
+    /// Remote environment variables (v1.46.0).
+    remote_env: ?[][2][]const u8,
 };
 
 /// Build environment variables with toolchain PATH injection.
@@ -554,10 +561,10 @@ fn workerFn(ctx: WorkerCtx) void {
             // If local miss, try remote cache (Phase 7)
             if (!local_hit and ctx.cache_remote_config != null) {
                 if (ctx.cache_remote_config) |remote_cfg| {
-                    var remote = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
-                    defer remote.deinit();
+                    var remote_cache = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
+                    defer remote_cache.deinit();
                     // Pull from remote (null = miss)
-                    if (remote.pull(key) catch null) |_data| {
+                    if (remote_cache.pull(key) catch null) |_data| {
                         // Remote hit: save to local cache for next time
                         // (data itself is just a marker, no actual artifact yet)
                         ctx.allocator.free(_data);
@@ -672,8 +679,125 @@ fn workerFn(ctx: WorkerCtx) void {
     // (we need to capture the output via callback). Otherwise, use should_show_output.
     const inherit_stdio_mode = if (combined_ctx.output_capture != null) false else should_show_output;
 
-    // Run the process with retry logic
-    var proc_result = process.run(ctx.allocator, .{
+    // Check if remote execution is requested (v1.46.0)
+    var proc_result: process.ProcessResult = if (ctx.remote_target) |remote_target_str| blk: {
+        // Create remote executor and parse target
+        var executor = remote.RemoteExecutor.init(ctx.allocator, .{
+            .ssh_timeout_ms = ctx.timeout_ms orelse 30_000,
+            .http_timeout_ms = ctx.timeout_ms orelse 30_000,
+        });
+        const target = executor.parseTarget(remote_target_str) catch {
+            // Failed to parse remote target — treat as local execution failure
+            break :blk process.ProcessResult{
+                .exit_code = 1,
+                .duration_ms = 0,
+                .success = false,
+            };
+        };
+        defer {
+            // Clean up target allocation manually (deinit is private)
+            switch (target) {
+                .ssh => |ssh| {
+                    if (ssh.owns_user) ctx.allocator.free(ssh.user);
+                    if (ssh.owns_host) ctx.allocator.free(ssh.host);
+                },
+                .http => |http| {
+                    if (http.owns_scheme) ctx.allocator.free(http.scheme);
+                    if (http.owns_host) ctx.allocator.free(http.host);
+                },
+            }
+        }
+
+        // Build a temporary Task struct for remote execution
+        // We need to combine local env + remote_env
+        const combined_env = if (ctx.remote_env) |remote_env| blk2: {
+            const local_env = proc_env orelse &[_][2][]const u8{};
+            const total_len = local_env.len + remote_env.len;
+            const combined = ctx.allocator.alloc([2][]const u8, total_len) catch break :blk2 local_env;
+
+            // Copy local env
+            for (local_env, 0..) |pair, i| {
+                combined[i] = pair;
+            }
+            // Append remote env
+            for (remote_env, 0..) |pair, i| {
+                combined[local_env.len + i] = pair;
+            }
+            break :blk2 combined;
+        } else proc_env orelse &[_][2][]const u8{};
+        defer if (ctx.remote_env != null and combined_env.ptr != (proc_env orelse &[_][2][]const u8{}).ptr) {
+            ctx.allocator.free(combined_env);
+        };
+
+        // Create temporary task with remote-specific fields
+        // We need to cast combined_env to remove const for Task.env field
+        const task_env: [][2][]const u8 = @constCast(combined_env);
+        const remote_task = types.Task{
+            .name = ctx.task_name,
+            .cmd = ctx.cmd,
+            .cwd = ctx.remote_cwd orelse ctx.cwd,
+            .description = null,
+            .deps = &.{},
+            .deps_serial = &.{},
+            .env = task_env,
+        };
+
+        // Execute remotely based on target type
+        const remote_result = switch (target) {
+            .ssh => |_| blk3: {
+                var ssh_executor = remote.SSHExecutor{
+                    .allocator = ctx.allocator,
+                    .config = .{
+                        .ssh_timeout_ms = ctx.timeout_ms orelse 30_000,
+                    },
+                };
+
+                const result = ssh_executor.execute(target, remote_task) catch {
+                    // SSH connection failure or other error
+                    break :blk3 remote.RemoteTaskResult{
+                        .exit_code = 255, // SSH convention for connection failure
+                        .stdout = ctx.allocator.dupe(u8, "") catch "",
+                        .stderr = ctx.allocator.dupe(u8, "SSH connection failed") catch "",
+                        .duration_ms = 0,
+                        .timed_out = false,
+                    };
+                };
+                break :blk3 result;
+            },
+            .http => |_| blk3: {
+                var http_executor = remote.HTTPExecutor{
+                    .allocator = ctx.allocator,
+                    .config = .{
+                        .http_timeout_ms = ctx.timeout_ms orelse 30_000,
+                    },
+                };
+
+                const result = http_executor.execute(target, remote_task) catch {
+                    // HTTP request failure
+                    break :blk3 remote.RemoteTaskResult{
+                        .exit_code = 1,
+                        .stdout = ctx.allocator.dupe(u8, "") catch "",
+                        .stderr = ctx.allocator.dupe(u8, "HTTP request failed") catch "",
+                        .duration_ms = 0,
+                        .timed_out = false,
+                    };
+                };
+                break :blk3 result;
+            },
+        };
+        defer {
+            // Manually free RemoteTaskResult fields (deinit is private)
+            ctx.allocator.free(remote_result.stdout);
+            ctx.allocator.free(remote_result.stderr);
+        }
+
+        // Map RemoteTaskResult to ProcessResult
+        break :blk process.ProcessResult{
+            .exit_code = remote_result.exit_code,
+            .duration_ms = remote_result.duration_ms,
+            .success = remote_result.exit_code == 0,
+        };
+    } else process.run(ctx.allocator, .{
         .cmd = ctx.cmd,
         .cwd = ctx.cwd,
         .env = proc_env,
@@ -886,10 +1010,10 @@ fn workerFn(ctx: WorkerCtx) void {
             }
             // Push to remote cache (Phase 7)
             if (ctx.cache_remote_config) |remote_cfg| {
-                var remote = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
-                defer remote.deinit();
+                var remote_cache = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
+                defer remote_cache.deinit();
                 // Push marker (empty data for now, just indicates success)
-                remote.push(key, &[_]u8{}) catch {};
+                remote_cache.push(key, &[_]u8{}) catch {};
             }
         }
     }
@@ -1547,6 +1671,9 @@ pub fn run(
                 .checkpoint_config = if (task.checkpoint) |*cp| cp else null,
                 .output_file = task.output_file,
                 .output_mode = parseOutputMode(task.output_mode),
+                .remote_target = task.remote,
+                .remote_cwd = task.remote_cwd,
+                .remote_env = task.remote_env,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
