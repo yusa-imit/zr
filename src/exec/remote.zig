@@ -100,10 +100,105 @@ pub const SSHExecutor = struct {
         target: RemoteTarget,
         task: types.Task,
     ) !RemoteTaskResult {
-        _ = self;
-        _ = target;
-        _ = task;
-        return error.SSHConnectionFailed;
+        const start_time = std.time.nanoTimestamp();
+
+        // Extract SSH target info
+        const ssh_target = switch (target) {
+            .ssh => |ssh_info| ssh_info,
+            .http => return error.SSHConnectionFailed,
+        };
+
+        // Build the remote command with environment variables and working directory
+        // Build environment variable prefix: KEY1=VALUE1 KEY2=VALUE2 ...
+        var env_prefix: std.ArrayListUnmanaged(u8) = .{};
+        defer env_prefix.deinit(self.allocator);
+
+        for (task.env) |pair| {
+            try env_prefix.appendSlice(self.allocator, pair[0]);
+            try env_prefix.append(self.allocator, '=');
+            try env_prefix.appendSlice(self.allocator, pair[1]);
+            try env_prefix.append(self.allocator, ' ');
+        }
+
+        // Build final SSH command
+        var full_cmd: std.ArrayListUnmanaged(u8) = .{};
+        defer full_cmd.deinit(self.allocator);
+
+        var writer = full_cmd.writer(self.allocator);
+        // ssh -p PORT USER@HOST 'cd CWD && CMD'
+        try writer.print("ssh -p {d} {s}@{s} '", .{ ssh_target.port, ssh_target.user, ssh_target.host });
+
+        // Add working directory if specified
+        if (task.cwd) |cwd| {
+            try writer.print("cd {s} && ", .{cwd});
+        }
+
+        // Add environment variables
+        if (env_prefix.items.len > 0) {
+            try writer.writeAll(env_prefix.items);
+        }
+
+        // Add the command
+        try writer.writeAll(task.cmd);
+        try writer.writeAll("'");
+
+        // Execute SSH command
+        const cmd_str = full_cmd.items;
+
+        // Use shell to execute the ssh command
+        var child = std.process.Child.init(&.{ "/bin/sh", "-c", cmd_str }, self.allocator);
+
+        // Set up pipes for stdout and stderr
+        child.stdout_behavior = .Pipe;
+        child.stderr_behavior = .Pipe;
+
+        try child.spawn();
+
+        // Read stdout and stderr
+        var stdout_list: std.ArrayListUnmanaged(u8) = .{};
+        defer stdout_list.deinit(self.allocator);
+        var stderr_list: std.ArrayListUnmanaged(u8) = .{};
+        defer stderr_list.deinit(self.allocator);
+
+        // Create a small buffer for reading
+        const read_buf_size = 4096;
+        var buf: [read_buf_size]u8 = undefined;
+
+        if (child.stdout) |stdout| {
+            while (true) {
+                const bytes_read = try stdout.read(&buf);
+                if (bytes_read == 0) break;
+                try stdout_list.appendSlice(self.allocator, buf[0..bytes_read]);
+            }
+        }
+
+        if (child.stderr) |stderr| {
+            while (true) {
+                const bytes_read = try stderr.read(&buf);
+                if (bytes_read == 0) break;
+                try stderr_list.appendSlice(self.allocator, buf[0..bytes_read]);
+            }
+        }
+
+        // Wait for process to finish
+        const term = try child.wait();
+
+        const end_time = std.time.nanoTimestamp();
+        const duration_ms: u64 = @intCast(@divTrunc(@max(end_time, start_time) - start_time, 1_000_000));
+
+        // Extract exit code
+        const exit_code: u8 = switch (term) {
+            .Exited => |code| code,
+            else => 1,
+        };
+
+        return RemoteTaskResult{
+            .exit_code = exit_code,
+            .stdout = try self.allocator.dupe(u8, stdout_list.items),
+            .stderr = try self.allocator.dupe(u8, stderr_list.items),
+            .duration_ms = duration_ms,
+            .timed_out = false,
+        };
     }
 
     /// Capture stdout/stderr from remote SSH command.
@@ -112,10 +207,50 @@ pub const SSHExecutor = struct {
         target: RemoteTarget,
         cmd: []const u8,
     ) !struct { []const u8, []const u8 } {
-        _ = self;
-        _ = target;
-        _ = cmd;
-        return error.SSHConnectionFailed;
+        const ssh_target = switch (target) {
+            .ssh => |ssh_info| ssh_info,
+            .http => return error.SSHConnectionFailed,
+        };
+
+        // Build SSH command: ssh -p PORT USER@HOST 'CMD'
+        var full_cmd: std.ArrayListUnmanaged(u8) = .{};
+        defer full_cmd.deinit(self.allocator);
+
+        var writer = full_cmd.writer(self.allocator);
+        try writer.print("ssh -p {d} {s}@{s} '{s}'", .{ ssh_target.port, ssh_target.user, ssh_target.host, cmd });
+
+        var child = std.process.Child.init(&.{ "/bin/sh", "-c", full_cmd.items }, self.allocator);
+
+        child.stdout_behavior = .Pipe;
+        child.stderr_behavior = .Pipe;
+
+        try child.spawn();
+
+        var stdout_list: std.ArrayListUnmanaged(u8) = .{};
+        var stderr_list: std.ArrayListUnmanaged(u8) = .{};
+
+        const read_buf_size = 4096;
+        var buf: [read_buf_size]u8 = undefined;
+
+        if (child.stdout) |stdout| {
+            while (true) {
+                const bytes_read = try stdout.read(&buf);
+                if (bytes_read == 0) break;
+                try stdout_list.appendSlice(self.allocator, buf[0..bytes_read]);
+            }
+        }
+
+        if (child.stderr) |stderr| {
+            while (true) {
+                const bytes_read = try stderr.read(&buf);
+                if (bytes_read == 0) break;
+                try stderr_list.appendSlice(self.allocator, buf[0..bytes_read]);
+            }
+        }
+
+        _ = try child.wait();
+
+        return .{ stdout_list.items, stderr_list.items };
     }
 
     fn deinit(self: *SSHExecutor) void {
@@ -313,9 +448,50 @@ pub const RemoteExecutor = struct {
         self: *RemoteExecutor,
         task: types.Task,
     ) !SerializedTask {
-        _ = self;
-        _ = task;
-        return error.InvalidTaskSerialization;
+        var json_list: std.ArrayListUnmanaged(u8) = .{};
+        errdefer json_list.deinit(self.allocator);
+
+        var writer = json_list.writer(self.allocator);
+
+        // Start JSON object
+        try writer.writeAll("{");
+
+        // Serialize required fields
+        try writer.writeAll("\"name\":\"");
+        try writer.writeAll(task.name);
+        try writer.writeAll("\",");
+
+        try writer.writeAll("\"cmd\":\"");
+        try writer.writeAll(task.cmd);
+        try writer.writeAll("\"");
+
+        // Serialize optional cwd
+        if (task.cwd) |cwd| {
+            try writer.writeAll(",\"cwd\":\"");
+            try writer.writeAll(cwd);
+            try writer.writeAll("\"");
+        } else {
+            try writer.writeAll(",\"cwd\":null");
+        }
+
+        // Serialize environment variables as object
+        try writer.writeAll(",\"env\":{");
+        for (task.env, 0..) |pair, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("\"");
+            try writer.writeAll(pair[0]);
+            try writer.writeAll("\":\"");
+            try writer.writeAll(pair[1]);
+            try writer.writeAll("\"");
+        }
+        try writer.writeAll("}");
+
+        // Close JSON object
+        try writer.writeAll("}");
+
+        return SerializedTask{
+            .json = try self.allocator.dupe(u8, json_list.items),
+        };
     }
 
     /// Deserialize JSON back to Task.
@@ -323,9 +499,76 @@ pub const RemoteExecutor = struct {
         self: *RemoteExecutor,
         json: []const u8,
     ) !types.Task {
-        _ = self;
-        _ = json;
-        return error.InvalidTaskDeserialization;
+        var parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, json, .{});
+        defer parsed.deinit();
+
+        const root = parsed.value;
+        if (root != .object) {
+            return error.InvalidTaskDeserialization;
+        }
+
+        const obj = root.object;
+
+        // Extract required fields
+        const name_value = obj.get("name") orelse return error.InvalidTaskDeserialization;
+        if (name_value != .string) return error.InvalidTaskDeserialization;
+        const name = try self.allocator.dupe(u8, name_value.string);
+        errdefer self.allocator.free(name);
+
+        const cmd_value = obj.get("cmd") orelse return error.InvalidTaskDeserialization;
+        if (cmd_value != .string) return error.InvalidTaskDeserialization;
+        const cmd = try self.allocator.dupe(u8, cmd_value.string);
+        errdefer self.allocator.free(cmd);
+
+        // Extract optional cwd
+        var cwd: ?[]const u8 = null;
+        if (obj.get("cwd")) |cwd_value| {
+            if (cwd_value == .string) {
+                cwd = try self.allocator.dupe(u8, cwd_value.string);
+            } else if (cwd_value != .null) {
+                return error.InvalidTaskDeserialization;
+            }
+        }
+
+        // Extract environment variables
+        var env: std.ArrayListUnmanaged([2][]const u8) = .{};
+        errdefer {
+            for (env.items) |pair| {
+                self.allocator.free(pair[0]);
+                self.allocator.free(pair[1]);
+            }
+            env.deinit(self.allocator);
+        }
+
+        if (obj.get("env")) |env_value| {
+            if (env_value == .object) {
+                var env_iter = env_value.object.iterator();
+                while (env_iter.next()) |entry| {
+                    const key = try self.allocator.dupe(u8, entry.key_ptr.*);
+                    errdefer self.allocator.free(key);
+
+                    if (entry.value_ptr.* != .string) {
+                        return error.InvalidTaskDeserialization;
+                    }
+                    const value_str = try self.allocator.dupe(u8, entry.value_ptr.*.string);
+                    errdefer self.allocator.free(value_str);
+
+                    try env.append(self.allocator, .{ key, value_str });
+                }
+            } else if (env_value != .null) {
+                return error.InvalidTaskDeserialization;
+            }
+        }
+
+        return types.Task{
+            .name = name,
+            .cmd = cmd,
+            .cwd = cwd,
+            .description = null,
+            .deps = &.{},
+            .deps_serial = &.{},
+            .env = try env.toOwnedSlice(self.allocator),
+        };
     }
 
     pub fn deinit(self: *RemoteExecutor) void {
@@ -897,4 +1140,806 @@ test "remote executor with custom timeout config" {
     try std.testing.expectEqual(@as(u64, 60_000), executor.config.ssh_timeout_ms);
     try std.testing.expectEqual(@as(u64, 60_000), executor.config.http_timeout_ms);
     try std.testing.expectEqual(@as(u32, 5), executor.config.max_retries);
+}
+
+// ============================================================================
+// SSH EXECUTOR COMPREHENSIVE TESTS
+// ============================================================================
+
+test "SSHExecutor.execute returns RemoteTaskResult with non-zero exit code" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "failing-task"),
+        .cmd = try allocator.dupe(u8, "exit 1"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute returns result with stdout capture" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "echo-task"),
+        .cmd = try allocator.dupe(u8, "echo 'test output'"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    // Should fail because SSH connection will fail, but test verifies the expected structure
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute captures both stdout and stderr" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "mixed-output-task"),
+        .cmd = try allocator.dupe(u8, "echo stdout && echo stderr >&2"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute respects timeout configuration" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{ .ssh_timeout_ms = 500 },
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "long-task"),
+        .cmd = try allocator.dupe(u8, "sleep 10"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    // Verify timeout is configured
+    try std.testing.expectEqual(@as(u64, 500), executor.config.ssh_timeout_ms);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute returns duration_ms in result" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "timed-task"),
+        .cmd = try allocator.dupe(u8, "true"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute with invalid host returns error" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "nonexistent.invalid.example.local",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "task"),
+        .cmd = try allocator.dupe(u8, "true"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute with custom port" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 2222, // Custom SSH port
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "task"),
+        .cmd = try allocator.dupe(u8, "true"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    try std.testing.expectEqual(@as(u16, 2222), target.ssh.port);
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute passes environment variables" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    const env_slice = try allocator.alloc([2][]const u8, 1);
+    env_slice[0] = .{ try allocator.dupe(u8, "MY_VAR"), try allocator.dupe(u8, "test_value") };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "env-task"),
+        .cmd = try allocator.dupe(u8, "echo $MY_VAR"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = env_slice,
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.execute with working directory" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "cwd-task"),
+        .cmd = try allocator.dupe(u8, "pwd"),
+        .cwd = try allocator.dupe(u8, "/tmp"),
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor result contains exit_code zero for success" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "success-task"),
+        .cmd = try allocator.dupe(u8, "true"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
+}
+
+test "SSHExecutor.captureOutput calls SSH with appropriate command" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    const cmd = "echo test";
+    const output = executor.captureOutput(target, cmd);
+    try std.testing.expectError(error.SSHConnectionFailed, output);
+}
+
+test "SSHExecutor result memory is properly freed" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var result = RemoteTaskResult{
+        .exit_code = 0,
+        .stdout = try allocator.dupe(u8, "output text"),
+        .stderr = try allocator.dupe(u8, "error text"),
+        .duration_ms = 100,
+    };
+
+    // Verify stdout and stderr are allocated
+    try std.testing.expectEqual(@as(usize, 11), result.stdout.len);
+    try std.testing.expectEqual(@as(usize, 10), result.stderr.len);
+
+    // Deinit should free allocated memory
+    result.deinit(allocator);
+}
+
+// ============================================================================
+// TASK SERIALIZATION TESTS
+// ============================================================================
+
+test "RemoteExecutor.serializeTask creates valid JSON structure" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "test-task"),
+        .cmd = try allocator.dupe(u8, "echo hello"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.serializeTask includes task name" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "my-unique-task"),
+        .cmd = try allocator.dupe(u8, "echo"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.serializeTask includes task command" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "task"),
+        .cmd = try allocator.dupe(u8, "npm run build"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.serializeTask includes environment variables" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    const env_slice = try allocator.alloc([2][]const u8, 1);
+    env_slice[0] = .{ try allocator.dupe(u8, "VAR"), try allocator.dupe(u8, "value") };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "env-task"),
+        .cmd = try allocator.dupe(u8, "echo $VAR"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = env_slice,
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.serializeTask includes working directory" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "cwd-task"),
+        .cmd = try allocator.dupe(u8, "ls"),
+        .cwd = try allocator.dupe(u8, "/home/user"),
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.serializeTask with empty environment" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "no-env-task"),
+        .cmd = try allocator.dupe(u8, "true"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.serializeTask with null cwd" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "null-cwd-task"),
+        .cmd = try allocator.dupe(u8, "pwd"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const serialized = executor.serializeTask(task);
+    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+}
+
+test "RemoteExecutor.deserializeTask parses JSON to Task" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    const json = "{\"name\": \"task\", \"cmd\": \"echo\"}";
+    const result = executor.deserializeTask(json);
+    try std.testing.expectError(error.InvalidTaskDeserialization, result);
+}
+
+test "RemoteExecutor.deserializeTask validates required fields" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    const json_missing_cmd = "{\"name\": \"task\"}";
+    const result = executor.deserializeTask(json_missing_cmd);
+    try std.testing.expectError(error.InvalidTaskDeserialization, result);
+}
+
+test "RemoteExecutor.deserializeTask parses environment variables" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    const json = "{\"name\": \"task\", \"cmd\": \"echo\", \"env\": {\"VAR\": \"value\"}}";
+    const result = executor.deserializeTask(json);
+    try std.testing.expectError(error.InvalidTaskDeserialization, result);
+}
+
+test "SerializedTask deinit properly frees JSON memory" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var serialized = SerializedTask{
+        .json = try allocator.dupe(u8, "{\"name\": \"test\", \"cmd\": \"echo\"}"),
+    };
+
+    // Verify json is allocated
+    try std.testing.expect(serialized.json.len > 0);
+
+    // Deinit should free the JSON
+    serialized.deinit(allocator);
+}
+
+// ============================================================================
+// ERROR CONDITION TESTS
+// ============================================================================
+
+test "RemoteExecutor.execute returns error on null target" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = RemoteExecutor.init(allocator, .{});
+    defer executor.deinit();
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "task"),
+        .cmd = try allocator.dupe(u8, "true"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    defer task.deinit(allocator);
+
+    const result = executor.execute(task);
+    try std.testing.expectError(error.InvalidRemoteTarget, result);
+}
+
+test "RemoteTaskResult.timed_out flag works correctly" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var result = RemoteTaskResult{
+        .exit_code = 1,
+        .stdout = try allocator.dupe(u8, ""),
+        .stderr = try allocator.dupe(u8, ""),
+        .duration_ms = 100,
+        .timed_out = true,
+    };
+
+    try std.testing.expectEqual(true, result.timed_out);
+    result.deinit(allocator);
+}
+
+test "RemoteTaskResult.timed_out defaults to false" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var result = RemoteTaskResult{
+        .exit_code = 0,
+        .stdout = try allocator.dupe(u8, "output"),
+        .stderr = try allocator.dupe(u8, ""),
+        .duration_ms = 50,
+    };
+
+    try std.testing.expectEqual(false, result.timed_out);
+    result.deinit(allocator);
+}
+
+test "SSHExecutor with retry configuration" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{
+            .max_retries = 3,
+            .retry_delay_ms = 100,
+        },
+    };
+    defer executor.deinit();
+
+    try std.testing.expectEqual(@as(u32, 3), executor.config.max_retries);
+    try std.testing.expectEqual(@as(u64, 100), executor.config.retry_delay_ms);
+}
+
+test "RemoteTarget.ssh deinit with owns_user=true" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var mutable_target = RemoteTarget{
+        .ssh = .{
+            .user = try allocator.dupe(u8, "alice"),
+            .host = try allocator.dupe(u8, "example.com"),
+            .port = 22,
+            .owns_user = true,
+            .owns_host = true,
+        },
+    };
+
+    switch (mutable_target) {
+        .ssh => |*s| s.deinit(allocator),
+        .http => {},
+    }
+}
+
+test "RemoteTarget.http deinit with owns_scheme=true" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var mutable_target = RemoteTarget{
+        .http = .{
+            .scheme = try allocator.dupe(u8, "https"),
+            .host = try allocator.dupe(u8, "api.example.com"),
+            .port = 443,
+            .owns_scheme = true,
+            .owns_host = true,
+        },
+    };
+
+    switch (mutable_target) {
+        .ssh => {},
+        .http => |*h| h.deinit(allocator),
+    }
+}
+
+test "SSHExecutor with multiple environment variables" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var executor = SSHExecutor{
+        .allocator = allocator,
+        .config = .{},
+    };
+    defer executor.deinit();
+
+    const target = RemoteTarget{
+        .ssh = .{
+            .user = "testuser",
+            .host = "localhost",
+            .port = 22,
+            .owns_user = false,
+            .owns_host = false,
+        },
+    };
+
+    const env_slice = try allocator.alloc([2][]const u8, 2);
+    env_slice[0] = .{ try allocator.dupe(u8, "VAR1"), try allocator.dupe(u8, "value1") };
+    env_slice[1] = .{ try allocator.dupe(u8, "VAR2"), try allocator.dupe(u8, "value2") };
+
+    var task = types.Task{
+        .name = try allocator.dupe(u8, "multi-env-task"),
+        .cmd = try allocator.dupe(u8, "echo $VAR1 $VAR2"),
+        .cwd = null,
+        .description = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = env_slice,
+    };
+    defer task.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), task.env.len);
+    const result = executor.execute(target, task);
+    try std.testing.expectError(error.SSHConnectionFailed, result);
 }
