@@ -17,14 +17,65 @@ var writer = std.fs.File.stdout().writer(&buf);
 ```zig
 var child = std.process.Child.init(&[_][]const u8{"sh", "-c", cmd}, allocator);
 child.stdin_behavior = .Inherit;
+child.stdout_behavior = .Pipe;  // To capture output
 try child.spawn();
+// Read pipes BEFORE wait()
+var output = child.stdout.?.readToEndAlloc(allocator, 1_000_000) catch "";
 const term = try child.wait();
 const exit_code = switch (term) { .Exited => |c| c, else => 1 };
 ```
 
+**Capture stdout incrementally** (for streaming):
+```zig
+var list: std.ArrayListUnmanaged(u8) = .{};
+const buf_size = 4096;
+var buf: [buf_size]u8 = undefined;
+if (child.stdout) |stdout| {
+    while (true) {
+        const bytes_read = try stdout.read(&buf);
+        if (bytes_read == 0) break;
+        try list.appendSlice(allocator, buf[0..bytes_read]);
+    }
+}
+```
+
 **Read stdout BEFORE wait()**: `child.wait()` closes stdout. Always read pipe first.
+**Child doesn't need deinit()**: No `defer child.deinit()` — use `spawn()` + `wait()`.
 
 **Exit pattern**: Flush all writers before single `std.process.exit()` call in main.
+
+## JSON Serialization & Parsing (Zig 0.15)
+
+**Parse JSON string**:
+```zig
+var parsed = try std.json.parseFromSlice(std.json.Value, allocator, json_str, .{});
+defer parsed.deinit();
+const obj = parsed.value.object;
+if (obj.get("field")) |value| {
+    if (value == .string) {
+        const str = value.string;  // []const u8
+    } else if (value == .object) {
+        var iter = value.object.iterator();
+        while (iter.next()) |entry| {
+            const key = entry.key_ptr.*;
+            const val = entry.value_ptr.*;
+        }
+    }
+}
+```
+
+**Manual JSON building** (no stringify API):
+```zig
+var json: std.ArrayListUnmanaged(u8) = .{};
+var writer = json.writer(allocator);
+try writer.writeAll("{\"key\":\"");
+try writer.writeAll(value);  // Already a string slice
+try writer.writeAll("\",\"num\":");
+try writer.print("{d}", .{num});
+try writer.writeAll("}");
+```
+
+**Note**: Escape special chars manually if needed (quotes, backslashes). For simple strings, direct write is OK.
 
 ## Memory Management
 
@@ -195,6 +246,53 @@ const exists: bool = blk: {
 Parse before command dispatch. Pass `max_jobs: u32`, `config_path: []const u8` to cmd* functions.
 
 Quiet mode: Open `/dev/null`, wrap with `File.writer(&buf)`, use interface pointer (valid in stack frame).
+
+## Remote Execution Task Config (Phase 1.1)
+
+**Remote field types**:
+```zig
+remote: ?[]const u8 = null,        // "user@host:port", "ssh://...", "http://...", "https://..."
+remote_cwd: ?[]const u8 = null,    // Working directory on remote system
+remote_env: [][2][]const u8 = &.{}, // Key-value pairs separate from local env
+```
+
+**Task.deinit() cleanup**:
+```zig
+if (self.remote_cwd) |rc| allocator.free(rc);
+for (self.remote_env) |pair| {
+    allocator.free(pair[0]);
+    allocator.free(pair[1]);
+}
+if (self.remote_env.len > 0) allocator.free(self.remote_env);
+```
+
+**Parser pattern for remote_env** (inline table):
+```zig
+// Input: remote_env = { ENV_KEY = "value", DEBUG = "true" }
+// Extract inner content and split by comma (respecting nesting)
+for (pairs) |pair| {
+    const eq = std.mem.indexOf(u8, pair, "=");
+    const k = std.mem.trim(u8, pair[0..eq], " \t\"");
+    const v = std.mem.trim(u8, pair[eq+1..], " \t\"");
+    env_array[i] = [_][]const u8{ try allocator.dupe(u8, k), try allocator.dupe(u8, v) };
+}
+```
+
+**Test format** (TOML):
+```toml
+[tasks.remote-task]
+cmd = "npm deploy"
+remote = "user@prod:22"
+remote_cwd = "/app"
+remote_env = { ENV = "prod", DEBUG = "false" }
+```
+
+**Test assertions**:
+- Check task.remote is non-null and matches expected string
+- Check task.remote_cwd is non-null for configured tasks, null otherwise
+- For remote_env, iterate pairs and verify key-value extraction
+- Test that local env (env) and remote_env are independent
+- Test optional fields work in isolation and combination
 
 ## Module Extraction
 
