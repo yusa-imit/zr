@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.45.0 (TOML Syntax Highlighting)
-- **Next release**: v1.46.0 (next version = current + 1, milestone TBD at release)
-- **Next actionable milestone**: Remote Execution & Distributed Builds (READY)
+- **Next release**: v1.46.0 (Remote Execution & Distributed Builds — IMPLEMENTED, pending release)
+- **Next actionable milestone**: Task Retry Strategies & Backoff Policies (READY)
 - **Blocked milestones**: zuda Levenshtein, zuda WorkStealingDeque (waiting on zuda releases)
 
 ---
@@ -21,9 +21,11 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **BLOCKED until zuda releases StealingQueue module.**
 
-### Remote Execution & Distributed Builds (was v1.41.0)
+### Remote Execution & Distributed Builds (was v1.41.0) — IMPLEMENTED
 
 Add remote task execution capabilities via SSH/HTTP. Features: `remote` field in task config for SSH target specification, task distribution across multiple machines, remote cache integration for artifact sharing, connection pooling and retry logic, progress monitoring for remote tasks. Enables distributed builds for large monorepos and CI/CD optimization.
+
+**Status**: Core implementation complete (2026-03-18). Scheduler integration done. Tasks with `remote` field execute on SSH or HTTP targets. Supports remote_cwd and remote_env. Pending: integration tests and documentation.
 
 ### Task Retry Strategies & Backoff Policies (was v1.42.0)
 
