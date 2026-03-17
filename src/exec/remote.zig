@@ -992,8 +992,12 @@ test "serializeTask converts Task to JSON" {
     };
     defer task.deinit(allocator);
 
-    const serialized = executor.serializeTask(task);
-    try std.testing.expectError(error.InvalidTaskSerialization, serialized);
+    const serialized = try executor.serializeTask(task);
+    defer allocator.free(serialized.json);
+
+    // Verify JSON contains expected fields
+    try std.testing.expect(std.mem.indexOf(u8, serialized.json, "\"name\":\"test-task\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, serialized.json, "\"cmd\":\"echo 'hello'\"") != null);
 }
 
 test "deserializeTask parses JSON back to Task" {
@@ -1005,8 +1009,12 @@ test "deserializeTask parses JSON back to Task" {
     defer executor.deinit();
 
     const json = "{\"name\": \"test\", \"cmd\": \"echo\"}";
-    const result = executor.deserializeTask(json);
-    try std.testing.expectError(error.InvalidTaskDeserialization, result);
+    var task = try executor.deserializeTask(json);
+    defer task.deinit(allocator);
+
+    // Verify task fields were deserialized correctly
+    try std.testing.expectEqualStrings("test", task.name);
+    try std.testing.expectEqualStrings("echo", task.cmd);
 }
 
 test "remote executor routes to SSH for ssh:// URI" {
