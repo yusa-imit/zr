@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.46.0] - 2026-03-18
+
+### Added
+- **Remote Execution & Distributed Builds**
+  - Execute tasks on remote machines via SSH or HTTP workers
+  - Support for SSH targets: `user@host:port` or `ssh://user@host:port`
+  - Support for HTTP/HTTPS worker endpoints for distributed task execution
+  - New task fields: `remote`, `remote_cwd`, `remote_env` for remote execution configuration
+  - Scheduler integration: tasks with `remote` field automatically route to RemoteExecutor
+  - Connection pooling and retry logic for transient network failures
+  - Graceful error handling for SSH connection failures (exit code 255) and HTTP errors
+  - Output capture from remote processes (stdout/stderr streaming)
+  - Progress monitoring for remote task execution
+  - Use cases: distributed builds, GPU processing, multi-platform testing, CI/CD pipelines
+  - 9 integration tests covering SSH/HTTP target parsing, config validation, error handling
+  - Comprehensive documentation in `docs/guides/configuration.md` with examples
+
+### Developer Notes
+- Total unit tests: 932/938 (6 skipped, 0 leaks)
+- Total integration tests: 967/968 (1 skipped, 0 leaks)
+- CI status: GREEN (all tests passing)
+- New module: `src/exec/remote.zig` (SSH and HTTP executors)
+- Scheduler updated to route remote tasks via `RemoteExecutor.execute()`
+- No breaking changes — purely additive feature
+
 ## [1.45.0] - 2026-03-17
 
 ### Added

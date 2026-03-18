@@ -6,6 +6,7 @@ This document describes the complete `zr.toml` configuration schema.
 
 - [Tasks](#tasks)
   - [Execution Hooks](#execution-hooks-v1240)
+  - [Remote Execution](#remote-execution-v1460)
 - [Workflows](#workflows)
 - [Profiles](#profiles)
 - [Matrix Expansion](#matrix-expansion)
@@ -65,6 +66,9 @@ cmd = "npm run build"
 | `hooks` | array | ❌ | [] | Execution hooks (v1.24.0, see [Execution Hooks](#execution-hooks-v1240)) |
 | `circuit_breaker` | table | ❌ | null | Circuit breaker configuration (v1.30.0, see [Circuit Breaker](#circuit-breaker-v1300)) |
 | `checkpoint` | table | ❌ | null | Checkpoint/resume configuration (v1.31.0, see [Checkpoint/Resume](#checkpointresume-v1310)) |
+| `remote` | string | ❌ | null | Remote execution target (v1.46.0, see [Remote Execution](#remote-execution-v1460)) |
+| `remote_cwd` | string | ❌ | null | Working directory on remote host (v1.46.0) |
+| `remote_env` | table | ❌ | {} | Environment variables for remote execution (v1.46.0) |
 
 ### Dependencies
 
@@ -276,6 +280,141 @@ for epoch in range(start_epoch, 100):
 - Only JSON format is supported for checkpoint markers
 
 **Note:** The checkpoint marker line is removed from task output to avoid cluttering logs. Only the actual task output is displayed.
+
+### Remote Execution (v1.46.0)
+
+Execute tasks on remote machines via SSH or HTTP workers. This enables distributed builds, offloading resource-intensive tasks, and leveraging remote compute resources.
+
+```toml
+[tasks.build-on-server]
+cmd = "cargo build --release"
+remote = "user@build-server.example.com:22"
+remote_cwd = "/home/user/project"
+remote_env = { RUST_LOG = "debug" }
+```
+
+**Remote Execution Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `remote` | string | null | Remote target specification (SSH or HTTP) |
+| `remote_cwd` | string | null | Working directory on remote host (overrides local `cwd`) |
+| `remote_env` | table | {} | Additional environment variables for remote execution |
+
+**Supported Target Formats:**
+
+1. **SSH (short format)**: `user@host[:port]`
+   ```toml
+   remote = "deploy@server.local:22"
+   ```
+
+2. **SSH (URI format)**: `ssh://user@host[:port]`
+   ```toml
+   remote = "ssh://ci@build-01.company.internal:2222"
+   ```
+
+3. **HTTP/HTTPS**: `http://host[:port]` or `https://host[:port]`
+   ```toml
+   remote = "http://worker.example.com:8080"
+   ```
+
+**SSH Remote Execution:**
+
+SSH targets execute commands via `ssh user@host 'command'`. Requires:
+- SSH key-based authentication (password prompts not supported)
+- Remote host in `~/.ssh/known_hosts`
+- Necessary permissions on remote machine
+
+```toml
+[tasks.deploy]
+cmd = "./deploy.sh production"
+remote = "deploy@prod-server.example.com"
+remote_cwd = "/opt/app"
+remote_env = { DEPLOY_ENV = "production", LOG_LEVEL = "info" }
+deps = ["build", "test"]  # Run local deps first, then deploy remotely
+```
+
+**HTTP Remote Execution:**
+
+HTTP targets POST task metadata as JSON to a remote worker service. The worker must implement the zr remote execution protocol:
+- Endpoint: `POST /execute`
+- Request: `{ "cmd": "...", "cwd": "...", "env": {...} }`
+- Response: `{ "exit_code": 0, "stdout": "...", "stderr": "...", "duration_ms": 123 }`
+
+```toml
+[tasks.process-video]
+cmd = "./encode.sh input.mp4"
+remote = "https://gpu-worker-01.local:443"
+remote_env = { GPU_DEVICE = "0" }
+timeout_ms = 3600000  # 1 hour
+```
+
+**How It Works:**
+
+1. **Local Dependencies**: All dependencies (`deps`, `deps_serial`, etc.) run locally first
+2. **Task Serialization**: Task command, environment, and working directory are serialized
+3. **Remote Execution**:
+   - **SSH**: Command is executed via `ssh -p PORT user@host 'cd CWD && ENV=val CMD'`
+   - **HTTP**: JSON payload is POSTed to remote worker endpoint
+4. **Output Capture**: stdout/stderr are captured and returned to local zr process
+5. **Exit Code**: Remote exit code determines task success/failure
+
+**Error Handling:**
+
+- **Connection Failures**: SSH exit code 255 or HTTP network errors → task fails with error
+- **Timeouts**: `timeout_ms` applies to remote execution (includes network latency)
+- **Retries**: Use `retry_max` and `retry_delay_ms` for transient network failures
+
+```toml
+[tasks.flaky-remote-build]
+cmd = "make all"
+remote = "builder@ci-agent-pool.local"
+timeout_ms = 600000      # 10 minutes
+retry_max = 3            # Retry on network failures
+retry_delay_ms = 5000    # Wait 5 seconds between retries
+```
+
+**Use Cases:**
+
+- **Distributed Builds**: Offload compilation to powerful build servers
+- **GPU Processing**: Execute ML training or video encoding on GPU-equipped machines
+- **Multi-Platform Testing**: Run tests on different OS/architectures via remote workers
+- **CI/CD Pipeline**: Distribute test suite across multiple agents
+- **Resource Isolation**: Execute memory/CPU-intensive tasks on dedicated machines
+
+**Limitations:**
+
+- SSH requires key-based authentication (no password prompt support)
+- HTTP workers must implement the zr remote execution protocol
+- File synchronization not automatic (use `rsync` in task `cmd` or remote cache)
+- Interactive tasks (`inherit_stdio=true`) not supported for remote execution
+- Remote tasks cannot spawn local subprocesses (all execution is remote)
+
+**Example: Multi-Stage CI with Remote Execution**
+
+```toml
+[tasks.test-linux]
+cmd = "./run-tests.sh"
+remote = "ssh://ci@linux-builder.local:22"
+remote_cwd = "/tmp/project"
+tags = ["ci", "linux"]
+
+[tasks.test-macos]
+cmd = "./run-tests.sh"
+remote = "ssh://ci@macos-builder.local:22"
+remote_cwd = "/tmp/project"
+tags = ["ci", "macos"]
+
+[tasks.test-windows]
+cmd = "powershell ./run-tests.ps1"
+remote = "http://windows-worker.local:8080"
+tags = ["ci", "windows"]
+
+[workflows.ci-full]
+stages = [
+  ["test-linux", "test-macos", "test-windows"]  # All platforms in parallel
+]
+```
 
 ### Conditional Execution
 

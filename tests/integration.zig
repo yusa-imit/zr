@@ -38,6 +38,7 @@ comptime {
     _ = @import("plugin_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
+    _ = @import("remote_test.zig");
     _ = @import("repo_test.zig");
     _ = @import("run_test.zig");
     _ = @import("schedule_test.zig");
