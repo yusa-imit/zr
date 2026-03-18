@@ -5,21 +5,21 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.44.0 (build.zig.zon) | Latest Release: v1.43.0 (2026-03-16)
+- **Version**: v1.46.0 (build.zig.zon) | Latest Release: v1.46.0 (2026-03-18)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.44.0 (current in build.zig.zon), next: v1.46.0 (remote execution milestone)
-- **Unit tests**: 845/853 (8 skipped, 0 failed, 0 memory leaks) — v1.45.0 baseline
-- **Integration tests**: 957/958 (1 skipped, 0 failed, 0 memory leaks) — v1.45.0 baseline
+- **Build version**: v1.46.0 (current in build.zig.zon), next: TBD (retry strategies milestone)
+- **Unit tests**: 932/938 (6 skipped, 0 failed, 0 memory leaks) — v1.46.0 baseline
+- **Integration tests**: 967/968 (1 skipped, 0 failed, 0 memory leaks) — v1.46.0 baseline
 - **CI**: GREEN — all 6 cross-compile targets passing
 - **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
 - **Source**: ~63,780 lines (+135), 91+ modules, 10 language providers
-- **Latest work**: Remote execution integration (2026-03-18) — scheduler routes tasks with `remote` field to SSH/HTTP executors
+- **Latest work**: v1.46.0 released (2026-03-18) — Remote Execution & Distributed Builds (SSH/HTTP, 9 integration tests, full docs)
 
 ## All PRD Phases COMPLETE ✅
 
@@ -43,7 +43,7 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 - `main.zig` (~550 lines) — Entry point + CLI dispatcher (34+ commands)
 - `cli/` (34 modules) — Command handlers (run, list, graph, watch, plugins, etc.)
 - `config/` (5 modules) — TOML loader, parser, expression engine, matrix expansion
-- `exec/` (8 modules) — Scheduler, worker pool, resource monitoring, hooks, timeline, **remote execution (v1.46.0)**
+- `exec/` (9 modules) — Scheduler, worker pool, resource monitoring, hooks, timeline, remote execution (SSH/HTTP)
 - `graph/` — DAG, topological sort, cycle detection, visualization
 - `plugin/` (8 modules) — Dynamic loading, registry client, built-ins, WASM runtime
 - `watch/` — Native filesystem watchers (inotify/kqueue/ReadDirectoryChangesW)
