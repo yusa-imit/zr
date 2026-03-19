@@ -20,6 +20,51 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **BLOCKED until zuda releases StealingQueue module.**
 
+### Shell Integration Enhancements
+
+**Theme**: Developer Experience — Seamless shell integration beyond completion
+
+**Scope**:
+1. **Smart `cd` integration**: `zr cd <workspace-member>` — instantly jump to workspace members by name (no path memorization)
+2. **Shell hooks**: Optional shell hooks for automatic environment loading (direnv-like, but zr-native)
+3. **Command abbreviations**: `zr b` → `zr run build`, `zr t` → `zr run test` (user-configurable aliases in `~/.zrconfig`)
+4. **Shell history integration**: Record `zr run` invocations in shell history with full command expansion for replay
+5. **Integration tests**: 5+ tests for cd/hooks/abbreviations
+
+**Why**: Make zr feel like a native part of the shell, not just another CLI tool. Reduce friction for daily workflows.
+
+**Status**: READY
+
+### Task Output Streaming Improvements
+
+**Theme**: Performance & UX — Better handling of long-running task output
+
+**Scope**:
+1. **Incremental rendering**: Stream task output to TUI without buffering entire output in memory (critical for multi-GB logs)
+2. **Compression on-the-fly**: Gzip-compress stored task output for `zr show --output` (reduce history storage by 5-10x)
+3. **Follow mode**: `zr show --output <task> --follow` — tail -f style live following
+4. **Output pagination**: Automatic pager integration (less/bat) for large outputs
+5. **Performance tests**: Verify memory usage stays under 50MB when streaming 1GB+ output
+
+**Why**: Current output capture buffers entire output, causing OOM on very long-running tasks. Improve scalability.
+
+**Status**: READY
+
+### Cross-Platform Path Handling Audit
+
+**Theme**: Stability — Eliminate path-related bugs on Windows
+
+**Scope**:
+1. **Path separator audit**: Review all path manipulation code for hardcoded `/` vs proper `std.fs.path.sep`
+2. **UNC path support**: Handle Windows UNC paths (`\\server\share`) correctly in cwd/remote_cwd
+3. **Long path support**: Enable Windows long path support (>260 characters) via manifest
+4. **Symlink handling**: Test and fix symlink resolution on Windows (requires admin or Dev Mode)
+5. **Integration tests**: 10+ Windows-specific path tests (run in CI via windows-latest)
+
+**Why**: Windows users report occasional path-related crashes. Comprehensive audit to eliminate this class of bugs.
+
+**Status**: READY
+
 ---
 
 ## Completed Milestones
