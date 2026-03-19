@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.47.0] - 2026-03-19
+
+### Added
+- **Task Retry Strategies & Backoff Policies (v1.47.0)**
+  - Configurable backoff multiplier for exponential/linear/custom retry delays
+    - `retry_backoff_multiplier` field (default: 2.0 for exponential, 1.0 for linear)
+    - Example: `retry_backoff_multiplier = 3.0` → delays grow 3x each attempt
+  - Jitter support to prevent thundering herd problem
+    - `retry_jitter = true` adds ±25% random variance to retry delays
+    - Helps distribute retry attempts across time when multiple tasks fail simultaneously
+  - Max backoff ceiling to cap exponential growth
+    - `max_backoff_ms` field (default: 60000ms = 1 minute)
+    - Prevents unbounded exponential delays that could stall workflows
+  - Conditional retry based on exit codes
+    - `retry_on_codes = [2, 3, 124]` — only retry when exit code matches
+    - Use case: retry on transient errors (exit 2), skip on fatal errors (exit 1)
+  - Conditional retry based on output patterns
+    - `retry_on_patterns = ["FLAKY", "TIMEOUT", "Connection refused"]`
+    - Only retry when stdout/stderr contains one of the specified patterns
+    - Requires `output_mode = "buffer"` for pattern matching
+  - Integration with existing features:
+    - Circuit breaker: still prevents retry storms even with custom strategies
+    - Retry budget: workflow-level retry limits still enforced
+    - Timeline tracking: logs actual delay used for each retry attempt
+  - New module: `src/exec/retry_strategy.zig` with comprehensive backoff calculation
+  - 8 new integration tests (970-977) covering all retry strategy combinations
+
+### Changed
+- Scheduler retry loop refactored to use `RetryStrategy` module (previously hardcoded)
+- Retry delay calculation now respects multiplier, jitter, and max backoff ceiling
+- Timeline events now include actual delay: `"retry 2/5 (delay: 120ms)"`
+
+### Developer Notes
+- Total unit tests: 980/986 (24 new in retry_strategy.zig, 6 skipped, 0 leaks)
+- Total integration tests: 975/976 (8 new retry tests, 1 skipped, 0 leaks)
+- CI status: GREEN (all tests passing)
+- No breaking changes — new fields are optional with backward-compatible defaults
+- Deprecated: `retry_backoff` boolean (replaced by `retry_backoff_multiplier`)
+  - Old: `retry_backoff = true` → doubles delay each attempt
+  - New: `retry_backoff_multiplier = 2.0` (explicit control)
+  - Migration: `retry_backoff = true` → `retry_backoff_multiplier = 2.0`
+  - Old field still works (maps to multiplier 2.0 internally)
+
 ## [1.46.0] - 2026-03-18
 
 ### Added
