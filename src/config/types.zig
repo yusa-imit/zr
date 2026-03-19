@@ -887,7 +887,20 @@ pub const Task = struct {
     /// Delay between retry attempts in milliseconds.
     retry_delay_ms: u64 = 0,
     /// If true, delay doubles on each retry attempt (exponential backoff).
+    /// DEPRECATED in v1.47.0: use retry_backoff_multiplier instead.
     retry_backoff: bool = false,
+    /// Backoff multiplier for retry delays (v1.47.0).
+    /// 1.0 = linear (constant delay), 2.0 = exponential (double each time), 1.5 = moderate growth.
+    /// If null, uses legacy retry_backoff behavior (multiplier = 2.0 if true, 1.0 if false).
+    retry_backoff_multiplier: ?f64 = null,
+    /// If true, add random jitter (±25%) to retry delays to prevent thundering herd (v1.47.0).
+    retry_jitter: bool = false,
+    /// Maximum delay between retries in milliseconds (ceiling for backoff calculation) (v1.47.0).
+    max_backoff_ms: ?u64 = null,
+    /// If non-empty, only retry when exit code matches one of these codes (v1.47.0).
+    retry_on_codes: []const u8 = &[_]u8{},
+    /// If non-empty, only retry when stdout/stderr contains one of these patterns (v1.47.0).
+    retry_on_patterns: []const []const u8 = &[_][]const u8{},
     /// Optional condition expression. If null, task always runs.
     /// If set, evaluated before the task runs; task is skipped if false.
     condition: ?[]const u8 = null,
@@ -1022,6 +1035,10 @@ pub const Task = struct {
             }
             allocator.free(re);
         }
+        // v1.47.0 retry strategy fields
+        if (self.retry_on_codes.len > 0) allocator.free(self.retry_on_codes);
+        for (self.retry_on_patterns) |pattern| allocator.free(pattern);
+        if (self.retry_on_patterns.len > 0) allocator.free(self.retry_on_patterns);
     }
 };
 
