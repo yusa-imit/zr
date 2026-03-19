@@ -287,6 +287,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_retry_max: u32 = 0;
     var task_retry_delay_ms: u64 = 0;
     var task_retry_backoff: bool = false;
+    // v1.47.0 retry strategy fields
+    var task_retry_backoff_multiplier: ?f64 = null;
+    var task_retry_jitter: bool = false;
+    var task_max_backoff_ms: ?u64 = null;
+    var task_retry_on_codes = std.ArrayList(u8){};
+    defer task_retry_on_codes.deinit(allocator);
+    var task_retry_on_patterns = std.ArrayList([]const u8){};
+    defer task_retry_on_patterns.deinit(allocator);
     var task_condition: ?[]const u8 = null;
     var task_skip_if: ?[]const u8 = null;
     var task_output_if: ?[]const u8 = null;
@@ -391,6 +399,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var template_retry_max: u32 = 0;
     var template_retry_delay_ms: u64 = 0;
     var template_retry_backoff: bool = false;
+    // v1.47.0 retry strategy fields
+    var template_retry_backoff_multiplier: ?f64 = null;
+    var template_retry_jitter: bool = false;
+    var template_max_backoff_ms: ?u64 = null;
+    var template_retry_on_codes = std.ArrayList(u8){};
+    defer template_retry_on_codes.deinit(allocator);
+    var template_retry_on_patterns = std.ArrayList([]const u8){};
+    defer template_retry_on_patterns.deinit(allocator);
     var template_condition: ?[]const u8 = null;
     var template_max_concurrent: u32 = 0;
     var template_cache: bool = false;
@@ -642,6 +658,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_retry_max = 0;
                 task_retry_delay_ms = 0;
                 task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
                 task_condition = null; task_skip_if = null; task_output_if = null;
                 task_max_concurrent = 0;
                 task_cache = false;
@@ -770,6 +791,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_cmd = null; task_cwd = null; task_desc = null;
                 task_timeout_ms = null; task_allow_failure = false;
                 task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
+                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
                 task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 current_task = null;
@@ -823,7 +846,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
+                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 current_task = null;
             }
@@ -855,7 +881,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
+                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 current_task = null;
             }
@@ -1037,7 +1066,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false; task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
+                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 current_task = null;
             }
@@ -1351,6 +1383,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_retry_max = 0;
             task_retry_delay_ms = 0;
             task_retry_backoff = false;
+            task_retry_backoff_multiplier = null;
+            task_retry_jitter = false;
+            task_max_backoff_ms = null;
+            task_retry_on_codes.clearRetainingCapacity();
+            task_retry_on_patterns.clearRetainingCapacity();
             task_condition = null;
             task_skip_if = null;
             task_output_if = null;
@@ -1533,6 +1570,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_retry_max = 0;
             template_retry_delay_ms = 0;
             template_retry_backoff = false;
+            template_retry_backoff_multiplier = null;
+            template_retry_jitter = false;
+            template_max_backoff_ms = null;
+            template_retry_on_codes.clearRetainingCapacity();
+            template_retry_on_patterns.clearRetainingCapacity();
             template_condition = null;
             template_max_concurrent = 0;
             template_cache = false;
@@ -2066,6 +2108,37 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                 task_retry_delay_ms = parseDurationMs(rval) orelse 0;
                             } else if (std.mem.eql(u8, rkey, "backoff")) {
                                 task_retry_backoff = std.mem.eql(u8, rval, "exponential");
+                            } else if (std.mem.eql(u8, rkey, "backoff_multiplier")) {
+                                task_retry_backoff_multiplier = std.fmt.parseFloat(f64, rval) catch null;
+                            } else if (std.mem.eql(u8, rkey, "jitter")) {
+                                task_retry_jitter = std.mem.eql(u8, rval, "true");
+                            } else if (std.mem.eql(u8, rkey, "max_backoff")) {
+                                task_max_backoff_ms = parseDurationMs(rval);
+                            } else if (std.mem.eql(u8, rkey, "on_codes")) {
+                                // Parse array: [1, 2, 255]
+                                if (std.mem.startsWith(u8, rval, "[") and std.mem.endsWith(u8, rval, "]")) {
+                                    const codes_str = rval[1 .. rval.len - 1];
+                                    var codes_it = std.mem.splitScalar(u8, codes_str, ',');
+                                    while (codes_it.next()) |code_str| {
+                                        const trimmed_code = std.mem.trim(u8, code_str, " \t");
+                                        if (trimmed_code.len > 0) {
+                                            const code = std.fmt.parseInt(u8, trimmed_code, 10) catch continue;
+                                            try task_retry_on_codes.append(allocator, code);
+                                        }
+                                    }
+                                }
+                            } else if (std.mem.eql(u8, rkey, "on_patterns")) {
+                                // Parse array: ["Connection refused", "Timeout"]
+                                if (std.mem.startsWith(u8, rval, "[") and std.mem.endsWith(u8, rval, "]")) {
+                                    const patterns_str = rval[1 .. rval.len - 1];
+                                    var patterns_it = std.mem.splitScalar(u8, patterns_str, ',');
+                                    while (patterns_it.next()) |pattern_str| {
+                                        const trimmed_pattern = std.mem.trim(u8, pattern_str, " \t\"");
+                                        if (trimmed_pattern.len > 0) {
+                                            try task_retry_on_patterns.append(allocator, trimmed_pattern);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2239,6 +2312,35 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                 template_retry_delay_ms = parseDurationMs(rval) orelse 0;
                             } else if (std.mem.eql(u8, rkey, "backoff")) {
                                 template_retry_backoff = std.mem.eql(u8, rval, "exponential");
+                            } else if (std.mem.eql(u8, rkey, "backoff_multiplier")) {
+                                template_retry_backoff_multiplier = std.fmt.parseFloat(f64, rval) catch null;
+                            } else if (std.mem.eql(u8, rkey, "jitter")) {
+                                template_retry_jitter = std.mem.eql(u8, rval, "true");
+                            } else if (std.mem.eql(u8, rkey, "max_backoff")) {
+                                template_max_backoff_ms = parseDurationMs(rval);
+                            } else if (std.mem.eql(u8, rkey, "on_codes")) {
+                                if (std.mem.startsWith(u8, rval, "[") and std.mem.endsWith(u8, rval, "]")) {
+                                    const codes_str = rval[1 .. rval.len - 1];
+                                    var codes_it = std.mem.splitScalar(u8, codes_str, ',');
+                                    while (codes_it.next()) |code_str| {
+                                        const trimmed_code = std.mem.trim(u8, code_str, " \t");
+                                        if (trimmed_code.len > 0) {
+                                            const code = std.fmt.parseInt(u8, trimmed_code, 10) catch continue;
+                                            try template_retry_on_codes.append(allocator, code);
+                                        }
+                                    }
+                                }
+                            } else if (std.mem.eql(u8, rkey, "on_patterns")) {
+                                if (std.mem.startsWith(u8, rval, "[") and std.mem.endsWith(u8, rval, "]")) {
+                                    const patterns_str = rval[1 .. rval.len - 1];
+                                    var patterns_it = std.mem.splitScalar(u8, patterns_str, ',');
+                                    while (patterns_it.next()) |pattern_str| {
+                                        const trimmed_pattern = std.mem.trim(u8, pattern_str, " \t\"");
+                                        if (trimmed_pattern.len > 0) {
+                                            try template_retry_on_patterns.append(allocator, trimmed_pattern);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
