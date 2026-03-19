@@ -11,15 +11,15 @@
 
 ## Current Status
 
-- **Build version**: v1.46.0 (current in build.zig.zon), next: v1.47.0 (retry strategies milestone — in progress)
+- **Build version**: v1.46.0 (current in build.zig.zon), next: v1.47.0 (retry strategies milestone — READY FOR RELEASE)
 - **Unit tests**: 956 passing (24 new in retry_strategy.zig), 6 skipped, 0 failed, 0 memory leaks
-- **Integration tests**: 967/968 (1 skipped, 0 failed, 0 memory leaks) — v1.46.0 baseline
+- **Integration tests**: 975/976 (8 new v1.47.0 retry tests: 970-977), 1 skipped, 0 failed, 0 memory leaks
 - **CI**: GREEN — all 6 cross-compile targets passing
 - **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
 - **Source**: ~64,350 lines (+570), 92 modules, 10 language providers
-- **Latest work**: v1.47.0 in progress (2026-03-19) — Task Retry Strategies & Backoff Policies (3/6 commits done)
+- **Latest work**: v1.47.0 COMPLETE (2026-03-19) — Task Retry Strategies & Backoff Policies (5/5 commits)
 
 ## All PRD Phases COMPLETE ✅
 

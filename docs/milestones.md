@@ -20,15 +20,12 @@ Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_progr
 
 Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **BLOCKED until zuda releases StealingQueue module.**
 
-### Task Retry Strategies & Backoff Policies (was v1.42.0)
-
-Enhance retry mechanism with configurable strategies. Features: exponential backoff, jitter, max_attempts per task, retry_on conditions (exit codes, output patterns), backoff_multiplier and max_backoff_ms config, integration with circuit breaker from v1.30.0. Improves reliability for flaky tests and network-dependent tasks.
-
 ---
 
 ## Completed Milestones
 
 | Version | Name | Date | Summary |
+| v1.47.0 | Task Retry Strategies & Backoff Policies | 2026-03-19 | Configurable retry strategies: backoff multiplier, jitter, max backoff ceiling, conditional retry (retry_on_codes, retry_on_patterns), integration tests |
 |---------|------|------|---------|
 | v1.46.0 | Remote Execution & Distributed Builds | 2026-03-18 | SSH/HTTP remote task execution, remote/remote_cwd/remote_env fields, scheduler integration, 9 integration tests |
 | v1.45.0 | TOML Syntax Highlighting | 2026-03-17 | Syntax-highlighted TOML error messages, error_display utility, color-coded diagnostics for validate command |
