@@ -58,6 +58,7 @@ const context_cmd = @import("cli/context.zig");
 const conformance_cmd = @import("cli/conformance.zig");
 const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
+const cd_cmd = @import("cli/cd.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
 const export_cmd = @import("cli/export.zig");
@@ -497,7 +498,7 @@ fn run(
         "interactive-run", "irun",       "tools",      "lint",
         "repo",       "codeowners", "version",    "publish",
         "analytics",  "context",    "conformance", "bench",
-        "doctor",     "setup",      "env",        "export",
+        "doctor",     "cd",         "setup",      "env",        "export",
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
@@ -768,6 +769,13 @@ fn run(
             }
         }
         return doctor_cmd.cmdDoctor(allocator, opts);
+    } else if (std.mem.eql(u8, cmd, "cd")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "cd: missing workspace member name\n\n  Hint: zr cd <member-name>\n", .{});
+            return 1;
+        }
+        const member_name = effective_args[2];
+        return cd_cmd.cmdCd(allocator, member_name, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "setup")) {
         const setup_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return setup_cmd.cmdSetup(allocator, setup_args, effective_w, ew, effective_color);
@@ -1048,6 +1056,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  context [OPTIONS]      Generate AI-friendly project metadata\n", .{});
     try w.print("  bench <task> [OPTIONS] Benchmark task performance with statistics\n", .{});
     try w.print("  doctor                 Diagnose environment and toolchain setup\n", .{});
+    try w.print("  cd <member>            Print path to workspace member (for shell integration)\n", .{});
     try w.print("  env [OPTIONS]          Display environment variables for tasks\n", .{});
     try w.print("  export [OPTIONS]       Export env vars in shell-sourceable format\n", .{});
     try w.print("  upgrade [OPTIONS]      Upgrade zr to the latest version\n", .{});
