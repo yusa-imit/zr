@@ -1,8 +1,27 @@
-## Weak Test Assertions (2026-03-18, commit 706a591)
-**Symptom**: Tests passing unconditionally due to trivially satisfiable assertions
+## macOS TCC blocks getcwd() for launchd agents accessing ~/Desktop/ (2026-03-19)
+**Symptom**: All cron-spawned Claude CLI processes stuck at 0 CPU, ~5KB RSS, producing zero output. Timeout after 30 min.
+**Root cause**: macOS TCC (Transparency, Consent, and Control) blocks `open()` syscall inside `getcwd()` for processes launched by a launchd agent (no TTY, `??` terminal) when cwd is under `~/Desktop/` (TCC-protected directory). The `__open_nocancel` syscall hangs indefinitely instead of returning EPERM. Both the Bun daemon AND child Claude processes were affected. Even freshly restarted launchd agent exhibited the same behavior.
+**Diagnosis method**: `sample <pid>` showed 100% of samples in `__private_getcwd → __getcwd → open$NOCANCEL → __open_nocancel`
+**Fix**:
+1. Move `~/Desktop/codespace/` → `~/codespace/` (not TCC-protected)
+2. Create symlink `~/Desktop/codespace → ~/codespace` for interactive workflows
+3. Update launchd plist WorkingDirectory + log paths
+4. Update all cron job cwds via API
+5. Reload launchd agent
+**Prevention**: Never use TCC-protected directories (`~/Desktop/`, `~/Documents/`, `~/Downloads/`) as working directories for launchd agents or background daemons. Use paths like `~/codespace/` or `~/.local/share/` instead.
+
+---
+
+## Weak Test Assertions (2026-03-18, commit 706a591; 2026-03-20, retry tests)
+**Symptom**: Tests passing unconditionally due to trivially satisfiable assertions or lack of behavioral verification
 **Examples found**:
 1. `setup_test.zig:50` — `expect(stdout.len > 0 or stderr.len > 0 or exit_code == 0)` always passes
 2. `clean_test.zig:63,91,107` — Only checking exit_code == 0 without verifying behavior
+3. `retry_strategy_test.zig:973` (2026-03-20) — **Smoke test claiming to verify retry behavior**:
+   - Test 973: Only checks `result.exit_code != 0` (would pass even without retry feature)
+   - Comment says "Should see retry attempts in output/logs (smoke test)" but NO output verification
+   - Commit 684801f **weakened** the test from `expectEqual(@as(u8, 2), exit_code)` to `expect(exit_code != 0)`
+   - Tests 970-977 are all smoke tests (just check for crashes, not retry behavior)
 **Fix**: Replace with meaningful assertions:
 ```zig
 // Bad: Trivially true
@@ -11,8 +30,16 @@ try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0 or result.
 // Good: Verifies actual behavior
 try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 try std.testing.expect(std.mem.indexOf(u8, result.stdout, "expected output") != null);
+
+// Bad: Smoke test for retry (test 973)
+try std.testing.expect(result1.exit_code != 0); // Would pass without retry feature!
+
+// Good: Verify retry actually happened
+// Option 1: Check execution time (retries should add delay_ms * retry_max)
+// Option 2: Use stateful counter script to verify attempt count
+// Option 3: Check stdout/stderr for retry-related log messages
 ```
-**Lesson**: Tests must verify actual behavior, not just "didn't crash". Every assertion should be able to fail if implementation is wrong.
+**Lesson**: Tests must verify actual behavior, not just "didn't crash". Every assertion should be able to fail if implementation is wrong. Smoke tests are useful for integration but should NOT claim to verify specific features.
 
 ---
 
