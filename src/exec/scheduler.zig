@@ -18,6 +18,7 @@ const types = @import("../config/types.zig");
 const checkpoint = @import("checkpoint.zig");
 const output_capture = @import("output_capture.zig");
 const remote = @import("remote.zig");
+const retry_strategy = @import("retry_strategy.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -371,6 +372,12 @@ const WorkerCtx = struct {
     retry_max: u32,
     retry_delay_ms: u64,
     retry_backoff: bool,
+    /// New retry strategy fields (v1.47.0)
+    retry_backoff_multiplier: ?f64,
+    retry_jitter: bool,
+    max_backoff_ms: ?u64,
+    retry_on_codes: []const u8,
+    retry_on_patterns: []const []const u8,
     /// Pointer to shared results list — protected by results_mutex.
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
@@ -816,83 +823,117 @@ fn workerFn(ctx: WorkerCtx) void {
         .success = false,
     };
 
-    // Retry on failure up to retry_max times
+    // Retry on failure up to retry_max times (v1.47.0: enhanced with RetryStrategy)
     var retry_count: u32 = 0;
     if (!proc_result.success and ctx.retry_max > 0) {
+        // Build RetryStrategy from task config (v1.47.0)
+        const strategy = retry_strategy.RetryStrategy{
+            .backoff_multiplier = ctx.retry_backoff_multiplier orelse (if (ctx.retry_backoff) 2.0 else 1.0),
+            .jitter = ctx.retry_jitter,
+            .max_backoff_ms = ctx.max_backoff_ms orelse 60_000,
+            .retry_on_codes = ctx.retry_on_codes,
+            .retry_on_patterns = ctx.retry_on_patterns,
+        };
+
+        // Initialize random number generator for jitter (if enabled)
+        var prng = if (strategy.jitter) std.Random.DefaultPrng.init(@intCast(std.time.milliTimestamp())) else undefined;
+        var rand_impl = if (strategy.jitter) prng.random() else undefined;
+        const rand_ptr: ?*std.Random = if (strategy.jitter) &rand_impl else null;
+
         // Record initial failure for circuit breaker (v1.30.0)
         if (ctx.circuit_breaker) |cb| {
             const now_ms = std.time.milliTimestamp();
             cb.recordFailure(now_ms);
         }
 
-        var delay_ms: u64 = ctx.retry_delay_ms;
-        var attempt: u32 = 0;
-        while (!proc_result.success and attempt < ctx.retry_max) : (attempt += 1) {
-            // Check circuit breaker state (v1.30.0)
-            if (ctx.circuit_breaker) |cb| {
-                if (cb.shouldPreventRetry()) {
-                    // Circuit breaker is open — stop retrying
-                    if (ctx.timeline_tracker) |tt| {
-                        tt.recordEvent(.retry_started, ctx.task_name, "circuit breaker tripped") catch {};
-                    }
-                    break;
-                }
-            }
+        // Check if retry conditions are met (v1.47.0)
+        // Get captured output if available for pattern matching
+        const captured_output = if (output_cap) |*oc| oc.getBuffer() catch "" else "";
+        const should_retry_on_conditions = strategy.shouldRetry(proc_result.exit_code, captured_output);
 
-            // Check retry budget (v1.30.0)
-            if (ctx.retry_budget) |rb| {
-                if (!rb.tryConsume()) {
-                    // Retry budget exhausted — stop retrying
-                    if (ctx.timeline_tracker) |tt| {
-                        tt.recordEvent(.retry_started, ctx.task_name, "retry budget exhausted") catch {};
-                    }
-                    break;
-                }
-            }
-
-            retry_count += 1;
-
-            // Record retry event (v1.14.0)
+        if (!should_retry_on_conditions) {
+            // Exit code or output pattern don't match retry conditions — skip retry
             if (ctx.timeline_tracker) |tt| {
-                const context_buf = std.fmt.allocPrint(ctx.allocator, "retry {d}/{d}", .{ retry_count, ctx.retry_max }) catch null;
-                defer if (context_buf) |buf| ctx.allocator.free(buf);
-                tt.recordEvent(.retry_started, ctx.task_name, context_buf) catch {};
+                tt.recordEvent(.retry_started, ctx.task_name, "retry conditions not met") catch {};
             }
-
-            if (delay_ms > 0) {
-                std.Thread.sleep(delay_ms * std.time.ns_per_ms);
-            }
-            proc_result = process.run(ctx.allocator, .{
-                .cmd = ctx.cmd,
-                .cwd = ctx.cwd,
-                .env = proc_env,
-                .inherit_stdio = inherit_stdio_mode,
-                .timeout_ms = ctx.timeout_ms,
-                .task_control = ctx.task_control,
-                .enable_monitor = ctx.monitor,
-                .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
-                .monitor_use_color = ctx.use_color,
-                .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
-                .output_callback = if (needs_callback) combinedOutputCallback else null,
-                .output_ctx = if (needs_callback) @ptrCast(&combined_ctx) else null,
-            }) catch process.ProcessResult{
-                .exit_code = 1,
-                .duration_ms = 0,
-                .success = false,
-            };
-
-            // Update circuit breaker with retry result (v1.30.0)
-            if (ctx.circuit_breaker) |cb| {
-                const now_ms = std.time.milliTimestamp();
-                if (proc_result.success) {
-                    cb.recordSuccess(now_ms);
-                } else {
-                    cb.recordFailure(now_ms);
+        } else {
+            var attempt: u32 = 0;
+            while (!proc_result.success and attempt < ctx.retry_max) : (attempt += 1) {
+                // Check circuit breaker state (v1.30.0)
+                if (ctx.circuit_breaker) |cb| {
+                    if (cb.shouldPreventRetry()) {
+                        // Circuit breaker is open — stop retrying
+                        if (ctx.timeline_tracker) |tt| {
+                            tt.recordEvent(.retry_started, ctx.task_name, "circuit breaker tripped") catch {};
+                        }
+                        break;
+                    }
                 }
-            }
 
-            if (ctx.retry_backoff and delay_ms > 0) {
-                delay_ms *= 2;
+                // Check retry budget (v1.30.0)
+                if (ctx.retry_budget) |rb| {
+                    if (!rb.tryConsume()) {
+                        // Retry budget exhausted — stop retrying
+                        if (ctx.timeline_tracker) |tt| {
+                            tt.recordEvent(.retry_started, ctx.task_name, "retry budget exhausted") catch {};
+                        }
+                        break;
+                    }
+                }
+
+                retry_count += 1;
+
+                // Calculate delay using RetryStrategy (v1.47.0)
+                const delay_ms = strategy.calculateDelay(ctx.retry_delay_ms, attempt, rand_ptr);
+
+                // Record retry event (v1.14.0)
+                if (ctx.timeline_tracker) |tt| {
+                    const context_buf = std.fmt.allocPrint(ctx.allocator, "retry {d}/{d} (delay: {d}ms)", .{ retry_count, ctx.retry_max, delay_ms }) catch null;
+                    defer if (context_buf) |buf| ctx.allocator.free(buf);
+                    tt.recordEvent(.retry_started, ctx.task_name, context_buf) catch {};
+                }
+
+                if (delay_ms > 0) {
+                    std.Thread.sleep(delay_ms * std.time.ns_per_ms);
+                }
+                proc_result = process.run(ctx.allocator, .{
+                    .cmd = ctx.cmd,
+                    .cwd = ctx.cwd,
+                    .env = proc_env,
+                    .inherit_stdio = inherit_stdio_mode,
+                    .timeout_ms = ctx.timeout_ms,
+                    .task_control = ctx.task_control,
+                    .enable_monitor = ctx.monitor,
+                    .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
+                    .monitor_use_color = ctx.use_color,
+                    .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
+                    .output_callback = if (needs_callback) combinedOutputCallback else null,
+                    .output_ctx = if (needs_callback) @ptrCast(&combined_ctx) else null,
+                }) catch process.ProcessResult{
+                    .exit_code = 1,
+                    .duration_ms = 0,
+                    .success = false,
+                };
+
+                // Update circuit breaker with retry result (v1.30.0)
+                if (ctx.circuit_breaker) |cb| {
+                    const now_ms = std.time.milliTimestamp();
+                    if (proc_result.success) {
+                        cb.recordSuccess(now_ms);
+                    } else {
+                        cb.recordFailure(now_ms);
+                    }
+                }
+
+                // Re-check retry conditions after each attempt (v1.47.0)
+                const retry_output = if (output_cap) |*oc| oc.getBuffer() catch "" else "";
+                if (!strategy.shouldRetry(proc_result.exit_code, retry_output)) {
+                    // Stop retrying if conditions no longer met
+                    if (ctx.timeline_tracker) |tt| {
+                        tt.recordEvent(.retry_started, ctx.task_name, "retry conditions not met") catch {};
+                    }
+                    break;
+                }
             }
         }
     }
@@ -1649,6 +1690,11 @@ pub fn run(
                 .retry_max = task.retry_max,
                 .retry_delay_ms = task.retry_delay_ms,
                 .retry_backoff = task.retry_backoff,
+                .retry_backoff_multiplier = task.retry_backoff_multiplier,
+                .retry_jitter = task.retry_jitter,
+                .max_backoff_ms = task.max_backoff_ms,
+                .retry_on_codes = task.retry_on_codes,
+                .retry_on_patterns = task.retry_on_patterns,
                 .results = &results,
                 .results_mutex = &results_mutex,
                 .semaphore = &semaphore,
