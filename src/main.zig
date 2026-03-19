@@ -16,6 +16,7 @@ const timeline = @import("exec/timeline.zig");
 const replay = @import("exec/replay.zig");
 const checkpoint = @import("exec/checkpoint.zig");
 const output_capture = @import("exec/output_capture.zig");
+const retry_strategy = @import("exec/retry_strategy.zig");
 const color = @import("output/color.zig");
 const progress = @import("output/progress.zig");
 const monitor = @import("output/monitor.zig");
