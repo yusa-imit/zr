@@ -5,13 +5,13 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.46.0 (build.zig.zon) | Latest Release: v1.46.0 (2026-03-18)
+- **Version**: v1.47.0 (build.zig.zon) | Latest Release: v1.47.0 (2026-03-19)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.46.0 (current in build.zig.zon), next: v1.47.0 (retry strategies milestone — READY FOR RELEASE)
+- **Build version**: v1.47.0 (current in build.zig.zon) | Latest Release: v1.47.0 (2026-03-19)
 - **Unit tests**: 956 passing (24 new in retry_strategy.zig), 6 skipped, 0 failed, 0 memory leaks
 - **Integration tests**: 975/976 (8 new v1.47.0 retry tests: 970-977), 1 skipped, 0 failed, 0 memory leaks
 - **CI**: GREEN — all 6 cross-compile targets passing
@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
 - **Source**: ~64,350 lines (+570), 92 modules, 10 language providers
-- **Latest work**: v1.47.0 COMPLETE (2026-03-19) — Task Retry Strategies & Backoff Policies (5/5 commits)
+- **Latest work**: v1.47.0 RELEASED (2026-03-19) — Task Retry Strategies & Backoff Policies (6 commits, all passing)
 
 ## All PRD Phases COMPLETE ✅
 
