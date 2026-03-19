@@ -18,8 +18,8 @@
 - **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
-- **Source**: ~64,350 lines (+570), 92 modules, 10 language providers
-- **Latest work**: v1.47.0 RELEASED (2026-03-19) — Task Retry Strategies & Backoff Policies (6 commits, all passing)
+- **Source**: ~64,490 lines (+140), 93 modules, 10 language providers
+- **Latest work**: Shell Integration Enhancements (IN PROGRESS) — `zr cd <member>` command with fuzzy matching (1/5 items complete, 2026-03-20)
 
 ## All PRD Phases COMPLETE ✅
 
