@@ -13,13 +13,13 @@
 
 - **Build version**: v1.47.0 (current in build.zig.zon) | Latest Release: v1.47.0 (2026-03-19)
 - **Unit tests**: 956 passing (24 new in retry_strategy.zig), 6 skipped, 0 failed, 0 memory leaks
-- **Integration tests**: 975/976 (8 new v1.47.0 retry tests: 970-977), 1 skipped, 0 failed, 0 memory leaks
+- **Integration tests**: 1011/1012 (40 new shell-hook tests), 1 skipped, 0 failed, 0 memory leaks
 - **CI**: GREEN — all 6 cross-compile targets passing
 - **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
-- **Source**: ~64,490 lines (+140), 93 modules, 10 language providers
-- **Latest work**: Shell Integration Enhancements (IN PROGRESS) — `zr cd <member>` command with fuzzy matching (1/5 items complete, 2026-03-20)
+- **Source**: ~65,273 lines (+783), 94 modules, 10 language providers
+- **Latest work**: Shell Integration Enhancements (IN PROGRESS) — `zr cd <member>` and `zr shell-hook <shell>` commands complete (2/5 items, 2026-03-20)
 
 ## All PRD Phases COMPLETE ✅
 
