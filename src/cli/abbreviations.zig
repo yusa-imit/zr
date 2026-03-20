@@ -81,7 +81,7 @@ pub fn expandAbbreviation(
     allocator: Allocator,
     abbreviations: *const std.StringHashMap([]const u8),
     abbrev: []const u8,
-) !?std.ArrayList([]const u8) {
+) !?std.ArrayListUnmanaged([]const u8) {
     const expansion = abbreviations.get(abbrev) orelse return null;
 
     var tokens: std.ArrayListUnmanaged([]const u8) = .{};
