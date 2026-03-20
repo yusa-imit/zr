@@ -32,6 +32,8 @@ try list.append(allocator, 42);
 
 **Every mutation method now takes `allocator` as first argument.**
 
+**CRITICAL:** Using the old `std.ArrayList(T){}` syntax (without `.init(allocator)`) will compile but cause **segmentation faults at runtime** (exit code 139). Always use `std.ArrayListUnmanaged(T) = .{};` pattern in Zig 0.15.
+
 ## I/O System
 
 ```zig
