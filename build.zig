@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const sailor_dep = b.dependency("sailor", .{ .target = target, .optimize = optimize });
+    const zuda_dep = b.dependency("zuda", .{ .target = target, .optimize = optimize });
 
     // Extract version from build.zig.zon at comptime and expose as build option
     const version: []const u8 = comptime blk: {
@@ -42,6 +43,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("sailor", sailor_dep.module("sailor"));
+    exe.root_module.addImport("zuda", zuda_dep.module("zuda"));
     exe.root_module.addOptions("build_options", version_opts);
 
     // Strip debug symbols in release builds for smaller binary size
