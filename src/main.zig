@@ -365,9 +365,9 @@ fn run(
 
     // Parse global flags using sailor.arg — extract known global flags from args,
     // passing through unknown flags (subcommand-specific) to remaining_args.
-    var remaining_args = std.ArrayList([]const u8){};
+    var remaining_args: std.ArrayListUnmanaged([]const u8) = .{};
     defer remaining_args.deinit(allocator);
-    var global_flag_tokens = std.ArrayList([]const u8){};
+    var global_flag_tokens: std.ArrayListUnmanaged([]const u8) = .{};
     defer global_flag_tokens.deinit(allocator);
 
     {
@@ -544,7 +544,7 @@ fn run(
                     }
 
                     // Build new args with abbreviation expansion
-                    var new_args = std.ArrayList([]const u8){};
+                    var new_args: std.ArrayListUnmanaged([]const u8) = .{};
                     defer new_args.deinit(allocator);
 
                     try new_args.append(allocator, effective_args[0]); // "zr"
@@ -580,7 +580,7 @@ fn run(
             // Expand the alias: split alias_command by spaces and prepend "zr"
             // Example: alias_command = "run build && run test"
             // We need to tokenize this properly, handling quoted strings
-            var expanded_args = std.ArrayList([]const u8){};
+            var expanded_args: std.ArrayListUnmanaged([]const u8) = .{};
             defer expanded_args.deinit(allocator);
 
             try expanded_args.append(allocator, effective_args[0]); // preserve "zr" binary path

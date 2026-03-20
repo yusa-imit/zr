@@ -84,7 +84,7 @@ pub fn expandAbbreviation(
 ) !?std.ArrayList([]const u8) {
     const expansion = abbreviations.get(abbrev) orelse return null;
 
-    var tokens = std.ArrayList([]const u8){};
+    var tokens: std.ArrayListUnmanaged([]const u8) = .{};
     errdefer {
         for (tokens.items) |t| allocator.free(t);
         tokens.deinit(allocator);
