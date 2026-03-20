@@ -59,6 +59,7 @@ const conformance_cmd = @import("cli/conformance.zig");
 const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
 const cd_cmd = @import("cli/cd.zig");
+const shell_hook_cmd = @import("cli/shell_hook.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
 const export_cmd = @import("cli/export.zig");
@@ -498,7 +499,7 @@ fn run(
         "interactive-run", "irun",       "tools",      "lint",
         "repo",       "codeowners", "version",    "publish",
         "analytics",  "context",    "conformance", "bench",
-        "doctor",     "cd",         "setup",      "env",        "export",
+        "doctor",     "cd",         "shell-hook", "setup",      "env",        "export",
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
@@ -776,6 +777,9 @@ fn run(
         }
         const member_name = effective_args[2];
         return cd_cmd.cmdCd(allocator, member_name, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "shell-hook")) {
+        const shell_name = if (effective_args.len >= 3) effective_args[2] else "";
+        return shell_hook_cmd.cmdShellHook(allocator, shell_name, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "setup")) {
         const setup_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return setup_cmd.cmdSetup(allocator, setup_args, effective_w, ew, effective_color);
