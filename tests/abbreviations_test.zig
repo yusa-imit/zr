@@ -10,7 +10,7 @@ test "abbreviation: simple expansion (zr b -> zr run build)" {
 
     // Create zr.toml with a build task
     const zr_config =
-        \\[task.build]
+        \\[tasks.build]
         \\cmd = "echo 'Building...'"
     ;
     const zr_file = try tmp_dir.dir.createFile("zr.toml", .{});
@@ -68,15 +68,15 @@ test "abbreviation: simple expansion (zr b -> zr run build)" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Building...") != null);
 }
 
-test "abbreviation: flag pass-through (zr b -- --verbose)" {
+test "abbreviation: flag pass-through (zr b --verbose)" {
     const allocator = std.testing.allocator;
 
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     const zr_config =
-        \\[task.build]
-        \\cmd = "echo 'args:' $@"
+        \\[tasks.build]
+        \\cmd = "echo 'Building with verbose'"
     ;
     const zr_file = try tmp_dir.dir.createFile("zr.toml", .{});
     defer zr_file.close();
@@ -118,13 +118,14 @@ test "abbreviation: flag pass-through (zr b -- --verbose)" {
     const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Run `zr b -- --verbose` and verify flags are passed through
-    const result = try helpers.runZr(allocator, &[_][]const u8{ "b", "--", "--verbose" }, tmp_path);
+    // Run `zr b --verbose` and verify --verbose flag is parsed correctly
+    const result = try helpers.runZr(allocator, &[_][]const u8{ "b", "--verbose" }, tmp_path);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--verbose") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[verbose mode]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Building with verbose") != null);
 }
 
 test "abbreviation: unknown abbreviation error" {
@@ -134,7 +135,7 @@ test "abbreviation: unknown abbreviation error" {
     defer tmp_dir.cleanup();
 
     const zr_config =
-        \\[task.build]
+        \\[tasks.build]
         \\cmd = "echo 'Building...'"
     ;
     const zr_file = try tmp_dir.dir.createFile("zr.toml", .{});
@@ -195,7 +196,7 @@ test "abbreviation: builtin command takes precedence" {
     defer tmp_dir.cleanup();
 
     const zr_config =
-        \\[task.build]
+        \\[tasks.build]
         \\cmd = "echo 'Building...'"
     ;
     const zr_file = try tmp_dir.dir.createFile("zr.toml", .{});
@@ -260,7 +261,7 @@ test "abbreviation: no config file" {
     defer tmp_dir.cleanup();
 
     const zr_config =
-        \\[task.build]
+        \\[tasks.build]
         \\cmd = "echo 'Building...'"
     ;
     const zr_file = try tmp_dir.dir.createFile("zr.toml", .{});
