@@ -140,7 +140,7 @@ Leader (orchestrator)
 - 테스트 실패 중이면 새 기능 추가 전에 수정
 - 사이클당 하나의 집중 작업만 수행
 - 이전 세션의 미완료 작업이 있으면 먼저 완료
-- Post-v1.0 우선순위: Bug 이슈 > `migration` 라벨 이슈 (sailor/zuda) > Post-v1.0 Priorities 항목
+- Post-v1.0 우선순위: Bug 이슈 > `migration` 라벨 이슈 (sailor/zuda) > READY 상태 zuda 마이그레이션 마일스톤 > Post-v1.0 Priorities 항목
 
 **이슈 우선순위 프로토콜** (Phase 1.5):
 
@@ -533,14 +533,23 @@ gh issue create --repo yusa-imit/sailor \
 
 ## zuda Library
 
-- **Current**: Not yet integrated (blocked on zuda releases)
+- **Current**: Not yet integrated — **READY for migration** (zuda v1.15.0 available with all target modules)
+- **Repository**: https://github.com/yusa-imit/zuda
 - **Tracking**: See `docs/milestones.md` for migration targets
+- **Compatibility layers**: `zuda.compat.zr_dag` provides drop-in wrapper for DAG/topo sort/cycle detection
 
-### Migration Protocol
-1. `from:zuda` 라벨 이슈 도착 시 status → READY
+### Migration Protocol (ACTIVE)
+1. zuda 마이그레이션 마일스톤은 **READY 상태** — 자율 세션에서 **적극적으로** 수행한다
 2. `zig fetch --save`로 의존성 추가
-3. 자체 구현 → zuda import로 교체 (래퍼 전환 또는 삭제)
+3. 자체 구현 → zuda import로 교체 (compat 래퍼 사용 또는 native API 직접 사용)
 4. `zig build test && zig build integration-test` 통과 확인
+5. 마이그레이션 완료 후 자체 구현 파일 삭제, 관련 GitHub 이슈 닫기
+
+### zuda-first Policy (CRITICAL)
+- 새로운 기능 구현 시 데이터 구조/알고리즘이 필요하면, **zuda에 해당 모듈이 있는지 먼저 확인**한다
+- zuda에 있으면 → 자체 구현하지 않고 zuda를 import하여 사용
+- zuda에 없으면 → `gh issue create --repo yusa-imit/zuda --label "feature-request,from:zr"` 발행 후, 긴급도에 따라 자체 구현 또는 대기 결정
+- **자체 구현을 새로 작성하는 것은 최후의 수단**이다
 
 ### No Local Workaround (CRITICAL)
 - zuda 버그 시 자체 구현으로 우회 금지 → 이슈 발행 후 수정 대기

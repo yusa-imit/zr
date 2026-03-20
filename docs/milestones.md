@@ -4,7 +4,7 @@
 
 - **Latest**: v1.46.0 (Remote Execution & Distributed Builds)
 - **Next actionable milestone**: Task Retry Strategies & Backoff Policies (READY)
-- **Blocked milestones**: zuda Levenshtein, zuda WorkStealingDeque (waiting on zuda releases)
+- **READY milestones**: zuda Graph Migration, zuda Levenshtein, zuda WorkStealingDeque, zuda Glob (all modules available in zuda v1.15.0)
 
 ---
 
@@ -12,13 +12,21 @@
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
-### zuda Levenshtein Migration (was v1.35.0)
+### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
-Migrate from custom `src/util/levenshtein.zig` to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **BLOCKED until zuda releases edit_distance module.**
+Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement, or migrate directly to `zuda.containers.graphs.AdjacencyList` + `zuda.algorithms.graph.topological_sort` + `zuda.algorithms.graph.cycle_detection`. Add zuda dependency via `zig fetch --save`, update all call sites, verify tests, remove custom implementations. **Status: READY** — zuda v1.15.0 provides all modules + compatibility wrapper.
 
-### zuda WorkStealingDeque Migration (was v1.36.0)
+### zuda Levenshtein Migration
 
-Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.StealingQueue` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **BLOCKED until zuda releases StealingQueue module.**
+Migrate from custom `src/util/levenshtein.zig` (214 LOC) to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **Status: READY** — zuda v1.15.0 provides edit_distance module.
+
+### zuda WorkStealingDeque Migration
+
+Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.queues.WorkStealingDeque` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Status: READY** — zuda v1.15.0 provides WorkStealingDeque module.
+
+### zuda Glob Migration
+
+Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: READY** — zuda v1.15.0 provides glob_match module.
 
 ### Shell Integration Enhancements
 
@@ -173,17 +181,19 @@ Migrate from custom `src/exec/workstealing.zig` to `zuda.containers.queues.Steal
 
 ### zuda Library
 
-- **Current**: Not yet integrated (blocked on zuda releases)
+- **Current**: Not yet integrated — **READY for migration** (zuda v1.15.0 available)
 - **Repository**: https://github.com/yusa-imit/zuda
+- **Compatibility layers**: `zuda.compat.zr_dag` — drop-in DAG/topo sort/cycle detection wrapper
+- **Migration guides**: See zuda `docs/migrations/ZR_GRAPH.md` for detailed API mapping
 
-| Custom Implementation | File | zuda Replacement | Issue | Status |
-|----------------------|------|-----------------|-------|--------|
-| DAG | `src/graph/dag.zig` | `zuda.containers.graphs.AdjacencyList` | #23 | PENDING |
-| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | `zuda.algorithms.graph.topological_sort` | #24 | PENDING |
-| Cycle Detection | `src/graph/cycle_detect.zig` | `zuda.algorithms.graph.cycle_detection` | #24 | PENDING |
-| Work-Stealing Deque | `src/exec/workstealing.zig` | `zuda.containers.queues.StealingQueue` | #22 | PENDING |
-| Levenshtein Distance | `src/util/levenshtein.zig` | `zuda.algorithms.dynamic_programming.edit_distance` | #21 | PENDING |
-| Glob Pattern Matching | `src/util/glob.zig` | `zuda.algorithms.string.glob_match` | #25 | PENDING |
+| Custom Implementation | File | LOC | zuda Replacement | Issue | Status |
+|----------------------|------|-----|-----------------|-------|--------|
+| DAG | `src/graph/dag.zig` | 187 | `zuda.compat.zr_dag` or `zuda.containers.graphs.AdjacencyList` | #23 | **READY** |
+| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | 323 | `zuda.algorithms.graph.topological_sort` | #24 | **READY** |
+| Cycle Detection | `src/graph/cycle_detect.zig` | 205 | `zuda.algorithms.graph.cycle_detection` | #24 | **READY** |
+| Work-Stealing Deque | `src/exec/workstealing.zig` | 130 | `zuda.containers.queues.WorkStealingDeque` | #22 | **READY** |
+| Levenshtein Distance | `src/util/levenshtein.zig` | 214 | `zuda.algorithms.dynamic_programming.editDistance` | #21 | **READY** |
+| Glob Pattern Matching | `src/util/glob.zig` | 130 | `zuda.algorithms.string.globMatch` | #25 | **READY** |
 
 **Migration exclusions** (domain-specific, kept in zr):
 - `src/util/string_pool.zig` — zr-specific string interning
