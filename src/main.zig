@@ -60,6 +60,7 @@ const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
 const cd_cmd = @import("cli/cd.zig");
 const shell_hook_cmd = @import("cli/shell_hook.zig");
+const abbreviations = @import("cli/abbreviations.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
 const export_cmd = @import("cli/export.zig");
@@ -231,6 +232,7 @@ comptime {
     _ = @import("lsp/handlers.zig");
     _ = @import("lsp/server.zig");
     _ = config_editor;
+    _ = abbreviations;
 }
 
 pub fn main() !void {
@@ -514,6 +516,52 @@ fn run(
     }
 
     if (!is_builtin) {
+        // First, try abbreviations from ~/.zrconfig
+        const abbrev_config_path = abbreviations.getConfigPath(allocator) catch null;
+        if (abbrev_config_path) |path| {
+            defer allocator.free(path);
+            var abbrev_map = abbreviations.parseAbbreviationConfig(allocator, path) catch |err| blk: {
+                if (err != error.FileNotFound) {
+                    try color.printError(ew, effective_color, "Failed to load abbreviations: {}\n", .{err});
+                }
+                break :blk null;
+            };
+            if (abbrev_map) |*map| {
+                defer {
+                    var it = map.iterator();
+                    while (it.next()) |entry| {
+                        allocator.free(entry.key_ptr.*);
+                        allocator.free(entry.value_ptr.*);
+                    }
+                    map.deinit();
+                }
+
+                var maybe_expanded = try abbreviations.expandAbbreviation(allocator, map, cmd);
+                if (maybe_expanded) |*expanded| {
+                    defer {
+                        for (expanded.items) |item| allocator.free(item);
+                        expanded.deinit(allocator);
+                    }
+
+                    // Build new args with abbreviation expansion
+                    var new_args = std.ArrayList([]const u8){};
+                    defer new_args.deinit(allocator);
+
+                    try new_args.append(allocator, effective_args[0]); // "zr"
+                    for (expanded.items) |item| {
+                        try new_args.append(allocator, item);
+                    }
+                    // Append remaining args after abbreviation
+                    for (effective_args[2..]) |arg| {
+                        try new_args.append(allocator, arg);
+                    }
+
+                    // Recursively call run with expanded args
+                    return try run(allocator, new_args.items, w, ew, use_color);
+                }
+            }
+        }
+
         // Try to load aliases and expand
         var alias_config = aliases.AliasConfig.load(allocator) catch |err| {
             // If alias loading fails, just continue with unknown command error

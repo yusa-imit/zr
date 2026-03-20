@@ -2,6 +2,7 @@ const std = @import("std");
 
 comptime {
     _ = @import("helpers.zig");
+    _ = @import("abbreviations_test.zig");
     _ = @import("add_test.zig");
     _ = @import("affected_test.zig");
     _ = @import("alias_test.zig");
