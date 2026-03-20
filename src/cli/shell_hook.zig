@@ -191,18 +191,18 @@ test "shell_hook: parseShellType is case-sensitive" {
 test "shell_hook: generateBashHook produces non-empty output" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateBashHook(allocator, output.writer());
+    try generateBashHook(allocator, output.writer(allocator));
     try std.testing.expect(output.items.len > 0);
 }
 
 test "shell_hook: generateBashHook contains bash-specific syntax" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateBashHook(allocator, output.writer());
+    try generateBashHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Check for bash-specific keywords
@@ -214,18 +214,18 @@ test "shell_hook: generateBashHook contains bash-specific syntax" {
 test "shell_hook: generateZshHook produces non-empty output" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateZshHook(allocator, output.writer());
+    try generateZshHook(allocator, output.writer(allocator));
     try std.testing.expect(output.items.len > 0);
 }
 
 test "shell_hook: generateZshHook contains zsh-specific syntax" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateZshHook(allocator, output.writer());
+    try generateZshHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Check for zsh-specific keywords
@@ -238,18 +238,18 @@ test "shell_hook: generateZshHook contains zsh-specific syntax" {
 test "shell_hook: generateFishHook produces non-empty output" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateFishHook(allocator, output.writer());
+    try generateFishHook(allocator, output.writer(allocator));
     try std.testing.expect(output.items.len > 0);
 }
 
 test "shell_hook: generateFishHook contains fish-specific syntax" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateFishHook(allocator, output.writer());
+    try generateFishHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Check for fish-specific keywords
@@ -263,18 +263,18 @@ test "shell_hook: all shells reference ZR_HOOK_CACHE_DIR environment variable" {
     const allocator = std.testing.allocator;
 
     var bash_output = std.ArrayList(u8){};
-    defer bash_output.deinit();
-    try generateBashHook(allocator, bash_output.writer());
+    defer bash_output.deinit(allocator);
+    try generateBashHook(allocator, bash_output.writer(allocator));
     try std.testing.expect(std.mem.indexOf(u8, bash_output.items, "ZR_HOOK_CACHE_DIR") != null);
 
     var zsh_output = std.ArrayList(u8){};
-    defer zsh_output.deinit();
-    try generateZshHook(allocator, zsh_output.writer());
+    defer zsh_output.deinit(allocator);
+    try generateZshHook(allocator, zsh_output.writer(allocator));
     try std.testing.expect(std.mem.indexOf(u8, zsh_output.items, "ZR_HOOK_CACHE_DIR") != null);
 
     var fish_output = std.ArrayList(u8){};
-    defer fish_output.deinit();
-    try generateFishHook(allocator, fish_output.writer());
+    defer fish_output.deinit(allocator);
+    try generateFishHook(allocator, fish_output.writer(allocator));
     try std.testing.expect(std.mem.indexOf(u8, fish_output.items, "ZR_HOOK_CACHE_DIR") != null);
 }
 
@@ -282,27 +282,27 @@ test "shell_hook: all shells look for zr.toml" {
     const allocator = std.testing.allocator;
 
     var bash_output = std.ArrayList(u8){};
-    defer bash_output.deinit();
-    try generateBashHook(allocator, bash_output.writer());
+    defer bash_output.deinit(allocator);
+    try generateBashHook(allocator, bash_output.writer(allocator));
     try std.testing.expect(std.mem.indexOf(u8, bash_output.items, "zr.toml") != null);
 
     var zsh_output = std.ArrayList(u8){};
-    defer zsh_output.deinit();
-    try generateZshHook(allocator, zsh_output.writer());
+    defer zsh_output.deinit(allocator);
+    try generateZshHook(allocator, zsh_output.writer(allocator));
     try std.testing.expect(std.mem.indexOf(u8, zsh_output.items, "zr.toml") != null);
 
     var fish_output = std.ArrayList(u8){};
-    defer fish_output.deinit();
-    try generateFishHook(allocator, fish_output.writer());
+    defer fish_output.deinit(allocator);
+    try generateFishHook(allocator, fish_output.writer(allocator));
     try std.testing.expect(std.mem.indexOf(u8, fish_output.items, "zr.toml") != null);
 }
 
 test "shell_hook: bash hook traverses parent directories" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateBashHook(allocator, output.writer());
+    try generateBashHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Check for loop that traverses directories
@@ -313,9 +313,9 @@ test "shell_hook: bash hook traverses parent directories" {
 test "shell_hook: zsh hook traverses parent directories" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateZshHook(allocator, output.writer());
+    try generateZshHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Check for loop that traverses directories
@@ -326,9 +326,9 @@ test "shell_hook: zsh hook traverses parent directories" {
 test "shell_hook: fish hook traverses parent directories" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateFishHook(allocator, output.writer());
+    try generateFishHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Check for loop that traverses directories
@@ -339,9 +339,9 @@ test "shell_hook: fish hook traverses parent directories" {
 test "shell_hook: bash hook installs via PROMPT_COMMAND" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateBashHook(allocator, output.writer());
+    try generateBashHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Verify bash installs the hook using PROMPT_COMMAND mechanism
@@ -352,9 +352,9 @@ test "shell_hook: bash hook installs via PROMPT_COMMAND" {
 test "shell_hook: zsh hook uses add-zsh-hook" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateZshHook(allocator, output.writer());
+    try generateZshHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Verify zsh uses add-zsh-hook for chpwd
@@ -365,9 +365,9 @@ test "shell_hook: zsh hook uses add-zsh-hook" {
 test "shell_hook: fish hook uses fish_postexec" {
     const allocator = std.testing.allocator;
     var output = std.ArrayList(u8){};
-    defer output.deinit();
+    defer output.deinit(allocator);
 
-    try generateFishHook(allocator, output.writer());
+    try generateFishHook(allocator, output.writer(allocator));
     const code = output.items;
 
     // Verify fish uses fish_postexec for PWD changes
