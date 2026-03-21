@@ -114,6 +114,7 @@ pub const ShowOutputOptions = struct {
     filter_regex: ?[]const u8 = null,
     tail_lines: ?usize = null,
     head_lines: ?usize = null,
+    follow: bool = false,
 };
 
 /// StreamingLineReader provides line-by-line iteration over a file
@@ -339,6 +340,55 @@ fn streamProcessOutput(
     }
 }
 
+/// Follow mode: tail -f style live output streaming
+/// Reads file from current position to end, then polls for new content
+fn followOutput(
+    allocator: Allocator,
+    file_path: []const u8,
+    opts: ShowOutputOptions,
+    w: anytype,
+    use_color: bool,
+) !void {
+    // Open file for reading
+    var file = try std.fs.cwd().openFile(file_path, .{});
+    defer file.close();
+
+    // First, stream existing content
+    try streamProcessOutput(allocator, file, opts, w, use_color);
+
+    // Then poll for new content (tail -f style)
+    while (true) {
+        // Sleep for 100ms between polls
+        std.Thread.sleep(100 * std.time.ns_per_ms);
+
+        // Try to read new content
+        var reader = StreamingLineReader.init(allocator, file);
+        defer reader.deinit();
+
+        while (try reader.next()) |line| {
+            defer allocator.free(line);
+
+            // Apply filters
+            const matches = if (opts.search_pattern) |pattern|
+                std.mem.indexOf(u8, line, pattern) != null
+            else if (opts.filter_regex) |pattern|
+                std.mem.indexOf(u8, line, pattern) != null
+            else
+                true;
+
+            if (matches) {
+                if (opts.search_pattern) |pattern| {
+                    try highlightMatches(line, pattern, w, use_color);
+                    try w.writeAll("\n");
+                } else {
+                    try w.writeAll(line);
+                    try w.writeAll("\n");
+                }
+            }
+        }
+    }
+}
+
 pub fn cmdShow(
     allocator: Allocator,
     task_name: []const u8,
@@ -373,6 +423,13 @@ pub fn cmdShow(
         }
 
         const output_path = task.output_file.?;
+
+        // Handle follow mode separately (keeps file open and polls)
+        if (output_opts.follow) {
+            try followOutput(allocator, output_path, output_opts, w, use_color);
+            return 0;
+        }
+
         const file = std.fs.cwd().openFile(output_path, .{}) catch |err| {
             if (err == error.FileNotFound) {
                 try color.printError(ew, use_color,

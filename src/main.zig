@@ -914,6 +914,7 @@ fn run(
             try effective_w.writeAll("  --filter <pattern>   Filter output to lines matching pattern (requires --output)\n");
             try effective_w.writeAll("  --head <N>           Show only first N lines (requires --output)\n");
             try effective_w.writeAll("  --tail <N>           Show only last N lines (requires --output)\n");
+            try effective_w.writeAll("  --follow, -f         Follow output in real-time (tail -f style, requires --output)\n");
             return 1;
         }
         const task_name = effective_args[2];
@@ -930,6 +931,7 @@ fn run(
             try effective_w.writeAll("  --filter <pattern>   Filter output to lines matching pattern (requires --output)\n");
             try effective_w.writeAll("  --head <N>           Show only first N lines (requires --output)\n");
             try effective_w.writeAll("  --tail <N>           Show only last N lines (requires --output)\n");
+            try effective_w.writeAll("  --follow, -f         Follow output in real-time (tail -f style, requires --output)\n");
             return 0;
         }
 
@@ -963,6 +965,8 @@ fn run(
                         i += 1;
                         output_opts.head_lines = std.fmt.parseInt(usize, effective_args[i], 10) catch null;
                     }
+                } else if (std.mem.eql(u8, arg, "--follow") or std.mem.eql(u8, arg, "-f")) {
+                    output_opts.follow = true;
                 }
             }
         }
