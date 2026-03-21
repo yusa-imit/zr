@@ -5,13 +5,13 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.47.0 (build.zig.zon) | Latest Release: v1.47.0 (2026-03-19)
+- **Version**: v1.48.0 (build.zig.zon) | Latest Release: v1.48.0 (2026-03-21)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.47.0 (current in build.zig.zon) | Latest Release: v1.47.0 (2026-03-19)
+- **Build version**: v1.48.0 (current in build.zig.zon) | Latest Release: v1.48.0 (2026-03-21)
 - **Unit tests**: 994 passing (includes abbreviations.zig tests), skipped varies, 0 failed, 0 memory leaks
 - **Integration tests**: Passing (includes 6 abbreviations tests)
 - **CI**: GREEN ✅ — all 6 cross-compile targets passing (fixed TOML config in tests)
@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
 - **Source**: ~65,948 lines (+675 abbreviations), 95 modules, 10 language providers
-- **Latest work**: Completed zuda Levenshtein migration (issue #21 closed), attempted zuda Graph migration but BLOCKED by incomplete compat layer (filed zuda issue #12) (2026-03-21)
+- **Latest work**: Released v1.48.0 (Shell Integration Enhancements). Discovered critical bugs in zuda v1.15.0 WorkStealingDeque (filed issue #13), wrote 11 compatibility tests. WorkStealingDeque migration BLOCKED pending zuda fix. (2026-03-21)
 
 ## All PRD Phases COMPLETE ✅
 

@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.47.0 (Task Retry Strategies & Backoff Policies)
-- **Next actionable milestone**: zuda WorkStealingDeque (READY)
-- **READY milestones**: zuda WorkStealingDeque, Shell Integration Enhancements
-- **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12 — compat layer incomplete)
-- **DONE**: zuda Glob Migration (completed 2026-03-21), zuda Levenshtein Migration (completed 2026-03-21)
+- **Latest**: v1.48.0 (Shell Integration Enhancements)
+- **Next actionable milestone**: Task Output Streaming Improvements (READY)
+- **READY milestones**: Task Output Streaming Improvements, Cross-Platform Path Handling Audit
+- **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
+- **DONE**: Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
