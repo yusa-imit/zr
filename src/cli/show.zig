@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const types = @import("../config/types.zig");
+const sailor = @import("sailor");
 
 fn processOutput(
     allocator: Allocator,
@@ -446,8 +447,12 @@ pub fn cmdShow(
         };
         defer file.close();
 
+        // TODO: Automatic pager integration (requires type-compatible writer API)
+        // For now, users can manually pipe to less: zr show task --output | less
+
         // Stream file contents (no memory limit, handles large files)
         try streamProcessOutput(allocator, file, output_opts, w, use_color);
+
         return 0;
     }
 
