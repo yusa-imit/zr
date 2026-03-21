@@ -116,6 +116,229 @@ pub const ShowOutputOptions = struct {
     head_lines: ?usize = null,
 };
 
+/// StreamingLineReader provides line-by-line iteration over a file
+/// without loading the entire file into memory.
+/// Memory usage: ~4KB buffer + current line allocation
+const StreamingLineReader = struct {
+    allocator: Allocator,
+    file: std.fs.File,
+    buffer: [4096]u8,
+    buffer_pos: usize,
+    buffer_len: usize,
+    eof_reached: bool,
+
+    pub fn init(allocator: Allocator, file: std.fs.File) StreamingLineReader {
+        return .{
+            .allocator = allocator,
+            .file = file,
+            .buffer = undefined,
+            .buffer_pos = 0,
+            .buffer_len = 0,
+            .eof_reached = false,
+        };
+    }
+
+    pub fn deinit(_: *StreamingLineReader) void {
+        // Nothing to clean up - file is owned by caller
+    }
+
+    /// Returns next line (owned, caller must free), or null if EOF.
+    /// Line does NOT include the trailing newline character.
+    pub fn next(self: *StreamingLineReader) !?[]const u8 {
+        if (self.eof_reached and self.buffer_pos >= self.buffer_len) {
+            return null;
+        }
+
+        var line_buf: std.ArrayListUnmanaged(u8) = .{};
+        errdefer line_buf.deinit(self.allocator);
+
+        while (true) {
+            // Refill buffer if needed
+            if (self.buffer_pos >= self.buffer_len and !self.eof_reached) {
+                self.buffer_len = try self.file.read(&self.buffer);
+                self.buffer_pos = 0;
+                if (self.buffer_len == 0) {
+                    self.eof_reached = true;
+                }
+            }
+
+            // Check for EOF
+            if (self.buffer_pos >= self.buffer_len) {
+                if (line_buf.items.len > 0) {
+                    // Return last line without trailing newline
+                    return try line_buf.toOwnedSlice(self.allocator);
+                } else {
+                    line_buf.deinit(self.allocator);
+                    return null;
+                }
+            }
+
+            // Scan for newline in current buffer
+            const remaining = self.buffer[self.buffer_pos..self.buffer_len];
+            if (std.mem.indexOfScalar(u8, remaining, '\n')) |newline_offset| {
+                // Found newline - append up to (but not including) newline
+                try line_buf.appendSlice(self.allocator, remaining[0..newline_offset]);
+                self.buffer_pos += newline_offset + 1; // Skip past newline
+                return try line_buf.toOwnedSlice(self.allocator);
+            } else {
+                // No newline in buffer - append all remaining and continue
+                try line_buf.appendSlice(self.allocator, remaining);
+                self.buffer_pos = self.buffer_len;
+            }
+        }
+    }
+};
+
+/// Circular buffer for tail operations - fixed memory footprint
+const CircularLineBuffer = struct {
+    allocator: Allocator,
+    lines: []?[]const u8,
+    capacity: usize,
+    write_index: usize,
+    count: usize,
+
+    fn init(allocator: Allocator, capacity: usize) !CircularLineBuffer {
+        const lines = try allocator.alloc(?[]const u8, capacity);
+        @memset(lines, null);
+        return .{
+            .allocator = allocator,
+            .lines = lines,
+            .capacity = capacity,
+            .write_index = 0,
+            .count = 0,
+        };
+    }
+
+    fn deinit(self: *CircularLineBuffer) void {
+        for (self.lines) |maybe_line| {
+            if (maybe_line) |line| {
+                self.allocator.free(line);
+            }
+        }
+        self.allocator.free(self.lines);
+    }
+
+    fn append(self: *CircularLineBuffer, line: []const u8) !void {
+        // Free old line if we're overwriting
+        if (self.lines[self.write_index]) |old_line| {
+            self.allocator.free(old_line);
+        }
+
+        // Store new line (duplicate so we own it)
+        self.lines[self.write_index] = try self.allocator.dupe(u8, line);
+
+        // Advance write position
+        self.write_index = (self.write_index + 1) % self.capacity;
+        if (self.count < self.capacity) {
+            self.count += 1;
+        }
+    }
+
+    fn getOrdered(self: *CircularLineBuffer, out: *std.ArrayListUnmanaged([]const u8), allocator: Allocator) !void {
+        if (self.count == 0) return;
+
+        // Calculate read start index (oldest line)
+        const start_index = if (self.count < self.capacity)
+            0
+        else
+            self.write_index;
+
+        var i: usize = 0;
+        while (i < self.count) : (i += 1) {
+            const idx = (start_index + i) % self.capacity;
+            if (self.lines[idx]) |line| {
+                try out.append(allocator, line);
+            }
+        }
+    }
+};
+
+/// Streaming version of processOutput - operates on file instead of memory buffer.
+/// Memory usage: ~4KB read buffer + N lines for tail (if tail_lines is set)
+fn streamProcessOutput(
+    allocator: Allocator,
+    file: std.fs.File,
+    opts: ShowOutputOptions,
+    w: anytype,
+    use_color: bool,
+) !void {
+    var reader = StreamingLineReader.init(allocator, file);
+    defer reader.deinit();
+
+    // Handle tail mode - requires circular buffer
+    if (opts.tail_lines) |n| {
+        var circular_buf = try CircularLineBuffer.init(allocator, n);
+        defer circular_buf.deinit();
+
+        // Read all lines into circular buffer (only keeps last N)
+        while (try reader.next()) |line| {
+            defer allocator.free(line);
+
+            // Apply search filter
+            const matches = if (opts.search_pattern) |pattern|
+                std.mem.indexOf(u8, line, pattern) != null
+            else if (opts.filter_regex) |pattern|
+                std.mem.indexOf(u8, line, pattern) != null
+            else
+                true;
+
+            if (matches) {
+                try circular_buf.append(line);
+            }
+        }
+
+        // Output the buffered lines
+        var output_lines: std.ArrayListUnmanaged([]const u8) = .{};
+        defer output_lines.deinit(allocator);
+        try circular_buf.getOrdered(&output_lines, allocator);
+
+        for (output_lines.items) |line| {
+            if (opts.search_pattern) |pattern| {
+                try highlightMatches(line, pattern, w, use_color);
+                try w.writeAll("\n");
+            } else {
+                try w.writeAll(line);
+                try w.writeAll("\n");
+            }
+        }
+
+        return;
+    }
+
+    // Head mode or no limit - stream directly (minimal memory)
+    var lines_output: usize = 0;
+    const limit = opts.head_lines orelse std.math.maxInt(usize);
+
+    while (try reader.next()) |line| {
+        defer allocator.free(line);
+
+        if (lines_output >= limit) {
+            break; // Stop reading after head limit reached
+        }
+
+        // Apply search filter
+        const matches = if (opts.search_pattern) |pattern|
+            std.mem.indexOf(u8, line, pattern) != null
+        else if (opts.filter_regex) |pattern|
+            std.mem.indexOf(u8, line, pattern) != null
+        else
+            true;
+
+        if (matches) {
+            // Output line immediately
+            if (opts.search_pattern) |pattern| {
+                try highlightMatches(line, pattern, w, use_color);
+                try w.writeAll("\n");
+            } else {
+                try w.writeAll(line);
+                try w.writeAll("\n");
+            }
+
+            lines_output += 1;
+        }
+    }
+}
+
 pub fn cmdShow(
     allocator: Allocator,
     task_name: []const u8,
@@ -166,12 +389,8 @@ pub fn cmdShow(
         };
         defer file.close();
 
-        // Read and display file contents
-        const contents = try file.readToEndAlloc(allocator, 10 * 1024 * 1024); // 10MB limit
-        defer allocator.free(contents);
-
-        // Process output based on options
-        try processOutput(allocator, contents, output_opts, w, use_color);
+        // Stream file contents (no memory limit, handles large files)
+        try streamProcessOutput(allocator, file, output_opts, w, use_color);
         return 0;
     }
 
@@ -405,4 +624,272 @@ test "highlightMatches highlights all occurrences" {
 
     const output = fbs.getWritten();
     try std.testing.expectEqualStrings(line, output);
+}
+
+// ============================================================================
+// Streaming Infrastructure Tests (TDD - will fail until implementation)
+// ============================================================================
+
+test "StreamingLineReader reads line-by-line without loading full file" {
+    const allocator = std.testing.allocator;
+
+    // Create a test file
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("streaming_test.txt", .{ .read = true });
+    try test_file.writeAll("line 1\nline 2\nline 3\nline 4\nline 5\n");
+    try test_file.seekTo(0);
+
+    // This will fail until StreamingLineReader is implemented
+    var reader = StreamingLineReader.init(allocator, test_file);
+    defer reader.deinit();
+
+    var line_count: usize = 0;
+    while (try reader.next()) |line| {
+        defer allocator.free(line);
+        line_count += 1;
+        // Verify each line is read independently
+        try std.testing.expect(line.len > 0);
+    }
+
+    try std.testing.expectEqual(@as(usize, 5), line_count);
+}
+
+test "StreamingLineReader handles file without trailing newline" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("no_trailing_newline.txt", .{ .read = true });
+    try test_file.writeAll("line 1\nline 2\nlast line without newline");
+    try test_file.seekTo(0);
+
+    var reader = StreamingLineReader.init(allocator, test_file);
+    defer reader.deinit();
+
+    var lines: std.ArrayListUnmanaged([]const u8) = .{};
+    defer {
+        for (lines.items) |line| {
+            allocator.free(line);
+        }
+        lines.deinit(allocator);
+    }
+
+    while (try reader.next()) |line| {
+        try lines.append(allocator, line);
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), lines.items.len);
+    try std.testing.expectEqualStrings("last line without newline", lines.items[2]);
+}
+
+test "StreamingLineReader handles empty file" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("empty.txt", .{ .read = true });
+    try test_file.seekTo(0);
+
+    var reader = StreamingLineReader.init(allocator, test_file);
+    defer reader.deinit();
+
+    const first_line = try reader.next();
+    try std.testing.expect(first_line == null);
+}
+
+test "StreamingLineReader handles single line" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("single_line.txt", .{ .read = true });
+    try test_file.writeAll("only one line\n");
+    try test_file.seekTo(0);
+
+    var reader = StreamingLineReader.init(allocator, test_file);
+    defer reader.deinit();
+
+    const line1 = try reader.next();
+    try std.testing.expect(line1 != null);
+    defer allocator.free(line1.?);
+    try std.testing.expectEqualStrings("only one line", line1.?);
+
+    const line2 = try reader.next();
+    try std.testing.expect(line2 == null);
+}
+
+test "streamProcessOutput filters lines while streaming" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create file with mixed content
+    const test_file = try tmp.dir.createFile("filter_test.txt", .{ .read = true });
+    try test_file.writeAll("ERROR: line 1\nINFO: line 2\nERROR: line 3\nINFO: line 4\n");
+    try test_file.seekTo(0);
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .search_pattern = "ERROR" };
+    try streamProcessOutput(allocator, test_file, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "ERROR: line 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "ERROR: line 3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "INFO") == null);
+}
+
+test "streamProcessOutput stops after head limit reached" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("head_test.txt", .{ .read = true });
+    // Write many lines, but we only want first 3
+    var i: usize = 0;
+    while (i < 1000) : (i += 1) {
+        var line_buf: [64]u8 = undefined;
+        const line = try std.fmt.bufPrint(&line_buf, "Line {d}\n", .{i});
+        try test_file.writeAll(line);
+    }
+    try test_file.seekTo(0);
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .head_lines = 3 };
+    try streamProcessOutput(allocator, test_file, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 3") == null);
+
+    // Critical: Must NOT read entire file when head limit is set
+    // (This behavior will be validated by memory tests in integration)
+}
+
+test "streamProcessOutput keeps only last N lines for tail" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("tail_test.txt", .{ .read = true });
+    var i: usize = 0;
+    while (i < 1000) : (i += 1) {
+        var line_buf: [64]u8 = undefined;
+        const line = try std.fmt.bufPrint(&line_buf, "Line {d}\n", .{i});
+        try test_file.writeAll(line);
+    }
+    try test_file.seekTo(0);
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .tail_lines = 3 };
+    try streamProcessOutput(allocator, test_file, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 997") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 998") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 999") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 0") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Line 996") == null);
+}
+
+test "streamProcessOutput combines search and head filters" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("combined_test.txt", .{});
+    // Write file with every 10th line containing "MATCH"
+    var i: usize = 0;
+    while (i < 100) : (i += 1) {
+        var line_buf: [64]u8 = undefined;
+        const line = if (i % 10 == 0)
+            try std.fmt.bufPrint(&line_buf, "MATCH: Line {d}\n", .{i})
+        else
+            try std.fmt.bufPrint(&line_buf, "Other: Line {d}\n", .{i});
+        try test_file.writeAll(line);
+    }
+    try test_file.seekTo(0);
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{
+        .search_pattern = "MATCH",
+        .head_lines = 2,
+    };
+    try streamProcessOutput(allocator, test_file, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+
+    // Should get only first 2 matching lines
+    var match_count: usize = 0;
+    var search_pos: usize = 0;
+    while (std.mem.indexOfPos(u8, output, search_pos, "MATCH")) |pos| {
+        match_count += 1;
+        search_pos = pos + 5;
+    }
+    try std.testing.expectEqual(@as(usize, 2), match_count);
+}
+
+test "streamProcessOutput preserves search highlighting" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("highlight_test.txt", .{});
+    try test_file.writeAll("This line has ERROR in it\nThis line has ERROR twice ERROR\n");
+    try test_file.seekTo(0);
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{ .search_pattern = "ERROR" };
+    try streamProcessOutput(allocator, test_file, opts, &writer_iface, true);
+
+    const output = fbs.getWritten();
+    // When use_color=true, output should contain ANSI escape codes
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[1;33m") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "\x1b[0m") != null);
+}
+
+test "streamProcessOutput handles empty file without error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const test_file = try tmp.dir.createFile("empty_stream.txt", .{});
+    try test_file.seekTo(0);
+
+    var out_buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var writer_iface = fbs.writer().any();
+
+    const opts = ShowOutputOptions{};
+    try streamProcessOutput(allocator, test_file, opts, &writer_iface, false);
+
+    const output = fbs.getWritten();
+    try std.testing.expectEqual(@as(usize, 0), output.len);
 }
