@@ -2,9 +2,10 @@
 
 ## Current Status
 
-- **Latest**: v1.46.0 (Remote Execution & Distributed Builds)
-- **Next actionable milestone**: Task Retry Strategies & Backoff Policies (READY)
-- **READY milestones**: zuda Graph Migration, zuda Levenshtein, zuda WorkStealingDeque, zuda Glob (all modules available in zuda v1.15.0)
+- **Latest**: v1.47.0 (Task Retry Strategies & Backoff Policies)
+- **Next actionable milestone**: Shell Integration Enhancements (READY)
+- **READY milestones**: zuda WorkStealingDeque, zuda Glob (zuda v1.15.0)
+- **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12 — compat layer incomplete)
 
 ---
 
@@ -14,11 +15,11 @@
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
-Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement, or migrate directly to `zuda.containers.graphs.AdjacencyList` + `zuda.algorithms.graph.topological_sort` + `zuda.algorithms.graph.cycle_detection`. Add zuda dependency via `zig fetch --save`, update all call sites, verify tests, remove custom implementations. **Status: READY** — zuda v1.15.0 provides all modules + compatibility wrapper.
+Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement, or migrate directly to `zuda.containers.graphs.AdjacencyList` + `zuda.algorithms.graph.topological_sort` + `zuda.algorithms.graph.cycle_detection`. Add zuda dependency via `zig fetch --save`, update all call sites, verify tests, remove custom implementations. **Status: BLOCKED** — zuda v1.15.0 compat.zr_dag missing required functions (nodeCount, getInDegree, getExecutionLevels, different return types). Filed https://github.com/yusa-imit/zuda/issues/12, awaiting resolution.
 
 ### zuda Levenshtein Migration
 
-Migrate from custom `src/util/levenshtein.zig` (214 LOC) to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **Status: READY** — zuda v1.15.0 provides edit_distance module.
+Migrate from custom `src/util/levenshtein.zig` (214 LOC) to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.dynamic_programming.editDistance, all tests passing.
 
 ### zuda WorkStealingDeque Migration
 
