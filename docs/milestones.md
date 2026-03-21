@@ -138,7 +138,7 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 
 ### Sailor Library
 
-- **Current in zr**: v1.16.0 (all migrations complete)
+- **Current in zr**: v1.18.0 (all migrations complete)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -167,6 +167,8 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 | v1.14.0 | DONE | Memory pooling, render profiling, virtual widget rendering, incremental layout, buffer compression |
 | v1.15.0 | DONE | Thread safety fixes, XTGETTCAP terminal capability detection, memory leak audit, multi-platform CI |
 | v1.16.0 | DONE | Terminal capability database, bracketed paste mode, synchronized output protocol, hyperlink support (OSC 8), focus tracking |
+| v1.17.0 | DONE | Hot reload improvements, widget performance enhancements |
+| v1.18.0 | DONE | Hot reload for themes, widget inspector, benchmark suite, example gallery, documentation generator |
 
 ### zuda Library
 

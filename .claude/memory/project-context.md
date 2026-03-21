@@ -17,9 +17,9 @@
 - **CI**: GREEN ✅ — all 6 cross-compile targets passing (fixed TOML config in tests)
 - **GitHub Issues**: 4 open (#22-25, zuda migrations; #21 closed — Levenshtein migration DONE)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
-- **Sailor version**: v1.16.0 (all migrations complete)
+- **Sailor version**: v1.18.0 (all migrations complete)
 - **Source**: ~65,948 lines (+675 abbreviations), 95 modules, 10 language providers
-- **Latest work**: Released v1.48.0 (Shell Integration Enhancements). Discovered critical bugs in zuda v1.15.0 WorkStealingDeque (filed issue #13), wrote 11 compatibility tests. WorkStealingDeque migration BLOCKED pending zuda fix. (2026-03-21)
+- **Latest work**: Migrated to sailor v1.18.0 (hot reload, widget inspector, benchmarks, example gallery). Build passing, binary functional. (2026-03-21)
 
 ## All PRD Phases COMPLETE ✅
 
@@ -57,8 +57,8 @@ CLI Interface → Config Engine → Task Graph Engine → Execution Engine → P
 
 - **Current in zr**: v1.16.0 ✅
 - **Status**: All migrations complete (v1.1.0 → v1.16.0)
-- **Latest available**: v1.16.0 (terminal capabilities release)
-- **Key features**: Terminal capability database, bracketed paste mode, synchronized output, hyperlink support (OSC 8), focus tracking, syntax highlighting, session recording, accessibility (WCAG AAA), mouse input, particle effects, data visualization
+- **Latest available**: v1.18.0 (hot reload, widget inspector, benchmarks)
+- **Key features**: Terminal capability database, bracketed paste mode, synchronized output, hyperlink support (OSC 8), focus tracking, syntax highlighting, session recording, accessibility (WCAG AAA), mouse input, particle effects, data visualization, hot reload for themes, widget inspector, benchmark suite
 
 ## Post-v1.0 Milestones
 
