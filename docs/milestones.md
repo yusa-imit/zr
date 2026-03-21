@@ -30,20 +30,6 @@ Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.qu
 
 Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.string.globMatch, reduced pattern matching logic from 44 LOC to wrapper, added character class support, all 1024 integration tests passing.
 
-### Shell Integration Enhancements
-
-**Theme**: Developer Experience — Seamless shell integration beyond completion
-
-**Scope**:
-1. **Smart `cd` integration**: `zr cd <workspace-member>` — instantly jump to workspace members by name (no path memorization)
-2. **Shell hooks**: Optional shell hooks for automatic environment loading (direnv-like, but zr-native)
-3. **Command abbreviations**: `zr b` → `zr run build`, `zr t` → `zr run test` (user-configurable aliases in `~/.zrconfig`)
-4. **Shell history integration**: Record `zr run` invocations in shell history with full command expansion for replay
-5. **Integration tests**: 5+ tests for cd/hooks/abbreviations
-
-**Why**: Make zr feel like a native part of the shell, not just another CLI tool. Reduce friction for daily workflows.
-
-**Status**: READY
 
 ### Task Output Streaming Improvements
 
@@ -80,8 +66,9 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 ## Completed Milestones
 
 | Version | Name | Date | Summary |
-| v1.47.0 | Task Retry Strategies & Backoff Policies | 2026-03-19 | Configurable retry strategies: backoff multiplier, jitter, max backoff ceiling, conditional retry (retry_on_codes, retry_on_patterns), integration tests |
 |---------|------|------|---------|
+| v1.48.0 | Shell Integration Enhancements | 2026-03-21 | Smart cd command, shell hooks (bash/zsh/fish), command abbreviations, 34 integration tests (abbreviations, alias, cd) |
+| v1.47.0 | Task Retry Strategies & Backoff Policies | 2026-03-19 | Configurable retry strategies: backoff multiplier, jitter, max backoff ceiling, conditional retry (retry_on_codes, retry_on_patterns), integration tests |
 | v1.46.0 | Remote Execution & Distributed Builds | 2026-03-18 | SSH/HTTP remote task execution, remote/remote_cwd/remote_env fields, scheduler integration, 9 integration tests |
 | v1.45.0 | TOML Syntax Highlighting | 2026-03-17 | Syntax-highlighted TOML error messages, error_display utility, color-coded diagnostics for validate command |
 | v1.44.0 | Version Fix (v1.0.0 revert) | 2026-03-16 | Reverted erroneous v1.0.0 version downgrade, added version monotonicity guard to release policy |
