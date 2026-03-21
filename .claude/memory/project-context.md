@@ -15,11 +15,11 @@
 - **Unit tests**: 994 passing (includes abbreviations.zig tests), skipped varies, 0 failed, 0 memory leaks
 - **Integration tests**: Passing (includes 6 abbreviations tests)
 - **CI**: GREEN ✅ — all 6 cross-compile targets passing (fixed TOML config in tests)
-- **GitHub Issues**: 5 open (#21-25, all zuda migration enhancements, blocked on zuda releases)
+- **GitHub Issues**: 4 open (#22-25, zuda migrations; #21 closed — Levenshtein migration DONE)
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.16.0 (all migrations complete)
 - **Source**: ~65,948 lines (+675 abbreviations), 95 modules, 10 language providers
-- **Latest work**: Fixed CI failure by correcting TOML test configs from [task.NAME] to [tasks.NAME] (2026-03-21)
+- **Latest work**: Completed zuda Levenshtein migration (issue #21 closed), attempted zuda Graph migration but BLOCKED by incomplete compat layer (filed zuda issue #12) (2026-03-21)
 
 ## All PRD Phases COMPLETE ✅
 
