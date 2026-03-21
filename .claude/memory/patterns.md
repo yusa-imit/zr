@@ -390,3 +390,24 @@ pub fn colorizeToken(token: Token) struct { prefix, suffix: []const u8 } {
 ```
 
 **Integration**: `highlightToml(allocator, input)` → lexes, applies colors, returns owned string. Caller must free.
+
+## zuda Migration Patterns
+
+**Dependency access**: zuda v1.15.0 is declared in `build.zig.zon`. Access algorithms/containers via `@import("zuda")`.
+
+**Module export structure**: zuda's root.zig exports FUNCTIONS, not nested structs.
+- ✅ Correct: `zuda.algorithms.string.globMatch(pattern, str)`
+- ❌ Wrong: `zuda.algorithms.string.globMatch.match(pattern, str)` — `globMatch` is already the function
+
+**Wrapper pattern**: Keep local function signature for compatibility, delegate to zuda:
+```zig
+const zuda = @import("zuda");
+
+pub fn match(pattern: []const u8, str: []const u8) bool {
+    return zuda.algorithms.string.globMatch(pattern, str);
+}
+```
+
+**Partial migration**: zuda provides algorithms (pattern matching, edit distance), NOT filesystem traversal. Keep local FS logic (find/findDirs), delegate only core algorithms.
+
+**Test verification**: Run `zig build integration-test` (faster than full `zig build test`) to verify migration. Check for 0 failures.
