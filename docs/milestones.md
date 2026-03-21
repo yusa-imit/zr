@@ -3,9 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.47.0 (Task Retry Strategies & Backoff Policies)
-- **Next actionable milestone**: Shell Integration Enhancements (READY)
-- **READY milestones**: zuda WorkStealingDeque, zuda Glob (zuda v1.15.0)
+- **Next actionable milestone**: zuda WorkStealingDeque (READY)
+- **READY milestones**: zuda WorkStealingDeque, Shell Integration Enhancements
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12 — compat layer incomplete)
+- **DONE**: zuda Glob Migration (completed 2026-03-21), zuda Levenshtein Migration (completed 2026-03-21)
 
 ---
 
@@ -27,7 +28,7 @@ Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.qu
 
 ### zuda Glob Migration
 
-Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: READY** — zuda v1.15.0 provides glob_match module.
+Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.string.globMatch, reduced pattern matching logic from 44 LOC to wrapper, added character class support, all 1024 integration tests passing.
 
 ### Shell Integration Enhancements
 
@@ -193,8 +194,8 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 | Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | 323 | `zuda.algorithms.graph.topological_sort` | #24 | **READY** |
 | Cycle Detection | `src/graph/cycle_detect.zig` | 205 | `zuda.algorithms.graph.cycle_detection` | #24 | **READY** |
 | Work-Stealing Deque | `src/exec/workstealing.zig` | 130 | `zuda.containers.queues.WorkStealingDeque` | #22 | **READY** |
-| Levenshtein Distance | `src/util/levenshtein.zig` | 214 | `zuda.algorithms.dynamic_programming.editDistance` | #21 | **READY** |
-| Glob Pattern Matching | `src/util/glob.zig` | 130 | `zuda.algorithms.string.globMatch` | #25 | **READY** |
+| Levenshtein Distance | `src/util/levenshtein.zig` | 214 | `zuda.algorithms.dynamic_programming.editDistance` | #21 | **DONE** |
+| Glob Pattern Matching | `src/util/glob.zig` | 472→7 | `zuda.algorithms.string.globMatch` | #25 | **DONE** |
 
 **Migration exclusions** (domain-specific, kept in zr):
 - `src/util/string_pool.zig` — zr-specific string interning
