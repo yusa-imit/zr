@@ -878,7 +878,7 @@ test "streamProcessOutput combines search and head filters" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const test_file = try tmp.dir.createFile("combined_test.txt", .{});
+    const test_file = try tmp.dir.createFile("combined_test.txt", .{ .read = true });
     // Write file with every 10th line containing "MATCH"
     var i: usize = 0;
     while (i < 100) : (i += 1) {
@@ -919,7 +919,7 @@ test "streamProcessOutput preserves search highlighting" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const test_file = try tmp.dir.createFile("highlight_test.txt", .{});
+    const test_file = try tmp.dir.createFile("highlight_test.txt", .{ .read = true });
     try test_file.writeAll("This line has ERROR in it\nThis line has ERROR twice ERROR\n");
     try test_file.seekTo(0);
 
@@ -942,7 +942,7 @@ test "streamProcessOutput handles empty file without error" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const test_file = try tmp.dir.createFile("empty_stream.txt", .{});
+    const test_file = try tmp.dir.createFile("empty_stream.txt", .{ .read = true });
     try test_file.seekTo(0);
 
     var out_buf: [4096]u8 = undefined;
