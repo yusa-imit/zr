@@ -2,60 +2,20 @@
 //
 // Levenshtein distance calculation for "Did you mean?" suggestions
 // Phase 9C — Used for command/task name typo detection
+// Migrated to zuda v1.15.0 (2026-03-21)
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const zuda = @import("zuda");
 
 /// Calculate the Levenshtein distance between two strings.
-/// Uses Wagner-Fischer algorithm with O(min(m,n)) space optimization.
+/// Wrapper around zuda.algorithms.dynamic_programming.editDistance.
 ///
 /// Returns the minimum number of single-character edits (insertions, deletions, substitutions)
 /// required to transform `source` into `target`.
 pub fn distance(allocator: Allocator, source: []const u8, target: []const u8) !usize {
-    const m = source.len;
-    const n = target.len;
-
-    // Edge cases
-    if (m == 0) return n;
-    if (n == 0) return m;
-
-    // Ensure we iterate over the shorter string for space optimization
-    const should_swap = m > n;
-    const shorter = if (should_swap) target else source;
-    const longer = if (should_swap) source else target;
-    const short_len = shorter.len;
-
-    // Use two rows instead of full matrix for O(min(m,n)) space
-    var prev_row = try allocator.alloc(usize, short_len + 1);
-    defer allocator.free(prev_row);
-    var curr_row = try allocator.alloc(usize, short_len + 1);
-    defer allocator.free(curr_row);
-
-    // Initialize first row: [0, 1, 2, ..., short_len]
-    for (prev_row, 0..) |*cell, i| {
-        cell.* = i;
-    }
-
-    // Wagner-Fischer algorithm with space optimization
-    for (longer, 0..) |long_char, i| {
-        curr_row[0] = i + 1;
-
-        for (shorter, 0..) |short_char, j| {
-            const cost: usize = if (long_char == short_char) 0 else 1;
-            const deletion = prev_row[j + 1] + 1;
-            const insertion = curr_row[j] + 1;
-            const substitution = prev_row[j] + cost;
-
-            curr_row[j + 1] = @min(@min(deletion, insertion), substitution);
-        }
-
-        // Swap rows
-        const tmp = prev_row;
-        prev_row = curr_row;
-        curr_row = tmp;
-    }
-
-    return prev_row[short_len];
+    _ = allocator; // zuda.editDistance doesn't require allocator
+    return zuda.algorithms.dynamic_programming.editDistance(source, target);
 }
 
 /// Suggestion with its Levenshtein distance from the input
