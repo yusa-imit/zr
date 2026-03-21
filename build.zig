@@ -102,6 +102,23 @@ pub fn build(b: *std.Build) void {
     const integration_step = b.step("integration-test", "Run integration tests");
     integration_step.dependOn(&run_int_tests.step);
 
+    // --- zuda WorkStealingDeque API Compatibility Tests ---
+    const zuda_ws_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/zuda_workstealing_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    zuda_ws_tests.root_module.addImport("zuda", zuda_dep.module("zuda"));
+
+    const run_zuda_ws_tests = std.Build.Step.Run.create(b, "run zuda workstealing tests");
+    run_zuda_ws_tests.addArtifactArg(zuda_ws_tests);
+    run_zuda_ws_tests.has_side_effects = true;
+
+    const zuda_ws_step = b.step("test-zuda-ws", "Run zuda WorkStealingDeque API compatibility tests");
+    zuda_ws_step.dependOn(&run_zuda_ws_tests.step);
+
     // --- Release Build ---
     // Optimized release build with ReleaseSmall + strip for minimal binary size
     const release_exe = b.addExecutable(.{

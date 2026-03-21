@@ -24,7 +24,7 @@ Migrate from custom `src/util/levenshtein.zig` (214 LOC) to `zuda.algorithms.dyn
 
 ### zuda WorkStealingDeque Migration
 
-Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.queues.WorkStealingDeque` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Status: READY** — zuda v1.15.0 provides WorkStealingDeque module.
+Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.queues.WorkStealingDeque` (issue #22). Add zuda dependency, migrate scheduler's work-stealing deque to zuda implementation, update WorkStealingDeque wrapper, verify performance benchmarks, integration tests pass. **Status: BLOCKED** — zuda v1.15.0 WorkStealingDeque has critical memory safety bug (filed https://github.com/yusa-imit/zuda/issues/13). Tests written (tests/zuda_workstealing_test.zig, 11 tests, 2 failing). Awaiting zuda fix.
 
 ### zuda Glob Migration
 
