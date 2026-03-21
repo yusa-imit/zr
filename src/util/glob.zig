@@ -1,46 +1,11 @@
 const std = @import("std");
+const zuda = @import("zuda");
 
 /// Match a pattern against a string using glob syntax.
-/// Supports: * (any chars), ? (one char), literal matching
-/// Does NOT support: character classes [], brace expansion {}
+/// Migrated to zuda v1.15.0 for improved glob matching with character classes.
+/// Supports: * (any chars), ? (one char), [abc] (char class), [a-z] (range), [^abc] (negation), \c (escape)
 pub fn match(pattern: []const u8, str: []const u8) bool {
-    return matchImpl(pattern, str, 0, 0);
-}
-
-fn matchImpl(pattern: []const u8, str: []const u8, p_idx: usize, s_idx: usize) bool {
-    // End of both pattern and string = match
-    if (p_idx == pattern.len and s_idx == str.len) return true;
-
-    // End of pattern but not string = no match
-    if (p_idx == pattern.len) return false;
-
-    // Handle * wildcard
-    if (pattern[p_idx] == '*') {
-        // Try matching * with 0 characters
-        if (matchImpl(pattern, str, p_idx + 1, s_idx)) return true;
-
-        // Try matching * with 1+ characters
-        if (s_idx < str.len) {
-            return matchImpl(pattern, str, p_idx, s_idx + 1);
-        }
-
-        return false;
-    }
-
-    // End of string but pattern has non-* characters = no match
-    if (s_idx == str.len) return false;
-
-    // Handle ? wildcard (matches any single char)
-    if (pattern[p_idx] == '?') {
-        return matchImpl(pattern, str, p_idx + 1, s_idx + 1);
-    }
-
-    // Literal character match
-    if (pattern[p_idx] == str[s_idx]) {
-        return matchImpl(pattern, str, p_idx + 1, s_idx + 1);
-    }
-
-    return false;
+    return zuda.algorithms.string.globMatch(pattern, str);
 }
 
 /// Find all files matching a glob pattern in a directory.
