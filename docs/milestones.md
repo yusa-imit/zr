@@ -36,15 +36,16 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 **Theme**: Performance & UX — Better handling of long-running task output
 
 **Scope**:
-1. **Incremental rendering**: Stream task output to TUI without buffering entire output in memory (critical for multi-GB logs)
+1. ✅ **Incremental rendering**: Stream task output to TUI without buffering entire output in memory (critical for multi-GB logs)
 2. **Compression on-the-fly**: Gzip-compress stored task output for `zr show --output` (reduce history storage by 5-10x)
-3. **Follow mode**: `zr show --output <task> --follow` — tail -f style live following
-4. **Output pagination**: Automatic pager integration (less/bat) for large outputs
+3. ✅ **Follow mode**: `zr show --output <task> --follow` — tail -f style live following
+4. **Output pagination**: Automatic pager integration (less/bat) for large outputs — DEFERRED (writer type compatibility)
 5. **Performance tests**: Verify memory usage stays under 50MB when streaming 1GB+ output
 
 **Why**: Current output capture buffers entire output, causing OOM on very long-running tasks. Improve scalability.
 
-**Status**: READY
+**Progress**: 2/5 complete (streaming + follow mode done, pager deferred, compression + perf tests remaining)
+**Status**: IN PROGRESS
 
 ### Cross-Platform Path Handling Audit
 

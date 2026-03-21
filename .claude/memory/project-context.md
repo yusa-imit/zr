@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.18.0 (all migrations complete)
 - **Source**: ~65,948 lines (+675 abbreviations), 95 modules, 10 language providers
-- **Latest work**: Migrated to sailor v1.18.0, added streaming output test suite (10 tests, all currently failing — implementation loads entire file). Next: implement streaming infrastructure for Task Output Streaming Improvements milestone. (2026-03-21)
+- **Latest work**: Implemented Task Output Streaming Improvements milestone (partial): StreamingLineReader for line-by-line file reading, follow mode (--follow/-f) for tail -f style output, 10 unit tests passing. Pager integration deferred (writer type compatibility). Next: compression on-the-fly, performance tests. (2026-03-22)
 
 ## All PRD Phases COMPLETE ✅
 
