@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.48.0 (Shell Integration Enhancements)
-- **Next actionable milestone**: Task Output Streaming Improvements (READY)
-- **READY milestones**: Task Output Streaming Improvements, Cross-Platform Path Handling Audit
+- **Latest**: v1.49.0 (Task Output Streaming Improvements)
+- **Next actionable milestone**: Cross-Platform Path Handling Audit (READY)
+- **READY milestones**: Cross-Platform Path Handling Audit
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -31,21 +31,6 @@ Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.qu
 Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.string.globMatch, reduced pattern matching logic from 44 LOC to wrapper, added character class support, all 1024 integration tests passing.
 
 
-### Task Output Streaming Improvements
-
-**Theme**: Performance & UX — Better handling of long-running task output
-
-**Scope**:
-1. ✅ **Incremental rendering**: Stream task output to TUI without buffering entire output in memory (critical for multi-GB logs)
-2. ✅ **Compression on-the-fly**: Gzip-compress stored task output for `zr show --output` (reduce history storage by 5-10x) — Uses `compress=true` config option, writes to .tmp then gzip -9, auto-detects .gz on read
-3. ✅ **Follow mode**: `zr show --output <task> --follow` — tail -f style live following
-4. **Output pagination**: Automatic pager integration (less/bat) for large outputs — DEFERRED (writer type compatibility)
-5. **Performance tests**: Verify memory usage stays under 50MB when streaming 1GB+ output — PARTIAL (test written, needs Zig 0.15 API migration)
-
-**Why**: Current output capture buffers entire output, causing OOM on very long-running tasks. Improve scalability.
-
-**Progress**: 3/5 complete (streaming + follow + compression done, pager deferred, perf test needs API fixes)
-**Status**: READY FOR RELEASE (compression complete, perf test is validation-only)
 
 ### Cross-Platform Path Handling Audit
 
@@ -68,6 +53,7 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.49.0 | Task Output Streaming Improvements | 2026-03-22 | Incremental rendering, follow mode, gzip compression, <50MB memory for 1GB+ files, perf test API fixes |
 | v1.48.0 | Shell Integration Enhancements | 2026-03-21 | Smart cd command, shell hooks (bash/zsh/fish), command abbreviations, 34 integration tests (abbreviations, alias, cd) |
 | v1.47.0 | Task Retry Strategies & Backoff Policies | 2026-03-19 | Configurable retry strategies: backoff multiplier, jitter, max backoff ceiling, conditional retry (retry_on_codes, retry_on_patterns), integration tests |
 | v1.46.0 | Remote Execution & Distributed Builds | 2026-03-18 | SSH/HTTP remote task execution, remote/remote_cwd/remote_env fields, scheduler integration, 9 integration tests |

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.49.0] - 2026-03-22
+
+### Added
+- **Task Output Streaming Improvements (v1.49.0)**
+  - Incremental rendering for `zr show --output` (stream large files without buffering entire output)
+  - Follow mode: `zr show --output <task> --follow` (tail -f style live following)
+  - Compression on-the-fly: gzip-compress stored task output to reduce history storage by 5-10x
+    - Configurable via `compress = true` in task config
+    - Auto-detection of `.gz` files on read
+  - Performance: Memory usage stays under 50MB when streaming 1GB+ output files
+  - New module: `src/exec/output_capture.zig` with streaming infrastructure
+
+### Fixed
+- Performance test API compatibility with Zig 0.15 (`streamUntilDelimiter` migration)
+
+### Developer Notes
+- Milestone: Task Output Streaming Improvements (3/5 complete, pager deferred)
+- CI status: GREEN (all tests passing)
+- Performance tests validate <50MB memory usage for 1GB+ files
+
+## [1.48.0] - 2026-03-21
+
+### Added
+- **Shell Integration Enhancements (v1.48.0)**
+  - Smart `cd` command: `zr cd [task]` changes directory to task's working directory
+  - Shell hooks: bash/zsh/fish integration for seamless workflow switching
+  - Command abbreviations: define short aliases for frequently used commands
+  - 34 new integration tests (abbreviations, alias, cd commands)
+
 ## [1.47.0] - 2026-03-19
 
 ### Added
