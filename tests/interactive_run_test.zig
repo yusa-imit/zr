@@ -17,6 +17,8 @@ test "interactive-run: requires task name" {
     var result = try runZr(allocator, &.{ "--config", config, "interactive-run" }, tmp_path);
     defer result.deinit();
     try std.testing.expect(result.exit_code != 0);
+    // Should show usage error
+    try std.testing.expect(result.stderr.len > 0);
 }
 
 test "interactive-run: with task name" {
@@ -37,8 +39,12 @@ test "interactive-run: with task name" {
 
     var result = try runZr(allocator, &.{ "--config", config, "interactive-run", "hello" }, tmp_path);
     defer result.deinit();
-    // Interactive run may succeed or fail depending on TUI support
-    _ = result.exit_code;
+    // In CI or non-TTY environment, interactive mode should fail gracefully
+    // Either succeeds (if TUI available) or fails with clear error message
+    if (result.exit_code != 0) {
+        // If it fails, should have an error message explaining why
+        try std.testing.expect(result.stderr.len > 0);
+    }
 }
 
 test "interactive-run: alias 'i' works" {
@@ -59,8 +65,11 @@ test "interactive-run: alias 'i' works" {
 
     var result = try runZr(allocator, &.{ "--config", config, "i", "hello" }, tmp_path);
     defer result.deinit();
-    // Should work same as interactive-run
-    _ = result.exit_code;
+    // Alias 'i' should behave identically to 'interactive-run'
+    // Either succeeds (if TUI available) or fails with clear error message
+    if (result.exit_code != 0) {
+        try std.testing.expect(result.stderr.len > 0);
+    }
 }
 
 test "interactive-run: missing config file" {
@@ -74,6 +83,9 @@ test "interactive-run: missing config file" {
     var result = try runZr(allocator, &.{ "interactive-run", "hello" }, tmp_path);
     defer result.deinit();
     try std.testing.expect(result.exit_code != 0);
+    // Should report missing config file
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr.toml") != null or
+        std.mem.indexOf(u8, result.stderr, "config") != null);
 }
 
 test "interactive-run: unknown task shows error" {
@@ -90,4 +102,8 @@ test "interactive-run: unknown task shows error" {
     var result = try runZr(allocator, &.{ "--config", config, "interactive-run", "nonexistent" }, tmp_path);
     defer result.deinit();
     try std.testing.expect(result.exit_code != 0);
+    // Should mention the task name in the error
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "nonexistent") != null or
+        std.mem.indexOf(u8, result.stderr, "not found") != null or
+        std.mem.indexOf(u8, result.stderr, "unknown") != null);
 }
