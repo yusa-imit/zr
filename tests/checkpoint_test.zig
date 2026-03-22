@@ -31,6 +31,8 @@ test "checkpoint: save and resume" {
 
     // Verify task ran successfully
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify the command actually executed
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
 
     // This test validates that checkpoint config is parsed and doesn't break execution
     // Actual checkpoint capture requires inherit_stdio=false + task emitting markers
@@ -64,6 +66,10 @@ test "checkpoint: resume protocol" {
     defer allocator.free(result.stderr);
 
     try std.testing.expect(result.exit_code == 0);
+    // Either ZR_CHECKPOINT was set (contains JSON) or it wasn't set (shows "No checkpoint")
+    const has_checkpoint = std.mem.indexOf(u8, result.stdout, "{") != null;
+    const has_fallback = std.mem.indexOf(u8, result.stdout, "No checkpoint") != null;
+    try std.testing.expect(has_checkpoint or has_fallback);
 
     // In non-interactive mode, the checkpoint would be in ZR_CHECKPOINT
     // This test validates that the checkpoint loading and env injection works
@@ -94,6 +100,8 @@ test "checkpoint: filesystem storage" {
     defer allocator.free(result.stderr);
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify the command actually executed
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
 
     // This test validates that custom checkpoint_dir config is accepted
     // Directory creation happens on checkpoint save, not task start
