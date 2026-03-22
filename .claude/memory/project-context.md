@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.18.0 (all migrations complete)
 - **Source**: ~65,948 lines (+675 abbreviations), 95 modules, 10 language providers
-- **Latest work**: Implemented Task Output Streaming Improvements milestone (partial): StreamingLineReader for line-by-line file reading, follow mode (--follow/-f) for tail -f style output, 10 unit tests passing. Pager integration deferred (writer type compatibility). Next: compression on-the-fly, performance tests. (2026-03-22)
+- **Latest work (2026-03-22, STABILIZATION)**: Test quality audit — fixed 5 test files with weak assertions (interactive_run_test.zig, codeowners_test.zig, checkpoint_test.zig, retry_strategy_test.zig, setup_test.zig). Replaced unconditional passes (`_ = result.exit_code`) with output validation. Commits: 6c55e6d, 4f55a9d, 1ebe550, 38661f8.
 
 ## All PRD Phases COMPLETE ✅
 
