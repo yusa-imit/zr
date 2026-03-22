@@ -22,6 +22,8 @@ test "setup: runs successfully with basic config" {
     var result = try runZr(allocator, &.{ "--config", config, "setup" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should either run setup task or complete successfully without one
+    try std.testing.expect(result.stdout.len > 0 or result.stderr.len == 0);
 }
 
 test "setup: detects and runs setup task" {
@@ -59,6 +61,9 @@ test "setup: handles missing config file" {
     var result = try runZr(allocator, &.{"setup"}, tmp_path);
     defer result.deinit();
     try std.testing.expect(result.exit_code != 0);
+    // Should report missing config file
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr.toml") != null or
+        std.mem.indexOf(u8, result.stderr, "config") != null);
 }
 
 test "setup: works without setup task" {
@@ -79,6 +84,9 @@ test "setup: works without setup task" {
 
     var result = try runZr(allocator, &.{ "--config", config, "setup" }, tmp_path);
     defer result.deinit();
-    // Should succeed even without setup task
+    // Should succeed even without setup task (no-op or informational message)
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should not error when no setup task defined
+    try std.testing.expect(result.stderr.len == 0 or
+        std.mem.indexOf(u8, result.stderr, "error") == null);
 }
