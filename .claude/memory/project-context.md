@@ -5,13 +5,13 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.48.0 (build.zig.zon) | Latest Release: v1.48.0 (2026-03-21)
+- **Version**: v1.49.0 (build.zig.zon) | Latest Release: v1.49.0 (2026-03-22)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.48.0 (current in build.zig.zon) | Latest Release: v1.48.0 (2026-03-21)
+- **Build version**: v1.49.0 (current in build.zig.zon) | Latest Release: v1.49.0 (2026-03-22)
 - **Unit tests**: 994 passing (includes abbreviations.zig tests), skipped varies, 0 failed, 0 memory leaks
 - **Integration tests**: Passing (includes 6 abbreviations tests)
 - **CI**: GREEN ✅ — all 6 cross-compile targets passing (fixed TOML config in tests)
@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~9.5MB debug, ~4ms cold start
 - **Sailor version**: v1.18.0 (all migrations complete)
 - **Source**: ~65,948 lines (+675 abbreviations), 95 modules, 10 language providers
-- **Latest work (2026-03-22, STABILIZATION)**: Test quality audit — fixed 5 test files with weak assertions (interactive_run_test.zig, codeowners_test.zig, checkpoint_test.zig, retry_strategy_test.zig, setup_test.zig). Replaced unconditional passes (`_ = result.exit_code`) with output validation. Commits: 6c55e6d, 4f55a9d, 1ebe550, 38661f8.
+- **Latest work (2026-03-22, FEATURE)**: Released v1.49.0 — Task Output Streaming Improvements. Fixed perf test API for Zig 0.15 (streamUntilDelimiter migration). Milestone complete: incremental rendering, follow mode, compression. Performance validated: <50MB memory for 1GB+ files. Commits: 0e5507d (perf test fix), a6f87c4 (version bump).
 
 ## All PRD Phases COMPLETE ✅
 
