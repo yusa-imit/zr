@@ -65,8 +65,10 @@ test "codeowners: generate with --dry-run" {
 
     var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate", "--dry-run" }, tmp_path);
     defer result.deinit();
-    // Should succeed or gracefully handle
-    _ = result.exit_code;
+    // Should succeed (dry-run mode) or fail with meaningful error
+    if (result.exit_code != 0) {
+        try std.testing.expect(result.stderr.len > 0);
+    }
 }
 
 test "codeowners: generate without workspace section" {
@@ -82,8 +84,10 @@ test "codeowners: generate without workspace section" {
 
     var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate" }, tmp_path);
     defer result.deinit();
-    // Should handle gracefully
-    _ = result.exit_code;
+    // Should fail when workspace section is missing
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "workspace") != null or
+        std.mem.indexOf(u8, result.stderr, "required") != null);
 }
 
 test "codeowners: unknown subcommand shows error" {
