@@ -22,8 +22,9 @@ test "setup: runs successfully with basic config" {
     var result = try runZr(allocator, &.{ "--config", config, "setup" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Should either run setup task or complete successfully without one
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len == 0);
+    // Setup command writes to stderr via std.debug.print, so check stderr for status messages
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "setup") != null or
+        std.mem.indexOf(u8, result.stderr, "Configuration loaded") != null);
 }
 
 test "setup: detects and runs setup task" {

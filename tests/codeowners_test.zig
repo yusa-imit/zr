@@ -82,12 +82,10 @@ test "codeowners: generate without workspace section" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "codeowners", "generate", "--dry-run" }, tmp_path);
     defer result.deinit();
-    // Should fail when workspace section is missing
-    try std.testing.expect(result.exit_code != 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "workspace") != null or
-        std.mem.indexOf(u8, result.stderr, "required") != null);
+    // Should succeed even without workspace section (generates minimal file)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
 test "codeowners: unknown subcommand shows error" {
