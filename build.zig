@@ -180,4 +180,24 @@ pub fn build(b: *std.Build) void {
     const run_fuzz_expr = b.addRunArtifact(fuzz_expr);
     const fuzz_expr_step = b.step("fuzz-expr", "Run expression engine fuzz test (runs until Ctrl+C)");
     fuzz_expr_step.dependOn(&run_fuzz_expr.step);
+
+    // --- Performance Tests ---
+    // Output streaming performance test (verifies <50MB memory for 1GB+ output)
+    const perf_streaming_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/perf_output_streaming.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = if (target.result.os.tag != .windows) true else null,
+        }),
+    });
+    perf_streaming_tests.root_module.addImport("zr", zr_module);
+    perf_streaming_tests.root_module.addImport("zuda", zuda_dep.module("zuda"));
+
+    const run_perf_streaming = std.Build.Step.Run.create(b, "run perf streaming tests");
+    run_perf_streaming.addArtifactArg(perf_streaming_tests);
+    run_perf_streaming.has_side_effects = true;
+
+    const perf_streaming_step = b.step("test-perf-streaming", "Run output streaming performance tests (1GB+ files)");
+    perf_streaming_step.dependOn(&run_perf_streaming.step);
 }

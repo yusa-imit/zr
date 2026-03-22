@@ -108,6 +108,7 @@ const checker = @import("upgrade/checker.zig");
 // Use different names to avoid shadowing internal const declarations
 pub const config_parser = parser;
 pub const config_expr = expr;
+pub const exec_output_capture = output_capture;
 
 // Ensure tests in all imported modules are included in test binary
 comptime {
