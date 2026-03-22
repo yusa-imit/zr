@@ -19,6 +19,9 @@ pub const OutputCaptureConfig = struct {
     /// Maximum buffer size in bytes for buffer mode (0 = unlimited).
     /// When exceeded, oldest lines are dropped.
     max_buffer_size: usize = 1024 * 1024, // 1MB default
+    /// Enable gzip compression for stream mode (reduces storage by 5-10x).
+    /// When true, output_file will have .gz appended automatically.
+    compress: bool = false,
 };
 
 /// OutputCapture manages task output with configurable modes.
@@ -27,6 +30,8 @@ pub const OutputCapture = struct {
     config: OutputCaptureConfig,
     /// File handle for stream mode.
     file: ?std.fs.File = null,
+    /// Temporary uncompressed file path (for post-compression via gzip command).
+    temp_path: ?[]const u8 = null,
     /// In-memory buffer for buffer mode (ArrayList of lines).
     buffer: std.ArrayList([]const u8) = .{},
     /// Current buffer size in bytes (for buffer mode).
@@ -47,7 +52,15 @@ pub const OutputCapture = struct {
             if (config.output_file == null) {
                 return error.MissingOutputFile;
             }
-            const file = try std.fs.cwd().createFile(config.output_file.?, .{});
+
+            // If compression enabled, write to temp file first
+            const write_path = if (config.compress) blk: {
+                const temp = try std.fmt.allocPrint(allocator, "{s}.tmp", .{config.output_file.?});
+                self.temp_path = temp;
+                break :blk temp;
+            } else config.output_file.?;
+
+            const file = try std.fs.cwd().createFile(write_path, .{});
             self.file = file;
         }
 
@@ -62,6 +75,47 @@ pub const OutputCapture = struct {
         // Close file if open
         if (self.file) |file| {
             file.close();
+        }
+
+        // If compression enabled, compress temp file to .gz and remove temp
+        if (self.temp_path) |temp_path| {
+            defer self.allocator.free(temp_path);
+
+            // Construct final .gz path
+            const final_path = std.fmt.allocPrint(
+                self.allocator,
+                "{s}.gz",
+                .{self.config.output_file.?},
+            ) catch {
+                // Cleanup temp file on error
+                std.fs.cwd().deleteFile(temp_path) catch {};
+                return;
+            };
+            defer self.allocator.free(final_path);
+
+            // Compress using gzip command (same as remote cache implementation)
+            const result = std.process.Child.run(.{
+                .allocator = self.allocator,
+                .argv = &[_][]const u8{ "gzip", "-f", "-9", "-c", temp_path },
+            }) catch {
+                std.fs.cwd().deleteFile(temp_path) catch {};
+                return;
+            };
+            defer self.allocator.free(result.stdout);
+            defer self.allocator.free(result.stderr);
+
+            if (result.term.Exited == 0) {
+                // Write compressed data to final path
+                const out_file = std.fs.cwd().createFile(final_path, .{}) catch {
+                    std.fs.cwd().deleteFile(temp_path) catch {};
+                    return;
+                };
+                defer out_file.close();
+                out_file.writeAll(result.stdout) catch {};
+            }
+
+            // Remove temp file
+            std.fs.cwd().deleteFile(temp_path) catch {};
         }
 
         // Free buffered lines
