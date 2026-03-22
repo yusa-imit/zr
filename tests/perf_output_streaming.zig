@@ -56,18 +56,24 @@ test "streaming 1GB+ output uses <50MB memory" {
     const reader_file = try tmp_dir.dir.openFile(large_file_path, .{});
     defer reader_file.close();
 
-    var reader_buf: [4096]u8 = undefined;
-    const reader = reader_file.reader(&reader_buf);
+    const reader = reader_file.deprecatedReader();
 
-    var line_buffer: [200]u8 = undefined;
+    var line_buffer = std.ArrayList(u8){};
+    defer line_buffer.deinit(allocator);
 
     // Track memory usage (rough estimate via allocator tracking)
     // For this test, we rely on the fact that streaming should NOT buffer
     // all 1.1GB in memory at once.
 
     var lines_streamed: usize = 0;
-    while (try reader.readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
-        try capture.writeLine(line, false);
+    while (true) {
+        line_buffer.clearRetainingCapacity();
+        reader.streamUntilDelimiter(line_buffer.writer(allocator), '\n', null) catch |err| {
+            if (err == error.EndOfStream) break;
+            return err;
+        };
+
+        try capture.writeLine(line_buffer.items, false);
         lines_streamed += 1;
 
         // Sample check every 1M lines
@@ -130,14 +136,20 @@ test "streaming 500MB+ output with gzip compression uses <50MB memory" {
     const reader_file = try tmp_dir.dir.openFile(large_file_path, .{});
     defer reader_file.close();
 
-    var reader_buf: [4096]u8 = undefined;
-    const reader = reader_file.reader(&reader_buf);
+    const reader = reader_file.deprecatedReader();
 
-    var line_buffer: [200]u8 = undefined;
+    var line_buffer = std.ArrayList(u8){};
+    defer line_buffer.deinit(allocator);
     var lines_streamed: usize = 0;
 
-    while (try reader.readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
-        try capture.writeLine(line, false);
+    while (true) {
+        line_buffer.clearRetainingCapacity();
+        reader.streamUntilDelimiter(line_buffer.writer(allocator), '\n', null) catch |err| {
+            if (err == error.EndOfStream) break;
+            return err;
+        };
+
+        try capture.writeLine(line_buffer.items, false);
         lines_streamed += 1;
     }
 
