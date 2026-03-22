@@ -83,6 +83,30 @@ zr init --from-task   # Convert Taskfile.yml → zr.toml
 
 ---
 
+## 🖥️ Supported Platforms
+
+zr is cross-compiled for **6 platforms**:
+
+| Platform | Architecture | Status | Notes |
+|----------|-------------|--------|-------|
+| **Linux** | x86_64 | ✅ Fully Supported | Tested on Ubuntu 20.04+ |
+| **Linux** | aarch64 (ARM64) | ✅ Fully Supported | Tested on ARM servers |
+| **macOS** | x86_64 (Intel) | ✅ Fully Supported | macOS 11.0+ |
+| **macOS** | aarch64 (Apple Silicon) | ✅ Fully Supported | M1/M2/M3 Macs |
+| **Windows** | x86_64 | ✅ Fully Supported | Windows 10+ |
+| **WASM** | wasm32-wasi | ❌ Not Supported | Threading not available |
+
+**System Requirements**:
+- **Memory**: Minimum 4GB RAM (8GB recommended for large monorepos)
+- **Disk**: ~5MB for binary + toolchains (varies by language)
+- **Network**: Required for toolchain downloads and remote cache (optional)
+
+**Limitations**:
+- **WASM**: zr uses native threads for parallel execution, which is not supported in WASM environments. Use native builds for CLI usage.
+- **Single-threaded CPUs**: zr will run but parallelization benefits are limited.
+
+---
+
 ## 🎯 Core Features
 
 ### Task Runner (Phase 1-3)
