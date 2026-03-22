@@ -257,6 +257,84 @@ const CircularLineBuffer = struct {
 
 /// Streaming version of processOutput - operates on file instead of memory buffer.
 /// Memory usage: ~4KB read buffer + N lines for tail (if tail_lines is set)
+/// Stream decompressed output from memory buffer (for .gz files).
+fn streamDecompressedOutput(
+    allocator: Allocator,
+    data: []const u8,
+    opts: ShowOutputOptions,
+    w: anytype,
+    use_color: bool,
+) !void {
+    // Split into lines
+    var line_it = std.mem.splitScalar(u8, data, '\n');
+
+    // Handle tail mode - collect last N lines
+    if (opts.tail_lines) |n| {
+        var circular_buf = try CircularLineBuffer.init(allocator, n);
+        defer circular_buf.deinit();
+
+        while (line_it.next()) |line| {
+            // Apply search filter
+            const matches = if (opts.search_pattern) |pattern|
+                std.mem.indexOf(u8, line, pattern) != null
+            else if (opts.filter_regex) |pattern|
+                std.mem.indexOf(u8, line, pattern) != null
+            else
+                true;
+
+            if (matches) {
+                try circular_buf.append(line);
+            }
+        }
+
+        // Output the buffered lines
+        var output_lines: std.ArrayListUnmanaged([]const u8) = .{};
+        defer output_lines.deinit(allocator);
+        try circular_buf.getOrdered(&output_lines, allocator);
+
+        for (output_lines.items) |line| {
+            if (opts.search_pattern) |pattern| {
+                try highlightMatches(line, pattern, w, use_color);
+                try w.writeAll("\n");
+            } else {
+                try w.writeAll(line);
+                try w.writeAll("\n");
+            }
+        }
+
+        return;
+    }
+
+    // Head mode or no limit - stream directly
+    var lines_output: usize = 0;
+    const limit = opts.head_lines orelse std.math.maxInt(usize);
+
+    while (line_it.next()) |line| {
+        if (lines_output >= limit) break;
+
+        // Apply search filter
+        const matches = if (opts.search_pattern) |pattern|
+            std.mem.indexOf(u8, line, pattern) != null
+        else if (opts.filter_regex) |pattern|
+            std.mem.indexOf(u8, line, pattern) != null
+        else
+            true;
+
+        if (matches) {
+            // Output line immediately
+            if (opts.search_pattern) |pattern| {
+                try highlightMatches(line, pattern, w, use_color);
+                try w.writeAll("\n");
+            } else {
+                try w.writeAll(line);
+                try w.writeAll("\n");
+            }
+
+            lines_output += 1;
+        }
+    }
+}
+
 fn streamProcessOutput(
     allocator: Allocator,
     file: std.fs.File,
@@ -431,6 +509,40 @@ pub fn cmdShow(
             return 0;
         }
 
+        // Check if compressed version (.gz) exists
+        const gz_path = try std.fmt.allocPrint(allocator, "{s}.gz", .{output_path});
+        defer allocator.free(gz_path);
+
+        const is_compressed = blk: {
+            std.fs.cwd().access(gz_path, .{}) catch {
+                break :blk false;
+            };
+            break :blk true;
+        };
+
+        if (is_compressed) {
+            // Decompress and stream (gunzip -c <file> to stdout)
+            const result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &[_][]const u8{ "gunzip", "-c", gz_path },
+            });
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
+
+            if (result.term.Exited != 0) {
+                try color.printError(ew, use_color,
+                    "show: Failed to decompress output file: {s}\n  Error: {s}\n",
+                    .{ gz_path, result.stderr },
+                );
+                return 1;
+            }
+
+            // Stream decompressed output with filters
+            try streamDecompressedOutput(allocator, result.stdout, output_opts, w, use_color);
+            return 0;
+        }
+
+        // No compression, read normally
         const file = std.fs.cwd().openFile(output_path, .{}) catch |err| {
             if (err == error.FileNotFound) {
                 try color.printError(ew, use_color,
