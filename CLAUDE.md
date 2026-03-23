@@ -354,6 +354,29 @@ See `docs/milestones.md` for active milestones, completed releases, and roadmap.
 
 ---
 
+## Test Execution Policy — 로컬 vs CI/Docker
+
+로컬 머신에서 리소스 집약적 테스트(벤치마크, 스트레스 테스트, 크로스 컴파일 등)를 동시에 실행하면 메모리 압박으로 시스템 불안정(커널 패닉)을 유발할 수 있다. 다음 정책을 따른다:
+
+### 로컬에서 실행 (OK)
+- `zig build test` — 단위 테스트
+- `zig build integration-test` — 통합 테스트
+- `zig build` — 단일 타겟 빌드
+- 빠른 검증 목적의 테스트
+
+### CI(GitHub Actions)에서만 실행
+- **크로스 컴파일**: 6개 타겟 동시 빌드
+- **벤치마크**: `bench.zig`, `bench_test.zig` 성능 측정 및 회귀 테스트
+- **스트레스 테스트**: 대량 태스크 그래프, 병렬 실행 부하 테스트
+- **퍼즈 테스트**: 장시간 무작위 입력 테스트
+
+### cron 작업 규칙
+- 로컬 cron에서 `zig build test`는 허용하되, 벤치마크/크로스 컴파일은 **금지**
+- 여러 Zig 프로젝트(zuda, silica, sailor, zoltraak)의 cron이 동시에 실행될 수 있으므로, 로컬 cron은 경량 작업만 수행
+- 무거운 검증은 `git push` 후 GitHub Actions에서 결과 확인
+
+---
+
 ## Quick Reference
 
 ```bash
@@ -369,7 +392,7 @@ zig build integration-test
 # Run (after build)
 ./zig-out/bin/zr
 
-# Cross-compile (example)
+# Cross-compile (CI에서만 전체 6 타겟 실행)
 zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 
 # Clean
