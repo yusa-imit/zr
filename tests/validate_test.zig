@@ -63,16 +63,25 @@ test "89: validate with --strict flag enforces stricter rules" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const config = try writeTmpConfig(allocator, tmp.dir, HELLO_TOML);
+    // Config with a task that lacks description — should trigger --strict warning
+    const config_no_desc =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_no_desc);
     defer allocator.free(config);
 
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Validate with strict mode
+    // Validate with strict mode — should warn about missing description
     var result = try runZr(allocator, &.{ "--config", config, "validate", "--strict" }, tmp_path);
     defer result.deinit();
-    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify that strict mode warning appears
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "missing description (--strict)") != null);
 }
 
 test "141: validate --strict enforces stricter validation rules" {
