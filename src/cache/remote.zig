@@ -1,8 +1,21 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const types = @import("../config/types.zig");
 
 /// Chunk size for incremental sync (1MB)
 const CHUNK_SIZE: usize = 1024 * 1024;
+
+/// Get system temp directory path. Caller owns returned memory.
+/// Returns platform-specific temp directory (TEMP/TMP on Windows, TMPDIR or /tmp on Unix).
+fn getTempDir(allocator: std.mem.Allocator) ![]const u8 {
+    return switch (builtin.os.tag) {
+        .windows => std.process.getEnvVarOwned(allocator, "TEMP") catch
+                    std.process.getEnvVarOwned(allocator, "TMP") catch
+                    try allocator.dupe(u8, "C:\\Windows\\Temp"),
+        else => std.process.getEnvVarOwned(allocator, "TMPDIR") catch
+                try allocator.dupe(u8, "/tmp"),
+    };
+}
 
 /// Remote cache client (Phase 7 — PRD §5.7.3).
 /// Supports S3, GCS, Azure, and HTTP backends.
@@ -26,8 +39,15 @@ pub const RemoteCache = struct {
     /// Compress data using gzip CLI. Caller owns returned memory.
     /// Uses external `gzip` command for maximum compatibility across platforms.
     fn compress(self: *const RemoteCache, data: []const u8) ![]u8 {
-        // Write data to temporary file
-        const tmp_in = try std.fmt.allocPrint(self.allocator, "/tmp/zr-compress-in-{d}.tmp", .{std.time.timestamp()});
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write data to temporary file (platform-agnostic)
+        const tmp_filename = try std.fmt.allocPrint(self.allocator, "zr-compress-in-{d}.tmp", .{std.time.timestamp()});
+        defer self.allocator.free(tmp_filename);
+
+        const tmp_in = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
         defer self.allocator.free(tmp_in);
         const in_file = try std.fs.cwd().createFile(tmp_in, .{});
         defer in_file.close();
@@ -60,8 +80,15 @@ pub const RemoteCache = struct {
 
     /// Decompress gzipped data using gzip CLI. Caller owns returned memory.
     fn decompress(self: *const RemoteCache, compressed_data: []const u8) ![]u8 {
-        // Write compressed data to temporary file
-        const tmp_in = try std.fmt.allocPrint(self.allocator, "/tmp/zr-decompress-in-{d}.tmp.gz", .{std.time.timestamp()});
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write compressed data to temporary file (platform-agnostic)
+        const tmp_filename = try std.fmt.allocPrint(self.allocator, "zr-decompress-in-{d}.tmp.gz", .{std.time.timestamp()});
+        defer self.allocator.free(tmp_filename);
+
+        const tmp_in = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
         defer self.allocator.free(tmp_in);
         const in_file = try std.fs.cwd().createFile(tmp_in, .{});
         defer in_file.close();
@@ -427,8 +454,15 @@ pub const RemoteCache = struct {
         const url = try std.fmt.allocPrint(self.allocator, "{s}/{s}.cache", .{ url_base, key });
         defer self.allocator.free(url);
 
-        // Write data to temp file for curl upload
-        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write data to temp file for curl upload (platform-agnostic)
+        const tmp_filename = try std.fmt.allocPrint(self.allocator, "zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_filename);
+
+        const tmp_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
         defer self.allocator.free(tmp_path);
         const file = try std.fs.cwd().createFile(tmp_path, .{});
         defer file.close();
@@ -682,8 +716,15 @@ pub const RemoteCache = struct {
         );
         defer self.allocator.free(url);
 
-        // Write data to temp file for curl upload
-        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write data to temp file for curl upload (platform-agnostic)
+        const tmp_filename = try std.fmt.allocPrint(self.allocator, "zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_filename);
+
+        const tmp_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
         defer self.allocator.free(tmp_path);
         const file = try std.fs.cwd().createFile(tmp_path, .{});
         defer file.close();
@@ -834,8 +875,15 @@ pub const RemoteCache = struct {
         const access_token = try self.getGCSAccessToken();
         defer self.allocator.free(access_token);
 
-        // Write data to temp file for curl upload
-        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write data to temp file for curl upload (platform-agnostic)
+        const tmp_filename = try std.fmt.allocPrint(self.allocator, "zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_filename);
+
+        const tmp_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
         defer self.allocator.free(tmp_path);
         const file = try std.fs.cwd().createFile(tmp_path, .{});
         defer file.close();
@@ -938,8 +986,14 @@ pub const RemoteCache = struct {
         );
         defer self.allocator.free(form_data);
 
-        // Write form data to temp file
-        const tmp_path = "/tmp/zr-gcs-oauth-form.tmp";
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write form data to temp file (platform-agnostic)
+        const tmp_filename = "zr-gcs-oauth-form.tmp";
+        const tmp_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
+        defer self.allocator.free(tmp_path);
         const tmp_file = try std.fs.cwd().createFile(tmp_path, .{});
         defer tmp_file.close();
         defer std.fs.cwd().deleteFile(tmp_path) catch {};
@@ -1040,22 +1094,32 @@ pub const RemoteCache = struct {
     /// Sign data with RS256 (RSA-SHA256) using private key.
     /// Uses openssl command for RSA signing (Zig 0.15 lacks RSA in std.crypto).
     fn signRS256(self: *const RemoteCache, data: []const u8, private_key: []const u8) ![]u8 {
-        // Write private key to temp file
-        const key_path = "/tmp/zr-gcs-privkey.pem";
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write private key to temp file (platform-agnostic)
+        const key_filename = "zr-gcs-privkey.pem";
+        const key_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, key_filename });
+        defer self.allocator.free(key_path);
         const key_file = try std.fs.cwd().createFile(key_path, .{});
         defer key_file.close();
         defer std.fs.cwd().deleteFile(key_path) catch {};
         try key_file.writeAll(private_key);
 
         // Write data to temp file
-        const data_path = "/tmp/zr-gcs-data.tmp";
+        const data_filename = "zr-gcs-data.tmp";
+        const data_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, data_filename });
+        defer self.allocator.free(data_path);
         const data_file = try std.fs.cwd().createFile(data_path, .{});
         defer data_file.close();
         defer std.fs.cwd().deleteFile(data_path) catch {};
         try data_file.writeAll(data);
 
         // Sign using openssl
-        const sig_path = "/tmp/zr-gcs-sig.bin";
+        const sig_filename = "zr-gcs-sig.bin";
+        const sig_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, sig_filename });
+        defer self.allocator.free(sig_path);
         defer std.fs.cwd().deleteFile(sig_path) catch {};
 
         var argv = std.ArrayList([]const u8){};
@@ -1224,8 +1288,15 @@ pub const RemoteCache = struct {
         );
         defer self.allocator.free(auth_header);
 
-        // Write data to temp file for curl upload
-        const tmp_path = try std.fmt.allocPrint(self.allocator, "/tmp/zr-cache-{s}.tmp", .{key});
+        // Get system temp directory
+        const tmp_dir_path = try getTempDir(self.allocator);
+        defer self.allocator.free(tmp_dir_path);
+
+        // Write data to temp file for curl upload (platform-agnostic)
+        const tmp_filename = try std.fmt.allocPrint(self.allocator, "zr-cache-{s}.tmp", .{key});
+        defer self.allocator.free(tmp_filename);
+
+        const tmp_path = try std.fs.path.join(self.allocator, &[_][]const u8{ tmp_dir_path, tmp_filename });
         defer self.allocator.free(tmp_path);
         const file = try std.fs.cwd().createFile(tmp_path, .{});
         defer file.close();

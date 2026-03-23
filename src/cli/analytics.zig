@@ -122,11 +122,25 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
         const stdout = std.fs.File.stdout();
         try stdout.writeAll(content);
     } else {
-        // Save to temp file and open in browser
-        const temp_path = try std.fmt.allocPrint(allocator, "/tmp/zr-analytics-{d}.html", .{std.time.timestamp()});
-        defer allocator.free(temp_path);
+        // Get system temp directory
+        const builtin = @import("builtin");
+        const tmp_dir_path = switch (builtin.os.tag) {
+            .windows => std.process.getEnvVarOwned(allocator, "TEMP") catch
+                        std.process.getEnvVarOwned(allocator, "TMP") catch
+                        try allocator.dupe(u8, "C:\\Windows\\Temp"),
+            else => std.process.getEnvVarOwned(allocator, "TMPDIR") catch
+                    try allocator.dupe(u8, "/tmp"),
+        };
+        defer allocator.free(tmp_dir_path);
 
-        const file = std.fs.cwd().createFile(temp_path, .{}) catch |err| {
+        // Save to temp file and open in browser (platform-agnostic)
+        const temp_filename = try std.fmt.allocPrint(allocator, "zr-analytics-{d}.html", .{std.time.timestamp()});
+        defer allocator.free(temp_filename);
+
+        const temp_path_for_write = try std.fs.path.join(allocator, &[_][]const u8{ tmp_dir_path, temp_filename });
+        defer allocator.free(temp_path_for_write);
+
+        const file = std.fs.cwd().createFile(temp_path_for_write, .{}) catch |err| {
             std.debug.print("error: failed to create temporary file: {s}\n", .{@errorName(err)});
             return 1;
         };
@@ -137,9 +151,9 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
             return 1;
         };
 
-        std.debug.print("✓ Report generated: {s}\n", .{temp_path});
+        std.debug.print("✓ Report generated: {s}\n", .{temp_path_for_write});
         if (!no_open) {
-            try openInBrowser(temp_path);
+            try openInBrowser(temp_path_for_write);
         }
     }
 

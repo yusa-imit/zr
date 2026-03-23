@@ -12,13 +12,24 @@ pub const CacheStore = struct {
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) !CacheStore {
+        const builtin = @import("builtin");
         const home = std.process.getEnvVarOwned(allocator, "HOME") catch null;
         defer if (home) |h| allocator.free(h);
 
         const dir_path = if (home) |h|
             try std.fs.path.join(allocator, &[_][]const u8{ h, ".zr", "cache" })
-        else
-            try allocator.dupe(u8, "/tmp/.zr/cache");
+        else blk: {
+            // Fallback to system temp directory (platform-agnostic)
+            const tmp_path = switch (builtin.os.tag) {
+                .windows => std.process.getEnvVarOwned(allocator, "TEMP") catch
+                            std.process.getEnvVarOwned(allocator, "TMP") catch
+                            try allocator.dupe(u8, "C:\\Windows\\Temp"),
+                else => std.process.getEnvVarOwned(allocator, "TMPDIR") catch
+                        try allocator.dupe(u8, "/tmp"),
+            };
+            defer allocator.free(tmp_path);
+            break :blk try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, ".zr", "cache" });
+        };
 
         // Ensure directory exists
         std.fs.cwd().makePath(dir_path) catch |err| switch (err) {
