@@ -29,6 +29,7 @@ comptime {
     _ = @import("hooks_test.zig");
     _ = @import("init_test.zig");
     _ = @import("interactive_run_test.zig");
+    _ = @import("integration_path.zig");
     _ = @import("lang_provider_test.zig");
     _ = @import("lint_test.zig");
     _ = @import("list_test.zig");
