@@ -17,6 +17,7 @@ docs/*.tar
 .claude/tasks/
 .claude/projects/
 .claude/scratchpad.md
+.claude/session-counter
 
 # zr runtime files
 .zr_history
