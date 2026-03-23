@@ -6,6 +6,51 @@ const color = @import("../output/color.zig");
 
 pub const CONFIG_FILE = "zr.toml";
 
+/// Find zr.toml by searching current directory and parent directories.
+/// Returns absolute path to zr.toml or null if not found.
+/// Caller owns returned memory.
+pub fn findConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = try std.fs.cwd().realpath(".", &cwd_buf);
+
+    var current_dir = try allocator.dupe(u8, cwd);
+    defer allocator.free(current_dir);
+
+    while (true) {
+        // Try to find zr.toml in current directory
+        const candidate = try std.fs.path.join(allocator, &[_][]const u8{ current_dir, CONFIG_FILE });
+        errdefer allocator.free(candidate);
+
+        // Check if file exists
+        std.fs.accessAbsolute(candidate, .{}) catch |err| {
+            if (err == error.FileNotFound) {
+                allocator.free(candidate);
+
+                // Move to parent directory
+                const parent = std.fs.path.dirname(current_dir) orelse {
+                    // Reached root without finding config
+                    return null;
+                };
+
+                // Stop if we've reached the root (no more parents)
+                if (std.mem.eql(u8, parent, current_dir)) {
+                    return null;
+                }
+
+                const new_current = try allocator.dupe(u8, parent);
+                allocator.free(current_dir);
+                current_dir = new_current;
+                continue;
+            } else {
+                return err;
+            }
+        };
+
+        // Found it!
+        return candidate;
+    }
+}
+
 /// Load config from file, applying profile overrides if requested.
 /// Returns null and prints an error message if loading fails.
 pub fn loadConfig(

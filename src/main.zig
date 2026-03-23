@@ -420,7 +420,22 @@ fn run(
     const quiet = flag_parser.getBool("quiet", false);
     const verbose = flag_parser.getBool("verbose", false);
     const enable_monitor = flag_parser.getBool("monitor", false);
-    const config_path = flag_parser.getString("config", common.CONFIG_FILE);
+    // Resolve config path: explicit --config flag, or search parent directories for zr.toml
+    var config_path_owned: ?[]const u8 = null;
+    defer if (config_path_owned) |path| allocator.free(path);
+
+    const config_path = if (flag_parser.get("config")) |config_val|
+        try config_val.asString()
+    else blk: {
+        // Search current directory and parents for zr.toml
+        if (try common.findConfigPath(allocator)) |found_path| {
+            config_path_owned = found_path;
+            break :blk found_path;
+        } else {
+            // Fall back to "./zr.toml" (will fail with clear error message)
+            break :blk common.CONFIG_FILE;
+        }
+    };
     const affected_base: ?[]const u8 = if (flag_parser.get("affected")) |v| (v.asString() catch null) else null;
 
     // --format: custom validation (only "json" or "text")
