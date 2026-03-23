@@ -120,17 +120,17 @@ fn findProjectForFile(workspace_members: []const []const u8, file_path: []const 
     var best_len: usize = 0;
 
     for (workspace_members) |member| {
-        // Normalize member path (remove trailing slash)
-        const normalized = if (member.len > 0 and member[member.len - 1] == '/')
+        // Normalize member path (remove trailing path separator)
+        const normalized = if (member.len > 0 and member[member.len - 1] == std.fs.path.sep)
             member[0 .. member.len - 1]
         else
             member;
 
         // Check if file_path starts with member path
         if (std.mem.startsWith(u8, file_path, normalized)) {
-            // Ensure it's a directory boundary (next char is '/' or end of string)
+            // Ensure it's a directory boundary (next char is path separator or end of string)
             if (file_path.len == normalized.len or
-                (file_path.len > normalized.len and file_path[normalized.len] == '/')) {
+                (file_path.len > normalized.len and file_path[normalized.len] == std.fs.path.sep)) {
                 if (normalized.len > best_len) {
                     best_match = member;
                     best_len = normalized.len;

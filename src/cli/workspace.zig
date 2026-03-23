@@ -30,14 +30,14 @@ pub fn resolveWorkspaceMembers(
             // Determine base directory and relative pattern
             // If pattern is absolute, extract the base dir
             var base_dir: std.fs.Dir = blk: {
-                if (pattern.len > 0 and pattern[0] == '/') {
+                if (std.fs.path.isAbsolute(pattern)) {
                     // Absolute path - find the first component with wildcard
                     var i: usize = 0;
                     while (i < pattern.len) : (i += 1) {
                         if (pattern[i] == '*' or pattern[i] == '?') break;
                     }
                     // Find last '/' before the wildcard
-                    const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], '/');
+                    const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], std.fs.path.sep);
                     if (last_slash) |idx| {
                         const base_path = pattern[0..idx];
                         break :blk std.fs.openDirAbsolute(base_path, .{ .iterate = true }) catch {
@@ -47,17 +47,17 @@ pub fn resolveWorkspaceMembers(
                 }
                 break :blk std.fs.cwd();
             };
-            const is_absolute = (pattern.len > 0 and pattern[0] == '/');
+            const is_absolute = std.fs.path.isAbsolute(pattern);
             defer if (is_absolute) base_dir.close();
 
             // Extract relative pattern
             const relative_pattern: []const u8 = blk: {
-                if (pattern.len > 0 and pattern[0] == '/') {
+                if (std.fs.path.isAbsolute(pattern)) {
                     var i: usize = 0;
                     while (i < pattern.len) : (i += 1) {
                         if (pattern[i] == '*' or pattern[i] == '?') break;
                     }
-                    const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], '/');
+                    const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], std.fs.path.sep);
                     if (last_slash) |idx| {
                         break :blk pattern[idx + 1 ..];
                     }
@@ -75,16 +75,16 @@ pub fn resolveWorkspaceMembers(
             for (matching_dirs) |dir_path| {
                 // Reconstruct full path
                 const full_path: []const u8 = blk: {
-                    if (pattern.len > 0 and pattern[0] == '/') {
+                    if (std.fs.path.isAbsolute(pattern)) {
                         // Find the base part of the absolute pattern
                         var i: usize = 0;
                         while (i < pattern.len) : (i += 1) {
                             if (pattern[i] == '*' or pattern[i] == '?') break;
                         }
-                        const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], '/');
+                        const last_slash = std.mem.lastIndexOfScalar(u8, pattern[0..i], std.fs.path.sep);
                         if (last_slash) |idx| {
                             const base_path = pattern[0..idx];
-                            break :blk try std.fmt.allocPrint(allocator, "{s}/{s}", .{ base_path, dir_path });
+                            break :blk try std.fs.path.join(allocator, &[_][]const u8{ base_path, dir_path });
                         }
                     }
                     break :blk try allocator.dupe(u8, dir_path);
@@ -92,7 +92,7 @@ pub fn resolveWorkspaceMembers(
                 defer allocator.free(full_path);
 
                 // Only include if it has a config file
-                const cfg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ full_path, config_filename });
+                const cfg_path = try std.fs.path.join(allocator, &[_][]const u8{ full_path, config_filename });
                 defer allocator.free(cfg_path);
                 const has_config: bool = blk: {
                     std.fs.cwd().access(cfg_path, .{}) catch break :blk false;
@@ -105,7 +105,7 @@ pub fn resolveWorkspaceMembers(
             }
         } else {
             // Treat as a literal directory path
-            const cfg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ pattern, config_filename });
+            const cfg_path = try std.fs.path.join(allocator, &[_][]const u8{ pattern, config_filename });
             defer allocator.free(cfg_path);
             const has_config: bool = blk: {
                 std.fs.cwd().access(cfg_path, .{}) catch break :blk false;

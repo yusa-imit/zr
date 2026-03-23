@@ -25,7 +25,7 @@ pub fn find(
     }
 
     // Split pattern into directory and filename parts
-    const sep_idx = std.mem.lastIndexOfScalar(u8, pattern, '/');
+    const sep_idx = std.mem.lastIndexOfScalar(u8, pattern, std.fs.path.sep);
 
     if (sep_idx) |idx| {
         // Pattern has directory component (e.g., "src/*.zig" or "packages/*/src")
@@ -52,7 +52,7 @@ pub fn find(
                     if (entry.kind != .file) continue;
 
                     if (match(file_pattern, entry.name)) {
-                        const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
+                        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
                         try results.append(allocator, full_path);
                     }
                 }
@@ -67,7 +67,7 @@ pub fn find(
                 if (entry.kind != .file) continue;
 
                 if (match(file_pattern, entry.name)) {
-                    const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_pattern, entry.name });
+                    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_pattern, entry.name });
                     try results.append(allocator, full_path);
                 }
             }
@@ -109,8 +109,8 @@ pub fn findDirs(
         results.deinit(allocator);
     }
 
-    // Split pattern by first '/' to process path component by component
-    const sep_idx = std.mem.indexOfScalar(u8, pattern, '/');
+    // Split pattern by first path separator to process path component by component
+    const sep_idx = std.mem.indexOfScalar(u8, pattern, std.fs.path.sep);
 
     if (sep_idx) |idx| {
         // Pattern has multiple components (e.g., "packages/*/src")
@@ -143,7 +143,7 @@ pub fn findDirs(
 
                     // Prepend current directory name to all sub-results
                     for (sub_results) |sub_path| {
-                        const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ entry.name, sub_path });
+                        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ entry.name, sub_path });
                         try results.append(allocator, full_path);
                     }
                 }
@@ -160,7 +160,7 @@ pub fn findDirs(
             }
 
             for (sub_results) |sub_path| {
-                const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ first_component, sub_path });
+                const full_path = try std.fs.path.join(allocator, &[_][]const u8{ first_component, sub_path });
                 try results.append(allocator, full_path);
             }
         }
@@ -293,9 +293,10 @@ test "find - subdirectory pattern" {
 
     try std.testing.expectEqual(@as(usize, 2), results.len);
 
-    // Check paths start with src/
+    // Check paths start with src<sep>
+    const expected_prefix = "src" ++ &[_]u8{std.fs.path.sep};
     for (results) |path| {
-        try std.testing.expect(std.mem.startsWith(u8, path, "src/"));
+        try std.testing.expect(std.mem.startsWith(u8, path, expected_prefix));
     }
 }
 
@@ -352,10 +353,13 @@ test "findDirs - nested pattern" {
     }
 
     try std.testing.expectEqual(@as(usize, 2), results.len);
-    // Both paths should start with "packages/"
+    // Both paths should start with "packages<sep>" and end with "<sep>src"
+    const sep_str = &[_]u8{std.fs.path.sep};
+    const expected_prefix = "packages" ++ sep_str;
+    const expected_suffix = sep_str ++ "src";
     for (results) |path| {
-        try std.testing.expect(std.mem.startsWith(u8, path, "packages/"));
-        try std.testing.expect(std.mem.endsWith(u8, path, "/src"));
+        try std.testing.expect(std.mem.startsWith(u8, path, expected_prefix));
+        try std.testing.expect(std.mem.endsWith(u8, path, expected_suffix));
     }
 }
 
@@ -410,8 +414,9 @@ test "find - wildcards in directory path" {
     }
 
     try std.testing.expectEqual(@as(usize, 2), results.len);
+    const expected_suffix = &[_]u8{std.fs.path.sep} ++ "main.zig";
     for (results) |path| {
-        try std.testing.expect(std.mem.endsWith(u8, path, "/main.zig"));
+        try std.testing.expect(std.mem.endsWith(u8, path, expected_suffix));
     }
 }
 
