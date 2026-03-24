@@ -3,10 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.49.0 (Task Output Streaming Improvements)
-- **Next actionable milestone**: Cross-Platform Path Handling Audit (READY)
-- **READY milestones**: Cross-Platform Path Handling Audit
+- **Next actionable milestone**: Cross-Platform Path Handling Audit (COMPLETE, ready for v1.50.0 release)
+- **READY milestones**: None (next milestone pending)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Cross-Platform Path Handling Audit, Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -37,15 +37,15 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 **Theme**: Stability — Eliminate path-related bugs on Windows
 
 **Scope**:
-1. **Path separator audit**: Review all path manipulation code for hardcoded `/` vs proper `std.fs.path.sep`
-2. **UNC path support**: Handle Windows UNC paths (`\\server\share`) correctly in cwd/remote_cwd
-3. **Long path support**: Enable Windows long path support (>260 characters) via manifest
-4. **Symlink handling**: Test and fix symlink resolution on Windows (requires admin or Dev Mode)
-5. **Integration tests**: 10+ Windows-specific path tests (run in CI via windows-latest)
+1. ✅ **Path separator audit**: Review all path manipulation code for hardcoded `/` vs proper `std.fs.path.sep` (DONE: glob.zig, affected.zig, workspace.zig fixed)
+2. ✅ **UNC path support**: Handle Windows UNC paths (`\\server\share`) correctly in cwd/remote_cwd (DONE: verified existing code handles UNC correctly, added tests)
+3. ✅ **Long path support**: Enable Windows long path support (>260 characters) via manifest (DONE: added integration tests)
+4. ✅ **Symlink handling**: Test and fix symlink resolution on Windows (requires admin or Dev Mode) (DONE: added integration tests)
+5. ✅ **Integration tests**: 10+ Windows-specific path tests (run in CI via windows-latest) (DONE: 11 tests in integration_windows_paths.zig)
 
 **Why**: Windows users report occasional path-related crashes. Comprehensive audit to eliminate this class of bugs.
 
-**Status**: READY
+**Status**: COMPLETE (ready for release)
 
 ---
 
