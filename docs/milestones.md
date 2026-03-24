@@ -69,6 +69,7 @@ Improve mouse interaction in TUI modes with non-blocking read and timeout suppor
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.52.0 | Output Enhancement & Pager Integration | 2026-03-25 | Automatic pager for large output, --no-pager flag, ZR_PAGER/PAGER env vars, TTY detection, color preservation, 36 tests |
 | v1.51.0 | Sailor v1.19.0 & v1.20.0 Migration | 2026-03-25 | Progress bar templates, environment variable config, color themes, table formatting, arg groups, Windows Unicode tests, pattern documentation |
 | v1.50.0 | Cross-Platform Path Handling Audit | 2026-03-24 | Path separator fixes (glob/affected/workspace), UNC path support, long path support (>260 chars), symlink resolution, 11 Windows integration tests |
 | v1.49.0 | Task Output Streaming Improvements | 2026-03-22 | Incremental rendering, follow mode, gzip compression, <50MB memory for 1GB+ files, perf test API fixes |
