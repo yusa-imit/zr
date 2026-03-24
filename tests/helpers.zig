@@ -312,3 +312,53 @@ pub fn writeTmpConfigPath(allocator: std.mem.Allocator, dir: std.fs.Dir, toml: [
     defer allocator.free(tmp_path);
     return std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_path, path });
 }
+
+/// Run an arbitrary command (not zr) in the specified directory.
+/// Returns captured stdout, stderr, and exit code.
+pub fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8, cwd: []const u8) !ZrResult {
+    var child = std.process.Child.init(argv, allocator);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+    child.stdin_behavior = .Close;
+    child.cwd = cwd;
+
+    try child.spawn();
+
+    // Read stdout/stderr BEFORE wait() — Zig 0.15 closes pipes in wait()
+    var stdout_list = std.ArrayList(u8){};
+    errdefer stdout_list.deinit(allocator);
+    var stderr_list = std.ArrayList(u8){};
+    errdefer stderr_list.deinit(allocator);
+
+    if (child.stdout) |pipe| {
+        var buf: [4096]u8 = undefined;
+        while (true) {
+            const n = pipe.read(&buf) catch break;
+            if (n == 0) break;
+            try stdout_list.appendSlice(allocator, buf[0..n]);
+        }
+    }
+    if (child.stderr) |pipe| {
+        var buf: [4096]u8 = undefined;
+        while (true) {
+            const n = pipe.read(&buf) catch break;
+            if (n == 0) break;
+            try stderr_list.appendSlice(allocator, buf[0..n]);
+        }
+    }
+
+    const term = try child.wait();
+    const exit_code: u8 = switch (term) {
+        .Exited => |code| code,
+        .Signal => |_| 255,
+        .Stopped => |_| 255,
+        .Unknown => |_| 255,
+    };
+
+    return ZrResult{
+        .exit_code = exit_code,
+        .stdout = try stdout_list.toOwnedSlice(allocator),
+        .stderr = try stderr_list.toOwnedSlice(allocator),
+        .allocator = allocator,
+    };
+}

@@ -281,11 +281,10 @@ test "affected: distinguishes similar path prefixes" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "core") != null);
 
     // Verify core-utils is NOT in output (unless output format includes both, filter by lines)
-    const lines = std.mem.split(u8, result.stdout, "\n");
+    var lines = std.mem.splitSequence(u8, result.stdout, "\n");
     var found_core = false;
     var found_core_utils = false;
-    var it = lines;
-    while (it.next()) |line| {
+    while (lines.next()) |line| {
         if (std.mem.indexOf(u8, line, "packages/core") != null and std.mem.indexOf(u8, line, "core-utils") == null) {
             found_core = true;
         }
