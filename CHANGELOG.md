@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.50.0] - 2026-03-24
+
+### Added
+- **Cross-Platform Path Handling Audit (v1.50.0)** - Complete Windows compatibility overhaul
+  - Path separator fixes: replaced hardcoded `/` with `std.fs.path.sep` in glob.zig (5), affected.zig (2), workspace.zig (6)
+  - UNC path support: Windows network paths (`\\server\share`) now work in cwd, remote_cwd, workspace members
+  - Long path support: handles paths >260 characters on Windows 10 1607+
+  - Symlink resolution: proper handling of directory symlinks on Windows (requires Dev Mode or admin)
+  - 11 new Windows-specific integration tests in `tests/integration_windows_paths.zig`
+  - 18 path separator compatibility tests in `tests/integration_path_separator.zig`
+
+### Fixed
+- SSH timeout: added ConnectTimeout to prevent hanging tests and zombie processes (#12799f7)
+- Parent directory search: `zr list` from nested directories now searches up for zr.toml (#b103b20)
+- Temp paths: replaced hardcoded `/tmp` with platform-specific temp directories (#d0cd4fd)
+- Test helpers: added `runCommand()` helper for git operations in integration tests (#402e733)
+
+### Developer Notes
+- Milestone: Cross-Platform Path Handling Audit (COMPLETE 5/5)
+- Total integration test files: 67 (added windows_paths.zig)
+- CI status: GREEN (all cross-platform tests passing)
+
 ## [1.49.0] - 2026-03-22
 
 ### Added
