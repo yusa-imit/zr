@@ -125,8 +125,9 @@ pub const SSHExecutor = struct {
         defer full_cmd.deinit(self.allocator);
 
         var writer = full_cmd.writer(self.allocator);
-        // ssh -p PORT USER@HOST 'cd CWD && CMD'
-        try writer.print("ssh -p {d} {s}@{s} '", .{ ssh_target.port, ssh_target.user, ssh_target.host });
+        // ssh -o ConnectTimeout=T -p PORT USER@HOST 'cd CWD && CMD'
+        const timeout_sec = @max(1, self.config.ssh_timeout_ms / 1000);
+        try writer.print("ssh -o ConnectTimeout={d} -o BatchMode=yes -p {d} {s}@{s} '", .{ timeout_sec, ssh_target.port, ssh_target.user, ssh_target.host });
 
         // Add working directory if specified
         if (task.cwd) |cwd| {
@@ -222,7 +223,8 @@ pub const SSHExecutor = struct {
         defer full_cmd.deinit(self.allocator);
 
         var writer = full_cmd.writer(self.allocator);
-        try writer.print("ssh -p {d} {s}@{s} '{s}'", .{ ssh_target.port, ssh_target.user, ssh_target.host, cmd });
+        const timeout_sec = @max(1, self.config.ssh_timeout_ms / 1000);
+        try writer.print("ssh -o ConnectTimeout={d} -o BatchMode=yes -p {d} {s}@{s} '{s}'", .{ timeout_sec, ssh_target.port, ssh_target.user, ssh_target.host, cmd });
 
         var child = std.process.Child.init(&.{ "/bin/sh", "-c", full_cmd.items }, self.allocator);
 
@@ -796,7 +798,7 @@ test "SSH executor handles connection failure" {
 
     var executor = SSHExecutor{
         .allocator = allocator,
-        .config = .{},
+        .config = .{ .ssh_timeout_ms = 3_000 },
     };
     defer executor.deinit();
 
@@ -1362,7 +1364,7 @@ test "SSHExecutor.execute with invalid host returns error" {
 
     var executor = SSHExecutor{
         .allocator = allocator,
-        .config = .{},
+        .config = .{ .ssh_timeout_ms = 3_000 },
     };
     defer executor.deinit();
 
