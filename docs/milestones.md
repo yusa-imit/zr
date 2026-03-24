@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.49.0 (Task Output Streaming Improvements)
-- **Next actionable milestone**: Cross-Platform Path Handling Audit (COMPLETE, ready for v1.50.0 release)
+- **Latest**: v1.50.0 (Cross-Platform Path Handling Audit)
+- **Next actionable milestone**: None (awaiting zuda issue resolutions or new milestone establishment)
 - **READY milestones**: None (next milestone pending)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Cross-Platform Path Handling Audit, Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -32,27 +32,13 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 
 
 
-### Cross-Platform Path Handling Audit
-
-**Theme**: Stability — Eliminate path-related bugs on Windows
-
-**Scope**:
-1. ✅ **Path separator audit**: Review all path manipulation code for hardcoded `/` vs proper `std.fs.path.sep` (DONE: glob.zig, affected.zig, workspace.zig fixed)
-2. ✅ **UNC path support**: Handle Windows UNC paths (`\\server\share`) correctly in cwd/remote_cwd (DONE: verified existing code handles UNC correctly, added tests)
-3. ✅ **Long path support**: Enable Windows long path support (>260 characters) via manifest (DONE: added integration tests)
-4. ✅ **Symlink handling**: Test and fix symlink resolution on Windows (requires admin or Dev Mode) (DONE: added integration tests)
-5. ✅ **Integration tests**: 10+ Windows-specific path tests (run in CI via windows-latest) (DONE: 11 tests in integration_windows_paths.zig)
-
-**Why**: Windows users report occasional path-related crashes. Comprehensive audit to eliminate this class of bugs.
-
-**Status**: COMPLETE (ready for release)
-
 ---
 
 ## Completed Milestones
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.50.0 | Cross-Platform Path Handling Audit | 2026-03-24 | Path separator fixes (glob/affected/workspace), UNC path support, long path support (>260 chars), symlink resolution, 11 Windows integration tests |
 | v1.49.0 | Task Output Streaming Improvements | 2026-03-22 | Incremental rendering, follow mode, gzip compression, <50MB memory for 1GB+ files, perf test API fixes |
 | v1.48.0 | Shell Integration Enhancements | 2026-03-21 | Smart cd command, shell hooks (bash/zsh/fish), command abbreviations, 34 integration tests (abbreviations, alias, cd) |
 | v1.47.0 | Task Retry Strategies & Backoff Policies | 2026-03-19 | Configurable retry strategies: backoff multiplier, jitter, max backoff ceiling, conditional retry (retry_on_codes, retry_on_patterns), integration tests |
