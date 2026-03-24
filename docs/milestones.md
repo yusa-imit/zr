@@ -38,6 +38,7 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.51.0 | Sailor v1.19.0 & v1.20.0 Migration | 2026-03-25 | Progress bar templates, environment variable config, color themes, table formatting, arg groups, Windows Unicode tests, pattern documentation |
 | v1.50.0 | Cross-Platform Path Handling Audit | 2026-03-24 | Path separator fixes (glob/affected/workspace), UNC path support, long path support (>260 chars), symlink resolution, 11 Windows integration tests |
 | v1.49.0 | Task Output Streaming Improvements | 2026-03-22 | Incremental rendering, follow mode, gzip compression, <50MB memory for 1GB+ files, perf test API fixes |
 | v1.48.0 | Shell Integration Enhancements | 2026-03-21 | Smart cd command, shell hooks (bash/zsh/fish), command abbreviations, 34 integration tests (abbreviations, alias, cd) |
@@ -111,7 +112,7 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 
 ### Sailor Library
 
-- **Current in zr**: v1.18.0 (all migrations complete)
+- **Current in zr**: v1.20.0 (all migrations complete)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -142,6 +143,8 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 | v1.16.0 | DONE | Terminal capability database, bracketed paste mode, synchronized output protocol, hyperlink support (OSC 8), focus tracking |
 | v1.17.0 | DONE | Hot reload improvements, widget performance enhancements |
 | v1.18.0 | DONE | Hot reload for themes, widget inspector, benchmark suite, example gallery, documentation generator |
+| v1.19.0 | DONE | Progress bar templates, environment variable config, color themes, table formatting, arg groups |
+| v1.20.0 | DONE | Windows Console Unicode tests, pattern documentation, quality improvements |
 
 ### zuda Library
 

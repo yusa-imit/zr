@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.51.0] - 2026-03-25
+
+### Changed
+- **Sailor v1.19.0 & v1.20.0 Migration** - CLI enhancements and quality improvements
+  - Sailor v1.19.0 features:
+    - Progress bar templates: 5 presets (download, build, test_run, install, processing)
+    - Environment variable config: `env.get/getBool/getInt` for runtime customization
+    - Color themes: Light/dark presets with auto-detection
+    - Table formatting: Alignment, padding, multi-line cells
+    - Arg groups: Better CLI option organization
+  - Sailor v1.20.0 features:
+    - Windows Console Unicode tests: 23 comprehensive tests covering UTF-16 surrogates, CJK width, ANSI escapes
+    - Pattern documentation: `docs/patterns.md` with examples for all major APIs
+    - Quality improvements: Directory scanning for docgen, error context module, edge case hardening
+
+### Developer Notes
+- All 996 unit tests passing (8 skipped)
+- No breaking changes - fully backward compatible
+- Closes issues #32 (sailor v1.19.0), #33 (sailor v1.20.0)
+
 ## [1.50.0] - 2026-03-24
 
 ### Added
