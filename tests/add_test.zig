@@ -24,21 +24,14 @@ test "add: unknown type shows error" {
 test "add: task without config file shows error" {
     const allocator = std.testing.allocator;
 
-    // Create temporary directory
-    const tmp_path = try std.fs.cwd().realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    var tmp_dir = try std.fs.cwd().makeOpenPath("test-add-tmp", .{});
-    defer {
-        std.fs.cwd().deleteTree("test-add-tmp") catch {};
-    }
-    defer tmp_dir.close();
-
-    const tmp_abs = try tmp_dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_abs);
+    // Create temporary directory in /tmp to avoid parent directory search finding project zr.toml
+    const tmp_base = "/tmp/zr-test-add-task";
+    std.fs.deleteTreeAbsolute(tmp_base) catch {};
+    try std.fs.makeDirAbsolute(tmp_base);
+    defer std.fs.deleteTreeAbsolute(tmp_base) catch {};
 
     // Simulate EOF on stdin by closing stdin (this will cause the command to fail gracefully)
-    var result = try helpers.runZr(allocator, &[_][]const u8{ "add", "task", "test-task" }, tmp_abs);
+    var result = try helpers.runZr(allocator, &[_][]const u8{ "add", "task", "test-task" }, tmp_base);
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
@@ -51,16 +44,13 @@ test "add: task without config file shows error" {
 test "add: workflow without config file shows error" {
     const allocator = std.testing.allocator;
 
-    var tmp_dir = try std.fs.cwd().makeOpenPath("test-add-workflow-tmp", .{});
-    defer {
-        std.fs.cwd().deleteTree("test-add-workflow-tmp") catch {};
-    }
-    defer tmp_dir.close();
+    // Create temporary directory in /tmp to avoid parent directory search finding project zr.toml
+    const tmp_base = "/tmp/zr-test-add-workflow";
+    std.fs.deleteTreeAbsolute(tmp_base) catch {};
+    try std.fs.makeDirAbsolute(tmp_base);
+    defer std.fs.deleteTreeAbsolute(tmp_base) catch {};
 
-    const tmp_abs = try tmp_dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_abs);
-
-    var result = try helpers.runZr(allocator, &[_][]const u8{ "add", "workflow", "test-workflow" }, tmp_abs);
+    var result = try helpers.runZr(allocator, &[_][]const u8{ "add", "workflow", "test-workflow" }, tmp_base);
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
@@ -72,16 +62,13 @@ test "add: workflow without config file shows error" {
 test "add: profile without config file shows error" {
     const allocator = std.testing.allocator;
 
-    var tmp_dir = try std.fs.cwd().makeOpenPath("test-add-profile-tmp", .{});
-    defer {
-        std.fs.cwd().deleteTree("test-add-profile-tmp") catch {};
-    }
-    defer tmp_dir.close();
+    // Create temporary directory in /tmp to avoid parent directory search finding project zr.toml
+    const tmp_base = "/tmp/zr-test-add-profile";
+    std.fs.deleteTreeAbsolute(tmp_base) catch {};
+    try std.fs.makeDirAbsolute(tmp_base);
+    defer std.fs.deleteTreeAbsolute(tmp_base) catch {};
 
-    const tmp_abs = try tmp_dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_abs);
-
-    var result = try helpers.runZr(allocator, &[_][]const u8{ "add", "profile", "test-profile" }, tmp_abs);
+    var result = try helpers.runZr(allocator, &[_][]const u8{ "add", "profile", "test-profile" }, tmp_base);
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);

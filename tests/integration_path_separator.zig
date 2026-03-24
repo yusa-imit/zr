@@ -186,7 +186,7 @@ test "affected: detects changes in subdirectory with platform separator" {
     // Modify file
     try tmp.dir.writeFile(.{ .sub_path = "packages/core/main.zig", .data = "const std = @import(\"std\"); // changed" });
 
-    var result = try helpers.runZr(std.testing.allocator, &.{ "affected", "--base", "HEAD" }, tmp_path);
+    var result = try helpers.runZr(std.testing.allocator, &.{ "affected", "--list", "--base", "HEAD" }, tmp_path);
     defer result.deinit();
 
     // Should detect that packages/core is affected
@@ -226,7 +226,7 @@ test "affected: correctly matches paths with trailing separator" {
     // Modify file
     try tmp.dir.writeFile(.{ .sub_path = "packages/utils/helper.zig", .data = "pub fn help() void {} // changed" });
 
-    var result = try helpers.runZr(std.testing.allocator, &.{ "affected", "--base", "HEAD" }, tmp_path);
+    var result = try helpers.runZr(std.testing.allocator, &.{ "affected", "--list", "--base", "HEAD" }, tmp_path);
     defer result.deinit();
 
     // Tests affected.zig line 124: handling of trailing '/' in member path normalization
@@ -271,7 +271,7 @@ test "affected: distinguishes similar path prefixes" {
     // Modify only packages/core/main.zig
     try tmp.dir.writeFile(.{ .sub_path = "packages/core/main.zig", .data = "const std = @import(\"std\"); // changed" });
 
-    var result = try helpers.runZr(std.testing.allocator, &.{ "affected", "--base", "HEAD" }, tmp_path);
+    var result = try helpers.runZr(std.testing.allocator, &.{ "affected", "--list", "--base", "HEAD" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
