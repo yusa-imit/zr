@@ -3,10 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.51.0 (Sailor v1.19.0 & v1.20.0 Migration)
-- **Next actionable milestone**: Output Enhancement & Pager Integration
-- **READY milestones**: Output Enhancement & Pager Integration, Platform-Specific Resource Monitoring
+- **Next actionable milestone**: Platform-Specific Resource Monitoring
+- **READY milestones**: Platform-Specific Resource Monitoring, TUI Mouse Interaction Enhancements
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Output Enhancement & Pager Integration (ready for v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -34,11 +34,12 @@ Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.glo
 
 Complete the deferred pager integration from Task Output Streaming Improvements (v1.49.0). Implement automatic pager integration for `zr show --output` command to handle large output files gracefully. Add support for `less`/`more` style navigation with search, color preservation, and keyboard shortcuts. Includes:
 - Auto-detect terminal height and switch to pager for outputs > screen size
-- Preserve ANSI colors in pager mode
-- Keyboard shortcuts (search with `/`, jump with `g/G`, quit with `q`)
+- Preserve ANSI colors in pager mode (via `less -R` default)
 - Configuration option to disable pager (`--no-pager` flag, `ZR_PAGER` env var)
-- Integration tests for pager behavior
-**Status: READY** — TODO identified in `src/cli/show.zig:203`. Deferred from v1.49.0 due to type-compatible writer API requirements.
+- Comprehensive pager utility module with platform-specific TTY detection
+- Integration tests for pager behavior (16 tests in integration_pager.zig)
+- Unit tests for pager module (20 tests in util/pager.zig)
+**Status: DONE** — Completed 2026-03-25. Automatic pager spawns when output exceeds terminal height, `--no-pager` flag added, environment variable support (`ZR_PAGER`, `PAGER`), TTY detection, color preservation.
 
 ### Platform-Specific Resource Monitoring
 

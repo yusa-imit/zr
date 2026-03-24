@@ -948,6 +948,7 @@ fn run(
             try effective_w.writeAll("  --head <N>           Show only first N lines (requires --output)\n");
             try effective_w.writeAll("  --tail <N>           Show only last N lines (requires --output)\n");
             try effective_w.writeAll("  --follow, -f         Follow output in real-time (tail -f style, requires --output)\n");
+            try effective_w.writeAll("  --no-pager           Disable automatic pager for large output (requires --output)\n");
             return 0;
         }
 
@@ -983,6 +984,8 @@ fn run(
                     }
                 } else if (std.mem.eql(u8, arg, "--follow") or std.mem.eql(u8, arg, "-f")) {
                     output_opts.follow = true;
+                } else if (std.mem.eql(u8, arg, "--no-pager")) {
+                    output_opts.no_pager = true;
                 }
             }
         }

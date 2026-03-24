@@ -4,6 +4,7 @@ const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const types = @import("../config/types.zig");
 const sailor = @import("sailor");
+const pager = @import("../util/pager.zig");
 
 fn processOutput(
     allocator: Allocator,
@@ -116,6 +117,7 @@ pub const ShowOutputOptions = struct {
     tail_lines: ?usize = null,
     head_lines: ?usize = null,
     follow: bool = false,
+    no_pager: bool = false,
 };
 
 /// StreamingLineReader provides line-by-line iteration over a file
@@ -559,10 +561,58 @@ pub fn cmdShow(
         };
         defer file.close();
 
-        // TODO: Automatic pager integration (requires type-compatible writer API)
-        // For now, users can manually pipe to less: zr show task --output | less
+        // Automatic pager integration for large output
+        // Only use pager if:
+        // - --no-pager flag is NOT set
+        // - Output is a TTY (not piped)
+        // - Output exceeds terminal height
+        const should_use_pager = blk: {
+            if (output_opts.no_pager) break :blk false;
+            if (!pager.isTerminal()) break :blk false;
 
-        // Stream file contents (no memory limit, handles large files)
+            // Count lines in file for pager decision
+            const file_size = try file.getEndPos();
+            try file.seekTo(0);
+
+            // Read file to count lines
+            const contents = try file.readToEndAlloc(allocator, file_size);
+            defer allocator.free(contents);
+
+            const line_count = pager.countLines(contents);
+            const terminal_height = pager.getTerminalHeight();
+
+            // Reset file position for streaming
+            try file.seekTo(0);
+
+            const pager_config = pager.PagerConfig{ .enabled = true };
+            break :blk pager.shouldUsePager(line_count, terminal_height, pager_config);
+        };
+
+        if (should_use_pager) {
+            // Spawn pager and pipe output through it
+            const pager_cmd = try pager.getPagerCommand(allocator);
+            defer if (pager_cmd) |cmd| allocator.free(cmd);
+
+            if (pager_cmd) |cmd| {
+                var child = try pager.spawnPager(allocator, cmd);
+                defer {
+                    _ = child.wait() catch {};
+                }
+
+                // Pipe file contents to pager stdin
+                if (child.stdin) |pager_stdin| {
+                    defer pager_stdin.close();
+
+                    // Stream file to pager with filters using deprecated writer API
+                    const pager_writer = pager_stdin.deprecatedWriter();
+                    try streamProcessOutput(allocator, file, output_opts, pager_writer, use_color);
+                }
+
+                return 0;
+            }
+        }
+
+        // No pager needed or available - stream directly to stdout
         try streamProcessOutput(allocator, file, output_opts, w, use_color);
 
         return 0;
