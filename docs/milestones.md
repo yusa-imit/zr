@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.50.0 (Cross-Platform Path Handling Audit)
-- **Next actionable milestone**: None (awaiting zuda issue resolutions or new milestone establishment)
-- **READY milestones**: None (next milestone pending)
+- **Latest**: v1.51.0 (Sailor v1.19.0 & v1.20.0 Migration)
+- **Next actionable milestone**: Output Enhancement & Pager Integration
+- **READY milestones**: Output Enhancement & Pager Integration, Platform-Specific Resource Monitoring
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -30,7 +30,37 @@ Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.qu
 
 Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.string.globMatch, reduced pattern matching logic from 44 LOC to wrapper, added character class support, all 1024 integration tests passing.
 
+### Output Enhancement & Pager Integration
 
+Complete the deferred pager integration from Task Output Streaming Improvements (v1.49.0). Implement automatic pager integration for `zr show --output` command to handle large output files gracefully. Add support for `less`/`more` style navigation with search, color preservation, and keyboard shortcuts. Includes:
+- Auto-detect terminal height and switch to pager for outputs > screen size
+- Preserve ANSI colors in pager mode
+- Keyboard shortcuts (search with `/`, jump with `g/G`, quit with `q`)
+- Configuration option to disable pager (`--no-pager` flag, `ZR_PAGER` env var)
+- Integration tests for pager behavior
+**Status: READY** — TODO identified in `src/cli/show.zig:203`. Deferred from v1.49.0 due to type-compatible writer API requirements.
+
+### Platform-Specific Resource Monitoring
+
+Implement platform-specific resource monitoring for comprehensive CPU/memory tracking across all supported platforms. Currently only basic cross-platform monitoring is implemented with TODOs for platform-specific optimizations. Includes:
+- Windows: Full NUMA topology detection via `GetLogicalProcessorInformationEx`
+- Linux: Parse `/proc/meminfo` for detailed memory stats (MemAvailable, Buffers, Cached)
+- macOS: Use `host_statistics64` for accurate memory pressure metrics
+- All platforms: CPU affinity setting with NUMA awareness
+- Performance profiling to measure monitoring overhead
+- 15+ integration tests for resource limits and monitoring accuracy
+**Status: READY** — TODOs identified in `src/util/numa.zig`, `src/exec/resource_monitor.zig`.
+
+### TUI Mouse Interaction Enhancements
+
+Improve mouse interaction in TUI modes with non-blocking read and timeout support. Currently mouse events use blocking reads which can freeze the TUI. Implement asynchronous event handling with configurable timeouts for responsive UI. Includes:
+- Non-blocking read with timeout for mouse events (`src/cli/tui_mouse.zig:167`)
+- Event batching to reduce UI redraws during rapid mouse movement
+- Double-click detection for quick-select in task picker
+- Drag-to-scroll in graph TUI for large dependency graphs
+- Mouse wheel support for navigation in list/graph views
+- 10+ integration tests for mouse event handling
+**Status: READY** — TODO identified in `src/cli/tui_mouse.zig:167`.
 
 ---
 
