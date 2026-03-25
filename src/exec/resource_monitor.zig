@@ -108,20 +108,68 @@ pub const ResourceMonitor = struct {
 
 /// Collect current system resource metrics for a process
 pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t) !ResourceMetrics {
-    _ = allocator;
-    _ = pid;
-
-    // TODO: Platform-specific implementation
-    // - Linux: read /proc/[pid]/status for memory, /proc/[pid]/stat for CPU
-    // - macOS: use proc_pidinfo() system call
-    // - Windows: use GetProcessMemoryInfo() and GetProcessTimes()
-
+    const builtin = @import("builtin");
     const now = std.time.milliTimestamp();
 
+    // Only implemented for Linux; return zeros for other platforms
+    if (builtin.os.tag != .linux) {
+        return ResourceMetrics{
+            .peak_memory_bytes = 0,
+            .avg_cpu_percent = 0.0,
+            .total_io_ops = 0,
+            .timestamp_ms = now,
+        };
+    }
+
+    // Linux-specific implementation using /proc/[pid]/ files
+    var peak_memory_bytes: u64 = 0;
+    var total_io_ops: u64 = 0;
+
+    // Try to read memory info from /proc/[pid]/status
+    // Format: /proc/{pid}/status
+    var pid_buf: [64]u8 = undefined;
+    const pid_str = try std.fmt.bufPrint(&pid_buf, "{d}", .{pid});
+
+    // Read /proc/[pid]/status for VmRSS (resident set size in KB)
+    const status_path = try std.fs.path.join(allocator, &[_][]const u8{ "/proc", pid_str, "status" });
+    defer allocator.free(status_path);
+
+    if (std.fs.cwd().readFileAlloc(allocator, status_path, 64 * 1024)) |status_content| {
+        defer allocator.free(status_content);
+        // Try to get VmRSS (resident set size) - this is the current physical memory
+        if (try extractStatusValue(status_content, "VmRSS:")) |vmrss_kb| {
+            // Convert from KB to bytes
+            peak_memory_bytes = vmrss_kb * 1024;
+        }
+    } else |_| {
+        // Status file not available - return zeros gracefully
+    }
+
+    // Try to read I/O stats from /proc/[pid]/io
+    const io_path = try std.fs.path.join(allocator, &[_][]const u8{ "/proc", pid_str, "io" });
+    defer allocator.free(io_path);
+
+    if (std.fs.cwd().readFileAlloc(allocator, io_path, 8 * 1024)) |io_content| {
+        defer allocator.free(io_content);
+        // Parse rchar (read chars) and wchar (write chars)
+        if (try extractStatusValue(io_content, "rchar:")) |rchar| {
+            if (try extractStatusValue(io_content, "wchar:")) |wchar| {
+                total_io_ops = rchar + wchar;
+            }
+        }
+    } else |_| {
+        // I/O file not available - return zero gracefully
+    }
+
+    // TODO: CPU percentage calculation requires tracking previous measurements
+    // For now, return 0.0 - would need a baseline measurement and elapsed time
+    // to calculate CPU time delta and convert to percentage.
+    const avg_cpu_percent = 0.0;
+
     return ResourceMetrics{
-        .peak_memory_bytes = 0,
-        .avg_cpu_percent = 0.0,
-        .total_io_ops = 0,
+        .peak_memory_bytes = peak_memory_bytes,
+        .avg_cpu_percent = avg_cpu_percent,
+        .total_io_ops = total_io_ops,
         .timestamp_ms = now,
     };
 }
@@ -254,4 +302,248 @@ test "ResourceMonitor: clear metrics" {
 
     monitor.clearMetrics();
     try std.testing.expectEqual(@as(usize, 0), monitor.getMetrics().len);
+}
+
+// ============================================================================
+// Linux /proc memory stats parsing tests
+// ============================================================================
+
+/// Helper function to extract a numeric value from /proc/meminfo format
+/// Returns the value in KB, or null if not found
+fn extractMemInfoValue(content: []const u8, key: []const u8) !?u64 {
+    var lines = std.mem.tokenizeSequence(u8, content, "\n");
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, key)) {
+            var parts = std.mem.tokenizeSequence(u8, line, ":");
+            _ = parts.next(); // Skip the key
+            if (parts.next()) |value_part| {
+                const trimmed = std.mem.trim(u8, value_part, " \t");
+                // Remove "kB" suffix if present
+                const numeric = std.mem.trim(u8, trimmed, "kB \t");
+                return try std.fmt.parseInt(u64, numeric, 10);
+            }
+        }
+    }
+    return null;
+}
+
+/// Helper function to extract a numeric value from /proc/[pid]/status format
+/// Returns the value (usually in KB for memory fields)
+fn extractStatusValue(content: []const u8, key: []const u8) !?u64 {
+    var lines = std.mem.tokenizeSequence(u8, content, "\n");
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, key)) {
+            // Extract the value part after the key and colon
+            if (std.mem.indexOfScalar(u8, line, ':')) |colon_pos| {
+                const value_part = std.mem.trim(u8, line[colon_pos + 1 ..], " \t");
+                // Remove "kB" suffix if present
+                const numeric = std.mem.trim(u8, value_part, "kB \t");
+                return try std.fmt.parseInt(u64, numeric, 10);
+            }
+        }
+    }
+    return null;
+}
+
+/// Helper function to parse /proc/[pid]/stat for CPU times
+/// Returns (utime, stime) tuple in jiffies
+fn extractStatValues(content: []const u8) !?struct { utime: u64, stime: u64 } {
+    // /proc/[pid]/stat format: pid (comm) state ppid pgrp session tty_nr ...
+    // Fields 14-15 (1-indexed, so indices 13-14) are utime and stime
+    var fields = std.mem.tokenizeSequence(u8, content, " ");
+
+    var field_count: usize = 0;
+    var utime: u64 = 0;
+    var stime: u64 = 0;
+
+    while (fields.next()) |field| {
+        if (field_count == 13) {
+            utime = try std.fmt.parseInt(u64, field, 10);
+        } else if (field_count == 14) {
+            stime = try std.fmt.parseInt(u64, field, 10);
+            break;
+        }
+        field_count += 1;
+    }
+
+    if (utime == 0 and stime == 0) return null;
+    return .{ .utime = utime, .stime = stime };
+}
+
+test "parse /proc/meminfo: extract MemTotal" {
+    const content =
+        \\MemTotal:       16384000 kB
+        \\MemFree:         8192000 kB
+        \\MemAvailable:    12288000 kB
+        \\Buffers:         1024000 kB
+        \\Cached:          2048000 kB
+    ;
+
+    const value = try extractMemInfoValue(content, "MemTotal:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 16384000), value.?);
+}
+
+test "parse /proc/meminfo: extract MemFree" {
+    const content =
+        \\MemTotal:       16384000 kB
+        \\MemFree:         8192000 kB
+        \\MemAvailable:    12288000 kB
+    ;
+
+    const value = try extractMemInfoValue(content, "MemFree:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 8192000), value.?);
+}
+
+test "parse /proc/meminfo: extract MemAvailable" {
+    const content =
+        \\MemTotal:       16384000 kB
+        \\MemFree:         8192000 kB
+        \\MemAvailable:    12288000 kB
+        \\Buffers:         1024000 kB
+        \\Cached:          2048000 kB
+        \\SwapTotal:       4096000 kB
+        \\SwapFree:        2048000 kB
+    ;
+
+    const value = try extractMemInfoValue(content, "MemAvailable:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 12288000), value.?);
+}
+
+test "parse /proc/meminfo: extract SwapTotal" {
+    const content =
+        \\MemTotal:       16384000 kB
+        \\MemFree:         8192000 kB
+        \\SwapTotal:       4096000 kB
+        \\SwapFree:        2048000 kB
+    ;
+
+    const value = try extractMemInfoValue(content, "SwapTotal:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 4096000), value.?);
+}
+
+test "parse /proc/meminfo: missing key returns null" {
+    const content =
+        \\MemTotal:       16384000 kB
+        \\MemFree:         8192000 kB
+    ;
+
+    const value = try extractMemInfoValue(content, "SwapTotal:");
+    try std.testing.expect(value == null);
+}
+
+test "parse /proc/meminfo: empty content returns null" {
+    const content = "";
+
+    const value = try extractMemInfoValue(content, "MemTotal:");
+    try std.testing.expect(value == null);
+}
+
+test "parse /proc/[pid]/status: extract VmSize" {
+    const content =
+        \\Name:   bash
+        \\State:  S (sleeping)
+        \\Pid:    1234
+        \\VmSize:        8192 kB
+        \\VmRSS:         4096 kB
+        \\VmPeak:        16384 kB
+    ;
+
+    const value = try extractStatusValue(content, "VmSize:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 8192), value.?);
+}
+
+test "parse /proc/[pid]/status: extract VmRSS" {
+    const content =
+        \\Name:   bash
+        \\State:  S (sleeping)
+        \\VmSize:        8192 kB
+        \\VmRSS:         4096 kB
+        \\VmPeak:        16384 kB
+    ;
+
+    const value = try extractStatusValue(content, "VmRSS:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 4096), value.?);
+}
+
+test "parse /proc/[pid]/status: extract VmPeak" {
+    const content =
+        \\Name:   bash
+        \\VmSize:        8192 kB
+        \\VmRSS:         4096 kB
+        \\VmPeak:        16384 kB
+    ;
+
+    const value = try extractStatusValue(content, "VmPeak:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 16384), value.?);
+}
+
+test "parse /proc/[pid]/status: missing field returns null" {
+    const content =
+        \\Name:   bash
+        \\VmSize:        8192 kB
+        \\VmRSS:         4096 kB
+    ;
+
+    const value = try extractStatusValue(content, "VmPeak:");
+    try std.testing.expect(value == null);
+}
+
+test "parse /proc/[pid]/stat: extract CPU times" {
+    const content = "1234 (bash) S 1000 1234 1234 0 -1 4194304 2500 50 0 0 234 156 0 0 20 0 1 0 123456789 8388608 1024 18446744073709551615 4194304 4238788 140731488921296 140731488920256 140721632408421 0 0 0 65536 0 0 0 17 3 0 0 0 0 0";
+    const result = try extractStatValues(content);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqual(@as(u64, 234), result.?.utime);
+    try std.testing.expectEqual(@as(u64, 156), result.?.stime);
+}
+
+test "parse /proc/[pid]/stat: malformed content returns null" {
+    const content = "invalid stat data";
+
+    const result = try extractStatValues(content);
+    try std.testing.expect(result == null);
+}
+
+test "parse /proc/[pid]/stat: empty content returns null" {
+    const content = "";
+
+    const result = try extractStatValues(content);
+    try std.testing.expect(result == null);
+}
+
+test "parse /proc/meminfo: extract Cached field" {
+    const content =
+        \\MemTotal:       16384000 kB
+        \\MemFree:         8192000 kB
+        \\Buffers:         1024000 kB
+        \\Cached:          3072000 kB
+    ;
+
+    const value = try extractMemInfoValue(content, "Cached:");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqual(@as(u64, 3072000), value.?);
+}
+
+test "parse /proc/[pid]/status: handles tab separators correctly" {
+    // Actual /proc/[pid]/status format uses tabs between label and value
+    const content =
+        \\Name:  bash
+        \\Pid:   1234
+        \\VmSize:        8192 kB
+        \\VmRSS:         2048 kB
+    ;
+
+    const size = try extractStatusValue(content, "VmSize:");
+    try std.testing.expect(size != null);
+    try std.testing.expectEqual(@as(u64, 8192), size.?);
+
+    const rss = try extractStatusValue(content, "VmRSS:");
+    try std.testing.expect(rss != null);
+    try std.testing.expectEqual(@as(u64, 2048), rss.?);
 }
