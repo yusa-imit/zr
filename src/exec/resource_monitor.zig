@@ -111,8 +111,14 @@ pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t) !Resour
     const builtin = @import("builtin");
     const now = std.time.milliTimestamp();
 
-    // Only implemented for Linux; return zeros for other platforms
-    if (builtin.os.tag != .linux) {
+    const os_tag = builtin.os.tag;
+
+    if (os_tag == .linux) {
+        return collectLinuxMetrics(allocator, pid, now);
+    } else if (os_tag == .macos) {
+        return collectMacOSMetrics(allocator, pid, now);
+    } else {
+        // Unsupported platform - return zeros
         return ResourceMetrics{
             .peak_memory_bytes = 0,
             .avg_cpu_percent = 0.0,
@@ -120,8 +126,10 @@ pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t) !Resour
             .timestamp_ms = now,
         };
     }
+}
 
-    // Linux-specific implementation using /proc/[pid]/ files
+/// Collect metrics on Linux using /proc filesystem
+fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMetrics {
     var peak_memory_bytes: u64 = 0;
     var total_io_ops: u64 = 0;
 
@@ -164,6 +172,71 @@ pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t) !Resour
     // TODO: CPU percentage calculation requires tracking previous measurements
     // For now, return 0.0 - would need a baseline measurement and elapsed time
     // to calculate CPU time delta and convert to percentage.
+    const avg_cpu_percent = 0.0;
+
+    return ResourceMetrics{
+        .peak_memory_bytes = peak_memory_bytes,
+        .avg_cpu_percent = avg_cpu_percent,
+        .total_io_ops = total_io_ops,
+        .timestamp_ms = now,
+    };
+}
+
+/// Collect metrics on macOS using proc_pidinfo and task_info
+fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMetrics {
+    // macOS uses libproc and mach APIs
+    const c = @cImport({
+        @cInclude("sys/proc_info.h");
+        @cInclude("libproc.h");
+        @cInclude("mach/mach.h");
+        @cInclude("mach/task.h");
+    });
+
+    var peak_memory_bytes: u64 = 0;
+    var total_io_ops: u64 = 0;
+
+    // Get task port for the process
+    var task: c.mach_port_t = undefined;
+    const kr = c.task_for_pid(c.mach_task_self(), @intCast(pid), &task);
+
+    if (kr == c.KERN_SUCCESS) {
+        // Get task basic info (includes resident memory size)
+        var info: c.mach_task_basic_info_data_t = undefined;
+        var count: c.mach_msg_type_number_t = c.MACH_TASK_BASIC_INFO_COUNT;
+
+        const info_kr = c.task_info(
+            task,
+            c.MACH_TASK_BASIC_INFO,
+            @ptrCast(&info),
+            &count,
+        );
+
+        if (info_kr == c.KERN_SUCCESS) {
+            // resident_size is in bytes
+            peak_memory_bytes = info.resident_size;
+        }
+
+        // Deallocate task port
+        _ = c.mach_port_deallocate(c.mach_task_self(), task);
+    }
+
+    // Try to get I/O stats using proc_pidinfo with PROC_PIDTASKINFO
+    var task_info: c.proc_taskinfo = undefined;
+    const bytes_read = c.proc_pidinfo(
+        pid,
+        c.PROC_PIDTASKINFO,
+        0,
+        &task_info,
+        @sizeOf(c.proc_taskinfo),
+    );
+
+    if (bytes_read == @sizeOf(c.proc_taskinfo)) {
+        // task_info contains pti_total_user, pti_total_system (nanoseconds)
+        // and pti_faults (page faults) - use faults as a proxy for I/O
+        total_io_ops = task_info.pti_faults;
+    }
+
+    // TODO: CPU percentage calculation requires tracking previous measurements
     const avg_cpu_percent = 0.0;
 
     return ResourceMetrics{
