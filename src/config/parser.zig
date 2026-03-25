@@ -527,6 +527,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var metadata_deps = std.ArrayList([]const u8){};
     defer metadata_deps.deinit(allocator);
 
+    // Imports parsing state (v1.55.0) — [imports]
+    var in_imports: bool = false;
+    var import_files = std.ArrayList([]const u8){};
+    defer import_files.deinit(allocator);
+
     // Cache parsing state (Phase 7) — [cache] and [cache.remote]
     var in_cache: bool = false;
     var in_cache_remote: bool = false;
@@ -976,30 +981,46 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_tools = false;
             in_constraint = false;
             in_metadata = true;
+            in_imports = false;
             in_cache = false;
             in_cache_remote = false;
             in_versioning = false;
+        } else if (std.mem.eql(u8, trimmed, "[imports]")) {
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_metadata = false;
+            in_imports = true;
+            in_cache = false;
+            in_cache_remote = false;
+            in_versioning = false;
+            in_conformance = false;
         } else if (std.mem.eql(u8, trimmed, "[cache]")) {
             in_workspace = false;
             in_tools = false;
             in_constraint = false;
             in_metadata = false;
+            in_imports = false;
             in_cache = true;
             in_cache_remote = false;
             in_versioning = false;
+            in_conformance = false;
         } else if (std.mem.eql(u8, trimmed, "[cache.remote]")) {
             in_workspace = false;
             in_tools = false;
             in_constraint = false;
             in_metadata = false;
+            in_imports = false;
             in_cache = false;
             in_cache_remote = true;
             in_versioning = false;
+            in_conformance = false;
         } else if (std.mem.eql(u8, trimmed, "[versioning]")) {
             in_workspace = false;
             in_tools = false;
             in_constraint = false;
             in_metadata = false;
+            in_imports = false;
             in_cache = false;
             in_cache_remote = false;
             in_versioning = true;
@@ -1010,6 +1031,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_tools = false;
             in_constraint = false;
             in_metadata = false;
+            in_imports = false;
             in_cache = false;
             in_cache_remote = false;
             in_versioning = false;
@@ -1771,6 +1793,18 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         while (items_it.next()) |item| {
                             const t = std.mem.trim(u8, item, " \t\"");
                             if (t.len > 0) try metadata_deps.append(allocator, t);
+                        }
+                    }
+                }
+            } else if (in_imports) {
+                // Inside [imports] — parse files array
+                if (std.mem.eql(u8, key, "files")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const items_str = value[1 .. value.len - 1];
+                        var items_it = std.mem.splitScalar(u8, items_str, ',');
+                        while (items_it.next()) |item| {
+                            const f = std.mem.trim(u8, item, " \t\"");
+                            if (f.len > 0) try import_files.append(allocator, f);
                         }
                     }
                 }
@@ -2755,6 +2789,21 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         @memcpy(config.conformance.ignore, conformance_ignore.items);
         config.conformance.rules = try allocator.alloc(conformance_types.ConformanceRule, conformance_rules.items.len);
         @memcpy(config.conformance.rules, conformance_rules.items);
+    }
+
+    // Transfer imports (v1.55.0)
+    if (import_files.items.len > 0) {
+        const owned_imports = try allocator.alloc([]const u8, import_files.items.len);
+        var imp_duped: usize = 0;
+        errdefer {
+            for (owned_imports[0..imp_duped]) |s| allocator.free(s);
+            allocator.free(owned_imports);
+        }
+        for (import_files.items, 0..) |s, i| {
+            owned_imports[i] = try allocator.dupe(u8, s);
+            imp_duped += 1;
+        }
+        config.imports = owned_imports;
     }
 
     return config;

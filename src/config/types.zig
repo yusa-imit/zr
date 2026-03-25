@@ -274,6 +274,8 @@ pub const Config = struct {
     conformance: ConformanceConfig = .{ .rules = &.{}, .fail_on_warning = false, .ignore = &.{} },
     /// Auto-load .env file from project root (default: true, v1.55.0).
     load_dotenv: bool = true,
+    /// Import files from [imports] section (v1.55.0).
+    imports: [][]const u8 = &.{},
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -329,6 +331,8 @@ pub const Config = struct {
         self.cache.deinit(self.allocator);
         if (self.versioning) |*v| v.deinit();
         self.conformance.deinit(self.allocator);
+        for (self.imports) |import_path| self.allocator.free(import_path);
+        if (self.imports.len > 0) self.allocator.free(self.imports);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks

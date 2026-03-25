@@ -23,6 +23,27 @@ const parser_mod = @import("parser.zig");
 pub const parseToml = parser_mod.parseToml;
 
 pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
+    var visited_files = std.StringHashMap(void).init(allocator);
+    defer {
+        var it = visited_files.keyIterator();
+        while (it.next()) |key| allocator.free(key.*);
+        visited_files.deinit();
+    }
+
+    return loadFromFileInternal(allocator, path, &visited_files);
+}
+
+fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited: *std.StringHashMap(void)) !Config {
+    // Get absolute path for cycle detection
+    const abs_path = try std.fs.cwd().realpathAlloc(allocator, path);
+    defer allocator.free(abs_path);
+
+    // Check for circular imports
+    if (visited.contains(abs_path)) {
+        return error.CircularImport;
+    }
+    try visited.put(try allocator.dupe(u8, abs_path), {});
+
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -31,6 +52,43 @@ pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
 
     var config = try parseToml(allocator, content);
     errdefer config.deinit();
+
+    // Process imports first (imported configs are merged before main config)
+    if (config.imports.len > 0) {
+        var import_error: ?anyerror = null;
+        var loaded_imports = std.ArrayList(Config){};
+        defer {
+            for (loaded_imports.items) |*cfg| cfg.deinit();
+            loaded_imports.deinit(allocator);
+        }
+
+        // Get directory of main config file for resolving relative paths
+        const main_dir = std.fs.path.dirname(path) orelse ".";
+
+        // Load each imported file
+        for (config.imports) |import_rel_path| {
+            // Resolve relative path from main config's directory
+            const import_path = try std.fs.path.join(allocator, &[_][]const u8{ main_dir, import_rel_path });
+            defer allocator.free(import_path);
+
+            // Load imported config recursively
+            if (loadFromFileInternal(allocator, import_path, visited)) |imported_config| {
+                try loaded_imports.append(allocator, imported_config);
+            } else |err| {
+                import_error = err;
+                break;
+            }
+        }
+
+        if (import_error) |err| {
+            return err;
+        }
+
+        // Merge all loaded imports into main config (main config takes precedence)
+        for (loaded_imports.items) |*imported_config| {
+            try mergeConfigs(allocator, &config, imported_config);
+        }
+    }
 
     // Auto-load .env file if enabled (v1.55.0)
     if (config.load_dotenv) {
@@ -116,6 +174,58 @@ fn mergeEnvIntoTask(allocator: std.mem.Allocator, task: *Task, env_map: *std.Str
     }
 
     task.env = new_env;
+}
+
+/// Merge imported config into main config.
+/// Main config's definitions override imported ones (no overwriting).
+/// Transfers ownership from imported to main (imported will be left empty).
+fn mergeConfigs(allocator: std.mem.Allocator, main: *Config, imported: *Config) !void {
+    _ = allocator;
+
+    // Merge tasks (transfer ownership if not in main)
+    var task_it = imported.tasks.iterator();
+    while (task_it.next()) |entry| {
+        if (!main.tasks.contains(entry.key_ptr.*)) {
+            // Transfer ownership: remove from imported, put into main
+            const result = imported.tasks.fetchRemove(entry.key_ptr.*);
+            if (result) |kv| {
+                try main.tasks.put(kv.key, kv.value);
+            }
+        }
+    }
+
+    // Merge workflows (transfer ownership if not in main)
+    var workflow_it = imported.workflows.iterator();
+    while (workflow_it.next()) |entry| {
+        if (!main.workflows.contains(entry.key_ptr.*)) {
+            const result = imported.workflows.fetchRemove(entry.key_ptr.*);
+            if (result) |kv| {
+                try main.workflows.put(kv.key, kv.value);
+            }
+        }
+    }
+
+    // Merge profiles (transfer ownership if not in main)
+    var profile_it = imported.profiles.iterator();
+    while (profile_it.next()) |entry| {
+        if (!main.profiles.contains(entry.key_ptr.*)) {
+            const result = imported.profiles.fetchRemove(entry.key_ptr.*);
+            if (result) |kv| {
+                try main.profiles.put(kv.key, kv.value);
+            }
+        }
+    }
+
+    // Merge templates (transfer ownership if not in main)
+    var template_it = imported.templates.iterator();
+    while (template_it.next()) |entry| {
+        if (!main.templates.contains(entry.key_ptr.*)) {
+            const result = imported.templates.fetchRemove(entry.key_ptr.*);
+            if (result) |kv| {
+                try main.templates.put(kv.key, kv.value);
+            }
+        }
+    }
 }
 
 /// Discover workspace members from a glob pattern.
