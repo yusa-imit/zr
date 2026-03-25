@@ -1,5 +1,6 @@
 const std = @import("std");
 const platform = @import("platform.zig");
+const numa = @import("numa.zig");
 
 /// Set CPU affinity for the current thread to a specific CPU core.
 /// This ensures the thread runs only on the specified core.
@@ -231,6 +232,53 @@ fn getCurrentCpuWindows() ?u32 {
     return @intCast(kernel32());
 }
 
+/// Set CPU affinity to all CPUs in a NUMA node.
+/// This is NUMA-aware and ensures the thread runs only on CPUs belonging to the specified node.
+pub fn setThreadAffinityToNumaNode(topology: *const numa.NumaTopology, node_id: u32) !void {
+    // Find the node with the given ID
+    for (topology.nodes) |node| {
+        if (node.id == node_id) {
+            // Set affinity to all CPUs in this node
+            return setThreadAffinityMask(node.cpu_ids);
+        }
+    }
+    return error.InvalidNumaNode;
+}
+
+/// Set CPU affinity to a preferred NUMA node for the current thread.
+/// If the specified node is not found, falls back to the first available node.
+pub fn setThreadAffinityToPreferredNumaNode(
+    topology: *const numa.NumaTopology,
+    preferred_node_id: u32,
+) !void {
+    // Try preferred node first
+    for (topology.nodes) |node| {
+        if (node.id == preferred_node_id) {
+            return setThreadAffinityMask(node.cpu_ids);
+        }
+    }
+
+    // Fallback to first node
+    if (topology.nodes.len > 0) {
+        return setThreadAffinityMask(topology.nodes[0].cpu_ids);
+    }
+
+    return error.NoNumaNodes;
+}
+
+/// Automatically set CPU affinity to the NUMA node of the current CPU.
+/// This is useful for ensuring memory-local execution on NUMA systems.
+pub fn setThreadAffinityToCurrentNumaNode(topology: *const numa.NumaTopology) !void {
+    // Get current CPU
+    const current_cpu = getCurrentCpu() orelse return error.CannotGetCurrentCpu;
+
+    // Find which NUMA node this CPU belongs to
+    const node_id = topology.getCpuNode(current_cpu) orelse return error.CpuNotInTopology;
+
+    // Set affinity to all CPUs in that node
+    return setThreadAffinityToNumaNode(topology, node_id);
+}
+
 test "affinity: basic API existence" {
     // This test just verifies the functions exist and can be called.
     // Actual functionality depends on OS support and permissions.
@@ -279,4 +327,134 @@ test "affinity: invalid CPU ID" {
                 err == error.SetAffinityFailed,
         );
     }
+}
+
+test "affinity: setThreadAffinityToNumaNode" {
+    const testing = std.testing;
+
+    // Create a mock NUMA topology
+    var cpu_ids_0 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_0[0] = 0;
+    cpu_ids_0[1] = 1;
+
+    var cpu_ids_1 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_1[0] = 2;
+    cpu_ids_1[1] = 3;
+
+    var nodes = try testing.allocator.alloc(numa.NumaNode, 2);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids_0, .memory_mb = 0 };
+    nodes[1] = .{ .id = 1, .cpu_ids = cpu_ids_1, .memory_mb = 0 };
+
+    var topology = numa.NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 4,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Try to set affinity to node 0
+    _ = setThreadAffinityToNumaNode(&topology, 0) catch |err| {
+        // Expected errors on platforms without affinity support
+        try testing.expect(err == error.UnsupportedPlatform or err == error.SetAffinityFailed or err == error.InvalidCpuId);
+        return;
+    };
+
+    // If it succeeded, we should now be on one of the CPUs in node 0
+    // (can't guarantee which one due to OS scheduling)
+}
+
+test "affinity: setThreadAffinityToNumaNode invalid node" {
+    const testing = std.testing;
+
+    var cpu_ids = try testing.allocator.alloc(u32, 2);
+    cpu_ids[0] = 0;
+    cpu_ids[1] = 1;
+
+    var nodes = try testing.allocator.alloc(numa.NumaNode, 1);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids, .memory_mb = 0 };
+
+    var topology = numa.NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 2,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Try to set affinity to non-existent node 99
+    const result = setThreadAffinityToNumaNode(&topology, 99);
+    try testing.expectError(error.InvalidNumaNode, result);
+}
+
+test "affinity: setThreadAffinityToPreferredNumaNode fallback" {
+    const testing = std.testing;
+
+    var cpu_ids_0 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_0[0] = 0;
+    cpu_ids_0[1] = 1;
+
+    var cpu_ids_1 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_1[0] = 2;
+    cpu_ids_1[1] = 3;
+
+    var nodes = try testing.allocator.alloc(numa.NumaNode, 2);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids_0, .memory_mb = 0 };
+    nodes[1] = .{ .id = 1, .cpu_ids = cpu_ids_1, .memory_mb = 0 };
+
+    var topology = numa.NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 4,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Request node 99 (doesn't exist), should fall back to node 0
+    _ = setThreadAffinityToPreferredNumaNode(&topology, 99) catch |err| {
+        try testing.expect(err == error.UnsupportedPlatform or err == error.SetAffinityFailed or err == error.InvalidCpuId);
+        return;
+    };
+}
+
+test "affinity: setThreadAffinityToCurrentNumaNode" {
+    const testing = std.testing;
+
+    var topology = try numa.detectTopology(testing.allocator);
+    defer topology.deinit();
+
+    // Try to set affinity to current NUMA node
+    _ = setThreadAffinityToCurrentNumaNode(&topology) catch |err| {
+        // Expected errors: CannotGetCurrentCpu (unsupported platform), or affinity errors
+        try testing.expect(
+            err == error.CannotGetCurrentCpu or
+                err == error.CpuNotInTopology or
+                err == error.UnsupportedPlatform or
+                err == error.SetAffinityFailed or
+                err == error.InvalidCpuId or
+                err == error.InvalidNumaNode,
+        );
+        return;
+    };
+
+    // If it succeeded, verify we're still on a valid CPU
+    if (getCurrentCpu()) |cpu_id| {
+        try testing.expect(cpu_id < topology.total_cpus);
+    }
+}
+
+test "affinity: NUMA functions with empty topology" {
+    const testing = std.testing;
+
+    const nodes = try testing.allocator.alloc(numa.NumaNode, 0);
+    var topology = numa.NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 0,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // All NUMA affinity functions should fail gracefully with empty topology
+    const result1 = setThreadAffinityToNumaNode(&topology, 0);
+    try testing.expectError(error.InvalidNumaNode, result1);
+
+    const result2 = setThreadAffinityToPreferredNumaNode(&topology, 0);
+    try testing.expectError(error.NoNumaNodes, result2);
 }
