@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.52.0 (Output Enhancement & Pager Integration)
-- **Next actionable milestone**: TUI Mouse Interaction Enhancements
-- **READY milestones**: TUI Mouse Interaction Enhancements
+- **Latest**: v1.54.0 (TUI Mouse Interaction Enhancements)
+- **Next actionable milestone**: None (need to establish new milestones)
+- **READY milestones**: None
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Platform-Specific Resource Monitoring (ready for v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -41,23 +41,13 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 - Unit tests for pager module (20 tests in util/pager.zig)
 **Status: DONE** — Completed 2026-03-25. Automatic pager spawns when output exceeds terminal height, `--no-pager` flag added, environment variable support (`ZR_PAGER`, `PAGER`), TTY detection, color preservation.
 
-### TUI Mouse Interaction Enhancements
-
-Improve mouse interaction in TUI modes with non-blocking read and timeout support. Currently mouse events use blocking reads which can freeze the TUI. Implement asynchronous event handling with configurable timeouts for responsive UI. Includes:
-- Non-blocking read with timeout for mouse events (`src/cli/tui_mouse.zig:167`)
-- Event batching to reduce UI redraws during rapid mouse movement
-- Double-click detection for quick-select in task picker
-- Drag-to-scroll in graph TUI for large dependency graphs
-- Mouse wheel support for navigation in list/graph views
-- 10+ integration tests for mouse event handling
-**Status: READY** — TODO identified in `src/cli/tui_mouse.zig:167`.
-
 ---
 
 ## Completed Milestones
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.54.0 | TUI Mouse Interaction Enhancements | 2026-03-25 | Non-blocking read with timeout (POSIX termios), event batching for rapid mouse movement, double-click detection, drag-to-scroll in graph TUI, mouse wheel navigation, 13 unit tests + 3 integration tests |
 | v1.53.0 | Platform-Specific Resource Monitoring | 2026-03-25 | Windows NUMA topology (GetLogicalProcessorInformationEx), Linux /proc stats, macOS task_info/proc_pidinfo, NUMA-aware CPU affinity, profiler module, 40 tests (25 NUMA, 10 profiler, 5 affinity, 15 integration) |
 | v1.52.0 | Output Enhancement & Pager Integration | 2026-03-25 | Automatic pager for large output, --no-pager flag, ZR_PAGER/PAGER env vars, TTY detection, color preservation, 36 tests |
 | v1.51.0 | Sailor v1.19.0 & v1.20.0 Migration | 2026-03-25 | Progress bar templates, environment variable config, color themes, table formatting, arg groups, Windows Unicode tests, pattern documentation |
