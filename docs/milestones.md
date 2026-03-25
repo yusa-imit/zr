@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.51.0 (Sailor v1.19.0 & v1.20.0 Migration)
-- **Next actionable milestone**: Platform-Specific Resource Monitoring
-- **READY milestones**: Platform-Specific Resource Monitoring, TUI Mouse Interaction Enhancements
+- **Latest**: v1.52.0 (Output Enhancement & Pager Integration)
+- **Next actionable milestone**: TUI Mouse Interaction Enhancements
+- **READY milestones**: TUI Mouse Interaction Enhancements
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Output Enhancement & Pager Integration (ready for v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Platform-Specific Resource Monitoring (ready for v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -41,17 +41,6 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 - Unit tests for pager module (20 tests in util/pager.zig)
 **Status: DONE** — Completed 2026-03-25. Automatic pager spawns when output exceeds terminal height, `--no-pager` flag added, environment variable support (`ZR_PAGER`, `PAGER`), TTY detection, color preservation.
 
-### Platform-Specific Resource Monitoring
-
-Implement platform-specific resource monitoring for comprehensive CPU/memory tracking across all supported platforms. Currently only basic cross-platform monitoring is implemented with TODOs for platform-specific optimizations. Includes:
-- Windows: Full NUMA topology detection via `GetLogicalProcessorInformationEx`
-- Linux: Parse `/proc/meminfo` for detailed memory stats (MemAvailable, Buffers, Cached)
-- macOS: Use `host_statistics64` for accurate memory pressure metrics
-- All platforms: CPU affinity setting with NUMA awareness
-- Performance profiling to measure monitoring overhead
-- 15+ integration tests for resource limits and monitoring accuracy
-**Status: READY** — TODOs identified in `src/util/numa.zig`, `src/exec/resource_monitor.zig`.
-
 ### TUI Mouse Interaction Enhancements
 
 Improve mouse interaction in TUI modes with non-blocking read and timeout support. Currently mouse events use blocking reads which can freeze the TUI. Implement asynchronous event handling with configurable timeouts for responsive UI. Includes:
@@ -69,6 +58,7 @@ Improve mouse interaction in TUI modes with non-blocking read and timeout suppor
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.53.0 | Platform-Specific Resource Monitoring | 2026-03-25 | Windows NUMA topology (GetLogicalProcessorInformationEx), Linux /proc stats, macOS task_info/proc_pidinfo, NUMA-aware CPU affinity, profiler module, 40 tests (25 NUMA, 10 profiler, 5 affinity, 15 integration) |
 | v1.52.0 | Output Enhancement & Pager Integration | 2026-03-25 | Automatic pager for large output, --no-pager flag, ZR_PAGER/PAGER env vars, TTY detection, color preservation, 36 tests |
 | v1.51.0 | Sailor v1.19.0 & v1.20.0 Migration | 2026-03-25 | Progress bar templates, environment variable config, color themes, table formatting, arg groups, Windows Unicode tests, pattern documentation |
 | v1.50.0 | Cross-Platform Path Handling Audit | 2026-03-24 | Path separator fixes (glob/affected/workspace), UNC path support, long path support (>260 chars), symlink resolution, 11 Windows integration tests |
