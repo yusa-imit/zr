@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.54.0 (TUI Mouse Interaction Enhancements)
-- **Next actionable milestone**: None (need to establish new milestones)
-- **READY milestones**: None
+- **Next actionable milestone**: Enhanced Configuration System (READY)
+- **READY milestones**: Enhanced Configuration System, Windows Platform Enhancements
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -13,6 +13,23 @@
 ## Active Milestones
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
+
+### Enhanced Configuration System
+
+Improve configuration ergonomics for users migrating from Make/Just/Task. Implement multi-file configuration (import tasks from other zr.toml files), .env file auto-loading (parse .env in project root, inject into task environment), variable substitution in TOML values (extend expression engine to support ${VAR} syntax in cmd/cwd/env fields). Benefits: reduces duplication across projects, enables environment-specific configs, improves DX for polyglot teams. **Status: READY** — No blockers. Includes:
+- Multi-file imports: `[imports] files = ["common.toml", "ci.toml"]` merges task definitions
+- .env loading: Auto-parse `.env` in project root, merge into task environment (can be disabled via `load_dotenv = false`)
+- Variable substitution: `cmd = "echo ${HOME}"` expands to actual HOME value at parse time
+- Integration tests: 15+ tests covering imports (merge, conflict, circular detection), .env parsing (multiline, quotes, comments), variable expansion (nested, undefined, escape sequences)
+- Unit tests: 10+ tests for dotenv parser, import resolver
+
+### Windows Platform Enhancements
+
+Complete Windows-specific features to achieve platform parity with Linux/macOS. Implement non-blocking mouse read with timeout for Windows TUI (currently TODO at src/cli/tui_mouse.zig:89), expand Windows integration test coverage (currently sparse compared to Linux/macOS tests), add PowerShell completion support (bash/zsh/fish exist, PowerShell missing). **Status: READY** — No blockers. Includes:
+- Non-blocking mouse: Implement Windows Console API-based timeout for mouse events (WaitForSingleObject + ReadConsoleInput)
+- Integration tests: 20+ Windows-specific tests (console encoding, path handling, process spawning, signal handling)
+- PowerShell completion: `zr completion powershell` command generates PowerShell completion script
+- Windows CI: Ensure all tests pass on windows-latest runner (currently 91.2% pass rate, target 100%)
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
