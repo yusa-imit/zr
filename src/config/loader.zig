@@ -95,6 +95,9 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
         try loadDotenvIntoConfig(allocator, &config);
     }
 
+    // Apply variable substitution to all task fields (v1.55.0)
+    try applyVariableSubstitution(allocator, &config);
+
     return config;
 }
 
@@ -126,6 +129,43 @@ fn loadDotenvIntoConfig(allocator: std.mem.Allocator, config: *Config) !void {
     var task_it = config.tasks.valueIterator();
     while (task_it.next()) |task_ptr| {
         try mergeEnvIntoTask(allocator, task_ptr, &env_map);
+    }
+}
+
+/// Apply variable substitution (${VAR} expansion) to all task fields.
+/// Expands cmd, cwd, and env value fields using task's environment + process env.
+fn applyVariableSubstitution(allocator: std.mem.Allocator, config: *Config) !void {
+    const varsubst_mod = @import("varsubst.zig");
+
+    var task_it = config.tasks.valueIterator();
+    while (task_it.next()) |task_ptr| {
+        // Build environment map from task.env + process env
+        var env_map = std.StringHashMap([]const u8).init(allocator);
+        defer env_map.deinit();
+
+        // Add task-specific env (takes precedence)
+        for (task_ptr.env) |kv| {
+            try env_map.put(kv[0], kv[1]);
+        }
+
+        // Substitute in cmd
+        const new_cmd = try varsubst_mod.substitute(allocator, task_ptr.cmd, &env_map);
+        allocator.free(task_ptr.cmd);
+        task_ptr.cmd = new_cmd;
+
+        // Substitute in cwd
+        if (task_ptr.cwd) |cwd| {
+            const new_cwd = try varsubst_mod.substitute(allocator, cwd, &env_map);
+            allocator.free(cwd);
+            task_ptr.cwd = new_cwd;
+        }
+
+        // Substitute in env values (keys stay the same)
+        for (task_ptr.env) |*kv| {
+            const new_value = try varsubst_mod.substitute(allocator, kv[1], &env_map);
+            allocator.free(kv[1]);
+            kv[1] = new_value;
+        }
     }
 }
 
