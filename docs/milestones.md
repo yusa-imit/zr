@@ -2,25 +2,17 @@
 
 ## Current Status
 
-- **Latest**: v1.54.0 (TUI Mouse Interaction Enhancements)
-- **Next actionable milestone**: Windows Platform Enhancements (READY)
-- **READY milestones**: Windows Platform Enhancements
+- **Latest**: v1.55.0 (Enhanced Configuration System)
+- **Next actionable milestone**: None (zuda migrations blocked, need new milestones)
+- **READY milestones**: None
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Enhanced Configuration System (v1.55.0 pending release), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Windows Platform Enhancements (v1.56.0 pending release), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
 ## Active Milestones
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
-
-### Windows Platform Enhancements
-
-Complete Windows-specific features to achieve platform parity with Linux/macOS. Implement non-blocking mouse read with timeout for Windows TUI (currently TODO at src/cli/tui_mouse.zig:89), expand Windows integration test coverage (currently sparse compared to Linux/macOS tests), add PowerShell completion support (bash/zsh/fish exist, PowerShell missing). **Status: READY** — No blockers. Includes:
-- Non-blocking mouse: Implement Windows Console API-based timeout for mouse events (WaitForSingleObject + ReadConsoleInput)
-- Integration tests: 20+ Windows-specific tests (console encoding, path handling, process spawning, signal handling)
-- PowerShell completion: `zr completion powershell` command generates PowerShell completion script
-- Windows CI: Ensure all tests pass on windows-latest runner (currently 91.2% pass rate, target 100%)
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
@@ -55,6 +47,7 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.56.0 | Windows Platform Enhancements | 2026-03-26 | Windows Console API-based non-blocking mouse read (WaitForSingleObject + ReadConsoleInput + PeekConsoleInputW), 21 Windows integration tests (console encoding, process spawning, env vars, file system, CLI, TUI), PowerShell completion script (Register-ArgumentCompleter), total 30 Windows tests (9 paths + 21 general). Commits: 69d161d (mouse timeout), 1ddb130 (integration tests), 0bdfeb6 (PowerShell completion) |
 | v1.55.0 | Enhanced Configuration System | 2026-03-26 | Multi-file imports ([imports] files), .env auto-loading, ${VAR} variable substitution in cmd/cwd/env, 33 integration tests (15 imports + 18 dotenv/varsubst), 72 unit tests (37 dotenv + 35 varsubst). Commits: 0ba2a02 (imports), 264ebc4 + e2b5692 (.env), b968828 (varsubst integration) |
 | v1.54.0 | TUI Mouse Interaction Enhancements | 2026-03-25 | Non-blocking read with timeout (POSIX termios), event batching for rapid mouse movement, double-click detection, drag-to-scroll in graph TUI, mouse wheel navigation, 13 unit tests + 3 integration tests |
 | v1.53.0 | Platform-Specific Resource Monitoring | 2026-03-25 | Windows NUMA topology (GetLogicalProcessorInformationEx), Linux /proc stats, macOS task_info/proc_pidinfo, NUMA-aware CPU affinity, profiler module, 40 tests (25 NUMA, 10 profiler, 5 affinity, 15 integration) |
