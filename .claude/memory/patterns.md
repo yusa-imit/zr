@@ -411,3 +411,64 @@ pub fn match(pattern: []const u8, str: []const u8) bool {
 **Partial migration**: zuda provides algorithms (pattern matching, edit distance), NOT filesystem traversal. Keep local FS logic (find/findDirs), delegate only core algorithms.
 
 **Test verification**: Run `zig build integration-test` (faster than full `zig build test`) to verify migration. Check for 0 failures.
+
+## Parsing /proc Files (Linux System Metrics)
+
+Pattern for extracting numeric values from Linux /proc format files (/proc/meminfo, /proc/[pid]/status, etc).
+
+**Key insight**: /proc files use colon-separated format with optional "kB" units. Some fields use spaces, others tabs.
+
+**Generic extractor for key:value pairs**:
+```zig
+fn extractValue(content: []const u8, key: []const u8) !?u64 {
+    var lines = std.mem.tokenizeSequence(u8, content, "\n");
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, key)) {
+            // Find colon separator
+            if (std.mem.indexOfScalar(u8, line, ':')) |colon_pos| {
+                const value_part = std.mem.trim(u8, line[colon_pos + 1 ..], " \t");
+                // Strip "kB" suffix if present
+                const numeric = std.mem.trim(u8, value_part, "kB \t");
+                return try std.fmt.parseInt(u64, numeric, 10);
+            }
+        }
+    }
+    return null;
+}
+```
+
+**Usage**:
+```zig
+// Extract MemTotal from /proc/meminfo
+const mem_total_kb = try extractValue(meminfo_content, "MemTotal:");
+// Returns null if not found, or ?u64 with value in KB
+
+// Extract VmSize from /proc/[pid]/status
+const vm_size_kb = try extractValue(status_content, "VmSize:");
+// Remember to convert KB to bytes: vm_size_bytes = vm_size_kb * 1024
+```
+
+**Parsing /proc/[pid]/stat for CPU times** (space-separated, field 14-15 are utime/stime in jiffies):
+```zig
+fn extractCpuTimes(content: []const u8) !?struct { utime: u64, stime: u64 } {
+    var fields = std.mem.tokenizeSequence(u8, content, " ");
+    var field_count: usize = 0;
+    var utime: u64 = 0;
+    var stime: u64 = 0;
+
+    while (fields.next()) |field| {
+        if (field_count == 13) {  // Field 14 in 1-indexed = index 13
+            utime = try std.fmt.parseInt(u64, field, 10);
+        } else if (field_count == 14) {  // Field 15 in 1-indexed = index 14
+            stime = try std.fmt.parseInt(u64, field, 10);
+            break;
+        }
+        field_count += 1;
+    }
+
+    if (utime == 0 and stime == 0) return null;
+    return .{ .utime = utime, .stime = stime };
+}
+```
+
+**Testing note**: Test with mock /proc content as string literals. Use `try extractValue(content, "Key:")` pattern. Always test both presence and absence of fields, empty content, and malformed input.
