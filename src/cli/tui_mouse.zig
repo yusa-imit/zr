@@ -11,6 +11,11 @@ const mouse = sailor.tui.mouse;
 
 const IS_POSIX = builtin.os.tag != .windows;
 
+// Windows-specific imports for console API
+const windows = if (!IS_POSIX) std.os.windows else struct {};
+const HANDLE = if (!IS_POSIX) windows.HANDLE else void;
+const DWORD = if (!IS_POSIX) windows.DWORD else void;
+
 /// Input event type - either keyboard or mouse
 pub const InputEvent = union(enum) {
     keyboard: KeyEvent,
@@ -135,6 +140,8 @@ const TerminalState = if (IS_POSIX) struct {
     stdin: std.fs.File,
 } else struct {
     stdin: std.fs.File,
+    original_mode: DWORD,
+    timeout_ms: u64,
 };
 
 /// Enter non-blocking mode with timeout.
@@ -151,10 +158,25 @@ fn enterNonBlockingMode(stdin: std.fs.File, timeout_ms: u64) !TerminalState {
         try std.posix.tcsetattr(stdin.handle, .NOW, raw);
         return .{ .original = original, .stdin = stdin };
     } else {
-        // Windows: use non-blocking read with timeout via WaitForSingleObject
-        // For now, return stdin as-is (blocking behavior)
-        // TODO: Implement Windows non-blocking read with timeout
-        return .{ .stdin = stdin };
+        // Windows: Get current console mode to restore later
+        var original_mode: DWORD = 0;
+        const handle = stdin.handle;
+
+        const kernel32 = windows.kernel32;
+        if (kernel32.GetConsoleMode(handle, &original_mode) == 0) {
+            return error.GetConsoleModeFailure;
+        }
+
+        // Enable mouse input for Windows console
+        const ENABLE_MOUSE_INPUT: DWORD = 0x0010;
+        const ENABLE_EXTENDED_FLAGS: DWORD = 0x0080;
+        const new_mode = original_mode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS;
+
+        if (kernel32.SetConsoleMode(handle, new_mode) == 0) {
+            return error.SetConsoleModeFailure;
+        }
+
+        return .{ .stdin = stdin, .original_mode = original_mode, .timeout_ms = timeout_ms };
     }
 }
 
@@ -162,16 +184,78 @@ fn enterNonBlockingMode(stdin: std.fs.File, timeout_ms: u64) !TerminalState {
 fn leaveNonBlockingMode(state: TerminalState) void {
     if (comptime IS_POSIX) {
         std.posix.tcsetattr(state.stdin.handle, .NOW, state.original) catch {};
+    } else {
+        const kernel32 = windows.kernel32;
+        _ = kernel32.SetConsoleMode(state.stdin.handle, state.original_mode);
     }
 }
 
-/// Read a single byte from stdin without blocking.
+/// Read a single byte from stdin without blocking (POSIX version).
 /// Returns null on timeout, EOF, or error.
-fn readByte(stdin: std.fs.File) ?u8 {
+fn readBytePosix(stdin: std.fs.File) ?u8 {
     var buf: [1]u8 = undefined;
     const n = stdin.read(&buf) catch return null;
     if (n == 0) return null;
     return buf[0];
+}
+
+/// Read a single byte from stdin with timeout (Windows version).
+/// Returns null on timeout, EOF, or error.
+fn readByteWindows(stdin: std.fs.File, timeout_ms: u64) ?u8 {
+    const handle = stdin.handle;
+    const kernel32 = windows.kernel32;
+
+    // Wait for input with timeout
+    const WAIT_OBJECT_0: DWORD = 0;
+    const WAIT_TIMEOUT: DWORD = 0x00000102;
+    const wait_result = kernel32.WaitForSingleObject(handle, @intCast(timeout_ms));
+
+    if (wait_result == WAIT_TIMEOUT) {
+        return null; // Timeout
+    }
+
+    if (wait_result != WAIT_OBJECT_0) {
+        return null; // Error
+    }
+
+    // Check if input is available
+    var events_read: DWORD = 0;
+    var input_record: windows.INPUT_RECORD = undefined;
+
+    if (kernel32.PeekConsoleInputW(handle, @ptrCast(&input_record), 1, &events_read) == 0) {
+        return null;
+    }
+
+    if (events_read == 0) {
+        return null;
+    }
+
+    // Read the input record
+    if (kernel32.ReadConsoleInputW(handle, @ptrCast(&input_record), 1, &events_read) == 0) {
+        return null;
+    }
+
+    // Only handle keyboard events for now (mouse events require different handling)
+    const KEY_EVENT: u16 = 0x0001;
+    if (input_record.EventType == KEY_EVENT) {
+        const key_event = input_record.Event.KeyEvent;
+        if (key_event.bKeyDown != 0 and key_event.uChar.AsciiChar != 0) {
+            return @intCast(key_event.uChar.AsciiChar);
+        }
+    }
+
+    // Not a valid character event
+    return null;
+}
+
+/// Read a single byte from stdin without blocking.
+/// Returns null on timeout, EOF, or error.
+fn readByte(stdin: std.fs.File, timeout_ms: u64) ?u8 {
+    if (comptime IS_POSIX) {
+        return readBytePosix(stdin);
+    } else {
+        return readByteWindows(stdin, timeout_ms);
+    }
 }
 
 /// Try to parse a mouse event from an escape sequence.
@@ -190,14 +274,14 @@ pub fn pollInput(allocator: std.mem.Allocator, stdin: std.fs.File, timeout_ms: u
     const state = try enterNonBlockingMode(stdin, timeout_ms);
     defer leaveNonBlockingMode(state);
 
-    const byte = readByte(stdin) orelse return .none;
+    const byte = readByte(stdin, timeout_ms) orelse return .none;
 
     // Check for escape sequence (both keyboard and mouse)
     if (byte == 0x1b) {
-        const b2 = readByte(stdin) orelse return .{ .keyboard = .{ .code = 0x1b } };
+        const b2 = readByte(stdin, timeout_ms) orelse return .{ .keyboard = .{ .code = 0x1b } };
 
         if (b2 == '[') {
-            const b3 = readByte(stdin) orelse return .{ .keyboard = .{ .code = 0x1b } };
+            const b3 = readByte(stdin, timeout_ms) orelse return .{ .keyboard = .{ .code = 0x1b } };
 
             // Check if this might be a mouse event (SGR format starts with '<')
             if (b3 == '<') {
@@ -207,7 +291,7 @@ pub fn pollInput(allocator: std.mem.Allocator, stdin: std.fs.File, timeout_ms: u
                 var seq_len: usize = 1;
 
                 while (seq_len < seq_buf.len) {
-                    const next_byte = readByte(stdin) orelse break;
+                    const next_byte = readByte(stdin, timeout_ms) orelse break;
                     seq_buf[seq_len] = next_byte;
                     seq_len += 1;
 
