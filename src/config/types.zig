@@ -272,6 +272,8 @@ pub const Config = struct {
     versioning: ?VersioningConfig = null,
     /// Conformance configuration from [conformance] section (Phase 8).
     conformance: ConformanceConfig = .{ .rules = &.{}, .fail_on_warning = false, .ignore = &.{} },
+    /// Auto-load .env file from project root (default: true, v1.55.0).
+    load_dotenv: bool = true,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {

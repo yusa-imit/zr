@@ -29,7 +29,93 @@ pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
     const content = try file.readToEndAlloc(allocator, 1024 * 1024);
     defer allocator.free(content);
 
-    return try parseToml(allocator, content);
+    var config = try parseToml(allocator, content);
+    errdefer config.deinit();
+
+    // Auto-load .env file if enabled (v1.55.0)
+    if (config.load_dotenv) {
+        try loadDotenvIntoConfig(allocator, &config);
+    }
+
+    return config;
+}
+
+/// Load .env file from project root and merge into all task environments.
+/// Silently ignores if .env file doesn't exist.
+fn loadDotenvIntoConfig(allocator: std.mem.Allocator, config: *Config) !void {
+    const dotenv_mod = @import("dotenv.zig");
+
+    // Try to read .env file (project root)
+    const dotenv_file = std.fs.cwd().openFile(".env", .{}) catch |err| {
+        if (err == error.FileNotFound) return; // Silently ignore if .env doesn't exist
+        return err;
+    };
+    defer dotenv_file.close();
+
+    const dotenv_content = dotenv_file.readToEndAlloc(allocator, 1024 * 1024) catch {
+        // If read fails, just skip .env loading
+        return;
+    };
+    defer allocator.free(dotenv_content);
+
+    var env_map = dotenv_mod.parseDotenv(allocator, dotenv_content) catch {
+        // If parse fails, skip .env loading (malformed .env)
+        return;
+    };
+    defer dotenv_mod.deinitDotenv(&env_map, allocator);
+
+    // Merge .env variables into all task environments
+    var task_it = config.tasks.valueIterator();
+    while (task_it.next()) |task_ptr| {
+        try mergeEnvIntoTask(allocator, task_ptr, &env_map);
+    }
+}
+
+/// Merge environment variables from .env into a task's env.
+/// Task-specific env takes precedence over .env values.
+fn mergeEnvIntoTask(allocator: std.mem.Allocator, task: *Task, env_map: *std.StringHashMap([]const u8)) !void {
+    // Build set of existing keys in task.env
+    var existing_keys = std.StringHashMap(void).init(allocator);
+    defer existing_keys.deinit();
+
+    for (task.env) |kv| {
+        try existing_keys.put(kv[0], {});
+    }
+
+    // Count new keys from .env that aren't in task.env
+    var new_count: usize = 0;
+    var env_it = env_map.iterator();
+    while (env_it.next()) |entry| {
+        if (!existing_keys.contains(entry.key_ptr.*)) {
+            new_count += 1;
+        }
+    }
+
+    if (new_count == 0) return; // No new keys to add
+
+    // Allocate new env array with space for existing + new
+    const new_env = try allocator.alloc([2][]const u8, task.env.len + new_count);
+
+    // Copy existing env
+    @memcpy(new_env[0..task.env.len], task.env);
+
+    // Free old env array (but not the strings, they're still referenced)
+    if (task.env.len > 0) allocator.free(task.env);
+
+    // Add new keys from .env
+    var idx = task.env.len;
+    env_it = env_map.iterator();
+    while (env_it.next()) |entry| {
+        if (!existing_keys.contains(entry.key_ptr.*)) {
+            new_env[idx] = .{
+                try allocator.dupe(u8, entry.key_ptr.*),
+                try allocator.dupe(u8, entry.value_ptr.*),
+            };
+            idx += 1;
+        }
+    }
+
+    task.env = new_env;
 }
 
 /// Discover workspace members from a glob pattern.
