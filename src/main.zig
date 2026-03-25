@@ -1122,7 +1122,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  validate               Validate zr.toml configuration file\n", .{});
     try w.print("  lint                   Validate architecture constraints\n", .{});
     try w.print("  conformance [OPTIONS]  Check code conformance against rules\n", .{});
-    try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish)\n", .{});
+    try w.print("  completion <shell>     Print shell completion script (bash|zsh|fish|powershell)\n", .{});
     try w.print("  tools list [kind]      List installed toolchain versions\n", .{});
     try w.print("  tools install <k>@<v>  Install a toolchain (e.g., node@20.11.1)\n", .{});
     try w.print("  tools outdated [kind]  Check for outdated toolchains\n", .{});

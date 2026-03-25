@@ -46,7 +46,7 @@ pub const BASH_COMPLETION =
     \\            COMPREPLY=($(compgen -W "add list remove show" -- "$cur"))
     \\            return ;;
     \\        completion)
-    \\            COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
+    \\            COMPREPLY=($(compgen -W "bash zsh fish powershell" -- "$cur"))
     \\            return ;;
     \\        --profile|-p)
     \\            # Complete profile names from zr.toml
@@ -175,7 +175,7 @@ pub const ZSH_COMPLETION =
     \\                    workflows=(${(f)"$(zr list 2>/dev/null | awk '/^Workflows:/,0 {if (/^  /) print $1}')"})
     \\                    _describe 'workflow' workflows ;;
     \\                completion)
-    \\                    _values 'shell' bash zsh fish ;;
+    \\                    _values 'shell' bash zsh fish powershell ;;
     \\                workspace)
     \\                    if [[ $words[3] == "run" ]]; then
     \\                        local -a tasks
@@ -282,7 +282,7 @@ pub const FISH_COMPLETION =
     \\complete -c zr -f -n '__fish_seen_subcommand_from workflow' -a '(__zr_workflows)'
     \\
     \\# Shell completions for completion
-    \\complete -c zr -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+    \\complete -c zr -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell'
     \\
     \\# Global options
     \\complete -c zr -l help       -s h -d 'Show help'
@@ -297,6 +297,128 @@ pub const FISH_COMPLETION =
     \\complete -c zr -l format     -s f -d 'Output format' -r -a 'text json'
     \\complete -c zr -l monitor    -s m -d 'Display live resource usage'
     \\complete -c zr -l affected         -d 'Run only affected members' -r
+    \\
+;
+
+pub const POWERSHELL_COMPLETION =
+    \\# PowerShell completion for zr
+    \\
+    \\# Helper function to get task names from zr list
+    \\function Get-ZrTasks {
+    \\    $output = zr list 2>$null
+    \\    if ($output) {
+    \\        $output | Where-Object { $_ -match '^\s\s[^\s]' } | ForEach-Object { $_.Trim().Split()[0] }
+    \\    }
+    \\}
+    \\
+    \\# Helper function to get workflow names
+    \\function Get-ZrWorkflows {
+    \\    $output = zr list 2>$null
+    \\    $inWorkflows = $false
+    \\    foreach ($line in $output) {
+    \\        if ($line -match '^Workflows:') {
+    \\            $inWorkflows = $true
+    \\            continue
+    \\        }
+    \\        if ($inWorkflows -and $line -match '^\s\s[^\s]') {
+    \\            $line.Trim().Split()[0]
+    \\        }
+    \\    }
+    \\}
+    \\
+    \\# Register argument completer for zr
+    \\Register-ArgumentCompleter -CommandName zr -ScriptBlock {
+    \\    param($commandName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    \\
+    \\    $commands = @(
+    \\        'run', 'watch', 'workflow', 'list', 'graph', 'history', 'workspace', 'affected',
+    \\        'cache', 'clean', 'plugin', 'interactive', 'i', 'live', 'interactive-run', 'irun',
+    \\        'init', 'setup', 'validate', 'lint', 'conformance', 'completion', 'tools', 'repo',
+    \\        'codeowners', 'version', 'publish', 'analytics', 'context', 'bench', 'doctor',
+    \\        'env', 'export', 'upgrade', 'alias', 'estimate', 'show', 'schedule', 'mcp', 'lsp',
+    \\        'add', 'edit', 'failures', 'template'
+    \\    )
+    \\
+    \\    $globalOptions = @(
+    \\        '--help', '-h', '--version', '--profile', '-p', '--dry-run', '-n',
+    \\        '--jobs', '-j', '--no-color', '--quiet', '-q', '--verbose', '-v',
+    \\        '--config', '--format', '-f', '--monitor', '-m', '--affected'
+    \\    )
+    \\
+    \\    # Get the position of the subcommand
+    \\    $tokens = $commandAst.ToString().Split(' ', [StringSplitOptions]::RemoveEmptyEntries)
+    \\    $subcommand = $null
+    \\    if ($tokens.Count -ge 2) {
+    \\        $subcommand = $tokens[1]
+    \\    }
+    \\
+    \\    # Complete main command if we're at position 1
+    \\    if (-not $subcommand -or $wordToComplete.StartsWith('-')) {
+    \\        $commands + $globalOptions | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\        }
+    \\        return
+    \\    }
+    \\
+    \\    # Complete subcommand-specific arguments
+    \\    switch ($subcommand) {
+    \\        { $_ -in 'run', 'watch', 'live', 'affected', 'bench', 'interactive-run', 'irun', 'estimate', 'show' } {
+    \\            Get-ZrTasks | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', "Task: $_")
+    \\            }
+    \\        }
+    \\        'workflow' {
+    \\            Get-ZrWorkflows | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', "Workflow: $_")
+    \\            }
+    \\        }
+    \\        'workspace' {
+    \\            @('list', 'run', 'sync') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'plugin' {
+    \\            @('list', 'search', 'install', 'remove', 'update', 'info', 'builtins', 'create') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'tools' {
+    \\            @('list', 'install', 'outdated') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'repo' {
+    \\            @('sync', 'status', 'graph', 'run') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'cache' {
+    \\            @('clear', 'status') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'codeowners' {
+    \\            @('generate') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'alias' {
+    \\            @('add', 'list', 'remove', 'show') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'schedule' {
+    \\            @('add', 'list', 'remove', 'show') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\        'completion' {
+    \\            @('bash', 'zsh', 'fish', 'powershell') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    \\                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    \\            }
+    \\        }
+    \\    }
+    \\}
     \\
 ;
 
@@ -315,13 +437,16 @@ pub fn cmdCompletion(
     } else if (std.mem.eql(u8, shell, "fish")) {
         try w.writeAll(FISH_COMPLETION);
         return 0;
+    } else if (std.mem.eql(u8, shell, "powershell") or std.mem.eql(u8, shell, "pwsh")) {
+        try w.writeAll(POWERSHELL_COMPLETION);
+        return 0;
     } else if (shell.len == 0) {
         try color.printError(err_writer, use_color,
-            "completion: missing shell name\n\n  Hint: zr completion <bash|zsh|fish>\n", .{});
+            "completion: missing shell name\n\n  Hint: zr completion <bash|zsh|fish|powershell>\n", .{});
         return 1;
     } else {
         try color.printError(err_writer, use_color,
-            "completion: unknown shell '{s}'\n\n  Hint: supported shells: bash, zsh, fish\n",
+            "completion: unknown shell '{s}'\n\n  Hint: supported shells: bash, zsh, fish, powershell\n",
             .{shell});
         return 1;
     }
