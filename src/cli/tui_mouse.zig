@@ -5,8 +5,11 @@
 /// TUI implementations.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const sailor = @import("sailor");
 const mouse = sailor.tui.mouse;
+
+const IS_POSIX = builtin.os.tag != .windows;
 
 /// Input event type - either keyboard or mouse
 pub const InputEvent = union(enum) {
@@ -22,8 +25,148 @@ pub const InputEvent = union(enum) {
     };
 };
 
+/// Event batcher for reducing UI redraws during rapid mouse movement.
+/// Accumulates multiple mouse move events and only reports the latest position.
+pub const EventBatcher = struct {
+    last_move: ?mouse.MouseEvent = null,
+    last_move_time: i64 = 0,
+    batch_interval_ms: u64,
+
+    const Self = @This();
+
+    pub fn init(batch_interval_ms: u64) Self {
+        return .{
+            .batch_interval_ms = batch_interval_ms,
+        };
+    }
+
+    /// Add an event to the batcher. Returns true if the event should be processed immediately.
+    /// For mouse move events, batches them and only returns true when batch interval expires.
+    pub fn addEvent(self: *Self, event: InputEvent, current_time_ms: i64) bool {
+        switch (event) {
+            .mouse => |m| {
+                // Batch mouse move events
+                if (m.event_type == .move or m.event_type == .drag) {
+                    const time_since_last = current_time_ms - self.last_move_time;
+                    self.last_move = m;
+
+                    if (time_since_last >= self.batch_interval_ms) {
+                        self.last_move_time = current_time_ms;
+                        return true; // Emit batched event
+                    }
+                    return false; // Buffer this event
+                }
+                // Other mouse events (click, scroll) are not batched
+                return true;
+            },
+            else => return true, // Keyboard and other events are not batched
+        }
+    }
+
+    /// Get the last batched move event if any.
+    pub fn getLastMove(self: *Self) ?mouse.MouseEvent {
+        defer self.last_move = null;
+        return self.last_move;
+    }
+};
+
+/// Double-click detector with configurable timeout.
+pub const DoubleClickDetector = struct {
+    last_click: ?ClickInfo = null,
+    max_interval_ms: u64,
+    max_distance: u16,
+
+    const ClickInfo = struct {
+        x: u16,
+        y: u16,
+        button: mouse.MouseButton,
+        time_ms: i64,
+    };
+
+    const Self = @This();
+
+    pub fn init(max_interval_ms: u64, max_distance: u16) Self {
+        return .{
+            .max_interval_ms = max_interval_ms,
+            .max_distance = max_distance,
+        };
+    }
+
+    /// Check if a click event is a double-click.
+    /// Returns true if this click is the second click of a double-click.
+    pub fn isDoubleClick(self: *Self, event: mouse.MouseEvent, current_time_ms: i64) bool {
+        if (event.event_type != .press) return false;
+
+        if (self.last_click) |last| {
+            const time_diff = current_time_ms - last.time_ms;
+            const dx = if (event.x > last.x) event.x - last.x else last.x - event.x;
+            const dy = if (event.y > last.y) event.y - last.y else last.y - event.y;
+            const distance = @max(dx, dy);
+
+            const is_double = time_diff <= self.max_interval_ms and
+                distance <= self.max_distance and
+                event.button == last.button;
+
+            if (is_double) {
+                self.last_click = null; // Reset after double-click
+                return true;
+            }
+        }
+
+        // Record this click for next comparison
+        self.last_click = .{
+            .x = event.x,
+            .y = event.y,
+            .button = event.button,
+            .time_ms = current_time_ms,
+        };
+        return false;
+    }
+
+    /// Reset the detector (e.g., when changing views).
+    pub fn reset(self: *Self) void {
+        self.last_click = null;
+    }
+};
+
+/// Terminal state for non-blocking input
+const TerminalState = if (IS_POSIX) struct {
+    original: std.posix.termios,
+    stdin: std.fs.File,
+} else struct {
+    stdin: std.fs.File,
+};
+
+/// Enter non-blocking mode with timeout.
+/// Returns state that must be restored with leaveNonBlockingMode().
+fn enterNonBlockingMode(stdin: std.fs.File, timeout_ms: u64) !TerminalState {
+    if (comptime IS_POSIX) {
+        const original = try std.posix.tcgetattr(stdin.handle);
+        var raw = original;
+
+        // Non-blocking read with timeout
+        raw.cc[@intFromEnum(std.posix.V.MIN)] = 0; // Don't wait for any characters
+        raw.cc[@intFromEnum(std.posix.V.TIME)] = @intCast(@min(255, (timeout_ms + 99) / 100)); // Convert ms to deciseconds (tenths of a second)
+
+        try std.posix.tcsetattr(stdin.handle, .NOW, raw);
+        return .{ .original = original, .stdin = stdin };
+    } else {
+        // Windows: use non-blocking read with timeout via WaitForSingleObject
+        // For now, return stdin as-is (blocking behavior)
+        // TODO: Implement Windows non-blocking read with timeout
+        return .{ .stdin = stdin };
+    }
+}
+
+/// Restore terminal to original mode.
+fn leaveNonBlockingMode(state: TerminalState) void {
+    if (comptime IS_POSIX) {
+        std.posix.tcsetattr(state.stdin.handle, .NOW, state.original) catch {};
+    }
+}
+
 /// Read a single byte from stdin without blocking.
-/// Returns null on EOF or error.
+/// Returns null on timeout, EOF, or error.
 fn readByte(stdin: std.fs.File) ?u8 {
     var buf: [1]u8 = undefined;
     const n = stdin.read(&buf) catch return null;
@@ -41,8 +184,11 @@ fn tryParseMouse(seq: []const u8) ?mouse.MouseEvent {
 /// Handles both keyboard input and mouse events (SGR format).
 /// Blocks until an event is available or returns .none on timeout.
 pub fn pollInput(allocator: std.mem.Allocator, stdin: std.fs.File, timeout_ms: u64) !InputEvent {
-    _ = timeout_ms; // TODO: Implement non-blocking read with timeout
     _ = allocator;
+
+    // Enter non-blocking mode with timeout
+    const state = try enterNonBlockingMode(stdin, timeout_ms);
+    defer leaveNonBlockingMode(state);
 
     const byte = readByte(stdin) orelse return .none;
 
@@ -150,4 +296,189 @@ test "tryParseMouse scroll event" {
     const event = tryParseMouse(seq);
     try std.testing.expect(event != null);
     try std.testing.expectEqual(mouse.MouseEventType.scroll_up, event.?.event_type);
+}
+
+test "EventBatcher: mouse move events batched" {
+    var batcher = EventBatcher.init(100); // 100ms batch interval
+
+    const move_event1 = InputEvent{ .mouse = .{
+        .event_type = .move,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    } };
+
+    const move_event2 = InputEvent{ .mouse = .{
+        .event_type = .move,
+        .button = .left,
+        .x = 15,
+        .y = 15,
+    } };
+
+    // First event should be buffered
+    const should_process1 = batcher.addEvent(move_event1, 0);
+    try std.testing.expect(!should_process1);
+
+    // Second event within batch interval should also be buffered
+    const should_process2 = batcher.addEvent(move_event2, 50);
+    try std.testing.expect(!should_process2);
+
+    // Event after batch interval should be processed
+    const should_process3 = batcher.addEvent(move_event2, 150);
+    try std.testing.expect(should_process3);
+
+    // Last move should be available
+    const last_move = batcher.getLastMove();
+    try std.testing.expect(last_move != null);
+    try std.testing.expectEqual(@as(u16, 15), last_move.?.x);
+    try std.testing.expectEqual(@as(u16, 15), last_move.?.y);
+}
+
+test "EventBatcher: click events not batched" {
+    var batcher = EventBatcher.init(100);
+
+    const click_event = InputEvent{ .mouse = .{
+        .event_type = .press,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    } };
+
+    // Click events should always be processed immediately
+    const should_process = batcher.addEvent(click_event, 0);
+    try std.testing.expect(should_process);
+}
+
+test "EventBatcher: keyboard events not batched" {
+    var batcher = EventBatcher.init(100);
+
+    const key_event = InputEvent{ .keyboard = .{ .code = 'a' } };
+
+    // Keyboard events should always be processed immediately
+    const should_process = batcher.addEvent(key_event, 0);
+    try std.testing.expect(should_process);
+}
+
+test "DoubleClickDetector: detects double-click" {
+    var detector = DoubleClickDetector.init(300, 5); // 300ms, 5px distance
+
+    const click1 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    };
+
+    const click2 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 11,
+        .y = 11,
+    };
+
+    // First click is not a double-click
+    const is_double1 = detector.isDoubleClick(click1, 0);
+    try std.testing.expect(!is_double1);
+
+    // Second click within interval and distance is a double-click
+    const is_double2 = detector.isDoubleClick(click2, 200);
+    try std.testing.expect(is_double2);
+
+    // After double-click, state is reset
+    const last_click = detector.last_click;
+    try std.testing.expect(last_click == null);
+}
+
+test "DoubleClickDetector: rejects clicks too far apart in time" {
+    var detector = DoubleClickDetector.init(300, 5);
+
+    const click1 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    };
+
+    const click2 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 11,
+        .y = 11,
+    };
+
+    _ = detector.isDoubleClick(click1, 0);
+
+    // Second click too late (400ms > 300ms)
+    const is_double = detector.isDoubleClick(click2, 400);
+    try std.testing.expect(!is_double);
+
+    // State should be updated to click2
+    const last_click = detector.last_click;
+    try std.testing.expect(last_click != null);
+    try std.testing.expectEqual(@as(u16, 11), last_click.?.x);
+}
+
+test "DoubleClickDetector: rejects clicks too far apart in distance" {
+    var detector = DoubleClickDetector.init(300, 5);
+
+    const click1 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    };
+
+    const click2 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 20,
+        .y = 20,
+    };
+
+    _ = detector.isDoubleClick(click1, 0);
+
+    // Second click too far (10px > 5px)
+    const is_double = detector.isDoubleClick(click2, 200);
+    try std.testing.expect(!is_double);
+}
+
+test "DoubleClickDetector: rejects different buttons" {
+    var detector = DoubleClickDetector.init(300, 5);
+
+    const click1 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    };
+
+    const click2 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .right,
+        .x = 11,
+        .y = 11,
+    };
+
+    _ = detector.isDoubleClick(click1, 0);
+
+    // Second click with different button
+    const is_double = detector.isDoubleClick(click2, 200);
+    try std.testing.expect(!is_double);
+}
+
+test "DoubleClickDetector: reset clears state" {
+    var detector = DoubleClickDetector.init(300, 5);
+
+    const click1 = mouse.MouseEvent{
+        .event_type = .press,
+        .button = .left,
+        .x = 10,
+        .y = 10,
+    };
+
+    _ = detector.isDoubleClick(click1, 0);
+    try std.testing.expect(detector.last_click != null);
+
+    detector.reset();
+    try std.testing.expect(detector.last_click == null);
 }

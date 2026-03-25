@@ -10,6 +10,15 @@ const tui_mouse = @import("tui_mouse.zig");
 
 const IS_POSIX = builtin.os.tag != .windows;
 
+/// Drag-to-scroll state tracker.
+const DragState = struct {
+    is_dragging: bool = false,
+    start_x: u16 = 0,
+    start_y: u16 = 0,
+    start_offset: usize = 0,
+    start_selected: usize = 0,
+};
+
 /// Convert GraphNode array to TreeNode structure
 pub fn buildTreeNodes(
     allocator: std.mem.Allocator,
@@ -189,6 +198,7 @@ pub fn graphTui(
     var selected: usize = 0;
     var offset: usize = 0;
     var quit = false;
+    var drag_state = DragState{};
 
     while (!quit) {
         // Get terminal size
@@ -285,6 +295,56 @@ pub fn graphTui(
                                                 const visible_count = tree.visibleCount();
                                                 if (clicked_idx < visible_count) {
                                                     selected = clicked_idx;
+                                                }
+
+                                                // Start drag state
+                                                drag_state.is_dragging = true;
+                                                drag_state.start_x = evt.x;
+                                                drag_state.start_y = evt.y;
+                                                drag_state.start_offset = offset;
+                                                drag_state.start_selected = selected;
+                                            }
+                                        }
+                                        // Handle mouse release - end drag
+                                        else if (evt.event_type == .release) {
+                                            drag_state.is_dragging = false;
+                                        }
+                                        // Handle drag events for scrolling
+                                        else if (evt.event_type == .drag and drag_state.is_dragging) {
+                                            // Calculate vertical scroll delta
+                                            const dy: i32 = @as(i32, evt.y) - @as(i32, drag_state.start_y);
+
+                                            // Scroll based on drag direction (invert: drag up = scroll down)
+                                            if (dy < 0) {
+                                                // Dragging up - scroll down
+                                                const scroll_amount: usize = @intCast(-dy);
+                                                const visible_count = tree.visibleCount();
+                                                const max_offset = if (visible_count > term_height - 3)
+                                                    visible_count - (term_height - 3)
+                                                else
+                                                    0;
+
+                                                offset = @min(drag_state.start_offset + scroll_amount, max_offset);
+
+                                                // Keep selection in view
+                                                if (selected < offset) {
+                                                    selected = offset;
+                                                } else if (selected >= offset + term_height - 3) {
+                                                    selected = offset + term_height - 4;
+                                                }
+                                            } else if (dy > 0) {
+                                                // Dragging down - scroll up
+                                                const scroll_amount: usize = @intCast(dy);
+                                                offset = if (scroll_amount > drag_state.start_offset)
+                                                    0
+                                                else
+                                                    drag_state.start_offset - scroll_amount;
+
+                                                // Keep selection in view
+                                                if (selected < offset) {
+                                                    selected = offset;
+                                                } else if (selected >= offset + term_height - 3) {
+                                                    selected = offset + term_height - 4;
                                                 }
                                             }
                                         }
