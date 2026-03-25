@@ -3,25 +3,16 @@
 ## Current Status
 
 - **Latest**: v1.54.0 (TUI Mouse Interaction Enhancements)
-- **Next actionable milestone**: Enhanced Configuration System (READY)
-- **READY milestones**: Enhanced Configuration System, Windows Platform Enhancements
+- **Next actionable milestone**: Windows Platform Enhancements (READY)
+- **READY milestones**: Windows Platform Enhancements
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Enhanced Configuration System (v1.55.0 pending release), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
 ## Active Milestones
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
-
-### Enhanced Configuration System
-
-Improve configuration ergonomics for users migrating from Make/Just/Task. Implement multi-file configuration (import tasks from other zr.toml files), .env file auto-loading (parse .env in project root, inject into task environment), variable substitution in TOML values (extend expression engine to support ${VAR} syntax in cmd/cwd/env fields). Benefits: reduces duplication across projects, enables environment-specific configs, improves DX for polyglot teams. **Status: READY** — No blockers. Includes:
-- Multi-file imports: `[imports] files = ["common.toml", "ci.toml"]` merges task definitions
-- .env loading: Auto-parse `.env` in project root, merge into task environment (can be disabled via `load_dotenv = false`)
-- Variable substitution: `cmd = "echo ${HOME}"` expands to actual HOME value at parse time
-- Integration tests: 15+ tests covering imports (merge, conflict, circular detection), .env parsing (multiline, quotes, comments), variable expansion (nested, undefined, escape sequences)
-- Unit tests: 10+ tests for dotenv parser, import resolver
 
 ### Windows Platform Enhancements
 
@@ -64,6 +55,7 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| v1.55.0 | Enhanced Configuration System | 2026-03-26 | Multi-file imports ([imports] files), .env auto-loading, ${VAR} variable substitution in cmd/cwd/env, 33 integration tests (15 imports + 18 dotenv/varsubst), 72 unit tests (37 dotenv + 35 varsubst). Commits: 0ba2a02 (imports), 264ebc4 + e2b5692 (.env), b968828 (varsubst integration) |
 | v1.54.0 | TUI Mouse Interaction Enhancements | 2026-03-25 | Non-blocking read with timeout (POSIX termios), event batching for rapid mouse movement, double-click detection, drag-to-scroll in graph TUI, mouse wheel navigation, 13 unit tests + 3 integration tests |
 | v1.53.0 | Platform-Specific Resource Monitoring | 2026-03-25 | Windows NUMA topology (GetLogicalProcessorInformationEx), Linux /proc stats, macOS task_info/proc_pidinfo, NUMA-aware CPU affinity, profiler module, 40 tests (25 NUMA, 10 profiler, 5 affinity, 15 integration) |
 | v1.52.0 | Output Enhancement & Pager Integration | 2026-03-25 | Automatic pager for large output, --no-pager flag, ZR_PAGER/PAGER env vars, TTY detection, color preservation, 36 tests |
