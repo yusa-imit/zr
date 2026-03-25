@@ -36,6 +36,7 @@ comptime {
     _ = @import("integration_pager.zig");
     _ = @import("integration_resource.zig");
     _ = @import("integration_tui_mouse.zig");
+    _ = @import("integration_windows.zig");
     _ = @import("integration_windows_paths.zig");
     _ = @import("lang_provider_test.zig");
     _ = @import("lint_test.zig");
