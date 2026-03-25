@@ -85,6 +85,7 @@ const hash_util = @import("util/hash.zig");
 const glob = @import("util/glob.zig");
 const affected = @import("util/affected.zig");
 const numa = @import("util/numa.zig");
+const profiler = @import("util/profiler.zig");
 const resource = @import("exec/resource.zig");
 const resource_monitor = @import("exec/resource_monitor.zig");
 const control = @import("exec/control.zig");
@@ -175,6 +176,7 @@ comptime {
     _ = glob;
     _ = affected;
     _ = numa;
+    _ = profiler;
     _ = resource;
     _ = resource_monitor;
     _ = control;
