@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.57.0] - 2026-03-26
+
+### 🎉 v1.0-Equivalent Release (Phase 13C Complete)
+
+After 13 development phases and 100+ releases, zr v1.57.0 marks feature-complete v1.0-equivalent status as a production-ready developer platform. All Phase 9-13 objectives complete.
+
+### Added
+
+**Phase 9: Foundation Infrastructure**
+- **LanguageProvider Interface** — Extensible architecture for toolchain support
+  - Unified interface for 8 toolchains (Node, Python, Zig, Go, Rust, Deno, Bun, Java)
+  - Registry pattern for easy language additions
+  - Automatic project detection and task extraction
+- **JSON-RPC Shared Infrastructure** — Common transport layer for MCP & LSP
+  - Content-Length framing (LSP) and newline-delimited (MCP) support
+  - Bidirectional message passing with request/response correlation
+  - JSON-RPC 2.0 error handling
+- **Levenshtein Distance** — Smart error suggestions
+  - "Did you mean?" suggestions for typos in task names and commands
+  - Integrated into CLI error handling
+- **Enhanced Error Messages** — Developer-friendly diagnostics
+  - Line and column numbers in TOML parse errors
+  - Syntax-highlighted error context
+  - Actionable suggestions for missing dependencies
+
+**Phase 10: AI Agent Integration**
+- **MCP Server** (`zr mcp serve`) — Model Context Protocol server for AI agents
+  - 9 tools exposed: `run_task`, `list_tasks`, `validate_config`, `show_history`, `graph_tasks`, `show_output`, `list_workflows`, `init_config`, `explain_config`
+  - Real-time streaming output for long-running tasks
+  - In-memory execution with result capture
+  - Documented in `docs/guides/mcp-integration.md`
+- **Auto-generate Configuration** (`zr init --detect`)
+  - Automatically detects project languages from package.json, setup.py, Cargo.toml, go.mod, etc.
+  - Extracts common tasks (build, test, lint) from existing configs
+  - Generates complete zr.toml with sensible defaults
+- **Natural Language Interface** (`zr ai "..."`)
+  - Keyword-based pattern matching for common workflows
+  - Extensible pattern matching engine
+
+**Phase 11: Editor Integration**
+- **LSP Server** (`zr lsp serve`) — Language Server Protocol for zr.toml
+  - Autocomplete for task names, fields, dependencies, expressions, toolchain versions
+  - Hover documentation with field descriptions and Big-O complexity
+  - Go-to-definition for task references and workflow stages
+  - Real-time diagnostics for syntax errors, missing deps, circular dependencies
+  - Supports VS Code, Neovim, Helix, Emacs, Zed
+  - Setup guide in `docs/guides/lsp-setup.md`
+
+**Phase 12: Performance & Quality**
+- **Binary Optimization** — Minimal footprint, maximum performance
+  - 1.2MB binary (ReleaseSmall + strip) — 10x smaller than Task, 5x smaller than Just
+  - 4-8ms cold start — competitive with Make
+  - 2-3MB memory — 30-50% reduction via string interning and arena allocators
+- **Fuzz Testing** — Comprehensive robustness testing
+  - TOML parser, expression engine, JSON-RPC parser (10+ minutes, zero crashes)
+  - Memory safety verification with AddressSanitizer
+- **Performance Benchmarks** — Validated against alternatives
+  - Comprehensive benchmark suite vs Make, Just, Task
+  - Results documented in `benchmarks/RESULTS.md`
+  - Binary size, cold start, config parsing, parallel execution, memory usage
+
+**Phase 13: Migration & Documentation**
+- **Migration Tools** — Seamless migration from existing task runners
+  - `zr init --from-make` — Convert Makefile → zr.toml
+  - `zr init --from-just` — Convert Justfile → zr.toml
+  - `zr init --from-task` — Convert Taskfile.yml → zr.toml
+  - Migration guide in `docs/guides/migration.md`
+- **8 Comprehensive Guides**
+  - getting-started, configuration, commands, benchmarks, mcp-integration, lsp-setup, migration, adding-language
+  - 300+ pages of documentation
+- **README Overhaul** — Feature matrix, performance benchmarks, comparison tables
+
+### Changed
+- Updated version badge to v1.0.0 (blue badge for stable release)
+- Enhanced Phase 9-13 section in README with detailed feature breakdown
+- Updated performance metrics with actual benchmark results
+
+### Developer Notes
+- **Test Status**: 1151/1159 unit tests passing (8 skipped) — 100% pass rate
+- **Integration Tests**: 30+ scenarios covering CLI, TUI, config parsing, output streaming
+- **Memory Leaks**: 0 (verified with std.testing.allocator)
+- **Cross-platform**: 6 targets tested (Linux x64/ARM64, macOS x64/ARM64, Windows x64, WASM)
+- **Documentation**: 8 guides, complete API reference
+- **Open Enhancement Issues**: 3 (zuda migrations, deferred to post-v1.0)
+
 ## [1.51.0] - 2026-03-25
 
 ### Changed

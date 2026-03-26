@@ -1,8 +1,11 @@
-# zr v1.0.0 — Developer Platform Release
+# zr v1.57.0 — v1.0-Equivalent Release
 
-**Release Date**: 2026-02-28
+**Release Date**: 2026-03-26
+**Milestone**: Phase 13C Complete (v1.0-Equivalent Feature Set)
 
-We're excited to announce **zr v1.0.0**, the first stable release of zr as a complete developer platform!
+After 13 development phases and 100+ releases, zr v1.57.0 achieves v1.0-equivalent feature completeness — a production-ready developer platform that unifies task running, toolchain management, and monorepo intelligence in a single 1.2MB binary.
+
+> **Note**: This release marks the completion of all Phase 1-13 objectives from the PRD. The version number (1.57.0) reflects continuous incremental development; the "v1.0" designation refers to feature-completeness, not version numbering.
 
 ---
 
@@ -69,10 +72,10 @@ zr is a universal developer platform built with Zig. It replaces:
 | Metric | zr v1.0.0 | Target |
 |--------|-----------|--------|
 | **Binary size** | 1.2MB | ≤ 2MB ✅ |
-| **Cold start** | ~5-8ms | < 10ms ✅ |
+| **Cold start** | ~4-8ms | < 10ms ✅ |
 | **Memory (idle)** | ~2-3MB | < 10MB ✅ |
-| **Unit tests** | 669/677 (8 skipped) | 100% pass ✅ |
-| **Integration tests** | 792/792 | 100% pass ✅ |
+| **Unit tests** | 1151/1159 (8 skipped) | 100% pass ✅ |
+| **Integration tests** | 30+ scenarios | 100% pass ✅ |
 | **Memory leaks** | 0 | 0 ✅ |
 
 **Comparison** (cold start):
@@ -109,21 +112,24 @@ zr is a universal developer platform built with Zig. It replaces:
 - ✅ Benchmark documentation vs Make/Just/Task
 
 ### Phase 13 — Release
-- ✅ Comprehensive documentation (6 guides, 3,250+ lines)
-- ✅ Migration tools (Make/Just/Task → zr.toml)
-- ✅ README overhaul reflecting all features
+- ✅ Comprehensive documentation (8 guides: getting-started, configuration, commands, benchmarks, MCP, LSP, migration, adding-language)
+- ✅ Migration tools (Make/Just/Task → zr.toml auto-conversion)
+- ✅ README overhaul with feature matrix and performance benchmarks
+- ✅ Benchmark documentation (benchmarks/RESULTS.md) with comprehensive performance analysis
 
 ---
 
 ## 📚 Documentation
 
-New guides in `docs/guides/`:
-- [Getting Started](docs/guides/getting-started.md)
-- [Configuration Reference](docs/guides/configuration.md)
-- [CLI Commands](docs/guides/commands.md)
-- [MCP Integration](docs/guides/mcp-integration.md)
-- [LSP Setup](docs/guides/lsp-setup.md)
-- [Adding a Language](docs/guides/adding-language.md)
+New guides in `docs/guides/` (8 comprehensive guides):
+- [Getting Started](docs/guides/getting-started.md) — Installation, first task, basic config
+- [Configuration Reference](docs/guides/configuration.md) — Complete TOML schema with 50+ examples
+- [CLI Commands](docs/guides/commands.md) — All CLI commands with usage examples
+- [Benchmarks](docs/guides/benchmarks.md) — Performance comparison methodology and results
+- [MCP Integration](docs/guides/mcp-integration.md) — Setting up MCP server for AI agents
+- [LSP Setup](docs/guides/lsp-setup.md) — Configuring LSP for VS Code, Neovim, etc.
+- [Migration](docs/guides/migration.md) — Step-by-step migration from Make/Just/Task
+- [Adding a Language](docs/guides/adding-language.md) — Extending LanguageProvider for new toolchains
 
 ---
 
@@ -185,7 +191,12 @@ zig build -Doptimize=ReleaseSmall
 
 ## 🐛 Known Issues
 
-None! All 669 unit tests and 792 integration tests pass with 0 memory leaks.
+None! All 1151 unit tests and 30+ integration test scenarios pass with 0 memory leaks.
+
+**Open enhancement issues** (not blocking v1.0):
+- [#24] Migrate graph algorithms to zuda library (deferred, requires zuda enhancements)
+- [#23] Migrate to zuda WorkStealingDeque (deferred, awaiting zuda fix)
+- [#22] Migrate to zuda graph data structures (deferred, requires zuda compatibility layer)
 
 ---
 

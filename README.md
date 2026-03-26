@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.56.0-green.svg)](https://github.com/yusa-imit/zr/releases)
+[![Version](https://img.shields.io/badge/version-1.57.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.57.0)
 
 ---
 
@@ -354,16 +354,25 @@ Comprehensive guides in `docs/guides/`:
 
 ## 🏎️ Performance
 
+zr achieves **Make-level performance** with **10x more features** in a single binary.
+
 | Metric | zr | make | just | task (go-task) | Nx | Turborepo |
 |--------|----|----|------|---------------|-------|-----------|
-| **Binary size** | 1.2MB | 200KB* | 4-6MB | 10-15MB | 200MB+ | 50MB+ |
-| **Cold start** | ~5-8ms | 3-5ms | 15-20ms | 20-30ms | 500ms+ | 300ms+ |
-| **Memory (idle)** | ~2-3MB | ~1MB | ~5MB | ~8MB | ~50MB+ | ~30MB+ |
-| **Runtime deps** | None | None | None | None | Node.js | Node.js |
+| **Binary size** | **1.2MB** | 200KB* | 4-6MB | 10-15MB | 200MB+ | 50MB+ |
+| **Cold start** | **~4-8ms** | 3-5ms | 15-20ms | 20-30ms | 500ms+ | 300ms+ |
+| **Memory (idle)** | **~2-3MB** | ~1MB | ~5MB | ~8MB | ~50MB+ | ~30MB+ |
+| **Parallel execution** | **4x speedup** (default) | 1x (serial) | 1x (serial) | 4x (-p flag) | 4x+ | 4x+ |
+| **Runtime deps** | **None** | None | None | None | Node.js | Node.js |
 
 *make is usually pre-installed
 
-**Benchmark details**: See [benchmarks/README.md](benchmarks/README.md)
+**Key Benchmarks** (Phase 12C):
+- **Cold start**: 4-8ms → Competitive with Make despite TOML parsing + DAG construction
+- **Config parsing**: <10ms for 100 tasks → Faster than execution overhead
+- **Memory**: 2-3MB RSS → 30-50% reduction via string interning & arena allocators
+- **Parallel**: Native worker pool → 4x speedup on multi-core systems (no `-j` flag needed)
+
+**Comprehensive benchmark results**: [benchmarks/RESULTS.md](benchmarks/RESULTS.md)
 
 ---
 
@@ -494,14 +503,40 @@ All phases complete! zr v1.0 is production-ready.
 - Multi-repo orchestration (cross-repo dependencies, sync)
 - Enterprise features (analytics, publishing, CODEOWNERS)
 
-### ✅ Phase 9-13 — AI Integration & v1.0 Release
-- LanguageProvider interface (extensible language support)
-- MCP Server for AI agents (Claude Code, Cursor)
-- LSP Server for editors (VS Code, Neovim, Helix, Emacs)
-- Error message improvements
-- Performance optimization (1.2MB binary, fuzz testing)
-- Migration tools (Make/Just/Task → zr)
-- Comprehensive documentation
+### ✅ Phase 9-13 — AI Integration & v1.0 Release (COMPLETED)
+**Foundation** (Phase 9):
+- LanguageProvider interface — extensible language support for 8+ toolchains
+- JSON-RPC shared infrastructure for MCP & LSP
+- Levenshtein "Did you mean?" suggestions for typos
+- Enhanced error messages with line/column numbers
+
+**AI Integration** (Phase 10):
+- **MCP Server** — 9 tools for AI agents (Claude Code, Cursor, Windsurf)
+  - `run_task`, `list_tasks`, `validate_config`, `show_history`, `graph_tasks`, etc.
+  - Real-time task execution with streaming output
+- **Auto-generate** — `zr init --detect` detects languages & creates zr.toml
+- **Natural language** — `zr ai "run tests in parallel"` keyword matching
+
+**Editor Integration** (Phase 11):
+- **LSP Server** — Language Server Protocol for zr.toml files
+  - Autocomplete for task names, fields, dependencies, expressions
+  - Hover documentation with Big-O complexity
+  - Go-to-definition for task references
+  - Real-time diagnostics for syntax errors, missing deps
+  - Supports VS Code, Neovim, Helix, Emacs, Zed
+
+**Performance & Quality** (Phase 12):
+- Binary optimization — 1.2MB (ReleaseSmall + strip)
+- Fuzz testing — TOML parser, expression engine, JSON-RPC (10min+ no crashes)
+- **Benchmarks** — Performance comparison vs Make, Just, Task (see benchmarks/RESULTS.md)
+  - Cold start: ~4-8ms (competitive with Make)
+  - Memory: ~2-3MB RSS (minimal overhead)
+  - Parallel execution: 4x speedup on multi-core systems
+
+**Migration & Documentation** (Phase 13):
+- **Migration tools** — `zr init --from-make/just/task` auto-converts configs
+- **8 comprehensive guides** — getting-started, configuration, commands, benchmarks, MCP, LSP, migration, adding-language
+- **README overhaul** — Feature matrix, performance benchmarks, comparison tables
 
 ### 🔮 Future (v2.0+)
 - Web dashboard for execution visualization
