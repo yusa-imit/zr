@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.56.0 (Windows Platform Enhancements)
-- **Next actionable milestone**: Natural Language AI Command (READY)
-- **READY milestones**: 1 (AI command)
+- **Next actionable milestone**: Phase 12C Benchmark Dashboard (READY)
+- **READY milestones**: 2 (Phase 12C Benchmark Dashboard, Phase 13B Migration Tools)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -14,9 +14,13 @@
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
-### Natural Language AI Command (Phase 10C)
+### Phase 12C: Benchmark Dashboard
 
-Implement `zr ai "<natural language query>"` command for keyword-pattern-based task execution. Create `src/cli/ai.zig` with pattern matching for common developer intents ("build", "test", "deploy", "start server", etc.), map to task names using fuzzy matching + context, execute matched task with confirmation prompt. Integration with MCP server for richer AI interactions (optional). Add unit tests for pattern matching, integration tests for end-to-end execution. **Status: READY** — Completes Phase 10 from PRD, builds on existing MCP server (Phase 10A) and LanguageProvider (Phase 9A). No external blockers.
+Create benchmark scripts comparing zr's performance against Make, Just, and Task (go-task) across multiple scenarios (small project, large monorepo, parallel execution, caching). Implement `benchmarks/` directory with test projects for each tool, runner scripts, and result documentation (`benchmarks/RESULTS.md`). Measure cold start time, 100-task graph execution, cache hit scenarios, and resource usage. Document findings with graphs and analysis showing zr's performance characteristics. **Status: READY** — Final missing item from Phase 12 (Performance & Stability). No external dependencies.
+
+### Phase 13B: Migration Tools
+
+Implement automatic config conversion from existing task runners to zr.toml. Add `--from-make`, `--from-just`, `--from-task` flags to `zr init` command in `src/cli/init.zig`. Parse Makefile syntax (targets, dependencies, commands), Justfile syntax, and Taskfile.yml respectively, and generate equivalent zr.toml configuration. Handle common patterns (phony targets, variables, multi-line commands, conditional logic). Add unit tests for parser accuracy, integration tests for end-to-end conversion. **Status: READY** — Final missing item from Phase 13 (v1.0 Release). Enables easy migration from competing tools.
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
