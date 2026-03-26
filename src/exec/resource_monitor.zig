@@ -34,6 +34,42 @@ pub const CpuTimeSnapshot = struct {
     timestamp_ms: i64,
 };
 
+/// Time window for historical metrics
+pub const TimeWindow = enum {
+    five_minutes,
+    one_hour,
+    twenty_four_hours,
+
+    /// Get the window duration in milliseconds
+    pub fn durationMs(self: TimeWindow) i64 {
+        return switch (self) {
+            .five_minutes => 5 * 60 * 1000, // 5 minutes
+            .one_hour => 60 * 60 * 1000,     // 1 hour
+            .twenty_four_hours => 24 * 60 * 60 * 1000, // 24 hours
+        };
+    }
+};
+
+/// Aggregated metrics over a time window
+pub const WindowedMetrics = struct {
+    /// Average memory usage in bytes
+    avg_memory_bytes: u64,
+    /// Peak memory usage in bytes
+    peak_memory_bytes: u64,
+    /// Average CPU usage percentage
+    avg_cpu_percent: f64,
+    /// Peak CPU usage percentage
+    peak_cpu_percent: f64,
+    /// Total I/O operations
+    total_io_ops: u64,
+    /// Number of samples in this window
+    sample_count: usize,
+    /// Window start timestamp
+    window_start_ms: i64,
+    /// Window end timestamp
+    window_end_ms: i64,
+};
+
 /// Real-time resource monitor for tracking task execution metrics
 pub const ResourceMonitor = struct {
     allocator: Allocator,
@@ -154,6 +190,68 @@ pub const ResourceMonitor = struct {
         const cpu_percent = (@as(f64, @floatFromInt(cpu_time_ns)) / @as(f64, @floatFromInt(wall_time_ns))) * 100.0;
 
         return cpu_percent;
+    }
+
+    /// Get aggregated metrics over a specific time window
+    /// Returns null if no metrics are available in the window
+    pub fn getWindowedMetrics(self: *const Self, window: TimeWindow) ?WindowedMetrics {
+        if (self.metrics_buffer.items.len == 0) return null;
+
+        const now = std.time.milliTimestamp();
+        const window_duration_ms = window.durationMs();
+        const window_start_ms = now - window_duration_ms;
+
+        // Find metrics within the time window
+        var total_memory: u64 = 0;
+        var peak_memory: u64 = 0;
+        var total_cpu: f64 = 0.0;
+        var peak_cpu: f64 = 0.0;
+        var total_io: u64 = 0;
+        var sample_count: usize = 0;
+        var first_timestamp: i64 = now;
+
+        for (self.metrics_buffer.items) |metric| {
+            if (metric.timestamp_ms >= window_start_ms) {
+                total_memory += metric.peak_memory_bytes;
+                peak_memory = @max(peak_memory, metric.peak_memory_bytes);
+                total_cpu += metric.avg_cpu_percent;
+                peak_cpu = @max(peak_cpu, metric.avg_cpu_percent);
+                total_io += metric.total_io_ops;
+                sample_count += 1;
+
+                if (metric.timestamp_ms < first_timestamp) {
+                    first_timestamp = metric.timestamp_ms;
+                }
+            }
+        }
+
+        if (sample_count == 0) return null;
+
+        const count_f64: f64 = @floatFromInt(sample_count);
+        return WindowedMetrics{
+            .avg_memory_bytes = @intFromFloat(@as(f64, @floatFromInt(total_memory)) / count_f64),
+            .peak_memory_bytes = peak_memory,
+            .avg_cpu_percent = total_cpu / count_f64,
+            .peak_cpu_percent = peak_cpu,
+            .total_io_ops = total_io,
+            .sample_count = sample_count,
+            .window_start_ms = first_timestamp,
+            .window_end_ms = now,
+        };
+    }
+
+    /// Get multiple windowed metrics at once (5min, 1hr, 24hr)
+    /// Returns a struct with all three windows
+    pub fn getAllWindowedMetrics(self: *const Self) struct {
+        five_min: ?WindowedMetrics,
+        one_hour: ?WindowedMetrics,
+        twenty_four_hr: ?WindowedMetrics,
+    } {
+        return .{
+            .five_min = self.getWindowedMetrics(.five_minutes),
+            .one_hour = self.getWindowedMetrics(.one_hour),
+            .twenty_four_hr = self.getWindowedMetrics(.twenty_four_hours),
+        };
     }
 };
 
@@ -1114,4 +1212,419 @@ test "parse /proc/[pid]/status: memory breakdown handles whitespace variations" 
     try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.heap_memory_bytes);
     try std.testing.expectEqual(@as(u64, 8 * 1024), breakdown.stack_memory_bytes);
     try std.testing.expectEqual(@as(u64, (2048 + 256) * 1024), breakdown.mapped_memory_bytes);
+}
+
+// ============================================================================
+// Historical resource usage trends tests
+// ============================================================================
+
+test "TimeWindow: five_minutes duration" {
+    const window = TimeWindow.five_minutes;
+    try std.testing.expectEqual(@as(i64, 5 * 60 * 1000), window.durationMs());
+}
+
+test "TimeWindow: one_hour duration" {
+    const window = TimeWindow.one_hour;
+    try std.testing.expectEqual(@as(i64, 60 * 60 * 1000), window.durationMs());
+}
+
+test "TimeWindow: twenty_four_hours duration" {
+    const window = TimeWindow.twenty_four_hours;
+    try std.testing.expectEqual(@as(i64, 24 * 60 * 60 * 1000), window.durationMs());
+}
+
+test "getWindowedMetrics: returns null for empty buffer" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result == null);
+}
+
+test "getWindowedMetrics: five_minutes window with recent metrics" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add 3 metrics within the last 5 minutes
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (2 * 60 * 1000), // 2 minutes ago
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now - (1 * 60 * 1000), // 1 minute ago
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 3000,
+        .avg_cpu_percent = 30.0,
+        .total_io_ops = 300,
+        .timestamp_ms = now,
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    try std.testing.expectEqual(@as(usize, 3), windowed.sample_count);
+
+    // Average memory: (1000 + 2000 + 3000) / 3 = 2000
+    try std.testing.expectEqual(@as(u64, 2000), windowed.avg_memory_bytes);
+
+    // Peak memory: max(1000, 2000, 3000) = 3000
+    try std.testing.expectEqual(@as(u64, 3000), windowed.peak_memory_bytes);
+
+    // Average CPU: (10 + 20 + 30) / 3 = 20
+    try std.testing.expectApproxEqAbs(@as(f64, 20.0), windowed.avg_cpu_percent, 0.01);
+
+    // Peak CPU: max(10, 20, 30) = 30
+    try std.testing.expectApproxEqAbs(@as(f64, 30.0), windowed.peak_cpu_percent, 0.01);
+
+    // Total I/O: 100 + 200 + 300 = 600
+    try std.testing.expectEqual(@as(u64, 600), windowed.total_io_ops);
+}
+
+test "getWindowedMetrics: filters out old metrics" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add old metric (10 minutes ago, outside 5-minute window)
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (10 * 60 * 1000),
+    });
+
+    // Add recent metric (1 minute ago, inside 5-minute window)
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now - (1 * 60 * 1000),
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    // Should only count the recent metric
+    try std.testing.expectEqual(@as(usize, 1), windowed.sample_count);
+    try std.testing.expectEqual(@as(u64, 2000), windowed.avg_memory_bytes);
+}
+
+test "getWindowedMetrics: one_hour window" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add metric 30 minutes ago
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (30 * 60 * 1000),
+    });
+
+    // Add metric 10 minutes ago
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now - (10 * 60 * 1000),
+    });
+
+    const result = monitor.getWindowedMetrics(.one_hour);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    try std.testing.expectEqual(@as(usize, 2), windowed.sample_count);
+}
+
+test "getWindowedMetrics: twenty_four_hours window" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 1000);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add metric 12 hours ago
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (12 * 60 * 60 * 1000),
+    });
+
+    // Add metric 6 hours ago
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now - (6 * 60 * 60 * 1000),
+    });
+
+    const result = monitor.getWindowedMetrics(.twenty_four_hours);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    try std.testing.expectEqual(@as(usize, 2), windowed.sample_count);
+}
+
+test "getWindowedMetrics: peak values are correctly tracked" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add metrics with varying values
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 5000,
+        .avg_cpu_percent = 75.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (3 * 60 * 1000),
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 25.0,
+        .total_io_ops = 50,
+        .timestamp_ms = now - (2 * 60 * 1000),
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 3000,
+        .avg_cpu_percent = 50.0,
+        .total_io_ops = 75,
+        .timestamp_ms = now - (1 * 60 * 1000),
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+
+    // Peak memory should be 5000 (highest)
+    try std.testing.expectEqual(@as(u64, 5000), windowed.peak_memory_bytes);
+
+    // Peak CPU should be 75.0 (highest)
+    try std.testing.expectApproxEqAbs(@as(f64, 75.0), windowed.peak_cpu_percent, 0.01);
+
+    // Average memory: (5000 + 2000 + 3000) / 3 = 3333
+    try std.testing.expectEqual(@as(u64, 3333), windowed.avg_memory_bytes);
+
+    // Average CPU: (75 + 25 + 50) / 3 = 50
+    try std.testing.expectApproxEqAbs(@as(f64, 50.0), windowed.avg_cpu_percent, 0.01);
+}
+
+test "getAllWindowedMetrics: returns all three windows" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 1000);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add metrics at various time points
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (2 * 60 * 1000), // 2 min ago (in 5min window)
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now - (30 * 60 * 1000), // 30 min ago (in 1hr window)
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 3000,
+        .avg_cpu_percent = 30.0,
+        .total_io_ops = 300,
+        .timestamp_ms = now - (12 * 60 * 60 * 1000), // 12 hrs ago (in 24hr window)
+    });
+
+    const all_windows = monitor.getAllWindowedMetrics();
+
+    // 5-minute window should have 1 metric
+    try std.testing.expect(all_windows.five_min != null);
+    try std.testing.expectEqual(@as(usize, 1), all_windows.five_min.?.sample_count);
+
+    // 1-hour window should have 2 metrics
+    try std.testing.expect(all_windows.one_hour != null);
+    try std.testing.expectEqual(@as(usize, 2), all_windows.one_hour.?.sample_count);
+
+    // 24-hour window should have 3 metrics
+    try std.testing.expect(all_windows.twenty_four_hr != null);
+    try std.testing.expectEqual(@as(usize, 3), all_windows.twenty_four_hr.?.sample_count);
+}
+
+test "getWindowedMetrics: window_start and window_end timestamps" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+    const first_timestamp = now - (3 * 60 * 1000);
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = first_timestamp,
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now,
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+
+    // Window start should be the timestamp of the first metric in the window
+    try std.testing.expectEqual(first_timestamp, windowed.window_start_ms);
+
+    // Window end should be approximately now (within 1 second tolerance)
+    try std.testing.expect(@abs(windowed.window_end_ms - now) < 1000);
+}
+
+test "getWindowedMetrics: all metrics outside window returns null" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add old metrics (all outside 5-minute window)
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now - (10 * 60 * 1000), // 10 min ago
+    });
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 20.0,
+        .total_io_ops = 200,
+        .timestamp_ms = now - (20 * 60 * 1000), // 20 min ago
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result == null);
+}
+
+test "getWindowedMetrics: single metric in window" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 2000,
+        .avg_cpu_percent = 50.0,
+        .total_io_ops = 100,
+        .timestamp_ms = now,
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    try std.testing.expectEqual(@as(usize, 1), windowed.sample_count);
+    try std.testing.expectEqual(@as(u64, 2000), windowed.avg_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 2000), windowed.peak_memory_bytes);
+    try std.testing.expectApproxEqAbs(@as(f64, 50.0), windowed.avg_cpu_percent, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f64, 50.0), windowed.peak_cpu_percent, 0.01);
+}
+
+test "getWindowedMetrics: zero I/O operations" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 100);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    try monitor.recordMetrics(.{
+        .peak_memory_bytes = 1000,
+        .avg_cpu_percent = 10.0,
+        .total_io_ops = 0,
+        .timestamp_ms = now,
+    });
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    try std.testing.expectEqual(@as(u64, 0), windowed.total_io_ops);
+}
+
+test "getWindowedMetrics: large number of samples" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 1000);
+    defer monitor.deinit();
+
+    monitor.startMonitoring();
+
+    const now = std.time.milliTimestamp();
+
+    // Add 100 metrics within 5-minute window
+    var i: usize = 0;
+    while (i < 100) : (i += 1) {
+        try monitor.recordMetrics(.{
+            .peak_memory_bytes = 1000 + i * 10,
+            .avg_cpu_percent = @as(f64, @floatFromInt(i)),
+            .total_io_ops = i,
+            .timestamp_ms = now - @as(i64, @intCast(i * 1000)), // Spread over 100 seconds
+        });
+    }
+
+    const result = monitor.getWindowedMetrics(.five_minutes);
+    try std.testing.expect(result != null);
+
+    const windowed = result.?;
+    try std.testing.expectEqual(@as(usize, 100), windowed.sample_count);
 }
