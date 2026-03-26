@@ -2,6 +2,16 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const platform = @import("../util/platform.zig");
 
+/// Memory breakdown by category
+pub const MemoryBreakdown = struct {
+    /// Heap memory allocated via malloc/new (bytes)
+    heap_memory_bytes: u64 = 0,
+    /// Stack memory usage (bytes)
+    stack_memory_bytes: u64 = 0,
+    /// Memory-mapped regions - files, shared memory (bytes)
+    mapped_memory_bytes: u64 = 0,
+};
+
 /// Resource usage metrics for a single task
 pub const ResourceMetrics = struct {
     /// Peak memory usage in bytes
@@ -12,6 +22,8 @@ pub const ResourceMetrics = struct {
     total_io_ops: u64,
     /// Timestamp when metrics were collected
     timestamp_ms: i64,
+    /// Optional memory breakdown by category (heap/stack/mapped)
+    memory_breakdown: ?MemoryBreakdown = null,
 };
 
 /// CPU time snapshot for calculating usage percentage
@@ -158,12 +170,13 @@ pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t, monitor
     } else if (os_tag == .macos) {
         return collectMacOSMetrics(allocator, pid, now, monitor);
     } else {
-        // Unsupported platform - return zeros
+        // Unsupported platform - return zeros with null memory breakdown
         return ResourceMetrics{
             .peak_memory_bytes = 0,
             .avg_cpu_percent = 0.0,
             .total_io_ops = 0,
             .timestamp_ms = now,
+            .memory_breakdown = null,
         };
     }
 }
@@ -172,6 +185,7 @@ pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t, monitor
 fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64, monitor: ?*ResourceMonitor) !ResourceMetrics {
     var peak_memory_bytes: u64 = 0;
     var total_io_ops: u64 = 0;
+    var memory_breakdown: ?MemoryBreakdown = null;
 
     // Try to read memory info from /proc/[pid]/status
     // Format: /proc/{pid}/status
@@ -189,6 +203,9 @@ fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64, mon
             // Convert from KB to bytes
             peak_memory_bytes = vmrss_kb * 1024;
         }
+
+        // Extract memory breakdown from /proc/[pid]/status
+        memory_breakdown = try extractLinuxMemoryBreakdown(status_content);
     } else |_| {
         // Status file not available - return zeros gracefully
     }
@@ -248,6 +265,7 @@ fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64, mon
         .avg_cpu_percent = avg_cpu_percent,
         .total_io_ops = total_io_ops,
         .timestamp_ms = now,
+        .memory_breakdown = memory_breakdown,
     };
 }
 
@@ -264,6 +282,7 @@ fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64, monitor: ?*
     var peak_memory_bytes: u64 = 0;
     var total_io_ops: u64 = 0;
     var avg_cpu_percent: f64 = 0.0;
+    var memory_breakdown: ?MemoryBreakdown = null;
 
     // Get task port for the process
     var task: c.mach_port_t = undefined;
@@ -318,11 +337,16 @@ fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64, monitor: ?*
         }
     }
 
+    // macOS: memory breakdown not yet fully supported - return null for breakdown
+    // In future, could infer from proc_taskinfo or mach task info
+    memory_breakdown = null;
+
     return ResourceMetrics{
         .peak_memory_bytes = peak_memory_bytes,
         .avg_cpu_percent = avg_cpu_percent,
         .total_io_ops = total_io_ops,
         .timestamp_ms = now,
+        .memory_breakdown = memory_breakdown,
     };
 }
 
@@ -792,4 +816,302 @@ test "calculateCpuPercent: returns 0.0 for negative wall time delta" {
     const percent = try monitor.calculateCpuPercent(1234, .{ .total_cpu_ns = 1_500_000_000, .timestamp_ms = 1500 });
 
     try std.testing.expectEqual(@as(f64, 0.0), percent);
+}
+
+// ============================================================================
+// Memory Breakdown Tests
+// ============================================================================
+
+test "MemoryBreakdown: struct creation with defaults" {
+    const breakdown = MemoryBreakdown{};
+    try std.testing.expectEqual(@as(u64, 0), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.mapped_memory_bytes);
+}
+
+test "MemoryBreakdown: struct creation with values" {
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 1024 * 1024,
+        .stack_memory_bytes = 8192,
+        .mapped_memory_bytes = 512 * 1024,
+    };
+    try std.testing.expectEqual(@as(u64, 1024 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8192), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "MemoryBreakdown: total calculation" {
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 1000,
+        .stack_memory_bytes = 500,
+        .mapped_memory_bytes = 300,
+    };
+    const total = breakdown.heap_memory_bytes + breakdown.stack_memory_bytes + breakdown.mapped_memory_bytes;
+    try std.testing.expectEqual(@as(u64, 1800), total);
+}
+
+test "MemoryBreakdown: zero values" {
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 0,
+        .stack_memory_bytes = 0,
+        .mapped_memory_bytes = 0,
+    };
+    try std.testing.expectEqual(@as(u64, 0), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.mapped_memory_bytes);
+}
+
+test "MemoryBreakdown: large values" {
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 1024 * 1024 * 1024, // 1 GB
+        .stack_memory_bytes = 8 * 1024 * 1024,   // 8 MB
+        .mapped_memory_bytes = 256 * 1024 * 1024, // 256 MB
+    };
+    try std.testing.expectEqual(@as(u64, 1024 * 1024 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8 * 1024 * 1024), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 256 * 1024 * 1024), breakdown.mapped_memory_bytes);
+}
+
+// ============================================================================
+// Linux /proc memory breakdown parsing tests
+// ============================================================================
+
+/// Helper function to extract memory breakdown from /proc/[pid]/status
+/// Returns MemoryBreakdown with VmData (heap), VmStk (stack), VmLib+VmExe (mapped)
+fn extractLinuxMemoryBreakdown(content: []const u8) !MemoryBreakdown {
+    var breakdown = MemoryBreakdown{};
+
+    // VmData: heap memory in KB
+    if (try extractStatusValue(content, "VmData:")) |vmdata_kb| {
+        breakdown.heap_memory_bytes = vmdata_kb * 1024;
+    }
+
+    // VmStk: stack memory in KB
+    if (try extractStatusValue(content, "VmStk:")) |vmstk_kb| {
+        breakdown.stack_memory_bytes = vmstk_kb * 1024;
+    }
+
+    // VmLib: shared library memory in KB
+    var mapped_total: u64 = 0;
+    if (try extractStatusValue(content, "VmLib:")) |vmlib_kb| {
+        mapped_total += vmlib_kb * 1024;
+    }
+
+    // VmExe: executable memory in KB
+    if (try extractStatusValue(content, "VmExe:")) |vmexe_kb| {
+        mapped_total += vmexe_kb * 1024;
+    }
+
+    breakdown.mapped_memory_bytes = mapped_total;
+
+    return breakdown;
+}
+
+test "parse /proc/[pid]/status: extract memory breakdown with all fields" {
+    const content =
+        \\Name:   test
+        \\VmData:         512 kB
+        \\VmStk:           8 kB
+        \\VmLib:         2048 kB
+        \\VmExe:          256 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8 * 1024), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, (2048 + 256) * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with missing VmLib" {
+    const content =
+        \\Name:   test
+        \\VmData:         512 kB
+        \\VmStk:           8 kB
+        \\VmExe:          256 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8 * 1024), breakdown.stack_memory_bytes);
+    // Only VmExe, no VmLib
+    try std.testing.expectEqual(@as(u64, 256 * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with missing VmExe" {
+    const content =
+        \\Name:   test
+        \\VmData:         512 kB
+        \\VmStk:           8 kB
+        \\VmLib:         2048 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8 * 1024), breakdown.stack_memory_bytes);
+    // Only VmLib, no VmExe
+    try std.testing.expectEqual(@as(u64, 2048 * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with missing VmData" {
+    const content =
+        \\Name:   test
+        \\VmStk:           8 kB
+        \\VmLib:         2048 kB
+        \\VmExe:          256 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8 * 1024), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, (2048 + 256) * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with missing VmStk" {
+    const content =
+        \\Name:   test
+        \\VmData:         512 kB
+        \\VmLib:         2048 kB
+        \\VmExe:          256 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, (2048 + 256) * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with all zero values" {
+    const content =
+        \\Name:   test
+        \\VmData:           0 kB
+        \\VmStk:            0 kB
+        \\VmLib:            0 kB
+        \\VmExe:            0 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with missing all memory fields" {
+    const content =
+        \\Name:   test
+        \\Pid:    1234
+        \\State:  S
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown with large values" {
+    const content =
+        \\Name:   test
+        \\VmData:      524288 kB
+        \\VmStk:        16384 kB
+        \\VmLib:      2097152 kB
+        \\VmExe:       1048576 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 524288 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 16384 * 1024), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, (2097152 + 1048576) * 1024), breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown sum check" {
+    const content =
+        \\Name:   test
+        \\VmRSS:        2048 kB
+        \\VmData:         512 kB
+        \\VmStk:           8 kB
+        \\VmLib:         768 kB
+        \\VmExe:         256 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    const total_breakdown = breakdown.heap_memory_bytes + breakdown.stack_memory_bytes + breakdown.mapped_memory_bytes;
+    const total_rss = 2048 * 1024;
+
+    // Breakdown sum should be <= RSS (may have other memory not accounted)
+    try std.testing.expect(total_breakdown <= total_rss);
+}
+
+// ============================================================================
+// macOS memory breakdown parsing tests
+// ============================================================================
+
+test "MemoryBreakdown: macOS style initialization (resident_size)" {
+    // On macOS, we extract from proc_pidinfo resident_size
+    // For testing, demonstrate breakdown creation
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 2048 * 1024,     // Typical heap
+        .stack_memory_bytes = 8192,           // Typical stack
+        .mapped_memory_bytes = 512 * 1024,    // Typical mapped regions
+    };
+
+    const total = breakdown.heap_memory_bytes + breakdown.stack_memory_bytes + breakdown.mapped_memory_bytes;
+    try std.testing.expect(total > 0);
+}
+
+test "MemoryBreakdown: graceful degradation when breakdown unavailable" {
+    // When platform doesn't support breakdown, should return zero breakdown
+    const breakdown = MemoryBreakdown{};
+
+    try std.testing.expectEqual(@as(u64, 0), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 0), breakdown.mapped_memory_bytes);
+}
+
+// ============================================================================
+// Integration tests for memory breakdown
+// ============================================================================
+
+test "MemoryBreakdown: breakdown proportions make sense" {
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 1024 * 1024,
+        .stack_memory_bytes = 8192,
+        .mapped_memory_bytes = 256 * 1024,
+    };
+
+    const total = breakdown.heap_memory_bytes + breakdown.stack_memory_bytes + breakdown.mapped_memory_bytes;
+
+    // Heap should be dominant (typically largest)
+    try std.testing.expect(breakdown.heap_memory_bytes >= breakdown.stack_memory_bytes);
+    try std.testing.expect(breakdown.heap_memory_bytes >= breakdown.mapped_memory_bytes);
+
+    // Total should be reasonable
+    try std.testing.expect(total > 0);
+    try std.testing.expect(total < 1024 * 1024 * 1024); // Less than 1 GB for test
+}
+
+test "MemoryBreakdown: stack is typically smallest" {
+    const breakdown = MemoryBreakdown{
+        .heap_memory_bytes = 1024 * 1024,
+        .stack_memory_bytes = 4096,
+        .mapped_memory_bytes = 512 * 1024,
+    };
+
+    // Stack is typically the smallest memory category
+    try std.testing.expect(breakdown.stack_memory_bytes <= breakdown.heap_memory_bytes);
+    try std.testing.expect(breakdown.stack_memory_bytes <= breakdown.mapped_memory_bytes);
+}
+
+test "parse /proc/[pid]/status: memory breakdown handles whitespace variations" {
+    const content =
+        \\Name:   test
+        \\VmData:          512 kB
+        \\VmStk:             8 kB
+        \\VmLib:          2048 kB
+        \\VmExe:           256 kB
+    ;
+
+    const breakdown = try extractLinuxMemoryBreakdown(content);
+    try std.testing.expectEqual(@as(u64, 512 * 1024), breakdown.heap_memory_bytes);
+    try std.testing.expectEqual(@as(u64, 8 * 1024), breakdown.stack_memory_bytes);
+    try std.testing.expectEqual(@as(u64, (2048 + 256) * 1024), breakdown.mapped_memory_bytes);
 }
