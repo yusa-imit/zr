@@ -29,3 +29,4 @@
 {"timestamp":"2026-03-24T00:30:00Z","action":"subagent","agent_type":"test-writer","task":"Write cross-platform path separator tests for glob.zig, affected.zig, workspace.zig","project":"zr"}
 {"timestamp":"2026-03-27T12:15:00Z","action":"subagent","agent_type":"test-writer","task":"Write memory breakdown tests (19 tests for MemoryBreakdown struct, /proc parsing, platform handling)","project":"zr"}
 {"timestamp":"2026-03-27T12:25:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement memory breakdown functionality (extended ResourceMetrics, integrated Linux/macOS/Windows support)","project":"zr"}
+{"timestamp":"2026-03-27T12:00:00Z","action":"subagent","agent_type":"none","task":"Implement historical resource usage trends (5min/1hr/24hr rolling windows)","project":"zr"}
