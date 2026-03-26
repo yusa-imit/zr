@@ -2,17 +2,25 @@
 
 ## Current Status
 
-- **Latest**: v1.55.0 (Enhanced Configuration System)
-- **Next actionable milestone**: None (zuda migrations blocked, need new milestones)
-- **READY milestones**: None
+- **Latest**: v1.56.0 (Windows Platform Enhancements)
+- **Next actionable milestone**: Sailor v1.21.0 & v1.22.0 Migration (READY), Natural Language AI Command (READY)
+- **READY milestones**: 2 (Sailor migrations, AI command)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Windows Platform Enhancements (v1.56.0 pending release), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
 ## Active Milestones
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
+
+### Sailor v1.21.0 & v1.22.0 Migration
+
+Migrate to sailor v1.21.0 and v1.22.0 to get latest bug fixes and features. Update `build.zig.zon` dependency, review CHANGELOG for breaking changes, update any affected API calls in zr codebase (particularly in `src/cli/tui_*.zig`, `src/output/*.zig`), run full test suite to verify compatibility. **Status: READY** — Linked to issues #34, #35. Sailor v1.21.0 and v1.22.0 released and available.
+
+### Natural Language AI Command (Phase 10C)
+
+Implement `zr ai "<natural language query>"` command for keyword-pattern-based task execution. Create `src/cli/ai.zig` with pattern matching for common developer intents ("build", "test", "deploy", "start server", etc.), map to task names using fuzzy matching + context, execute matched task with confirmation prompt. Integration with MCP server for richer AI interactions (optional). Add unit tests for pattern matching, integration tests for end-to-end execution. **Status: READY** — Completes Phase 10 from PRD, builds on existing MCP server (Phase 10A) and LanguageProvider (Phase 9A). No external blockers.
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
@@ -126,7 +134,8 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 ### Sailor Library
 
-- **Current in zr**: v1.20.0 (all migrations complete)
+- **Current in zr**: v1.20.0 (all migrations complete through v1.20.0)
+- **Next**: v1.21.0, v1.22.0 available (READY for migration)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -159,6 +168,8 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 | v1.18.0 | DONE | Hot reload for themes, widget inspector, benchmark suite, example gallery, documentation generator |
 | v1.19.0 | DONE | Progress bar templates, environment variable config, color themes, table formatting, arg groups |
 | v1.20.0 | DONE | Windows Console Unicode tests, pattern documentation, quality improvements |
+| v1.21.0 | READY | Available for migration (check CHANGELOG for details) |
+| v1.22.0 | READY | Available for migration (check CHANGELOG for details) |
 
 ### zuda Library
 
