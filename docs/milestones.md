@@ -16,6 +16,31 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+### Enhanced Performance Monitoring
+
+Complete the TODO items in resource monitoring for comprehensive real-time performance analysis. Implement CPU percentage tracking (requires delta measurements), memory breakdown (heap/stack/mapped), and historical trending. Add `zr monitor` command for live resource dashboard with task-level granularity. Includes:
+- CPU percentage calculation (requires tracking previous CPU time samples)
+- Memory breakdown by category (heap allocations, stack usage, memory-mapped regions)
+- Historical resource usage trends (5min/1hr/24hr rolling windows)
+- Task-level resource attribution (CPU/memory per task)
+- Real-time dashboard TUI (`zr monitor <workflow>`) with live graphs
+- Export metrics to JSON/CSV for external analysis
+- Integration with existing `resource_monitor.zig` (complete TODOs at lines 156, 234)
+**Status: READY** — Post-v1.0 enhancement, no blockers.
+
+### Interactive Task Builder TUI
+
+Create a form-based interactive TUI for building tasks without manually editing TOML. Enhance the existing `zr add task` command with a rich interactive mode featuring field validation, inline help, and live preview. Includes:
+- Form-based TUI with sailor Form widget (text input, select, checkbox fields)
+- Field validation with instant feedback (required fields, valid expressions, existing deps)
+- Inline contextual help (hover/F1 for field descriptions, examples)
+- Live TOML preview pane showing generated config
+- Dependency picker with autocomplete from existing tasks
+- Save to zr.toml with syntax-highlighted diff preview
+- Template selection (common task patterns: build, test, deploy, docker, git)
+- Extend to workflow builder (`zr add workflow --interactive`)
+**Status: READY** — Post-v1.0 UX enhancement, leverages sailor v1.4.0 Form widgets.
+
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
 Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement, or migrate directly to `zuda.containers.graphs.AdjacencyList` + `zuda.algorithms.graph.topological_sort` + `zuda.algorithms.graph.cycle_detection`. Add zuda dependency via `zig fetch --save`, update all call sites, verify tests, remove custom implementations. **Status: BLOCKED** — zuda v1.15.0 compat.zr_dag missing required functions (nodeCount, getInDegree, getExecutionLevels, different return types). Filed https://github.com/yusa-imit/zuda/issues/12, awaiting resolution.
