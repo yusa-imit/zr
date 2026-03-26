@@ -14,6 +14,14 @@ pub const ResourceMetrics = struct {
     timestamp_ms: i64,
 };
 
+/// CPU time snapshot for calculating usage percentage
+pub const CpuTimeSnapshot = struct {
+    /// Total CPU time in nanoseconds (user + system)
+    total_cpu_ns: u64,
+    /// Wall-clock timestamp when this snapshot was taken
+    timestamp_ms: i64,
+};
+
 /// Real-time resource monitor for tracking task execution metrics
 pub const ResourceMonitor = struct {
     allocator: Allocator,
@@ -23,6 +31,8 @@ pub const ResourceMonitor = struct {
     max_buffer_size: usize,
     /// Current monitoring state
     is_monitoring: bool,
+    /// Previous CPU time snapshot for calculating percentage (per-PID tracking)
+    cpu_snapshots: std.AutoHashMapUnmanaged(std.posix.pid_t, CpuTimeSnapshot),
 
     const Self = @This();
 
@@ -32,11 +42,13 @@ pub const ResourceMonitor = struct {
             .metrics_buffer = .{},
             .max_buffer_size = max_buffer_size,
             .is_monitoring = false,
+            .cpu_snapshots = .{},
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.metrics_buffer.deinit(self.allocator);
+        self.cpu_snapshots.deinit(self.allocator);
     }
 
     /// Start monitoring a task
@@ -104,19 +116,47 @@ pub const ResourceMonitor = struct {
     pub fn clearMetrics(self: *Self) void {
         self.metrics_buffer.clearRetainingCapacity();
     }
+
+    /// Calculate CPU percentage from current and previous snapshots
+    /// Returns 0.0 if this is the first measurement for this PID
+    pub fn calculateCpuPercent(self: *Self, pid: std.posix.pid_t, current: CpuTimeSnapshot) !f64 {
+        const prev_snapshot = self.cpu_snapshots.get(pid);
+
+        // Store current snapshot for next calculation
+        try self.cpu_snapshots.put(self.allocator, pid, current);
+
+        // If no previous snapshot, return 0.0 (baseline)
+        const prev = prev_snapshot orelse return 0.0;
+
+        // Calculate time deltas
+        const wall_time_ms = current.timestamp_ms - prev.timestamp_ms;
+        if (wall_time_ms <= 0) return 0.0; // Avoid division by zero
+
+        const cpu_time_ns = current.total_cpu_ns - prev.total_cpu_ns;
+
+        // Convert wall time from ms to ns for consistent units
+        const wall_time_ns: u64 = @intCast(wall_time_ms * 1_000_000);
+
+        // CPU percentage = (cpu_time_delta / wall_time_delta) * 100
+        // Note: On multi-core systems, this can exceed 100% (e.g., 200% on 2 cores fully utilized)
+        const cpu_percent = (@as(f64, @floatFromInt(cpu_time_ns)) / @as(f64, @floatFromInt(wall_time_ns))) * 100.0;
+
+        return cpu_percent;
+    }
 };
 
 /// Collect current system resource metrics for a process
-pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t) !ResourceMetrics {
+/// If monitor is provided, CPU percentage is calculated using previous snapshots
+pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t, monitor: ?*ResourceMonitor) !ResourceMetrics {
     const builtin = @import("builtin");
     const now = std.time.milliTimestamp();
 
     const os_tag = builtin.os.tag;
 
     if (os_tag == .linux) {
-        return collectLinuxMetrics(allocator, pid, now);
+        return collectLinuxMetrics(allocator, pid, now, monitor);
     } else if (os_tag == .macos) {
-        return collectMacOSMetrics(allocator, pid, now);
+        return collectMacOSMetrics(allocator, pid, now, monitor);
     } else {
         // Unsupported platform - return zeros
         return ResourceMetrics{
@@ -129,7 +169,7 @@ pub fn collectProcessMetrics(allocator: Allocator, pid: std.posix.pid_t) !Resour
 }
 
 /// Collect metrics on Linux using /proc filesystem
-fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMetrics {
+fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64, monitor: ?*ResourceMonitor) !ResourceMetrics {
     var peak_memory_bytes: u64 = 0;
     var total_io_ops: u64 = 0;
 
@@ -169,10 +209,39 @@ fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64) !Re
         // I/O file not available - return zero gracefully
     }
 
-    // TODO: CPU percentage calculation requires tracking previous measurements
-    // For now, return 0.0 - would need a baseline measurement and elapsed time
-    // to calculate CPU time delta and convert to percentage.
-    const avg_cpu_percent = 0.0;
+    // CPU percentage calculation using /proc/[pid]/stat
+    var avg_cpu_percent: f64 = 0.0;
+
+    if (monitor) |mon| {
+        // Read /proc/[pid]/stat for CPU times (utime + stime)
+        const stat_path = try std.fs.path.join(allocator, &[_][]const u8{ "/proc", pid_str, "stat" });
+        defer allocator.free(stat_path);
+
+        if (std.fs.cwd().readFileAlloc(allocator, stat_path, 8 * 1024)) |stat_content| {
+            defer allocator.free(stat_content);
+
+            // Parse /proc/[pid]/stat to get utime (field 14) and stime (field 15)
+            // Format: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime ...
+            // Fields are space-separated, but comm can contain spaces and parens
+            if (try extractStatValues(stat_content)) |cpu_times| {
+                const cpu_time_ticks = cpu_times.utime + cpu_times.stime;
+
+                // Convert ticks to nanoseconds (typically 100 ticks/second on Linux)
+                const ticks_per_sec = std.posix.sysconf(std.posix.SC.CLK_TCK);
+                const ticks_per_sec_u64: u64 = if (ticks_per_sec > 0) @intCast(ticks_per_sec) else 100;
+                const cpu_time_ns = (cpu_time_ticks * 1_000_000_000) / ticks_per_sec_u64;
+
+                const snapshot = CpuTimeSnapshot{
+                    .total_cpu_ns = cpu_time_ns,
+                    .timestamp_ms = now,
+                };
+
+                avg_cpu_percent = try mon.calculateCpuPercent(pid, snapshot);
+            }
+        } else |_| {
+            // stat file not available - return 0.0 gracefully
+        }
+    }
 
     return ResourceMetrics{
         .peak_memory_bytes = peak_memory_bytes,
@@ -183,7 +252,7 @@ fn collectLinuxMetrics(allocator: Allocator, pid: std.posix.pid_t, now: i64) !Re
 }
 
 /// Collect metrics on macOS using proc_pidinfo and task_info
-fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMetrics {
+fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64, monitor: ?*ResourceMonitor) !ResourceMetrics {
     // macOS uses libproc and mach APIs
     const c = @cImport({
         @cInclude("sys/proc_info.h");
@@ -194,6 +263,7 @@ fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMe
 
     var peak_memory_bytes: u64 = 0;
     var total_io_ops: u64 = 0;
+    var avg_cpu_percent: f64 = 0.0;
 
     // Get task port for the process
     var task: c.mach_port_t = undefined;
@@ -220,7 +290,7 @@ fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMe
         _ = c.mach_port_deallocate(c.mach_task_self(), task);
     }
 
-    // Try to get I/O stats using proc_pidinfo with PROC_PIDTASKINFO
+    // Try to get I/O stats and CPU time using proc_pidinfo with PROC_PIDTASKINFO
     var task_info: c.proc_taskinfo = undefined;
     const bytes_read = c.proc_pidinfo(
         pid,
@@ -234,10 +304,19 @@ fn collectMacOSMetrics(_: Allocator, pid: std.posix.pid_t, now: i64) !ResourceMe
         // task_info contains pti_total_user, pti_total_system (nanoseconds)
         // and pti_faults (page faults) - use faults as a proxy for I/O
         total_io_ops = task_info.pti_faults;
-    }
 
-    // TODO: CPU percentage calculation requires tracking previous measurements
-    const avg_cpu_percent = 0.0;
+        // CPU percentage calculation using pti_total_user and pti_total_system (already in nanoseconds)
+        if (monitor) |mon| {
+            const cpu_time_ns = task_info.pti_total_user + task_info.pti_total_system;
+
+            const snapshot = CpuTimeSnapshot{
+                .total_cpu_ns = cpu_time_ns,
+                .timestamp_ms = now,
+            };
+
+            avg_cpu_percent = try mon.calculateCpuPercent(pid, snapshot);
+        }
+    }
 
     return ResourceMetrics{
         .peak_memory_bytes = peak_memory_bytes,
@@ -619,4 +698,98 @@ test "parse /proc/[pid]/status: handles tab separators correctly" {
     const rss = try extractStatusValue(content, "VmRSS:");
     try std.testing.expect(rss != null);
     try std.testing.expectEqual(@as(u64, 2048), rss.?);
+}
+
+test "calculateCpuPercent: returns 0.0 for first measurement" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 10);
+    defer monitor.deinit();
+
+    const snapshot = CpuTimeSnapshot{
+        .total_cpu_ns = 1_000_000_000, // 1 second of CPU time
+        .timestamp_ms = std.time.milliTimestamp(),
+    };
+
+    const percent = try monitor.calculateCpuPercent(1234, snapshot);
+    try std.testing.expectEqual(@as(f64, 0.0), percent);
+}
+
+test "calculateCpuPercent: calculates percentage from two measurements" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 10);
+    defer monitor.deinit();
+
+    // First measurement (baseline)
+    const snapshot1 = CpuTimeSnapshot{
+        .total_cpu_ns = 1_000_000_000, // 1 second of CPU time
+        .timestamp_ms = 1000,
+    };
+    _ = try monitor.calculateCpuPercent(1234, snapshot1);
+
+    // Second measurement after 1 second wall time, 500ms CPU time used
+    const snapshot2 = CpuTimeSnapshot{
+        .total_cpu_ns = 1_500_000_000, // 1.5 seconds of CPU time
+        .timestamp_ms = 2000, // 1 second later
+    };
+    const percent = try monitor.calculateCpuPercent(1234, snapshot2);
+
+    // Expected: (500ms CPU / 1000ms wall) * 100 = 50%
+    try std.testing.expectApproxEqRel(@as(f64, 50.0), percent, 0.01);
+}
+
+test "calculateCpuPercent: handles multi-core usage (>100%)" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 10);
+    defer monitor.deinit();
+
+    // First measurement
+    const snapshot1 = CpuTimeSnapshot{
+        .total_cpu_ns = 1_000_000_000,
+        .timestamp_ms = 1000,
+    };
+    _ = try monitor.calculateCpuPercent(1234, snapshot1);
+
+    // Second measurement: 2 seconds of CPU time in 1 second wall time (2 cores fully utilized)
+    const snapshot2 = CpuTimeSnapshot{
+        .total_cpu_ns = 3_000_000_000, // 3 seconds total CPU time
+        .timestamp_ms = 2000,
+    };
+    const percent = try monitor.calculateCpuPercent(1234, snapshot2);
+
+    // Expected: (2000ms CPU / 1000ms wall) * 100 = 200%
+    try std.testing.expectApproxEqRel(@as(f64, 200.0), percent, 0.01);
+}
+
+test "calculateCpuPercent: tracks multiple PIDs independently" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 10);
+    defer monitor.deinit();
+
+    // PID 1234 measurements
+    _ = try monitor.calculateCpuPercent(1234, .{ .total_cpu_ns = 1_000_000_000, .timestamp_ms = 1000 });
+    const percent1 = try monitor.calculateCpuPercent(1234, .{ .total_cpu_ns = 1_500_000_000, .timestamp_ms = 2000 });
+
+    // PID 5678 measurements
+    _ = try monitor.calculateCpuPercent(5678, .{ .total_cpu_ns = 2_000_000_000, .timestamp_ms = 1000 });
+    const percent2 = try monitor.calculateCpuPercent(5678, .{ .total_cpu_ns = 3_000_000_000, .timestamp_ms = 2000 });
+
+    // PID 1234: 50% (500ms / 1000ms)
+    try std.testing.expectApproxEqRel(@as(f64, 50.0), percent1, 0.01);
+
+    // PID 5678: 100% (1000ms / 1000ms)
+    try std.testing.expectApproxEqRel(@as(f64, 100.0), percent2, 0.01);
+}
+
+test "calculateCpuPercent: returns 0.0 for negative wall time delta" {
+    const allocator = std.testing.allocator;
+    var monitor = try ResourceMonitor.init(allocator, 10);
+    defer monitor.deinit();
+
+    // First measurement
+    _ = try monitor.calculateCpuPercent(1234, .{ .total_cpu_ns = 1_000_000_000, .timestamp_ms = 2000 });
+
+    // Second measurement with earlier timestamp (clock skew)
+    const percent = try monitor.calculateCpuPercent(1234, .{ .total_cpu_ns = 1_500_000_000, .timestamp_ms = 1500 });
+
+    try std.testing.expectEqual(@as(f64, 0.0), percent);
 }
