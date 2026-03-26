@@ -3,20 +3,16 @@
 ## Current Status
 
 - **Latest**: v1.56.0 (Windows Platform Enhancements)
-- **Next actionable milestone**: Sailor v1.21.0 & v1.22.0 Migration (READY), Natural Language AI Command (READY)
-- **READY milestones**: 2 (Sailor migrations, AI command)
+- **Next actionable milestone**: Natural Language AI Command (READY)
+- **READY milestones**: 1 (AI command)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
 ## Active Milestones
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
-
-### Sailor v1.21.0 & v1.22.0 Migration
-
-Migrate to sailor v1.21.0 and v1.22.0 to get latest bug fixes and features. Update `build.zig.zon` dependency, review CHANGELOG for breaking changes, update any affected API calls in zr codebase (particularly in `src/cli/tui_*.zig`, `src/output/*.zig`), run full test suite to verify compatibility. **Status: READY** — Linked to issues #34, #35. Sailor v1.21.0 and v1.22.0 released and available.
 
 ### Natural Language AI Command (Phase 10C)
 
@@ -55,6 +51,7 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| (no release) | Sailor v1.21.0 & v1.22.0 Migration | 2026-03-26 | Dependency update: sailor v1.20.0 → v1.22.0. v1.21.0: DataSource abstraction, large data benchmarks. v1.22.0: Rich text rendering, markdown parser, line breaking/hyphenation, text measurements (+123 tests). No breaking changes, backward compatible. Commit: 4176ca4 |
 | v1.56.0 | Windows Platform Enhancements | 2026-03-26 | Windows Console API-based non-blocking mouse read (WaitForSingleObject + ReadConsoleInput + PeekConsoleInputW), 21 Windows integration tests (console encoding, process spawning, env vars, file system, CLI, TUI), PowerShell completion script (Register-ArgumentCompleter), total 30 Windows tests (9 paths + 21 general). Commits: 69d161d (mouse timeout), 1ddb130 (integration tests), 0bdfeb6 (PowerShell completion) |
 | v1.55.0 | Enhanced Configuration System | 2026-03-26 | Multi-file imports ([imports] files), .env auto-loading, ${VAR} variable substitution in cmd/cwd/env, 33 integration tests (15 imports + 18 dotenv/varsubst), 72 unit tests (37 dotenv + 35 varsubst). Commits: 0ba2a02 (imports), 264ebc4 + e2b5692 (.env), b968828 (varsubst integration) |
 | v1.54.0 | TUI Mouse Interaction Enhancements | 2026-03-25 | Non-blocking read with timeout (POSIX termios), event batching for rapid mouse movement, double-click detection, drag-to-scroll in graph TUI, mouse wheel navigation, 13 unit tests + 3 integration tests |
