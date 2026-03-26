@@ -3,20 +3,16 @@
 ## Current Status
 
 - **Latest**: v1.56.0 (Windows Platform Enhancements)
-- **Next actionable milestone**: Phase 13A Documentation Review (READY)
-- **READY milestones**: 2 (Phase 13A Documentation Review, Phase 13C v1.0 Release Preparation)
+- **Next actionable milestone**: Phase 13C v1.0 Release Preparation (READY)
+- **READY milestones**: 1 (Phase 13C v1.0 Release Preparation)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
 ## Active Milestones
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
-
-### Phase 13A: Documentation Review & Validation
-
-Review and validate all documentation guides for accuracy, completeness, and consistency. Verify docs/guides/ (7 guides: getting-started, configuration, commands, mcp-integration, lsp-setup, adding-language, migration) match current implementation. Check for outdated examples, missing features, broken cross-references. Test all example commands and code snippets. Update version references, ensure installation instructions work, verify configuration examples parse correctly. Add missing sections for newly completed features (Phase 12C benchmarks, Phase 13B migration tools). **Status: READY** — All guides exist, need validation pass before v1.0.
 
 ### Phase 13C: v1.0 Release Preparation
 
@@ -55,6 +51,7 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| (no release) | Phase 13A: Documentation Review & Validation | 2026-03-26 | Comprehensive documentation review for v1.0 release. Updated version references (v1.56.0) in getting-started.md and README.md. Fixed broken cross-reference (expressions.md → configuration.md). Created benchmarks.md guide documenting Phase 12C performance benchmarks. Verified all configuration examples parse correctly. All 8 guides (getting-started, configuration, commands, benchmarks, mcp-integration, lsp-setup, migration, adding-language) validated and current. |
 | (no release) | Phase 12C: Benchmark Dashboard | 2026-03-26 | Comprehensive benchmark suite in `benchmarks/` directory. Performance comparison against Make, Just, and Task across binary size, cold start, config parsing, parallel execution, memory usage, and real-world scenarios. Results documented in benchmarks/RESULTS.md with analysis. Test scripts: run_benchmarks.sh, benchmark.sh. zr achieves Make-level performance (~4-8ms cold start, ~2-3MB memory) with 10x more features. |
 | (no release) | Phase 13B: Migration Tools | 2026-03-26 | Automatic config conversion from existing task runners to zr.toml. CLI flags: `--from-make`, `--from-just`, `--from-task` in `zr init` command. Migration modules: src/migrate/makefile.zig, justfile.zig, taskfile.zig. Parses Makefile targets, Justfile syntax, Taskfile.yml and generates equivalent zr.toml with tasks, dependencies, and commands. Enables easy migration from competing tools. |
 | (no release) | Sailor v1.21.0 & v1.22.0 Migration | 2026-03-26 | Dependency update: sailor v1.20.0 → v1.22.0. v1.21.0: DataSource abstraction, large data benchmarks. v1.22.0: Rich text rendering, markdown parser, line breaking/hyphenation, text measurements (+123 tests). No breaking changes, backward compatible. Commit: 4176ca4 |

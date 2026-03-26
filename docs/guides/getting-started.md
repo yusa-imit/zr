@@ -44,7 +44,7 @@ sudo cp zig-out/bin/zr /usr/local/bin/
 
 ```bash
 zr --version
-# zr v1.22.0
+# zr v1.56.0
 ```
 
 ## Quick Start
@@ -190,11 +190,12 @@ dir = "./packages/frontend"
 
 ## Next Steps
 
-- [Configuration Reference](configuration.md) — full TOML schema
+- [Configuration Reference](configuration.md) — full TOML schema (includes expressions guide)
 - [Commands Reference](commands.md) — all CLI commands
-- [Expressions Guide](expressions.md) — dynamic expressions and conditions
+- [Performance Benchmarks](benchmarks.md) — performance comparison vs Make, Just, Task
 - [MCP Integration](mcp-integration.md) — AI agent integration
 - [LSP Setup](lsp-setup.md) — editor integration
+- [Migration Guide](migration.md) — migrate from Make, Just, or Task
 - [Adding a Language](adding-language.md) — extend toolchain support
 
 ## Examples
