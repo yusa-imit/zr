@@ -1402,6 +1402,8 @@ fn runTaskSync(
         .exit_code = proc_result.exit_code,
         .duration_ms = proc_result.duration_ms,
         .retry_count = retry_count,
+        .peak_memory_bytes = proc_result.peak_memory_bytes,
+        .avg_cpu_percent = proc_result.avg_cpu_percent,
     }) catch {
         allocator.free(owned_name);
         return error.OutOfMemory;
@@ -2285,4 +2287,20 @@ test "RetryBudgetTracker: exhausted budget prevents retry" {
     try std.testing.expect(tracker.tryConsume()); // 0 remaining
     try std.testing.expect(!tracker.tryConsume()); // Exhausted
     try std.testing.expectEqual(@as(u32, 0), tracker.remaining());
+}
+
+// Task-level resource attribution tests
+test "TaskResult: resource metrics fields exist in struct" {
+    // Verify that TaskResult has the required resource tracking fields
+    const result = TaskResult{
+        .task_name = "test",
+        .success = true,
+        .exit_code = 0,
+        .duration_ms = 100,
+        .peak_memory_bytes = 1024 * 1024, // 1MB
+        .avg_cpu_percent = 25.5,
+    };
+
+    try std.testing.expectEqual(@as(u64, 1024 * 1024), result.peak_memory_bytes);
+    try std.testing.expectEqual(@as(f64, 25.5), result.avg_cpu_percent);
 }
