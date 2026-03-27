@@ -77,6 +77,7 @@ const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
 const show_cmd = @import("cli/show.zig");
 const schedule_cmd = @import("cli/schedule.zig");
+const monitor_dashboard = @import("cli/monitor.zig");
 const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
 const platform = @import("util/platform.zig");
@@ -519,7 +520,7 @@ fn run(
         "graph",      "history",    "init",       "validate",
         "completion", "workspace",  "cache",      "plugin",
         "registry",   "interactive", "i",          "live",
-        "interactive-run", "irun",       "tools",      "lint",
+        "monitor",    "interactive-run", "irun",       "tools",      "lint",
         "repo",       "codeowners", "version",    "publish",
         "analytics",  "context",    "conformance", "bench",
         "doctor",     "cd",         "shell-hook", "setup",      "env",        "export",
@@ -776,7 +777,7 @@ fn run(
             return 1;
         }
         const workflow_name = effective_args[2];
-        return monitor_cmd.cmdMonitor(allocator, workflow_name, config_path, effective_w, ew, effective_color);
+        return monitor_dashboard.cmdMonitor(allocator, workflow_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "interactive-run") or std.mem.eql(u8, cmd, "irun")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "interactive-run: missing task name\n\n  Hint: zr interactive-run <task-name>\n", .{});
@@ -1153,6 +1154,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  show <task>            Display detailed information about a task\n", .{});
     try w.print("  failures [list|clear]  View or clear captured task failure reports\n", .{});
     try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
+    try w.print("  monitor <workflow>     Execute workflow with real-time resource monitoring dashboard\n", .{});
     try w.print("  mcp serve              Start MCP server for Claude Code/Cursor integration\n", .{});
     try w.print("  lsp                    Start LSP server for VS Code/Neovim integration\n", .{});
     try w.print("  <alias>                Run a user-defined alias (e.g., 'zr dev' if 'dev' is defined)\n\n", .{});

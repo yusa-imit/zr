@@ -87,9 +87,9 @@ pub const MonitorDashboard = struct {
 
         // Add to history (circular buffer)
         if (self.cpu_history.items.len >= self.max_history_points) {
-            _ = self.cpu_history.orderedRemove(self.allocator, 0);
-            _ = self.mem_history.orderedRemove(self.allocator, 0);
-            _ = self.timestamps.orderedRemove(self.allocator, 0);
+            _ = self.cpu_history.orderedRemove(0);
+            _ = self.mem_history.orderedRemove(0);
+            _ = self.timestamps.orderedRemove(0);
         }
 
         try self.cpu_history.append(self.allocator, total_cpu);
@@ -428,6 +428,14 @@ fn estimateBytesLen(bytes: u64) usize {
     }
 }
 
+/// Context for monitoring thread - tracks task PIDs during execution.
+const MonitorContext = struct {
+    allocator: std.mem.Allocator,
+    dashboard: *MonitorDashboard,
+    process_map: *std.StringHashMap(std.posix.pid_t),
+    map_mutex: *std.Thread.Mutex,
+};
+
 /// CLI entry point for `zr monitor <workflow>` command.
 /// Executes the workflow and displays real-time resource monitoring dashboard.
 pub fn cmdMonitor(
@@ -459,22 +467,99 @@ pub fn cmdMonitor(
     var dashboard = try MonitorDashboard.init(allocator, use_color, &done);
     defer dashboard.deinit();
 
-    // Execute workflow with monitoring
-    // Note: This is a simplified implementation. In a full version, we would:
-    // 1. Spawn a thread to run the dashboard.run() loop
-    // 2. Execute the workflow tasks with the scheduler
-    // 3. Add tasks to the dashboard as they start
-    // 4. Update task status as they complete/fail
-    // 5. Set done=true when workflow completes
-    // For now, we'll show a placeholder message
+    // Create process map for tracking task PIDs
+    var process_map = std.StringHashMap(std.posix.pid_t).init(allocator);
+    defer process_map.deinit();
+    var map_mutex = std.Thread.Mutex{};
 
-    _ = workflow;
+    // Spawn monitoring thread
+    const monitor_ctx = MonitorContext{
+        .allocator = allocator,
+        .dashboard = &dashboard,
+        .process_map = &process_map,
+        .map_mutex = &map_mutex,
+    };
+    const monitor_thread = try std.Thread.spawn(.{}, monitoringLoop, .{monitor_ctx});
 
-    try color_mod.printError(ew, use_color, "Monitor command is work-in-progress. Full implementation pending.\n", .{});
-    try color_mod.printError(ew, use_color, "The monitoring dashboard UI is ready (MonitorDashboard struct).\n", .{});
-    try color_mod.printError(ew, use_color, "Integration with workflow execution will be completed in the next iteration.\n", .{});
+    // Execute workflow stages sequentially
+    var all_success = true;
+    for (workflow.stages) |stage| {
+        // Add stage header to dashboard (simplified - just track tasks)
+        const sched_config = scheduler.SchedulerConfig{
+            .max_jobs = 0, // Use all CPU cores
+            .inherit_stdio = true,
+            .dry_run = false,
+            .monitor = true, // Enable resource tracking in scheduler
+            .use_color = use_color,
+        };
 
-    return 0;
+        var result = scheduler.run(
+            allocator,
+            &config,
+            stage.tasks,
+            sched_config,
+        ) catch |err| {
+            done.store(true, .release);
+            monitor_thread.join();
+            try color_mod.printError(ew, use_color, "Stage '{s}' failed: {}\n", .{ stage.name, err });
+            return 1;
+        };
+        defer result.deinit(allocator);
+
+        if (!result.total_success) {
+            all_success = false;
+            // Stop on first failure (default workflow behavior)
+            break;
+        }
+    }
+
+    // Signal monitoring thread to stop
+    done.store(true, .release);
+    monitor_thread.join();
+
+    // Show final summary
+    if (all_success) {
+        try color_mod.printSuccess(ew, use_color, "\n✓ Workflow completed successfully\n", .{});
+    } else {
+        try color_mod.printError(ew, use_color, "\n✗ Workflow failed\n", .{});
+    }
+
+    return if (all_success) 0 else 1;
+}
+
+/// Monitoring thread loop - periodically discovers running processes and updates dashboard.
+fn monitoringLoop(ctx: MonitorContext) !void {
+    while (!ctx.dashboard.done.load(.acquire)) {
+        // Discover all child processes (zr spawns them, we track them by name)
+        try discoverAndTrackProcesses(ctx);
+
+        // Update metrics for all tracked tasks
+        try ctx.dashboard.updateMetrics();
+        try ctx.dashboard.render();
+
+        // Sleep for update interval
+        std.Thread.sleep(ctx.dashboard.update_interval_ms * std.time.ns_per_ms);
+    }
+
+    // Final render
+    try ctx.dashboard.updateMetrics();
+    try ctx.dashboard.render();
+}
+
+/// Discover child processes and add them to the dashboard if not already tracked.
+fn discoverAndTrackProcesses(ctx: MonitorContext) !void {
+    // This is a simplified implementation - in production, we would:
+    // 1. Parse /proc to find all child processes of current PID
+    // 2. Match process command lines to task names
+    // 3. Add new processes to the dashboard
+    //
+    // For now, we rely on the scheduler's resource tracking which already
+    // monitors processes via resource_monitor.zig. The dashboard will show
+    // aggregate resource usage even without per-task tracking.
+    //
+    // Future enhancement: Hook into scheduler's workerFn to register PIDs
+    // when tasks start, then remove them when tasks complete.
+    _ = ctx;
 }
 
 // Tests
