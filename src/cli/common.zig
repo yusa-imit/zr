@@ -149,7 +149,7 @@ pub fn buildDag(allocator: std.mem.Allocator, config: *const loader.Config) !dag
 }
 
 /// Write a JSON-encoded string (with surrounding quotes and escape sequences).
-pub fn writeJsonString(w: *std.Io.Writer, s: []const u8) !void {
+pub fn writeJsonString(w: anytype, s: []const u8) !void {
     try w.writeAll("\"");
     for (s) |c| {
         switch (c) {
@@ -167,13 +167,27 @@ pub fn writeJsonString(w: *std.Io.Writer, s: []const u8) !void {
 
 test "writeJsonString escapes special characters" {
     var buf: [256]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var w = stdout.writer(&buf);
+    var stream = std.io.fixedBufferStream(&buf);
+    const writer = stream.writer();
 
-    try writeJsonString(&w.interface, "hello world");
-    try writeJsonString(&w.interface, "with \"quotes\"");
-    try writeJsonString(&w.interface, "with\nnewline");
-    try writeJsonString(&w.interface, "with\\backslash");
+    // Test basic string
+    try writeJsonString(writer, "hello world");
+    try std.testing.expectEqualStrings("\"hello world\"", stream.getWritten());
+
+    // Test quotes
+    stream.reset();
+    try writeJsonString(writer, "with \"quotes\"");
+    try std.testing.expectEqualStrings("\"with \\\"quotes\\\"\"", stream.getWritten());
+
+    // Test newline
+    stream.reset();
+    try writeJsonString(writer, "with\nnewline");
+    try std.testing.expectEqualStrings("\"with\\nnewline\"", stream.getWritten());
+
+    // Test backslash
+    stream.reset();
+    try writeJsonString(writer, "with\\backslash");
+    try std.testing.expectEqualStrings("\"with\\\\backslash\"", stream.getWritten());
 }
 
 test "buildDag with conditional dependencies - condition true" {

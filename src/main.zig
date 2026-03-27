@@ -1338,17 +1338,28 @@ test "--format missing value returns error" {
 }
 
 test "writeJsonString escapes special characters" {
-    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
-    defer null_file.close();
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    const writer = stream.writer();
 
-    var out_buf: [4096]u8 = undefined;
-    var out_w = null_file.writer(&out_buf);
+    // Test basic string
+    try common.writeJsonString(writer, "hello world");
+    try std.testing.expectEqualStrings("\"hello world\"", stream.getWritten());
 
-    // Just test that it runs without error on common characters.
-    try common.writeJsonString(&out_w.interface, "hello world");
-    try common.writeJsonString(&out_w.interface, "with \"quotes\"");
-    try common.writeJsonString(&out_w.interface, "with\nnewline");
-    try common.writeJsonString(&out_w.interface, "with\\backslash");
+    // Test quotes
+    stream.reset();
+    try common.writeJsonString(writer, "with \"quotes\"");
+    try std.testing.expectEqualStrings("\"with \\\"quotes\\\"\"", stream.getWritten());
+
+    // Test newline
+    stream.reset();
+    try common.writeJsonString(writer, "with\nnewline");
+    try std.testing.expectEqualStrings("\"with\\nnewline\"", stream.getWritten());
+
+    // Test backslash
+    stream.reset();
+    try common.writeJsonString(writer, "with\\backslash");
+    try std.testing.expectEqualStrings("\"with\\\\backslash\"", stream.getWritten());
 }
 
 test "cmdList --format json returns valid JSON with tasks field" {
@@ -1362,12 +1373,12 @@ test "cmdList --format json returns valid JSON with tasks field" {
     var out_w = null_file.writer(&out_buf);
     var err_w = null_file.writer(&err_buf);
 
-    // Without a real config file this returns 1 — ensure it doesn't crash
-    // and that flag parsing itself works (no panic).
+    // Without a real config file this succeeds with empty task list.
+    // This test verifies flag parsing works and the command doesn't crash/panic.
     const fake_args = [_][]const u8{ "zr", "--format", "json", "list" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
-    // Exit 1 expected (no zr.toml in cwd during tests) — but no crash/panic.
-    _ = code;
+    // Exit 0 expected (command succeeds even without zr.toml, shows empty list)
+    try std.testing.expectEqual(@as(u8, 0), code);
 }
 
 test "workspace command: missing subcommand returns error" {
