@@ -5,7 +5,7 @@ const types = @import("../config/types.zig");
 const parser = @import("../config/parser.zig");
 
 /// Interactive add command for creating tasks, workflows, and profiles.
-/// Usage: zr add <task|workflow|profile> [name]
+/// Usage: zr add <task|workflow|profile> [name] [--interactive]
 pub fn cmdAdd(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -19,8 +19,37 @@ pub fn cmdAdd(
         return 1;
     }
 
+    // Check for --interactive flag
+    var is_interactive = false;
+    var name: ?[]const u8 = null;
+
+    for (args[1..]) |arg| {
+        if (std.mem.eql(u8, arg, "--interactive")) {
+            is_interactive = true;
+        } else if (name == null) {
+            name = arg;
+        }
+    }
+
     const add_type = args[0];
-    const name = if (args.len >= 2) args[1] else null;
+
+    // If interactive mode requested, check if TTY available
+    if (is_interactive) {
+        const add_interactive = @import("add_interactive.zig");
+        if (!add_interactive.isTty()) {
+            try color.printError(ew, use_color, "Interactive mode requires a TTY terminal.\n\n  Hint: Run without --interactive flag for prompt-based mode\n", .{});
+            return 1;
+        }
+
+        if (std.mem.eql(u8, add_type, "task")) {
+            return add_interactive.addTaskInteractive(allocator, name, config_path, w, ew, use_color);
+        } else if (std.mem.eql(u8, add_type, "workflow")) {
+            return add_interactive.addWorkflowInteractive(allocator, name, config_path, w, ew, use_color);
+        } else {
+            try color.printError(ew, use_color, "add: interactive mode not yet supported for '{s}'\n\n  Hint: Use 'task' or 'workflow'\n", .{add_type});
+            return 1;
+        }
+    }
 
     if (std.mem.eql(u8, add_type, "task")) {
         return addTask(allocator, name, config_path, w, ew, use_color);
