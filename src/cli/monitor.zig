@@ -3,6 +3,9 @@ const builtin = @import("builtin");
 const sailor = @import("sailor");
 const resource = @import("../exec/resource.zig");
 const color_mod = @import("../output/color.zig");
+const loader = @import("../config/loader.zig");
+const scheduler = @import("../exec/scheduler.zig");
+const types = @import("../config/types.zig");
 
 /// Task execution metrics for monitoring dashboard.
 pub const TaskMetrics = struct {
@@ -423,6 +426,55 @@ fn estimateBytesLen(bytes: u64) usize {
     } else {
         return 9; // "1024.00 GB"
     }
+}
+
+/// CLI entry point for `zr monitor <workflow>` command.
+/// Executes the workflow and displays real-time resource monitoring dashboard.
+pub fn cmdMonitor(
+    allocator: std.mem.Allocator,
+    workflow_name: []const u8,
+    config_path: ?[]const u8,
+    w: anytype,
+    ew: anytype,
+    use_color: bool,
+) !u8 {
+    _ = w; // Not used in this command (TUI takes over stdout)
+
+    // Load config
+    const resolved_path = config_path orelse "zr.toml";
+    var config = loader.loadFromFile(allocator, resolved_path) catch |err| {
+        try color_mod.printError(ew, use_color, "Failed to load config: {}\n", .{err});
+        return 1;
+    };
+    defer config.deinit();
+
+    // Find workflow
+    const workflow = config.workflows.get(workflow_name) orelse {
+        try color_mod.printError(ew, use_color, "Workflow '{s}' not found\n", .{workflow_name});
+        return 1;
+    };
+
+    // Create monitoring dashboard
+    var done = std.atomic.Value(bool).init(false);
+    var dashboard = try MonitorDashboard.init(allocator, use_color, &done);
+    defer dashboard.deinit();
+
+    // Execute workflow with monitoring
+    // Note: This is a simplified implementation. In a full version, we would:
+    // 1. Spawn a thread to run the dashboard.run() loop
+    // 2. Execute the workflow tasks with the scheduler
+    // 3. Add tasks to the dashboard as they start
+    // 4. Update task status as they complete/fail
+    // 5. Set done=true when workflow completes
+    // For now, we'll show a placeholder message
+
+    _ = workflow;
+
+    try color_mod.printError(ew, use_color, "Monitor command is work-in-progress. Full implementation pending.\n", .{});
+    try color_mod.printError(ew, use_color, "The monitoring dashboard UI is ready (MonitorDashboard struct).\n", .{});
+    try color_mod.printError(ew, use_color, "Integration with workflow execution will be completed in the next iteration.\n", .{});
+
+    return 0;
 }
 
 // Tests

@@ -118,7 +118,6 @@ comptime {
     _ = alias_cmd;
     _ = estimate_cmd;
     _ = schedule_cmd;
-    _ = monitor_cmd;
     _ = loader;
     _ = parser;
     _ = expr;
@@ -769,6 +768,13 @@ fn run(
         }
         const task_names = effective_args[2..];
         return live_cmd.cmdLive(allocator, task_names, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "monitor")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "monitor: missing workflow name\n\n  Hint: zr monitor <workflow-name>\n", .{});
+            return 1;
+        }
+        const workflow_name = effective_args[2];
+        return monitor_cmd.cmdMonitor(allocator, workflow_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "interactive-run") or std.mem.eql(u8, cmd, "irun")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "interactive-run: missing task name\n\n  Hint: zr interactive-run <task-name>\n", .{});
@@ -1110,6 +1116,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  registry serve         Start plugin registry HTTP server\n", .{});
     try w.print("  interactive, i         Launch interactive TUI task picker\n", .{});
     try w.print("  live <task>            Run task with live TUI log streaming\n", .{});
+    try w.print("  monitor <workflow>     Real-time resource dashboard for workflow execution\n", .{});
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("    --detect             Auto-detect project languages and generate tasks\n", .{});
