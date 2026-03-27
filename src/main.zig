@@ -88,6 +88,7 @@ const numa = @import("util/numa.zig");
 const profiler = @import("util/profiler.zig");
 const resource = @import("exec/resource.zig");
 const resource_monitor = @import("exec/resource_monitor.zig");
+const metrics_export = @import("exec/metrics_export.zig");
 const control = @import("exec/control.zig");
 const toolchain_types = @import("toolchain/types.zig");
 const toolchain_installer = @import("toolchain/installer.zig");
@@ -178,6 +179,7 @@ comptime {
     _ = profiler;
     _ = resource;
     _ = resource_monitor;
+    _ = metrics_export;
     _ = control;
     _ = toolchain_types;
     _ = toolchain_installer;
