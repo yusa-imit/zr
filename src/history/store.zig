@@ -171,6 +171,11 @@ pub fn defaultHistoryPath(allocator: std.mem.Allocator) ![]const u8 {
 // Tests
 // ---------------------------------------------------------------------------
 
+test {
+    // Include stats.zig tests in test compilation
+    _ = @import("stats.zig");
+}
+
 test "parseLine: valid line with retry_count" {
     const allocator = std.testing.allocator;
     const line = "1700000000\tbuild\tok\t1234\t3\t2";
