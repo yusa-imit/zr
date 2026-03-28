@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.57.0 (Phase 13C: v1.0-Equivalent Release — ALL Phase 1-13 objectives complete)
-- **Next actionable milestone**: Post-v1.0 enhancements (zuda migrations when unblocked, new feature milestones)
-- **READY milestones**: 0 (all Phase 1-13 milestones complete, post-v1.0 enhancements in progress)
+- **Next actionable milestone**: TOML Parser Enhancement, Task Estimation & Time Tracking, Configuration Validation Enhancements, Interactive Workflow Visualizer (4 new milestones established 2026-03-28)
+- **READY milestones**: 4 (TOML Parser Enhancement, Task Estimation & Time Tracking, Configuration Validation Enhancements, Interactive Workflow Visualizer)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -119,6 +119,60 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 - Integration tests for pager behavior (16 tests in integration_pager.zig)
 - Unit tests for pager module (20 tests in util/pager.zig)
 **Status: DONE** — Completed 2026-03-25. Automatic pager spawns when output exceeds terminal height, `--no-pager` flag added, environment variable support (`ZR_PAGER`, `PAGER`), TTY detection, color preservation.
+
+### TOML Parser Enhancement (Section Syntax Support)
+
+Extend TOML parser to support section-based syntax for retry configuration, currently only inline table syntax is supported. This allows cleaner multi-line configuration for complex retry strategies. Includes:
+- Parse `[tasks.X.retry]` section syntax (currently unimplemented, see Retry Strategy Integration Completion milestone note)
+- Support both inline (`retry = { max = 3, delay_ms = 100 }`) and section syntax
+- Update parser tests to cover both formats
+- Ensure backward compatibility (existing inline syntax continues to work)
+- Extend to other nested configurations (hooks, conditional dependencies) for consistency
+- Add comprehensive parser tests for section syntax edge cases
+**Status: READY** — Parser currently only supports inline table syntax. Section syntax would improve readability for complex configurations.
+
+### Task Estimation & Time Tracking
+
+Implement task duration estimation and historical time tracking to help users understand and predict task execution patterns. Uses execution history data to provide insights. Includes:
+- Historical duration tracking per task (min/max/avg/p50/p90/p99 from history)
+- Duration estimate display in `zr list` and `zr run` preview
+- Anomaly detection (task took 2x longer than p90 → warning)
+- `zr estimate <task>` command for single-task duration prediction
+- `zr estimate <workflow>` for workflow total time (sum of critical path)
+- Integration with existing `src/history/` module (read history.jsonl)
+- Statistical analysis module (percentiles, standard deviation)
+- TUI progress bar with ETA based on historical avg
+- Export estimates to JSON for external tools
+**Status: READY** — Foundation exists (history module), needs aggregation and prediction layer.
+
+### Configuration Validation Enhancements
+
+Improve configuration validation with actionable error messages, suggestions, and common mistake detection. Builds on existing `zr validate` command. Includes:
+- Detect common mistakes (typo in task names, circular dependencies, undefined variables)
+- Suggest fixes using Levenshtein distance ("Did you mean 'build-prod'?" for 'build-prod')
+- Validate expression syntax with detailed error positions (line/column)
+- Check for unused tasks (defined but never referenced in deps or workflows)
+- Detect duplicate task names across imports (namespace collision warnings)
+- Schema validation for plugin configurations (validate plugin-specific TOML sections)
+- Performance warnings (e.g., workflow with >100 tasks, deep dependency chains >10 levels)
+- `zr validate --strict` mode (treat warnings as errors for CI)
+- Integration with LSP for real-time validation in editors
+**Status: READY** — Extends existing `src/cli/validate.zig` with advanced checks.
+
+### Interactive Workflow Visualizer
+
+Create an interactive HTML/SVG-based workflow visualization for understanding complex task graphs. Complements existing ASCII graph with modern web UI. Includes:
+- Generate standalone HTML file with embedded SVG graph (no external dependencies)
+- Interactive features: zoom, pan, click task to see details (cmd, deps, env)
+- Color-coded nodes (pending/running/success/failed status from last execution)
+- Critical path highlighting (longest dependency chain)
+- Filter by tags, status, or regex pattern
+- Export to PNG/SVG for documentation
+- `zr graph --interactive` generates HTML, opens in default browser
+- `zr graph --watch` live-updates graph during workflow execution
+- Integration with existing `src/graph/ascii.zig` for layout algorithm reuse
+- Responsive design (works on mobile/tablet for remote monitoring)
+**Status: READY** — Builds on existing DAG + ASCII renderer, adds HTML/CSS/JS layer.
 
 ---
 
