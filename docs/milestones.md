@@ -3,10 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.57.0 (Phase 13C: v1.0-Equivalent Release — ALL Phase 1-13 objectives complete)
-- **Next actionable milestone**: Post-v1.0 enhancements (zuda migrations when unblocked)
-- **READY milestones**: 0 (all Phase 1-13 milestones complete)
+- **Next actionable milestone**: Post-v1.0 enhancements (zuda migrations when unblocked, new feature milestones)
+- **READY milestones**: 0 (all Phase 1-13 milestones complete, post-v1.0 enhancements in progress)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -31,15 +31,15 @@ Complete the TODO items in resource monitoring for comprehensive real-time perfo
 ### Interactive Task Builder TUI
 
 Create a form-based interactive TUI for building tasks without manually editing TOML. Enhance the existing `zr add task` command with a rich interactive mode featuring field validation, inline help, and live preview. Includes:
-- Form-based TUI with sailor Form widget (text input, select, checkbox fields)
+- Text-based prompts for task/workflow creation (implemented with retry loops)
 - Field validation with instant feedback (required fields, valid expressions, existing deps)
-- Inline contextual help (hover/F1 for field descriptions, examples)
-- Live TOML preview pane showing generated config
-- Dependency picker with autocomplete from existing tasks
-- Save to zr.toml with syntax-highlighted diff preview
-- Template selection (common task patterns: build, test, deploy, docker, git)
+- Live TOML preview showing generated config before save
+- Dependency existence validation (checks against existing tasks in config)
+- Expression syntax validation (basic check for unmatched {{ }})
+- Save to zr.toml with confirmation prompt and backup (.bak)
+- Re-parse validation after save to ensure config integrity
 - Extend to workflow builder (`zr add workflow --interactive`)
-**Status: READY** — Post-v1.0 UX enhancement, leverages sailor v1.4.0 Form widgets.
+**Status: DONE** — Completed 2026-03-28 (Cycle 33). Implemented with text prompts instead of sailor Form widgets due to API compatibility issues with sailor v1.22.0. Full implementation in src/cli/add_interactive.zig with 41 integration tests. Commands: `zr add task --interactive`, `zr add workflow --interactive`.
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
