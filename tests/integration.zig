@@ -53,6 +53,7 @@ comptime {
     _ = @import("remote_test.zig");
     _ = @import("repo_test.zig");
     _ = @import("retry_strategy_test.zig");
+    _ = @import("retry_section_syntax_test.zig");
     _ = @import("run_test.zig");
     _ = @import("schedule_test.zig");
     _ = @import("setup_test.zig");

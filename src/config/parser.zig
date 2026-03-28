@@ -357,6 +357,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var in_task_env: bool = false;     // true when inside [tasks.X.env] section
     var in_task_toolchain: bool = false; // true when inside [tasks.X.toolchain] section
     var in_task_hooks: bool = false;    // true when inside [[tasks.X.hooks]] section (v1.24.0)
+    var in_task_retry: bool = false;    // true when inside [tasks.X.retry] section (v1.48.0)
     var pending_task_name: ?[]const u8 = null; // task name from subsection
     // Buffer for matrix TOML (will be content for task_matrix_raw when main task appears)
     var pending_matrix_buffer = std.ArrayList(u8){};
@@ -388,6 +389,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var current_hook_working_dir: ?[]const u8 = null;
     var current_hook_env = std.ArrayList([2][]const u8){};
     defer current_hook_env.deinit(allocator);
+
 
     // Template parsing state — non-owning slices into content
     var current_template: ?[]const u8 = null;
@@ -1158,12 +1160,44 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
 
             in_task_watch = true;
+        } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".retry]") != null) {
+            // Section: [tasks.X.retry] — retry configuration for task X (v1.48.0)
+            in_workspace = false;
+            in_cache = false;
+            in_cache_remote = false;
+            in_task_watch = false;
+
+            // Extract task name: "[tasks.X.retry]" → X
+            const retry_marker = ".retry]";
+            const retry_idx = std.mem.indexOf(u8, trimmed, retry_marker) orelse return error.MalformedSectionHeader;
+
+            // Check if task name would be empty (e.g., [tasks.retry])
+            if (retry_idx <= "[tasks.".len) {
+                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
+                return error.ReservedTaskName;
+            }
+
+            const before_retry = trimmed["[tasks.".len .. retry_idx];
+
+            // Verify we're currently in this task's context
+            if (current_task) |task_name| {
+                if (!std.mem.eql(u8, task_name, before_retry)) {
+                    std.debug.print("Error: [tasks.{s}.retry] must follow [tasks.{s}]\n", .{ before_retry, before_retry });
+                    return error.MalformedSectionHeader;
+                }
+            } else {
+                std.debug.print("Error: [tasks.{s}.retry] must follow [tasks.{s}]\n", .{ before_retry, before_retry });
+                return error.MalformedSectionHeader;
+            }
+
+            in_task_retry = true;
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".matrix]") != null) {
             // Section: [tasks.X.matrix] — matrix configuration for task X (v1.19.0)
             in_workspace = false;
             in_cache = false;
             in_cache_remote = false;
             in_task_watch = false;
+            in_task_retry = false;
 
             // Extract task name: "[tasks.X.matrix]" → X
             const matrix_marker = ".matrix]";
@@ -1182,6 +1216,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_matrix = true;
             in_task_env = false;
             in_task_toolchain = false;
+            in_task_retry = false;
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".env]") != null) {
             // Section: [tasks.X.env] — env configuration for task X (v1.19.0)
             in_workspace = false;
@@ -1206,6 +1241,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_env = true;
             in_task_matrix = false;
             in_task_toolchain = false;
+            in_task_retry = false;
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".toolchain]") != null) {
             // Section: [tasks.X.toolchain] — toolchain configuration for task X (v1.19.0)
             in_workspace = false;
@@ -1231,6 +1267,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_matrix = false;
             in_task_env = false;
             in_task_hooks = false;
+            in_task_retry = false;
         } else if (std.mem.startsWith(u8, trimmed, "[[tasks.") and std.mem.indexOf(u8, trimmed, ".hooks]]") != null) {
             // Section: [[tasks.X.hooks]] — hook configuration for task X (v1.24.0)
             // This is an array-of-tables section, each entry is a hook
@@ -1275,6 +1312,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_matrix = false;
             in_task_env = false;
             in_task_toolchain = false;
+            in_task_retry = false;
 
             // Reset current hook state for new hook entry
             current_hook_cmd = null;
@@ -1432,6 +1470,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_env = false;
             in_task_toolchain = false;
             in_task_hooks = false;
+            in_task_retry = false;
             in_cache_remote = false;
             // Validate section header has closing bracket
             current_task = validateSectionHeader(trimmed, "[tasks.") catch |err| {
@@ -1985,6 +2024,54 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     }
                 } else {
                     // Unknown field, ignore
+                }
+            } else if (in_task_retry) {
+                // Inside [tasks.X.retry] section (v1.48.0)
+                if (std.mem.eql(u8, key, "max")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    task_retry_max = std.fmt.parseInt(u32, trimmed_val, 10) catch 0;
+                } else if (std.mem.eql(u8, key, "delay_ms")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    task_retry_delay_ms = std.fmt.parseInt(u64, trimmed_val, 10) catch 0;
+                } else if (std.mem.eql(u8, key, "delay")) {
+                    // Alternative: parse as duration (e.g., "100ms")
+                    task_retry_delay_ms = parseDurationMs(value) orelse 0;
+                } else if (std.mem.eql(u8, key, "backoff")) {
+                    task_retry_backoff = std.mem.eql(u8, value, "exponential");
+                } else if (std.mem.eql(u8, key, "backoff_multiplier")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    task_retry_backoff_multiplier = std.fmt.parseFloat(f64, trimmed_val) catch null;
+                } else if (std.mem.eql(u8, key, "jitter")) {
+                    task_retry_jitter = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "max_backoff_ms")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    task_max_backoff_ms = std.fmt.parseInt(u64, trimmed_val, 10) catch null;
+                } else if (std.mem.eql(u8, key, "max_backoff")) {
+                    // Alternative: parse as duration (e.g., "1000ms")
+                    task_max_backoff_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "on_codes")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const codes_str = value[1 .. value.len - 1];
+                        var codes_it = std.mem.splitScalar(u8, codes_str, ',');
+                        while (codes_it.next()) |code| {
+                            const trimmed_code = std.mem.trim(u8, code, " \t");
+                            if (trimmed_code.len > 0) {
+                                const code_val = std.fmt.parseInt(u8, trimmed_code, 10) catch continue;
+                                try task_retry_on_codes.append(allocator, code_val);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "on_patterns")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const patterns_str = value[1 .. value.len - 1];
+                        var patterns_it = std.mem.splitScalar(u8, patterns_str, ',');
+                        while (patterns_it.next()) |pattern| {
+                            const trimmed_pattern = std.mem.trim(u8, pattern, " \t\"");
+                            if (trimmed_pattern.len > 0) {
+                                try task_retry_on_patterns.append(allocator, trimmed_pattern);
+                            }
+                        }
+                    }
                 }
             } else if (current_task != null) {
                 // Task-level key=value parsing
