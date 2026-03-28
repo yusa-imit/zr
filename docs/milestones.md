@@ -3,10 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.57.0 (Phase 13C: v1.0-Equivalent Release — ALL Phase 1-13 objectives complete)
-- **Next actionable milestone**: TOML Parser Enhancement, Task Estimation & Time Tracking, Configuration Validation Enhancements, Interactive Workflow Visualizer (4 new milestones established 2026-03-28)
-- **READY milestones**: 4 (TOML Parser Enhancement, Task Estimation & Time Tracking, Configuration Validation Enhancements, Interactive Workflow Visualizer)
+- **Next actionable milestone**: Task Estimation & Time Tracking, Configuration Validation Enhancements, Interactive Workflow Visualizer (3 READY milestones)
+- **READY milestones**: 3 (Task Estimation & Time Tracking, Configuration Validation Enhancements, Interactive Workflow Visualizer)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
+- **DONE**: TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
@@ -123,13 +123,13 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 ### TOML Parser Enhancement (Section Syntax Support)
 
 Extend TOML parser to support section-based syntax for retry configuration, currently only inline table syntax is supported. This allows cleaner multi-line configuration for complex retry strategies. Includes:
-- Parse `[tasks.X.retry]` section syntax (currently unimplemented, see Retry Strategy Integration Completion milestone note)
-- Support both inline (`retry = { max = 3, delay_ms = 100 }`) and section syntax
-- Update parser tests to cover both formats
-- Ensure backward compatibility (existing inline syntax continues to work)
-- Extend to other nested configurations (hooks, conditional dependencies) for consistency
-- Add comprehensive parser tests for section syntax edge cases
-**Status: READY** — Parser currently only supports inline table syntax. Section syntax would improve readability for complex configurations.
+- ✅ Parse `[tasks.X.retry]` section syntax
+- ✅ Support both inline (`retry = { max = 3, delay_ms = 100 }`) and section syntax
+- ✅ Update parser tests to cover both formats (18 integration tests in tests/retry_section_syntax_test.zig)
+- ✅ Ensure backward compatibility (existing inline syntax continues to work)
+- ⚠️ Extend to other nested configurations (hooks, conditional dependencies) — deferred, retry complete
+- ✅ Add comprehensive parser tests for section syntax edge cases
+**Status: DONE** — Completed 2026-03-29 (Cycle 38). Section syntax now supported for retry configuration. Parser handles [tasks.X.retry] sections with all retry fields (max, delay_ms, backoff_multiplier, jitter, max_backoff_ms, on_codes, on_patterns). Both inline and section syntax work in same config. Manual testing confirms retry execution with section syntax. 18 integration tests cover all field combinations and edge cases.
 
 ### Task Estimation & Time Tracking
 
