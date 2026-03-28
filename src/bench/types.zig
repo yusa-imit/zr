@@ -56,7 +56,18 @@ pub const BenchmarkConfig = struct {
 test "BenchmarkStats init/deinit" {
     const allocator = std.testing.allocator;
     var stats = BenchmarkStats.init(allocator);
-    stats.deinit();
+    defer stats.deinit();
+
+    // Verify all fields are initialized to zero/empty
+    try std.testing.expectEqual(@as(u64, 0), stats.mean_ns);
+    try std.testing.expectEqual(@as(u64, 0), stats.median_ns);
+    try std.testing.expectEqual(@as(u64, 0), stats.min_ns);
+    try std.testing.expectEqual(@as(u64, 0), stats.max_ns);
+    try std.testing.expectEqual(@as(u64, 0), stats.std_dev_ns);
+    try std.testing.expectEqual(@as(usize, 0), stats.total_runs);
+    try std.testing.expectEqual(@as(usize, 0), stats.successful_runs);
+    try std.testing.expectEqual(@as(usize, 0), stats.failed_runs);
+    try std.testing.expectEqual(@as(usize, 0), stats.runs.len);
 }
 
 test "BenchmarkRun size" {

@@ -1441,6 +1441,10 @@ test "RemoteCache init and deinit" {
     };
     var cache = RemoteCache.init(allocator, config);
     defer cache.deinit();
+
+    // Verify initialization
+    try std.testing.expectEqual(types.RemoteCacheType.http, cache.config.type);
+    try std.testing.expectEqualStrings("https://cache.example.com", cache.config.url.?);
 }
 
 test "formatISO8601" {

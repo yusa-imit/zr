@@ -298,5 +298,14 @@ test "CheckResult init and deinit" {
     const allocator = std.testing.allocator;
     result.found_version = try allocator.dupe(u8, "1.0.0");
     result.message = try allocator.dupe(u8, "test message");
+
+    // Verify fields are set correctly
+    try std.testing.expectEqualStrings("test", result.name);
+    try std.testing.expectEqual(false, result.name_owned);
+    try std.testing.expectEqual(@as(?[]const u8, null), result.required_version);
+    try std.testing.expectEqualStrings("1.0.0", result.found_version.?);
+    try std.testing.expectEqualStrings("test message", result.message.?);
+    try std.testing.expectEqual(CheckResult.Status.ok, result.status);
+
     result.deinit(allocator);
 }
