@@ -57,6 +57,58 @@ Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.qu
 
 Migrate from custom `src/util/glob.zig` (130 LOC) to `zuda.algorithms.string.globMatch` (issue #25). Add zuda dependency, replace glob matching logic, verify tests pass. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.string.globMatch, reduced pattern matching logic from 44 LOC to wrapper, added character class support, all 1024 integration tests passing.
 
+### Sailor v1.23.0 Migration (Plugin Architecture)
+
+Migrate to sailor v1.23.0 which introduces plugin architecture and extensibility features. This enables custom widgets and composition helpers in zr's TUI components. Includes:
+- Widget trait system for custom widget implementations
+- Pre/post render callbacks for custom effects
+- Theme plugin system with JSON loading and runtime switching
+- Composition helpers (Padding, Centered, Aligned, Stack, Constrained)
+- Full nesting support for widget composition
+- Update `build.zig.zon` dependency to v1.23.0
+- Review all TUI components for potential plugin integration
+- No breaking changes expected (backward compatible)
+**Status: READY** — sailor v1.23.0 released 2026-03-26. Migration can proceed immediately.
+
+### Sailor v1.24.0 Migration (Animation & Transitions)
+
+Migrate to sailor v1.24.0 which adds animation system for smooth, time-based rendering. This can enhance zr's progress indicators, graph visualization transitions, and TUI feedback. Includes:
+- 22 easing functions (linear, cubic, elastic, bounce, back, circ, expo)
+- Animation struct for value interpolation
+- ColorAnimation for smooth color transitions
+- Timer/TimerManager for async scheduling
+- Transition helpers (fade, slide effects)
+- Update `build.zig.zon` dependency to v1.24.0 (after v1.23.0)
+- Review progress bars, TUI transitions, live execution views for animation opportunities
+- +271 tests in sailor (no zr changes needed unless utilizing animations)
+**Status: BLOCKED** — Depends on sailor v1.23.0 migration. Can proceed after v1.23.0 complete.
+
+### Sailor v1.25.0 Migration (Form & Validation)
+
+Migrate to sailor v1.25.0 which completes form widget system with comprehensive validation. This DIRECTLY addresses the Interactive Task Builder TUI milestone's original goal of using sailor Form widgets (deferred in Cycle 31 due to API issues with v1.22.0). Includes:
+- Form widget with multi-field container and fluent API
+- Field focus management (Tab/Shift+Tab navigation)
+- Password field masking
+- 15+ built-in validators (notEmpty, minLength, email, url, ipv4, numeric, etc.)
+- Input masks (SSN, phone, date, credit card, ZIP)
+- Inline error display and optional help text
+- Update `build.zig.zon` dependency to v1.25.0 (after v1.24.0)
+- **Revisit Interactive Task Builder TUI**: replace text prompts in `src/cli/add_interactive.zig` with sailor v1.25.0 Form widgets
+- Add live TOML preview pane, field validation, dependency picker (original milestone goals)
+- Update integration tests (41 existing tests in tests/add_interactive_test.zig)
+**Status: BLOCKED** — Depends on sailor v1.24.0 migration. Can proceed after v1.24.0 complete. **HIGH PRIORITY** for completing original Interactive Task Builder TUI goals.
+
+### Retry Strategy Integration Completion
+
+Complete the integration of retry strategies from v1.47.0. Currently 6 tests are skipped due to implementation gaps (timing variance, retry_on_codes/patterns config parsing). Includes:
+- Fix timing variance issues in retry backoff tests (tests 120, 140)
+- Implement retry_on_codes config parsing in scheduler (tests 124, 128)
+- Implement retry_on_patterns config parsing in scheduler (tests 132, 136)
+- Remove `return error.SkipZigTest` from 6 tests in tests/retry_strategy_test.zig
+- Verify all retry strategy scenarios work end-to-end
+- Add integration tests for retry behavior with real task failures
+**Status: READY** — Implementation started but incomplete. Can proceed immediately.
+
 ### Output Enhancement & Pager Integration
 
 Complete the deferred pager integration from Task Output Streaming Improvements (v1.49.0). Implement automatic pager integration for `zr show --output` command to handle large output files gracefully. Add support for `less`/`more` style navigation with search, color preservation, and keyboard shortcuts. Includes:
@@ -158,8 +210,8 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 ### Sailor Library
 
-- **Current in zr**: v1.20.0 (all migrations complete through v1.20.0)
-- **Next**: v1.21.0, v1.22.0 available (READY for migration)
+- **Current in zr**: v1.22.0 (all migrations complete through v1.22.0)
+- **Next**: v1.23.0, v1.24.0, v1.25.0 available (READY for migration)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -192,8 +244,11 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 | v1.18.0 | DONE | Hot reload for themes, widget inspector, benchmark suite, example gallery, documentation generator |
 | v1.19.0 | DONE | Progress bar templates, environment variable config, color themes, table formatting, arg groups |
 | v1.20.0 | DONE | Windows Console Unicode tests, pattern documentation, quality improvements |
-| v1.21.0 | READY | Available for migration (check CHANGELOG for details) |
-| v1.22.0 | READY | Available for migration (check CHANGELOG for details) |
+| v1.21.0 | DONE | Streaming & Large Data — DataSource abstraction, large dataset benchmarks |
+| v1.22.0 | DONE | Rich Text & Formatting — markdown parser, line breaking/hyphenation, text measurements |
+| v1.23.0 | READY | Plugin Architecture & Extensibility — widget trait system, custom renderer hooks, theme plugins, composition helpers (Padding, Centered, Aligned, Stack, Constrained) |
+| v1.24.0 | READY | Animation & Transitions — 22 easing functions, Animation/ColorAnimation structs, Timer/TimerManager, transition helpers |
+| v1.25.0 | READY | Form & Validation — form widget with multi-field container, 15+ validators, input masks, password masking, Tab navigation |
 
 ### zuda Library
 
