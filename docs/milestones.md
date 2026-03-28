@@ -81,7 +81,7 @@ Migrate to sailor v1.24.0 which adds animation system for smooth, time-based ren
 - Update `build.zig.zon` dependency to v1.24.0 (after v1.23.0)
 - Review progress bars, TUI transitions, live execution views for animation opportunities
 - +271 tests in sailor (no zr changes needed unless utilizing animations)
-**Status: READY** — Unblocked by v1.23.0 completion. Can proceed immediately.
+**Status: DONE** — Completed 2026-03-28 (Cycle 36). Updated build.zig.zon, all 1197 unit tests pass, no code changes required (backward compatible).
 
 ### Sailor v1.25.0 Migration (Form & Validation)
 
@@ -96,7 +96,7 @@ Migrate to sailor v1.25.0 which completes form widget system with comprehensive 
 - **Revisit Interactive Task Builder TUI**: replace text prompts in `src/cli/add_interactive.zig` with sailor v1.25.0 Form widgets
 - Add live TOML preview pane, field validation, dependency picker (original milestone goals)
 - Update integration tests (41 existing tests in tests/add_interactive_test.zig)
-**Status: BLOCKED** — Depends on sailor v1.24.0 migration. Can proceed after v1.24.0 complete. **HIGH PRIORITY** for completing original Interactive Task Builder TUI goals.
+**Status: READY** — Unblocked by v1.24.0 completion. Can proceed immediately. **HIGH PRIORITY** for completing original Interactive Task Builder TUI goals.
 
 ### Retry Strategy Integration Completion
 
@@ -210,8 +210,8 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 
 ### Sailor Library
 
-- **Current in zr**: v1.23.0 (all migrations complete through v1.23.0)
-- **Next**: v1.24.0, v1.25.0 available (READY for migration)
+- **Current in zr**: v1.24.0 (all migrations complete through v1.24.0)
+- **Next**: v1.25.0 available (READY for migration)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -247,7 +247,7 @@ Complete the deferred pager integration from Task Output Streaming Improvements 
 | v1.21.0 | DONE | Streaming & Large Data — DataSource abstraction, large dataset benchmarks |
 | v1.22.0 | DONE | Rich Text & Formatting — markdown parser, line breaking/hyphenation, text measurements |
 | v1.23.0 | DONE | Plugin Architecture & Extensibility — widget trait system, custom renderer hooks, theme plugins, composition helpers (Padding, Centered, Aligned, Stack, Constrained) |
-| v1.24.0 | READY | Animation & Transitions — 22 easing functions, Animation/ColorAnimation structs, Timer/TimerManager, transition helpers |
+| v1.24.0 | DONE | Animation & Transitions — 22 easing functions, Animation/ColorAnimation structs, Timer/TimerManager, transition helpers |
 | v1.25.0 | READY | Form & Validation — form widget with multi-field container, 15+ validators, input masks, password masking, Tab navigation |
 
 ### zuda Library
