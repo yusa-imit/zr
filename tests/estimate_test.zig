@@ -418,3 +418,257 @@ test "635: estimate with --format=json outputs structured duration prediction" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+// Workflow estimation tests (feature not yet implemented — tests will FAIL)
+
+test "3809: estimate workflow with sequential stages" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workflow_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy"
+        \\
+        \\[workflows.ci]
+        \\description = "CI pipeline"
+        \\
+        \\[[workflows.ci.stages]]
+        \\tasks = ["build"]
+        \\
+        \\[[workflows.ci.stages]]
+        \\tasks = ["test"]
+        \\
+        \\[[workflows.ci.stages]]
+        \\tasks = ["deploy"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workflow_toml);
+    defer allocator.free(config);
+
+    // Build history by running each task
+    {
+        var build_result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+        defer build_result.deinit();
+    }
+    {
+        var test_result = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
+        defer test_result.deinit();
+    }
+    {
+        var deploy_result = try runZr(allocator, &.{ "--config", config, "run", "deploy" }, tmp_path);
+        defer deploy_result.deinit();
+    }
+
+    // Estimate workflow (should calculate sum of sequential stages)
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "ci" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify output mentions workflow name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "ci") != null or
+        std.mem.indexOf(u8, result.stdout, "workflow") != null);
+    // Verify output contains total time estimate
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "total") != null or
+        std.mem.indexOf(u8, result.stdout, "Total") != null);
+}
+
+test "3810: estimate workflow with parallel stage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const parallel_workflow_toml =
+        \\[tasks.lint]
+        \\cmd = "sleep 0.2"
+        \\
+        \\[tasks.typecheck]
+        \\cmd = "sleep 0.3"
+        \\
+        \\[tasks.test]
+        \\cmd = "sleep 0.1"
+        \\
+        \\[workflows.checks]
+        \\description = "Parallel checks"
+        \\
+        \\[[workflows.checks.stages]]
+        \\tasks = ["lint", "typecheck", "test"]
+        \\parallel = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, parallel_workflow_toml);
+    defer allocator.free(config);
+
+    // Build history by running tasks multiple times
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        {
+            var lint_result = try runZr(allocator, &.{ "--config", config, "run", "lint" }, tmp_path);
+            defer lint_result.deinit();
+        }
+        {
+            var typecheck_result = try runZr(allocator, &.{ "--config", config, "run", "typecheck" }, tmp_path);
+            defer typecheck_result.deinit();
+        }
+        {
+            var test_result = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
+            defer test_result.deinit();
+        }
+    }
+
+    // Estimate workflow (parallel stage should take MAX duration, not SUM)
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "checks" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify output contains workflow name and parallel indication
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "checks") != null or
+        std.mem.indexOf(u8, output, "workflow") != null);
+    // Should show per-stage breakdown
+    try std.testing.expect(std.mem.indexOf(u8, output, "stage") != null or
+        std.mem.indexOf(u8, output, "Stage") != null);
+}
+
+test "3811: estimate workflow without history shows warning" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workflow_toml =
+        \\[tasks.never-run]
+        \\cmd = "echo never executed"
+        \\
+        \\[workflows.empty]
+        \\description = "Workflow with no history"
+        \\
+        \\[[workflows.empty.stages]]
+        \\tasks = ["never-run"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workflow_toml);
+    defer allocator.free(config);
+
+    // Estimate workflow without running tasks first
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "empty" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed but show warning about missing history
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Verify warning message about no history
+    try std.testing.expect(std.mem.indexOf(u8, output, "no") != null or
+        std.mem.indexOf(u8, output, "No") != null or
+        std.mem.indexOf(u8, output, "history") != null);
+}
+
+test "3812: estimate nonexistent workflow shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workflow_toml =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[workflows.ci]
+        \\description = "CI workflow"
+        \\
+        \\[[workflows.ci.stages]]
+        \\tasks = ["build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workflow_toml);
+    defer allocator.free(config);
+
+    // Try to estimate nonexistent workflow
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "nonexistent-workflow" }, tmp_path);
+    defer result.deinit();
+
+    // Should error with exit code 1
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Verify error message mentions "not found"
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null);
+}
+
+test "3813: estimate workflow with --format json outputs structured workflow estimates" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const workflow_toml =
+        \\[tasks.setup]
+        \\cmd = "echo setup"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+        \\[workflows.pipeline]
+        \\description = "Build pipeline"
+        \\
+        \\[[workflows.pipeline.stages]]
+        \\tasks = ["setup"]
+        \\
+        \\[[workflows.pipeline.stages]]
+        \\tasks = ["build", "test"]
+        \\parallel = true
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, workflow_toml);
+    defer allocator.free(config);
+
+    // Build history by running tasks
+    {
+        var setup_result = try runZr(allocator, &.{ "--config", config, "run", "setup" }, tmp_path);
+        defer setup_result.deinit();
+    }
+    {
+        var build_result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+        defer build_result.deinit();
+    }
+    {
+        var test_result = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
+        defer test_result.deinit();
+    }
+
+    // Estimate workflow with JSON output
+    var result = try runZr(allocator, &.{ "--config", config, "estimate", "pipeline", "--format", "json" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    // Verify JSON structure
+    try std.testing.expect(std.mem.indexOf(u8, output, "{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "}") != null);
+    // Should contain workflow name
+    try std.testing.expect(std.mem.indexOf(u8, output, "pipeline") != null or
+        std.mem.indexOf(u8, output, "workflow") != null);
+    // Should contain stage information
+    try std.testing.expect(std.mem.indexOf(u8, output, "stage") != null);
+    // Should contain total time estimate
+    try std.testing.expect(std.mem.indexOf(u8, output, "total") != null);
+}

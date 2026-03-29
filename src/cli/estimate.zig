@@ -4,11 +4,182 @@ const color = @import("../output/color.zig");
 const common = @import("common.zig");
 const history = @import("../history/store.zig");
 const stats_mod = @import("../history/stats.zig");
+const config_types = @import("../config/types.zig");
 
 pub const OutputFormat = enum {
     text,
     json,
 };
+
+const StageEstimate = struct {
+    name: []const u8,
+    duration_ms: u64,
+    tasks: [][]const u8,
+    parallel: bool,
+};
+
+fn estimateWorkflow(
+    allocator: Allocator,
+    workflow: *const config_types.Workflow,
+    workflow_name: []const u8,
+    config: *const config_types.Config,
+    w: *std.Io.Writer,
+    ew: *std.Io.Writer,
+    use_color: bool,
+    output_format: OutputFormat,
+) !u8 {
+    // Load history
+    const history_path = try history.defaultHistoryPath(allocator);
+    defer allocator.free(history_path);
+
+    var store = try history.Store.init(allocator, history_path);
+    defer store.deinit();
+
+    var records = try store.loadLast(allocator, 1000);
+    defer {
+        for (records.items) |r| r.deinit(allocator);
+        records.deinit(allocator);
+    }
+
+    // Calculate estimates for each stage
+    var stage_estimates_list = try allocator.alloc(StageEstimate, workflow.stages.len);
+    defer {
+        for (stage_estimates_list) |*est| {
+            allocator.free(est.tasks);
+        }
+        allocator.free(stage_estimates_list);
+    }
+
+    var total_duration_ms: u64 = 0;
+    var has_any_history = false;
+
+    for (workflow.stages, 0..) |stage, stage_idx| {
+        // Calculate stage duration based on parallel flag
+        var stage_duration_ms: u64 = 0;
+        var max_task_duration: u64 = 0;
+        var all_tasks_have_history = true;
+
+        // Duplicate task names for storage
+        var task_names = try allocator.alloc([]const u8, stage.tasks.len);
+        errdefer allocator.free(task_names);
+        for (stage.tasks, 0..) |task, i| {
+            task_names[i] = task;
+        }
+
+        for (stage.tasks) |task_name| {
+            // Verify task exists
+            if (config.tasks.get(task_name) == null) {
+                try color.printError(ew, use_color,
+                    "estimate: Task '{s}' in workflow stage '{s}' not found\n",
+                    .{ task_name, stage.name },
+                );
+                return 1;
+            }
+
+            // Get task statistics
+            const task_stats = try stats_mod.calculateStats(records.items, task_name, allocator);
+            if (task_stats) |stats| {
+                has_any_history = true;
+                if (stage.parallel) {
+                    // Parallel: take max duration (critical path)
+                    if (stats.avg_ms > max_task_duration) {
+                        max_task_duration = stats.avg_ms;
+                    }
+                } else {
+                    // Sequential: sum durations
+                    stage_duration_ms += stats.avg_ms;
+                }
+            } else {
+                all_tasks_have_history = false;
+            }
+        }
+
+        // For parallel stages, use max duration
+        if (stage.parallel) {
+            stage_duration_ms = max_task_duration;
+        }
+
+        total_duration_ms += stage_duration_ms;
+
+        stage_estimates_list[stage_idx] = .{
+            .name = stage.name,
+            .duration_ms = stage_duration_ms,
+            .tasks = task_names,
+            .parallel = stage.parallel,
+        };
+    }
+
+    if (!has_any_history) {
+        try color.printWarning(w, use_color,
+            "No execution history found for tasks in workflow '{s}'\n\n  Hint: Run 'zr run {s}' first to build history\n",
+            .{ workflow_name, workflow_name },
+        );
+        return 0;
+    }
+
+    // Print workflow estimation report
+    switch (output_format) {
+        .text => try printWorkflowEstimation(w, workflow_name, stage_estimates_list, total_duration_ms, use_color),
+        .json => try printWorkflowEstimationJson(allocator, w, workflow_name, stage_estimates_list, total_duration_ms),
+    }
+
+    return 0;
+}
+
+fn printWorkflowEstimationJson(
+    _: Allocator,
+    w: *std.Io.Writer,
+    workflow_name: []const u8,
+    stages: []const StageEstimate,
+    total_ms: u64,
+) !void {
+    try w.print("{{", .{});
+    try w.print("\"workflow\":\"{s}\",", .{workflow_name});
+    try w.print("\"total_duration_ms\":{d},", .{total_ms});
+    try w.print("\"stages\":[", .{});
+
+    for (stages, 0..) |stage, i| {
+        if (i > 0) try w.print(",", .{});
+        try w.print("{{", .{});
+        try w.print("\"name\":\"{s}\",", .{stage.name});
+        try w.print("\"duration_ms\":{d},", .{stage.duration_ms});
+        try w.print("\"parallel\":{s},", .{if (stage.parallel) "true" else "false"});
+        try w.print("\"tasks\":[", .{});
+        for (stage.tasks, 0..) |task, j| {
+            if (j > 0) try w.print(",", .{});
+            try w.print("\"{s}\"", .{task});
+        }
+        try w.print("]", .{});
+        try w.print("}}", .{});
+    }
+
+    try w.print("]", .{});
+    try w.print("}}\n", .{});
+}
+
+fn printWorkflowEstimation(
+    w: *std.Io.Writer,
+    workflow_name: []const u8,
+    stages: []const StageEstimate,
+    total_ms: u64,
+    use_color: bool,
+) !void {
+    try color.printBold(w, use_color, "Estimation for workflow '{s}':\n\n", .{workflow_name});
+
+    // Print per-stage breakdown
+    try color.printBold(w, use_color, "  Stages:\n", .{});
+    for (stages) |stage| {
+        const stage_duration_f = @as(f64, @floatFromInt(stage.duration_ms));
+        const mode = if (stage.parallel) "parallel" else "sequential";
+        try w.print("    {s} ({s}): {s}\n", .{ stage.name, mode, formatDuration(stage_duration_f) });
+    }
+
+    // Print total estimated time
+    try color.printBold(w, use_color, "\n  Total Estimated Time:\n", .{});
+    const total_duration_f = @as(f64, @floatFromInt(total_ms));
+    try w.print("    {s}\n", .{formatDuration(total_duration_f)});
+    try w.print("\n", .{});
+}
 
 pub fn cmdEstimate(
     allocator: Allocator,
@@ -20,13 +191,18 @@ pub fn cmdEstimate(
     use_color: bool,
     output_format: OutputFormat,
 ) !u8 {
-    // Load config to verify task exists
+    // Load config to verify task/workflow exists
     var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse return 1;
     defer config.deinit();
 
+    // Check if it's a workflow first, then fall back to task
+    if (config.workflows.get(task_name)) |workflow| {
+        return try estimateWorkflow(allocator, &workflow, task_name, &config, w, ew, use_color, output_format);
+    }
+
     if (config.tasks.get(task_name) == null) {
         try color.printError(ew, use_color,
-            "estimate: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
+            "estimate: Task or workflow '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks and workflows\n",
             .{task_name},
         );
         return 1;

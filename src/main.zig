@@ -880,10 +880,10 @@ fn run(
         return alias_cmd.cmdAlias(allocator, alias_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "estimate")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "Usage: zr estimate <task> [--limit N] [--format json]\n", .{});
+            try color.printError(ew, effective_color, "Usage: zr estimate <task|workflow> [--limit N] [--format json]\n", .{});
             try effective_w.writeAll("\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
-            try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
+            try effective_w.writeAll("  Estimate task or workflow duration based on execution history\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
             try effective_w.writeAll("  --limit N         Limit history sample to last N executions (default: 20)\n");
             try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
@@ -894,9 +894,9 @@ fn run(
 
         // Check for --help flag
         if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
-            try effective_w.writeAll("Usage: zr estimate <task> [--limit N] [--format json]\n\n");
+            try effective_w.writeAll("Usage: zr estimate <task|workflow> [--limit N] [--format json]\n\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
-            try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
+            try effective_w.writeAll("  Estimate task or workflow duration based on execution history\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
             try effective_w.writeAll("  --limit N         Limit history sample to last N executions (default: 20)\n");
             try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
@@ -1150,7 +1150,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  export [OPTIONS]       Export env vars in shell-sourceable format\n", .{});
     try w.print("  upgrade [OPTIONS]      Upgrade zr to the latest version\n", .{});
     try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
-    try w.print("  estimate <task>        Estimate task duration based on execution history\n", .{});
+    try w.print("  estimate <task|workflow> Estimate task/workflow duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
     try w.print("  failures [list|clear]  View or clear captured task failure reports\n", .{});
     try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
