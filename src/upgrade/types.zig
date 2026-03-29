@@ -44,5 +44,12 @@ pub const UpgradeOptions = struct {
 test "Release init/deinit" {
     const allocator = std.testing.allocator;
     var release = Release.init(allocator);
-    release.deinit();
+    defer release.deinit();
+
+    // Verify all fields are initialized to empty strings/false
+    try std.testing.expectEqualStrings("", release.version);
+    try std.testing.expectEqualStrings("", release.tag_name);
+    try std.testing.expectEqual(false, release.prerelease);
+    try std.testing.expectEqualStrings("", release.created_at);
+    try std.testing.expectEqualStrings("", release.download_url);
 }

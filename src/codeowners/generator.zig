@@ -114,6 +114,11 @@ test "Generator init/deinit" {
 
     var gen = Generator.init(allocator, &config);
     defer gen.deinit();
+
+    // Verify generator is initialized with empty patterns
+    try std.testing.expectEqual(@as(usize, 0), gen.patterns.items.len);
+    // Verify config reference is set correctly
+    try std.testing.expectEqual(&config, gen.config);
 }
 
 test "Generator addPattern" {
