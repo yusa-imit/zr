@@ -8,6 +8,8 @@ const cache_store = @import("../cache/store.zig");
 const graph_ascii = @import("../graph/ascii.zig");
 const loader = @import("../config/loader.zig");
 const workspace_cmd = @import("workspace.zig");
+const history_store = @import("../history/store.zig");
+const history_stats = @import("../history/stats.zig");
 
 pub fn cmdList(
     allocator: std.mem.Allocator,
@@ -125,6 +127,19 @@ pub fn cmdList(
     }.lessThan);
 
     if (json_output) {
+        // Load history for duration estimates in JSON output
+        const history_path = try history_store.defaultHistoryPath(allocator);
+        defer allocator.free(history_path);
+
+        const hist_store = try history_store.Store.init(allocator, history_path);
+        defer hist_store.deinit();
+
+        var records_list = hist_store.loadLast(allocator, 1000) catch std.ArrayList(history_store.Record){};
+        defer {
+            for (records_list.items) |r| r.deinit(allocator);
+            records_list.deinit(allocator);
+        }
+
         // Collect workflow names too
         var wf_names = std.ArrayList([]const u8){};
         defer wf_names.deinit(allocator);
@@ -159,6 +174,26 @@ pub fn cmdList(
                     try obj.addNull("description");
                 }
                 try obj.addNumber("deps_count", task.deps.len);
+
+                // Add duration estimate if available
+                if (records_list.items.len > 0) {
+                    if (try history_stats.calculateStats(records_list.items, name, allocator)) |stats| {
+                        try obj.writer.writeAll(",\"estimate\":");
+                        var est_obj = try sailor.fmt.JsonObject(*std.Io.Writer).init(w);
+                        try est_obj.addNumber("avg_ms", stats.avg_ms);
+                        try est_obj.addNumber("min_ms", stats.min_ms);
+                        try est_obj.addNumber("max_ms", stats.max_ms);
+                        try est_obj.addNumber("p50_ms", stats.p50_ms);
+                        try est_obj.addNumber("p90_ms", stats.p90_ms);
+                        try est_obj.addNumber("p99_ms", stats.p99_ms);
+                        try est_obj.end();
+                    } else {
+                        try obj.addNull("estimate");
+                    }
+                } else {
+                    try obj.addNull("estimate");
+                }
+
                 try obj.end();
             }
             try tasks_arr.end();
@@ -184,6 +219,19 @@ pub fn cmdList(
         return 0;
     }
 
+    // Load history for duration estimates
+    const history_path = try history_store.defaultHistoryPath(allocator);
+    defer allocator.free(history_path);
+
+    const hist_store = try history_store.Store.init(allocator, history_path);
+    defer hist_store.deinit();
+
+    var records_list = hist_store.loadLast(allocator, 1000) catch std.ArrayList(history_store.Record){};
+    defer {
+        for (records_list.items) |r| r.deinit(allocator);
+        records_list.deinit(allocator);
+    }
+
     try color.printHeader(w, use_color, "Tasks:", .{});
 
     for (names.items) |name| {
@@ -193,6 +241,16 @@ pub fn cmdList(
         if (task.description) |desc| {
             try color.printDim(w, use_color, " {s}", .{desc});
         }
+
+        // Show duration estimate if available
+        if (records_list.items.len > 0) {
+            if (try history_stats.calculateStats(records_list.items, name, allocator)) |stats| {
+                const estimate = try history_stats.formatEstimate(stats, allocator);
+                defer allocator.free(estimate);
+                try color.printDim(w, use_color, "  [{s}]", .{estimate});
+            }
+        }
+
         try w.print("\n", .{});
     }
 
