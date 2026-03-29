@@ -136,15 +136,15 @@ Extend TOML parser to support section-based syntax for retry configuration, curr
 Implement task duration estimation and historical time tracking to help users understand and predict task execution patterns. Uses execution history data to provide insights. Includes:
 - ✅ Historical duration tracking per task (min/max/avg/p50/p90/p99 from history)
 - ✅ Duration estimate display in `zr list` — DONE (Cycle 41, 2026-03-29)
-- ⏳ Duration estimate display in `zr run` preview — TODO (next cycle)
+- ✅ Duration estimate display in `zr run --dry-run` preview — DONE (Cycle 42, 2026-03-29)
 - ✅ Anomaly detection (task took 2x longer than p90 → warning threshold in stats module)
 - ✅ `zr estimate <task>` command for single-task duration prediction (refactored with p90/p99)
-- ⏳ `zr estimate <workflow>` for workflow total time (sum of critical path) — TODO
+- ⏳ `zr estimate <workflow>` for workflow total time (sum of critical path) — TODO (next cycle)
 - ✅ Integration with existing `src/history/` module (read history.jsonl)
 - ✅ Statistical analysis module (percentiles, standard deviation) — src/history/stats.zig
 - ⏳ TUI progress bar with ETA based on historical avg — TODO (next cycle)
 - ✅ Export estimates to JSON for external tools (JSON format in estimate command)
-**Status: IN_PROGRESS** — List command integration complete (2026-03-29, Cycle 41). Remaining: run preview estimates, ETA in progress bars, workflow estimation.
+**Status: IN_PROGRESS** — Run preview estimates complete (2026-03-29, Cycle 42). Remaining: workflow estimation, ETA in progress bars.
 
 ### Configuration Validation Enhancements
 
