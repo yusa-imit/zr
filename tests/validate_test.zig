@@ -58,7 +58,7 @@ test "49: config with unknown task field is accepted" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
 }
 
-test "89: validate with --strict flag enforces stricter rules" {
+test "89: validate with --strict flag treats warnings as errors" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -76,12 +76,12 @@ test "89: validate with --strict flag enforces stricter rules" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Validate with strict mode — should warn about missing description
+    // Validate with strict mode — warnings are now treated as errors (exit code 1)
     var result = try runZr(allocator, &.{ "--config", config, "validate", "--strict" }, tmp_path);
     defer result.deinit();
-    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
     // Verify that strict mode warning appears
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "missing description (--strict)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "missing description") != null);
 }
 
 test "141: validate --strict enforces stricter validation rules" {
@@ -1285,4 +1285,251 @@ test "859: validate with malformed workflow section header" {
 
     // Should fail validation
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+}
+
+test "3900: validate detects invalid expression syntax in task condition" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Config with invalid expression syntax (missing closing brace)
+    const config_invalid_expr =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\condition = "platform.is_linux && env.CI == '1'"
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploying"
+        \\condition = "invalid_expr((("
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_invalid_expr);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail due to invalid expression
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid expression") != null or std.mem.indexOf(u8, result.stderr, "Error") != null);
+}
+
+test "3901: validate detects invalid expression in deps_if condition" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_invalid_deps_if =
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\deps_if = [{ task = "lint", condition = "broken{{" }]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_invalid_deps_if);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail due to invalid deps_if expression
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid expression") != null or std.mem.indexOf(u8, result.stderr, "Error") != null);
+}
+
+test "3902: validate warns about large task count (>100 tasks)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create config with 101 tasks
+    var config_buf = std.ArrayList(u8){};
+    defer config_buf.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < 101) : (i += 1) {
+        const writer = config_buf.writer(allocator);
+        try writer.print(
+            \\[tasks.task{d}]
+            \\cmd = "echo task {d}"
+            \\
+            \\
+        , .{ i, i });
+    }
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_buf.items);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with performance warning
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Performance") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, ">100") != null);
+}
+
+test "3903: validate warns about deep dependency chain (>10 levels)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create config with 12-level deep dependency chain
+    var config_buf = std.ArrayList(u8){};
+    defer config_buf.deinit(allocator);
+
+    const writer = config_buf.writer(allocator);
+    try writer.writeAll(
+        \\[tasks.task0]
+        \\cmd = "echo task0"
+        \\
+        \\
+    );
+
+    var i: usize = 1;
+    while (i < 12) : (i += 1) {
+        try writer.print(
+            \\[tasks.task{d}]
+            \\cmd = "echo task {d}"
+            \\deps = ["task{d}"]
+            \\
+            \\
+        , .{ i, i, i - 1 });
+    }
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_buf.items);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with performance warning about deep chain
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "deep dependency chain") != null);
+}
+
+test "3904: validate warns about multiple imports (namespace collision risk)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create first import file
+    const import1_file = try tmp.dir.createFile("import1.toml", .{});
+    defer import1_file.close();
+    try import1_file.writeAll(
+        \\[tasks.build]
+        \\cmd = "echo import1 build"
+        \\
+    );
+
+    // Create second import file
+    const import2_file = try tmp.dir.createFile("import2.toml", .{});
+    defer import2_file.close();
+    try import2_file.writeAll(
+        \\[tasks.test]
+        \\cmd = "echo import2 test"
+        \\
+    );
+
+    // Create main config with multiple imports
+    const main_content = try std.fmt.allocPrint(allocator,
+        \\[imports]
+        \\files = ["{s}/import1.toml", "{s}/import2.toml"]
+        \\
+        \\[tasks.main]
+        \\cmd = "echo main"
+        \\deps = ["build", "test"]
+        \\
+    , .{ tmp_path, tmp_path });
+    defer allocator.free(main_content);
+
+    const main_file = try tmp.dir.createFile("zr.toml", .{});
+    defer main_file.close();
+    try main_file.writeAll(main_content);
+
+    var result = try runZr(allocator, &.{ "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with namespace collision warning
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "imports") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "namespace collision") != null or std.mem.indexOf(u8, result.stderr, "collision") != null);
+}
+
+test "3905: validate checks plugin source field presence" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Config with plugin missing source field
+    const config_no_source =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[plugins.myplugin]
+        \\version = "1.0.0"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_no_source);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail due to missing source
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "missing 'source'") != null);
+}
+
+test "3906: validate warns about malformed plugin source" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Config with plugin source missing protocol
+    const config_bad_source =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\
+        \\[plugins.myplugin]
+        \\source = "example.com/plugin"
+        \\version = "1.0.0"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_bad_source);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with warning about source format
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "protocol or path") != null);
 }
