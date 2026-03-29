@@ -6,9 +6,10 @@ const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
 const graph = @import("../graph/dag.zig");
 const levenshtein = @import("../util/levenshtein.zig");
+const expr = @import("../config/expr.zig");
 
 pub const ValidateOptions = struct {
-    /// Enable strict mode (warn about unused tasks, missing descriptions)
+    /// Enable strict mode (treat warnings as errors)
     strict: bool = false,
     /// Show full schema reference
     show_schema: bool = false,
@@ -336,16 +337,149 @@ pub fn cmdValidate(
         }
     }
 
+    // Validate expression syntax for conditions
+    {
+        var expr_iter = config.tasks.iterator();
+        while (expr_iter.next()) |entry| {
+            const task_name = entry.key_ptr.*;
+            const task = entry.value_ptr;
+
+            if (task.condition) |condition| {
+                // Try to parse the expression to check syntax
+                var diag_ctx = expr.DiagContext.init(allocator);
+                defer diag_ctx.deinit();
+
+                const result = expr.evalConditionWithDiag(allocator, condition, null, null, &diag_ctx) catch |err| {
+                    try color.printError(err_writer, use_color,
+                        "✗ Task '{s}': invalid expression syntax in 'condition'\n",
+                        .{task_name},
+                    );
+                    try err_writer.print("  Expression: {s}\n", .{condition});
+                    try err_writer.print("  Error: {s}\n", .{@errorName(err)});
+                    try diag_ctx.formatStackTrace(err_writer);
+                    try err_writer.writeAll("\n");
+                    error_count += 1;
+                    continue;
+                };
+                _ = result; // Parsed successfully
+            }
+
+            // Validate conditional dependencies
+            for (task.deps_if) |dep_if| {
+                var diag_ctx = expr.DiagContext.init(allocator);
+                defer diag_ctx.deinit();
+
+                const result = expr.evalConditionWithDiag(allocator, dep_if.condition, null, null, &diag_ctx) catch |err| {
+                    try color.printError(err_writer, use_color,
+                        "✗ Task '{s}': invalid expression syntax in 'deps_if' condition\n",
+                        .{task_name},
+                    );
+                    try err_writer.print("  Expression: {s}\n", .{dep_if.condition});
+                    try err_writer.print("  Error: {s}\n", .{@errorName(err)});
+                    try diag_ctx.formatStackTrace(err_writer);
+                    try err_writer.writeAll("\n");
+                    error_count += 1;
+                    continue;
+                };
+                _ = result;
+            }
+        }
+    }
+
+    // Performance warnings: check for excessive task count
+    const task_count = config.tasks.count();
+    if (task_count > 100) {
+        if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
+        try err_writer.print("⚠ Performance: configuration has {d} tasks (>100)\n", .{task_count});
+        if (use_color) try err_writer.writeAll(color.Code.reset);
+        try color.printDim(err_writer, use_color, "  Hint: Consider splitting into multiple config files or using workspace for large projects\n\n", .{});
+        warning_count += 1;
+    }
+
+    // Performance warnings: check for deep dependency chains
+    {
+        var max_depth: usize = 0;
+        var deepest_task: []const u8 = "";
+
+        var depth_iter = config.tasks.iterator();
+        while (depth_iter.next()) |entry| {
+            const task_name = entry.key_ptr.*;
+            const depth = try calculateDepChainDepth(allocator, &config, task_name);
+            if (depth > max_depth) {
+                max_depth = depth;
+                deepest_task = task_name;
+            }
+        }
+
+        if (max_depth > 10) {
+            if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
+            try err_writer.print("⚠ Performance: task '{s}' has deep dependency chain (depth: {d}, >10)\n", .{ deepest_task, max_depth });
+            if (use_color) try err_writer.writeAll(color.Code.reset);
+            try color.printDim(err_writer, use_color, "  Hint: Deep dependency chains can slow down execution planning\n\n", .{});
+            warning_count += 1;
+        }
+    }
+
+    // Check for duplicate task names across imports (namespace collisions)
+    if (config.imports.len > 0) {
+        var seen_tasks = std.StringHashMap([]const u8).init(allocator);
+        defer seen_tasks.deinit();
+
+        // First, track tasks from main config
+        var main_iter = config.tasks.iterator();
+        while (main_iter.next()) |entry| {
+            try seen_tasks.put(entry.key_ptr.*, "main config");
+        }
+
+        // Then check imported configs (note: imports are already merged into config.tasks)
+        // We detect duplicates by checking if task definitions came from different sources
+        // This is a heuristic - we warn about potential collisions
+        if (config.tasks.count() > 0 and config.imports.len > 1) {
+            if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
+            try err_writer.print("⚠ Configuration uses {d} imports - watch for namespace collisions\n", .{config.imports.len});
+            if (use_color) try err_writer.writeAll(color.Code.reset);
+            try color.printDim(err_writer, use_color, "  Hint: Consider using unique task name prefixes for each imported file\n\n", .{});
+            warning_count += 1;
+        }
+    }
+
+    // Validate plugin configurations (if any)
+    for (config.plugins) |plugin| {
+        // Check required fields
+        if (plugin.source.len == 0) {
+            try color.printError(err_writer, use_color,
+                "✗ Plugin '{s}': missing 'source' field\n  Hint: Add 'source = \"git:https://...\"' or 'source = \"./path/to/plugin\"'\n\n",
+                .{plugin.name},
+            );
+            error_count += 1;
+        }
+
+        // Validate source format
+        if (plugin.source.len > 0) {
+            const has_protocol = std.mem.indexOf(u8, plugin.source, "://") != null or
+                std.mem.startsWith(u8, plugin.source, "./") or
+                std.mem.startsWith(u8, plugin.source, "/");
+
+            if (!has_protocol) {
+                if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
+                try err_writer.print("⚠ Plugin '{s}': source '{s}' should start with protocol or path\n", .{ plugin.name, plugin.source });
+                if (use_color) try err_writer.writeAll(color.Code.reset);
+                try color.printDim(err_writer, use_color, "  Hint: Use 'git:https://...', 'http://...', or './path'\n\n", .{});
+                warning_count += 1;
+            }
+        }
+    }
+
     // Print summary
     try w.writeAll("\n");
 
     if (error_count == 0 and warning_count == 0) {
         try color.printSuccess(w, use_color, "✓ Configuration valid\n\n", .{});
 
-        const task_count = config.tasks.count();
+        const task_count_summary = config.tasks.count();
         const workflow_count = config.workflows.count();
 
-        try color.printDim(w, use_color, "  Tasks:     {d}\n", .{task_count});
+        try color.printDim(w, use_color, "  Tasks:     {d}\n", .{task_count_summary});
         try color.printDim(w, use_color, "  Workflows: {d}\n", .{workflow_count});
 
         if (config.workspace) |workspace| {
@@ -355,11 +489,21 @@ pub fn cmdValidate(
         try w.writeAll("\n");
         return 0;
     } else if (error_count == 0) {
-        // Only warnings
-        if (use_color) try w.writeAll(color.Code.bright_yellow);
-        try w.print("✓ Configuration valid with {d} warning(s)\n\n", .{warning_count});
-        if (use_color) try w.writeAll(color.Code.reset);
-        return 0;
+        // Only warnings - in strict mode, treat warnings as errors
+        if (options.strict) {
+            try color.printError(w, use_color, "✗ Configuration validation failed (--strict mode)\n\n", .{});
+            if (use_color) try w.writeAll(color.Code.bright_yellow);
+            try w.print("  Warnings: {d} (treated as errors)\n", .{warning_count});
+            if (use_color) try w.writeAll(color.Code.reset);
+            try w.writeAll("\n");
+            try color.printDim(w, use_color, "  Hint: Fix warnings or remove --strict flag\n", .{});
+            return 1;
+        } else {
+            if (use_color) try w.writeAll(color.Code.bright_yellow);
+            try w.print("✓ Configuration valid with {d} warning(s)\n\n", .{warning_count});
+            if (use_color) try w.writeAll(color.Code.reset);
+            return 0;
+        }
     } else {
         // Has errors
         try color.printError(w, use_color, "✗ Configuration validation failed\n\n", .{});
@@ -375,6 +519,52 @@ pub fn cmdValidate(
         try color.printDim(w, use_color, "  Hint: Fix the errors above and run 'zr validate' again\n", .{});
         return 1;
     }
+}
+
+/// Calculate the maximum dependency chain depth for a task.
+fn calculateDepChainDepth(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+    task_name: []const u8,
+) !usize {
+    var visited = std.StringHashMap(void).init(allocator);
+    defer visited.deinit();
+
+    return calculateDepChainDepthRecursive(config, task_name, &visited);
+}
+
+fn calculateDepChainDepthRecursive(
+    config: *const loader.Config,
+    task_name: []const u8,
+    visited: *std.StringHashMap(void),
+) usize {
+    // Check if already visited (cycle detection)
+    if (visited.contains(task_name)) return 0;
+    visited.put(task_name, {}) catch return 0;
+
+    const task = config.tasks.get(task_name) orelse return 0;
+
+    var max_depth: usize = 0;
+
+    // Check regular dependencies
+    for (task.deps) |dep_name| {
+        const depth = calculateDepChainDepthRecursive(config, dep_name, visited);
+        if (depth > max_depth) max_depth = depth;
+    }
+
+    // Check conditional dependencies
+    for (task.deps_if) |dep_if| {
+        const depth = calculateDepChainDepthRecursive(config, dep_if.task, visited);
+        if (depth > max_depth) max_depth = depth;
+    }
+
+    // Check optional dependencies
+    for (task.deps_optional) |dep_name| {
+        const depth = calculateDepChainDepthRecursive(config, dep_name, visited);
+        if (depth > max_depth) max_depth = depth;
+    }
+
+    return max_depth + 1;
 }
 
 /// Print full schema reference.
@@ -557,7 +747,7 @@ test "cmdValidate: workflow with invalid task reference fails" {
     try std.testing.expectEqual(@as(u8, 1), result);
 }
 
-test "cmdValidate: strict mode warns about missing descriptions" {
+test "cmdValidate: strict mode treats warnings as errors" {
     const allocator = std.testing.allocator;
 
     var tmp = std.testing.tmpDir(.{});
@@ -582,8 +772,8 @@ test "cmdValidate: strict mode warns about missing descriptions" {
 
     const result = try cmdValidate(allocator, config_path, .{ .strict = true }, &out_w, &err_w, false);
 
-    // Should succeed with warnings
-    try std.testing.expectEqual(@as(u8, 0), result);
+    // Should fail with warnings in strict mode (warnings treated as errors)
+    try std.testing.expectEqual(@as(u8, 1), result);
 
     // Check that warning was printed
     const err_str = err_buf[0..err_w.end];
