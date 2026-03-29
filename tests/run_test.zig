@@ -3804,3 +3804,78 @@ test "720: run with combined deps, deps_serial, deps_if, deps_optional" {
     // Nonexistent optional dep should be ignored
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "nonexistent") == null);
 }
+
+test "3807: run --dry-run shows duration estimates when history exists" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create simple config with a task
+    const toml_content =
+        \\[tasks.sample]
+        \\cmd = "echo test"
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml_content);
+    defer allocator.free(config);
+
+    // Create history file with sample data (3 runs, avg 6s)
+    // Format: timestamp\ttask\tstatus\tduration_ms\ttask_count\tretry_count\tmem\tcpu
+    // Use std.fmt.allocPrint to construct content with tabs
+    const history_content = try std.fmt.allocPrint(
+        allocator,
+        "1771430920\tsample\tok\t5000\t1\t0\t0\t0.0\n" ++
+            "1771430950\tsample\tok\t6000\t1\t0\t0\t0.0\n" ++
+            "1771430980\tsample\tok\t7000\t1\t0\t0\t0.0\n",
+        .{},
+    );
+    defer allocator.free(history_content);
+    try tmp.dir.writeFile(.{ .sub_path = ".zr_history", .data = history_content });
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "sample", "--dry-run" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should contain duration estimate with "avg" and "range"
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "avg") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "range") != null);
+
+    // Should contain estimated total time
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Estimated total time") != null);
+
+    // Should contain the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "sample") != null);
+}
+
+test "3808: run --dry-run without history shows no estimates" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml_content =
+        \\[tasks.newtest]
+        \\cmd = "echo new"
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // No history file — estimates should not appear
+    var result = try runZr(allocator, &.{ "--config", config, "run", "newtest", "--dry-run" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should NOT contain duration estimates
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "avg") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Estimated total time") == null);
+
+    // Should still show the execution plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Dry run") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "newtest") != null);
+}

@@ -81,7 +81,7 @@ pub fn cmdRun(
             return 1;
         };
         defer plan.deinit();
-        try printDryRunPlan(w, use_color, plan);
+        try printDryRunPlan(allocator, w, use_color, plan);
         return 0;
     }
 
@@ -413,7 +413,7 @@ pub fn cmdWorkflow(
                 return 1;
             };
             defer plan.deinit();
-            try printDryRunPlan(w, use_color, plan);
+            try printDryRunPlan(allocator, w, use_color, plan);
         }
         try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
         return 0;
@@ -678,26 +678,110 @@ pub fn printRunResultJson(
 }
 
 /// Print a formatted dry-run plan showing execution levels and task names.
-pub fn printDryRunPlan(w: *std.Io.Writer, use_color: bool, plan: scheduler.DryRunPlan) !void {
+pub fn printDryRunPlan(allocator: std.mem.Allocator, w: *std.Io.Writer, use_color: bool, plan: scheduler.DryRunPlan) !void {
+    // Load history for duration estimates
+    const history_path = try history.defaultHistoryPath(allocator);
+    defer allocator.free(history_path);
+
+    const hist_store = try history.Store.init(allocator, history_path);
+    defer hist_store.deinit();
+
+    var records_list = hist_store.loadLast(allocator, 1000) catch std.ArrayList(history.Record){};
+    defer {
+        for (records_list.items) |r| r.deinit(allocator);
+        records_list.deinit(allocator);
+    }
+
     try color.printBold(w, use_color, "Dry run — execution plan:\n", .{});
     if (plan.levels.len == 0) {
         try color.printDim(w, use_color, "  (no tasks to run)\n", .{});
         return;
     }
+
+    // Calculate total estimated duration (sum of critical path)
+    var total_estimate_ms: ?u64 = null;
+    for (plan.levels) |level| {
+        if (level.tasks.len == 0) continue;
+
+        // For each level, find the longest estimated task (since they run in parallel)
+        var level_max_ms: ?u64 = null;
+        for (level.tasks) |task_name| {
+            if (records_list.items.len > 0) {
+                const stats_module = @import("../history/stats.zig");
+                if (try stats_module.calculateStats(records_list.items, task_name, allocator)) |stats| {
+                    if (level_max_ms == null or stats.avg_ms > level_max_ms.?) {
+                        level_max_ms = stats.avg_ms;
+                    }
+                }
+            }
+        }
+
+        if (level_max_ms) |max_ms| {
+            if (total_estimate_ms) |current| {
+                total_estimate_ms = current + max_ms;
+            } else {
+                total_estimate_ms = max_ms;
+            }
+        }
+    }
+
     for (plan.levels, 0..) |level, i| {
         if (level.tasks.len == 0) continue;
         if (level.tasks.len == 1) {
             try color.printDim(w, use_color, "  Level {d}  ", .{i});
-            try color.printInfo(w, use_color, "{s}\n", .{level.tasks[0]});
+            try color.printInfo(w, use_color, "{s}", .{level.tasks[0]});
+
+            // Show duration estimate
+            if (records_list.items.len > 0) {
+                const stats_module = @import("../history/stats.zig");
+                if (try stats_module.calculateStats(records_list.items, level.tasks[0], allocator)) |stats| {
+                    const estimate = try stats_module.formatEstimate(stats, allocator);
+                    defer allocator.free(estimate);
+                    try color.printDim(w, use_color, "  [{s}]", .{estimate});
+                }
+            }
+            try w.print("\n", .{});
         } else {
             try color.printDim(w, use_color, "  Level {d}  ", .{i});
             try color.printDim(w, use_color, "[parallel]\n", .{});
             for (level.tasks) |t| {
                 try w.print("    ", .{});
-                try color.printInfo(w, use_color, "{s}\n", .{t});
+                try color.printInfo(w, use_color, "{s}", .{t});
+
+                // Show duration estimate
+                if (records_list.items.len > 0) {
+                    const stats_module = @import("../history/stats.zig");
+                    if (try stats_module.calculateStats(records_list.items, t, allocator)) |stats| {
+                        const estimate = try stats_module.formatEstimate(stats, allocator);
+                        defer allocator.free(estimate);
+                        try color.printDim(w, use_color, "  [{s}]", .{estimate});
+                    }
+                }
+                try w.print("\n", .{});
             }
         }
     }
+
+    // Show total estimated duration if available
+    if (total_estimate_ms) |total_ms| {
+        try w.print("\n", .{});
+        try color.printDim(w, use_color, "Estimated total time: ", .{});
+
+        // Format total duration
+        const formatted_total = if (total_ms < 1000)
+            try std.fmt.allocPrint(allocator, "{d}ms", .{total_ms})
+        else if (total_ms < 60000)
+            try std.fmt.allocPrint(allocator, "{d:.1}s", .{@as(f64, @floatFromInt(total_ms)) / 1000.0})
+        else if (total_ms < 3600000)
+            try std.fmt.allocPrint(allocator, "{d:.1}m", .{@as(f64, @floatFromInt(total_ms)) / 60000.0})
+        else
+            try std.fmt.allocPrint(allocator, "{d:.1}h", .{@as(f64, @floatFromInt(total_ms)) / 3600000.0});
+        defer allocator.free(formatted_total);
+
+        try color.printInfo(w, use_color, "{s}", .{formatted_total});
+        try w.print("\n", .{});
+    }
+
     try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
 }
 
@@ -903,7 +987,6 @@ test "cmdRun: failing task returns 1" {
 
 test "printDryRunPlan: empty plan" {
     const allocator = std.testing.allocator;
-    _ = allocator;
 
     var out_buf: [4096]u8 = undefined;
     const stdout = std.fs.File.stdout();
@@ -916,7 +999,7 @@ test "printDryRunPlan: empty plan" {
     };
 
     // printDryRunPlan should return without error on empty plan
-    try printDryRunPlan(&out_w.interface, false, plan);
+    try printDryRunPlan(allocator, &out_w.interface, false, plan);
 }
 
 test "cmdHistory: empty history returns 0" {
