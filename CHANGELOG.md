@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.58.0] - 2026-03-30
+
+### 🎯 Post-v1.0 Enhancements: Task Estimation, Validation, Visualization
+
+This release delivers three major post-v1.0 enhancement milestones focused on workflow intelligence, configuration quality, and interactive visualization.
+
+### Added
+
+**Task Estimation & Time Tracking**
+- **Statistics Module** (`src/history/stats.zig`) — Percentile calculations (p50/p90/p99), standard deviation, anomaly detection (2x p90 threshold)
+- **Estimate Command** — Enhanced `zr estimate <task|workflow>` with per-task and workflow estimation
+  - Critical path calculation for parallel workflow stages (MAX for parallel, SUM for sequential)
+  - JSON export format with full statistical breakdown
+  - P90/P99 percentiles and anomaly thresholds in text output
+- **Duration Displays** — Time estimates integrated throughout CLI
+  - `zr list`: Shows `[~8.2s (avg), 0.6-27.6s range]` estimates alongside task names
+  - `zr run --dry-run`: Displays per-task estimates and total estimated workflow time
+  - TUI Progress Bars: Live ETA display based on historical averages with dynamic updates
+
+**Configuration Validation Enhancements**
+- **Expression Syntax Validation** — Uses `expr.evalConditionWithDiag` to validate task conditions and `deps_if` expressions with diagnostic context
+- **Performance Warnings** — Warns when task count >100 or dependency chains >10 levels deep (recursive depth calculation)
+- **Plugin Schema Validation** — Checks required `source` field presence and format in plugin configurations
+- **Import Collision Detection** — Warns about namespace collisions with multiple imports
+- **Strict Mode Enhancement** — `zr validate --strict` now treats warnings as errors (exit code 1 for CI)
+
+**Interactive Workflow Visualizer**
+- **Interactive HTML/SVG Visualization** — D3.js v7 force-directed graph with zoom/pan/drag behaviors
+  - Standalone HTML output with embedded JSON data (no external dependencies)
+  - Dark theme UI matching zr's aesthetic
+- **Task Details Panel** — Click nodes to view cmd, description, dependencies, environment variables, tags, duration
+- **Status Color Coding** — Loads `.zr_history` for task status (success/failed/pending/unknown)
+- **Critical Path Highlighting** — Recursive BFS depth calculation marks longest dependency chains (golden border)
+- **Filter Controls** — Regex search, status dropdown, tag dropdown with real-time node opacity updates
+- **Export Functionality** — SVG and PNG download buttons with 2x scaling for quality
+- **Command Integration** — `zr graph --interactive > workflow.html` generates interactive visualization
+
+### Changed
+
+- **Refactored Estimate Command** — Reduced from 249 LOC to 53 LOC (-196 LOC) by extracting shared statistics module
+- **Enhanced Validation** — 7 new validation rules integrated into `src/cli/validate.zig`
+
+### Technical
+
+- **Test Coverage**: 1224/1232 unit tests passing (100% pass rate), 8 skipped
+- **Integration Tests**: 24 new tests (7 validation, 7 estimation, 10 interactive graph)
+- **Lines of Code**: +1,500 LOC (stats module, validation enhancements, interactive renderer)
+- **Commits**: 47 commits since v1.57.0
+
 ## [1.57.0] - 2026-03-26
 
 ### 🎉 v1.0-Equivalent Release (Phase 13C Complete)
