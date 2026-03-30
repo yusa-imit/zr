@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.58.0 (Post-v1.0 Enhancements: Task Estimation, Validation, Visualization)
-- **Next actionable milestone**: None (all READY milestones complete — establish new milestones)
-- **READY milestones**: 0
+- **Next actionable milestone**: Task Fuzzy Search & Enhanced Discovery, Graph Format Enhancements, NUMA Memory Information, Workflow Matrix Execution (4 READY)
+- **READY milestones**: 4 (Task Fuzzy Search & Enhanced Discovery, Graph Format Enhancements, NUMA Memory Information, Workflow Matrix Execution)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -15,6 +15,54 @@
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
+
+### Workflow Matrix Execution
+
+Implement matrix execution strategy for workflows to run same tasks with different parameters. Inspired by GitHub Actions matrix strategy and just's positional arguments. Includes:
+- Matrix definition in zr.toml: `[workflows.test.matrix]` with `os = ["linux", "macos", "windows"]`, `version = ["1.0", "2.0"]`
+- Matrix expansion: auto-generate N×M task combinations with matrix variables accessible in task cmd
+- Matrix variable substitution: `cmd = "test --os={{ matrix.os }} --version={{ matrix.version }}"`
+- Parallel execution: all matrix combinations run in parallel by default
+- Matrix exclusions: `exclude = [{os = "macos", version = "1.0"}]` to skip specific combinations
+- `zr run <workflow> --matrix-show` to preview generated task combinations without execution
+- Integration with existing workflow stages and dependency resolution
+- Integration tests for matrix expansion, variable substitution, exclusions
+**Status: READY** — Uses existing workflow engine, expression evaluator, parallel scheduler.
+
+### Task Fuzzy Search & Enhanced Discovery
+
+Improve task discovery UX with fuzzy search, categorization, and smart suggestions. Inspired by just's fuzzy search and task's tag system. Includes:
+- Fuzzy search in `zr list` with Levenshtein distance scoring (already have zuda integration)
+- Task categorization: group tasks by tags in `zr list` output (fold/unfold categories)
+- Recent tasks tracking: `zr list --recent` shows last N executed tasks
+- Suggested tasks: `zr run` without arguments shows interactive picker with most common tasks
+- Search by description: `zr list --search="build"` matches task names + descriptions
+- `zr which <task>` command: show task definition location (file + line number for imports)
+- Integration tests for fuzzy search and task picker
+**Status: READY** — Uses existing Levenshtein (zuda), history module, TUI (sailor).
+
+### Graph Format Enhancements
+
+Complete the TODO at `src/cli/graph.zig:479` to implement remaining graph output formats for task graphs. Currently only interactive format is implemented for task graphs, but ASCII/DOT/JSON formats should also support `--type=tasks`. Includes:
+- ASCII tree rendering for task graphs (similar to workspace mode but for tasks)
+- DOT format for task graphs (GraphViz compatibility with task metadata)
+- JSON format for task graphs (machine-readable with full task details)
+- Consistent CLI interface: `zr graph --type=tasks --format=<ascii|dot|json|interactive>`
+- Update existing ASCII/DOT/JSON implementations to handle TaskConfig input
+- Add integration tests for all task graph formats
+- Document usage in help text and guides
+**Status: READY** — No dependencies, builds on existing graph infrastructure.
+
+### NUMA Memory Information
+
+Complete the TODO at `src/util/numa.zig:129` to parse memory information from /proc/meminfo (Linux) or equivalent APIs (macOS/Windows). Currently NUMA topology detection reports `memory_mb = 0`. Includes:
+- Linux: Parse `/proc/meminfo` for MemAvailable per NUMA node
+- macOS: Use `hw.memsize` sysctl + topology mapping
+- Windows: Use `GetNumaAvailableMemoryNodeEx` API
+- Add unit tests for meminfo parsing (mock file reads)
+- Verify memory reporting in `zr doctor` output
+- Update resource monitor to use actual memory info
+**Status: READY** — No dependencies, platform-specific enhancement.
 
 ### Enhanced Performance Monitoring
 
