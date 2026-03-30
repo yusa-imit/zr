@@ -12,6 +12,9 @@
             .url = "https://github.com/yusa-imit/zuda/archive/refs/tags/v1.15.0.tar.gz",
             .hash = "zuda-1.15.0-ih6_-FEAJgCMw1r7iXElqo7XO3UlSBp1arjTBqSk_CFS",
         },
+        .zuda = .{
+            .path = "../zuda",
+        },
     },
     .paths = .{
         "build.zig",
