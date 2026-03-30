@@ -380,6 +380,265 @@ fn sanitizeDotId(path: []const u8) ![]const u8 {
     return std.heap.page_allocator.dupe(u8, path);
 }
 
+/// Render task graph in ASCII tree format
+fn renderTasksAscii(
+    w: *std.Io.Writer,
+    config: *const loader.Config,
+    use_color: bool,
+) !void {
+    const task_count = config.tasks.count();
+
+    if (task_count == 0) {
+        try w.writeAll("(no tasks defined)\n");
+        return;
+    }
+
+    try color.printBold(w, use_color, "Task Dependency Graph ({d} tasks)\n\n", .{task_count});
+
+    // Iterate through all tasks
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+
+        // Print task name
+        try w.print("● {s}", .{task.name});
+
+        // Print description if available
+        if (task.description) |desc| {
+            try color.printDim(w, use_color, " — {s}", .{desc});
+        }
+        try w.writeAll("\n");
+
+        // Print command (indented, dimmed)
+        if (task.cmd.len > 0) {
+            try color.printDim(w, use_color, "  cmd: {s}\n", .{task.cmd});
+        }
+
+        // Count total dependencies
+        const total_deps = task.deps.len + task.deps_serial.len + task.deps_if.len + task.deps_optional.len;
+
+        if (total_deps > 0) {
+            // Print parallel dependencies
+            for (task.deps, 0..) |dep, i| {
+                const is_last = (i == task.deps.len - 1) and
+                                task.deps_serial.len == 0 and
+                                task.deps_if.len == 0 and
+                                task.deps_optional.len == 0;
+                const prefix = if (is_last) "  └─" else "  ├─";
+                try color.printDim(w, use_color, "{s} {s}\n", .{ prefix, dep });
+            }
+
+            // Print serial dependencies
+            for (task.deps_serial, 0..) |dep, i| {
+                const is_last = (i == task.deps_serial.len - 1) and
+                                task.deps_if.len == 0 and
+                                task.deps_optional.len == 0;
+                const prefix = if (is_last) "  └─" else "  ├─";
+                try color.printDim(w, use_color, "{s} {s} ", .{ prefix, dep });
+                try color.printWarning(w, use_color, "(serial)\n", .{});
+            }
+
+            // Print conditional dependencies
+            for (task.deps_if, 0..) |dep, i| {
+                const is_last = (i == task.deps_if.len - 1) and task.deps_optional.len == 0;
+                const prefix = if (is_last) "  └─" else "  ├─";
+                try color.printDim(w, use_color, "{s} {s} ", .{ prefix, dep.task });
+                try color.printInfo(w, use_color, "(if: {s})\n", .{dep.condition});
+            }
+
+            // Print optional dependencies
+            for (task.deps_optional, 0..) |dep, i| {
+                const is_last = (i == task.deps_optional.len - 1);
+                const prefix = if (is_last) "  └─" else "  ├─";
+                try color.printDim(w, use_color, "{s} {s} ", .{ prefix, dep });
+                try color.printDim(w, use_color, "(optional)\n", .{});
+            }
+        }
+
+        try w.writeAll("\n");
+    }
+}
+
+/// Render task graph in Graphviz DOT format
+fn renderTasksDot(
+    w: *std.Io.Writer,
+    config: *const loader.Config,
+    _: bool,
+) !void {
+    try w.writeAll("digraph tasks {\n");
+    try w.writeAll("  rankdir=LR;\n");
+    try w.writeAll("  node [shape=box, style=rounded];\n\n");
+
+    // Define nodes with task metadata
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        const name = try sanitizeDotId(task.name);
+        defer std.heap.page_allocator.free(name);
+
+        try w.print("  \"{s}\" [label=\"{s}", .{ name, name });
+
+        // Add description as subtitle if available
+        if (task.description) |desc| {
+            // Escape quotes in description
+            var escaped = std.ArrayList(u8){};
+            defer escaped.deinit(std.heap.page_allocator);
+
+            for (desc) |c| {
+                if (c == '"') {
+                    try escaped.append(std.heap.page_allocator, '\\');
+                }
+                try escaped.append(std.heap.page_allocator, c);
+            }
+
+            try w.print("\\n{s}", .{escaped.items});
+        }
+
+        try w.writeAll("\"];\n");
+    }
+
+    try w.writeAll("\n");
+
+    // Define edges (dependencies)
+    task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        const from = try sanitizeDotId(task.name);
+        defer std.heap.page_allocator.free(from);
+
+        // Parallel dependencies (solid line)
+        for (task.deps) |dep| {
+            const to = try sanitizeDotId(dep);
+            defer std.heap.page_allocator.free(to);
+            try w.print("  \"{s}\" -> \"{s}\";\n", .{ to, from });
+        }
+
+        // Serial dependencies (bold line)
+        for (task.deps_serial) |dep| {
+            const to = try sanitizeDotId(dep);
+            defer std.heap.page_allocator.free(to);
+            try w.print("  \"{s}\" -> \"{s}\" [style=bold, label=\"serial\"];\n", .{ to, from });
+        }
+
+        // Conditional dependencies (dashed line)
+        for (task.deps_if) |dep| {
+            const to = try sanitizeDotId(dep.task);
+            defer std.heap.page_allocator.free(to);
+            try w.print("  \"{s}\" -> \"{s}\" [style=dashed, label=\"{s}\"];\n", .{ to, from, dep.condition });
+        }
+
+        // Optional dependencies (dotted line)
+        for (task.deps_optional) |dep| {
+            const to = try sanitizeDotId(dep);
+            defer std.heap.page_allocator.free(to);
+            try w.print("  \"{s}\" -> \"{s}\" [style=dotted, label=\"optional\"];\n", .{ to, from });
+        }
+    }
+
+    try w.writeAll("}\n");
+}
+
+/// Render task graph in JSON format
+fn renderTasksJson(
+    w: *std.Io.Writer,
+    config: *const loader.Config,
+    _: bool,
+) !void {
+    const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
+
+    try w.writeAll("{\"tasks\":");
+    var tasks_arr = try JsonArr.init(w);
+
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        var obj = try tasks_arr.beginObject();
+
+        // Basic task metadata
+        try obj.addString("name", task.name);
+        try obj.addString("cmd", task.cmd);
+
+        if (task.description) |desc| {
+            try obj.addString("description", desc);
+        }
+
+        if (task.cwd) |cwd| {
+            try obj.addString("cwd", cwd);
+        }
+
+        // Dependencies arrays
+        try obj.writer.writeAll(",\"deps\":");
+        var deps_arr = try JsonArr.init(w);
+        for (task.deps) |dep| {
+            try deps_arr.addString(dep);
+        }
+        try deps_arr.end();
+
+        try obj.writer.writeAll(",\"deps_serial\":");
+        var serial_arr = try JsonArr.init(w);
+        for (task.deps_serial) |dep| {
+            try serial_arr.addString(dep);
+        }
+        try serial_arr.end();
+
+        try obj.writer.writeAll(",\"deps_if\":");
+        var if_arr = try JsonArr.init(w);
+        for (task.deps_if) |dep| {
+            var if_obj = try if_arr.beginObject();
+            try if_obj.addString("task", dep.task);
+            try if_obj.addString("condition", dep.condition);
+            try if_obj.end();
+        }
+        try if_arr.end();
+
+        try obj.writer.writeAll(",\"deps_optional\":");
+        var opt_arr = try JsonArr.init(w);
+        for (task.deps_optional) |dep| {
+            try opt_arr.addString(dep);
+        }
+        try opt_arr.end();
+
+        // Tags
+        if (task.tags.len > 0) {
+            try obj.writer.writeAll(",\"tags\":");
+            var tags_arr = try JsonArr.init(w);
+            for (task.tags) |tag| {
+                try tags_arr.addString(tag);
+            }
+            try tags_arr.end();
+        }
+
+        // Environment variables
+        if (task.env.len > 0) {
+            try obj.writer.writeAll(",\"env\":{");
+            for (task.env, 0..) |kv, i| {
+                if (i > 0) try obj.writer.writeAll(",");
+                try obj.writer.print("\"{s}\":\"{s}\"", .{ kv[0], kv[1] });
+            }
+            try obj.writer.writeAll("}");
+        }
+
+        // Timeout
+        if (task.timeout_ms) |timeout| {
+            try obj.writer.print(",\"timeout_ms\":{d}", .{timeout});
+        }
+
+        // Resource limits
+        if (task.max_cpu) |cpu| {
+            try obj.writer.print(",\"max_cpu\":{d}", .{cpu});
+        }
+
+        if (task.max_memory) |mem| {
+            try obj.writer.print(",\"max_memory\":{d}", .{mem});
+        }
+
+        try obj.end();
+    }
+
+    try tasks_arr.end();
+    try w.writeAll("}\n");
+}
+
 /// Main entry point for `zr graph` command
 pub fn graphCommand(
     allocator: std.mem.Allocator,
@@ -476,11 +735,22 @@ pub fn graphCommand(
             return 0;
         }
 
-        // TODO: Implement other formats (ascii, dot, json) for task graphs
-        try color.printError(ew, use_color,
-            "graph: tasks graph only supports --interactive format currently\n\n  Hint: Use --interactive flag\n",
-            .{});
-        return 1;
+        // Render task graph in requested format
+        switch (format) {
+            .ascii => try renderTasksAscii(w, &config, use_color),
+            .dot => try renderTasksDot(w, &config, use_color),
+            .json => try renderTasksJson(w, &config, use_color),
+            .interactive => unreachable, // Already handled above
+            .html => {
+                try color.printError(ew, use_color, "graph: HTML format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
+                return 1;
+            },
+            .tui => {
+                try color.printError(ew, use_color, "graph: TUI format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
+                return 1;
+            },
+        }
+        return 0;
     }
 
     // Legacy workspace graph handling (unchanged)

@@ -683,7 +683,29 @@ fn run(
         }
         return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, profiles_only, members_only, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
-        // Parse graph options
+        // Check if using new graph command flags (--type, --format, --interactive, etc.)
+        // If so, delegate to the full graph_cmd handler
+        var use_new_graph = false;
+        for (effective_args[2..]) |arg| {
+            if (std.mem.startsWith(u8, arg, "--type=") or
+                std.mem.startsWith(u8, arg, "--format=") or
+                std.mem.eql(u8, arg, "--interactive") or
+                std.mem.eql(u8, arg, "--watch") or
+                std.mem.startsWith(u8, arg, "--affected") or
+                std.mem.startsWith(u8, arg, "--focus=") or
+                std.mem.eql(u8, arg, "--help") or
+                std.mem.eql(u8, arg, "-h")) {
+                use_new_graph = true;
+                break;
+            }
+        }
+
+        if (use_new_graph) {
+            const graph_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+            return graph_cmd.graphCommand(allocator, graph_args, effective_w, ew, effective_color);
+        }
+
+        // Legacy graph command (only supports --ascii)
         var ascii_mode = false;
         for (effective_args[2..]) |arg| {
             if (std.mem.eql(u8, arg, "--ascii")) {
