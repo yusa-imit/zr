@@ -42,6 +42,60 @@ pub const NumaTopology = struct {
     }
 };
 
+/// Get total system memory in MB (cross-platform).
+/// Returns 0 on failure or if detection is unavailable.
+fn getTotalSystemMemory() !u64 {
+    const builtin = @import("builtin");
+    const os_tag = builtin.os.tag;
+
+    if (os_tag == .linux) {
+        // Parse /proc/meminfo for MemTotal
+        const allocator = std.heap.page_allocator;
+        const result = parseMeminfoFile(allocator, "/proc/meminfo") catch return 0;
+        return result;
+    } else if (os_tag == .macos) {
+        // Use sysctl to get hw.memsize (bytes)
+        var size: usize = 0;
+        var len: usize = @sizeOf(usize);
+        const name = "hw.memsize";
+        const result = std.c.sysctlbyname(name.ptr, &size, &len, null, 0);
+        if (result == 0) {
+            return size / (1024 * 1024); // Convert bytes to MB
+        }
+        return 0;
+    } else if (os_tag == .windows) {
+        // Use GlobalMemoryStatusEx for total physical memory
+        const windows = std.os.windows;
+        const MEMORYSTATUSEX = extern struct {
+            dwLength: windows.DWORD,
+            dwMemoryLoad: windows.DWORD,
+            ullTotalPhys: u64,
+            ullAvailPhys: u64,
+            ullTotalPageFile: u64,
+            ullAvailPageFile: u64,
+            ullTotalVirtual: u64,
+            ullAvailVirtual: u64,
+            ullAvailExtendedVirtual: u64,
+        };
+
+        const kernel32 = struct {
+            extern "kernel32" fn GlobalMemoryStatusEx(
+                lpBuffer: *MEMORYSTATUSEX,
+            ) callconv(.c) windows.BOOL;
+        }.GlobalMemoryStatusEx;
+
+        var mem_status: MEMORYSTATUSEX = undefined;
+        mem_status.dwLength = @sizeOf(MEMORYSTATUSEX);
+
+        if (kernel32(&mem_status) != 0) {
+            return mem_status.ullTotalPhys / (1024 * 1024); // Convert bytes to MB
+        }
+        return 0;
+    } else {
+        return 0;
+    }
+}
+
 /// Detect NUMA topology on the current system.
 /// Returns a single-node topology on systems without NUMA or on detection failure.
 pub fn detectTopology(allocator: std.mem.Allocator) !NumaTopology {
@@ -68,11 +122,14 @@ fn detectFallback(allocator: std.mem.Allocator) !NumaTopology {
         id.* = @intCast(i);
     }
 
+    // Get total system memory (best-effort)
+    const memory_mb = getTotalSystemMemory() catch 0;
+
     const nodes = try allocator.alloc(NumaNode, 1);
     nodes[0] = .{
         .id = 0,
         .cpu_ids = cpu_ids,
-        .memory_mb = 0, // Unknown
+        .memory_mb = memory_mb,
     };
 
     return NumaTopology{
@@ -123,10 +180,15 @@ fn detectLinux(allocator: std.mem.Allocator) !NumaTopology {
 
         total_cpus += @intCast(cpu_ids.len);
 
+        // Parse memory info from /sys/devices/system/node/nodeN/meminfo
+        var meminfo_path_buf: [256]u8 = undefined;
+        const meminfo_path = std.fmt.bufPrint(&meminfo_path_buf, "/sys/devices/system/node/{s}/meminfo", .{entry.name}) catch 0;
+        const memory_mb = if (meminfo_path == 0) 0 else parseMeminfoFile(allocator, meminfo_path_buf[0..meminfo_path]) catch 0;
+
         try nodes_list.append(allocator, .{
             .id = node_id,
             .cpu_ids = cpu_ids,
-            .memory_mb = 0, // TODO: Parse meminfo if needed
+            .memory_mb = memory_mb,
         });
     }
 
@@ -140,6 +202,43 @@ fn detectLinux(allocator: std.mem.Allocator) !NumaTopology {
         .total_cpus = total_cpus,
         .allocator = allocator,
     };
+}
+
+/// Parse meminfo content to extract MemTotal in MB.
+/// Returns memory in MB, or 0 if not found or on parse error.
+fn parseMeminfo(allocator: std.mem.Allocator, content: []const u8) !u64 {
+    _ = allocator; // Used for potential future error handling
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (std.mem.startsWith(u8, trimmed, "MemTotal:")) {
+            // Extract the number part: "MemTotal:       16384000 kB"
+            const after_colon = trimmed[9..]; // Skip "MemTotal:"
+            const value_str = std.mem.trim(u8, after_colon, " \t");
+
+            // Find the number part (before " kB")
+            var iter = std.mem.splitScalar(u8, value_str, ' ');
+            if (iter.next()) |num_str| {
+                const kb_value = std.fmt.parseInt(u64, num_str, 10) catch return 0;
+                return kb_value / 1024; // Convert kB to MB
+            }
+        }
+    }
+
+    return 0;
+}
+
+/// Read and parse meminfo file at the given path.
+/// Returns memory in MB, or 0 if file doesn't exist or on error.
+fn parseMeminfoFile(allocator: std.mem.Allocator, path: []const u8) !u64 {
+    const file = std.fs.openFileAbsolute(path, .{}) catch return 0;
+    defer file.close();
+
+    const content = file.readToEndAlloc(allocator, 8192) catch return 0;
+    defer allocator.free(content);
+
+    return try parseMeminfo(allocator, content);
 }
 
 /// Parse Linux cpulist format (e.g., "0-3,8-11" → [0,1,2,3,8,9,10,11]).
@@ -172,6 +271,28 @@ fn parseCpuList(allocator: std.mem.Allocator, cpulist: []const u8) ![]u32 {
     }
 
     return result.toOwnedSlice(allocator);
+}
+
+/// Get available memory for a NUMA node on Windows (in MB).
+/// Returns 0 if the API is not available or on error.
+fn getWindowsNodeMemory(node_number: u32) u64 {
+    const windows = std.os.windows;
+
+    const kernel32 = struct {
+        extern "kernel32" fn GetNumaAvailableMemoryNodeEx(
+            Node: windows.WORD,
+            AvailableBytes: *u64,
+        ) callconv(.c) windows.BOOL;
+    }.GetNumaAvailableMemoryNodeEx;
+
+    var available_bytes: u64 = 0;
+    const result = kernel32(@intCast(node_number), &available_bytes);
+
+    if (result != 0) {
+        return available_bytes / (1024 * 1024); // Convert bytes to MB
+    }
+
+    return 0;
 }
 
 /// Detect NUMA topology on Windows using GetLogicalProcessorInformationEx.
@@ -288,10 +409,13 @@ fn detectWindows(allocator: std.mem.Allocator) !NumaTopology {
         }
 
         if (cpu_ids.items.len > 0) {
+            // Get memory information for this NUMA node
+            const memory_mb = getWindowsNodeMemory(@intCast(node_number));
+
             try nodes_list.append(allocator, .{
                 .id = @intCast(node_number),
                 .cpu_ids = try cpu_ids.toOwnedSlice(allocator),
-                .memory_mb = 0, // Windows NUMA API doesn't provide memory info easily
+                .memory_mb = memory_mb,
             });
             total_cpus += @intCast(cpu_ids.items.len);
         } else {
@@ -871,4 +995,300 @@ test "Fallback topology has deterministic node ID" {
 
     // Fallback always uses node ID 0
     try testing.expectEqual(@as(u32, 0), topology.nodes[0].id);
+}
+
+// NUMA Memory Information Parsing Tests
+// These tests verify the implementation of memory detection for Linux, macOS, and Windows
+
+test "parseMeminfo returns MB from kB format" {
+    const testing = std.testing;
+
+    // Simulates: MemTotal: 16384000 kB (16 GB in kB)
+    const meminfo_content = "MemTotal:       16384000 kB\nMemFree:         8192000 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // 16384000 kB / 1024 = 16000 MB
+    try testing.expectEqual(@as(u64, 16000), result);
+}
+
+test "parseMeminfo handles MemTotal with varying whitespace" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemTotal:    16384000   kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    try testing.expectEqual(@as(u64, 16000), result);
+}
+
+test "parseMeminfo returns 0 for missing file" {
+    const testing = std.testing;
+
+    const result = try parseMeminfoFile(testing.allocator, "/nonexistent/path/meminfo");
+
+    try testing.expectEqual(@as(u64, 0), result);
+}
+
+test "parseMeminfo handles malformed content without MemTotal" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemFree:         8192000 kB\nMemAvailable:    4096000 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // Should return 0 when MemTotal is missing
+    try testing.expectEqual(@as(u64, 0), result);
+}
+
+test "parseMeminfo handles MemTotal in middle of file" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemFree:         8192000 kB\nMemTotal:       16384000 kB\nMemAvailable:    4096000 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    try testing.expectEqual(@as(u64, 16000), result);
+}
+
+test "parseMeminfo converts edge case: 1 kB to MB" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemTotal:       1 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // 1 kB / 1024 = 0 MB (floor division)
+    try testing.expectEqual(@as(u64, 0), result);
+}
+
+test "parseMeminfo converts 1048576 kB (1 GB) to MB" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemTotal:       1048576 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // 1048576 kB / 1024 = 1024 MB (exactly 1 GB)
+    try testing.expectEqual(@as(u64, 1024), result);
+}
+
+test "parseMeminfo handles very large memory values" {
+    const testing = std.testing;
+
+    // 2 TB in kB
+    const meminfo_content = "MemTotal:       2147483648 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // 2147483648 kB / 1024 = 2097152 MB
+    try testing.expectEqual(@as(u64, 2097152), result);
+}
+
+test "parseMeminfo ignores invalid numeric values" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemTotal:       notanumber kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // Should return 0 on parse error
+    try testing.expectEqual(@as(u64, 0), result);
+}
+
+test "parseMeminfo handles empty content" {
+    const testing = std.testing;
+
+    const meminfo_content = "";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    try testing.expectEqual(@as(u64, 0), result);
+}
+
+test "single-node topology gets all system memory" {
+    const testing = std.testing;
+
+    const cpu_ids = try testing.allocator.alloc(u32, 4);
+    for (cpu_ids, 0..) |*id, i| {
+        id.* = @intCast(i);
+    }
+
+    var nodes = try testing.allocator.alloc(NumaNode, 1);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids, .memory_mb = 16384 };
+
+    var topology = NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 4,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Single-node topology should have all memory in node 0
+    try testing.expectEqual(@as(u64, 16384), topology.nodes[0].memory_mb);
+}
+
+test "multi-node topology with per-node memory info" {
+    const testing = std.testing;
+
+    var cpu_ids_0 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_0[0] = 0;
+    cpu_ids_0[1] = 1;
+
+    var cpu_ids_1 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_1[0] = 2;
+    cpu_ids_1[1] = 3;
+
+    var nodes = try testing.allocator.alloc(NumaNode, 2);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids_0, .memory_mb = 8192 };
+    nodes[1] = .{ .id = 1, .cpu_ids = cpu_ids_1, .memory_mb = 8192 };
+
+    var topology = NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 4,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Multi-node topology should have distinct memory per node
+    try testing.expectEqual(@as(u64, 8192), topology.nodes[0].memory_mb);
+    try testing.expectEqual(@as(u64, 8192), topology.nodes[1].memory_mb);
+
+    // Total memory should be sum of all nodes
+    var total_memory: u64 = 0;
+    for (topology.nodes) |node| {
+        total_memory += node.memory_mb;
+    }
+    try testing.expectEqual(@as(u64, 16384), total_memory);
+}
+
+test "multi-node topology with unequal memory distribution" {
+    const testing = std.testing;
+
+    var cpu_ids_0 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_0[0] = 0;
+    cpu_ids_0[1] = 1;
+
+    var cpu_ids_1 = try testing.allocator.alloc(u32, 2);
+    cpu_ids_1[0] = 2;
+    cpu_ids_1[1] = 3;
+
+    var nodes = try testing.allocator.alloc(NumaNode, 2);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids_0, .memory_mb = 12288 };
+    nodes[1] = .{ .id = 1, .cpu_ids = cpu_ids_1, .memory_mb = 4096 };
+
+    var topology = NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 4,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Unequal memory distribution is valid
+    try testing.expectEqual(@as(u64, 12288), topology.nodes[0].memory_mb);
+    try testing.expectEqual(@as(u64, 4096), topology.nodes[1].memory_mb);
+}
+
+test "memory distribution across 4 NUMA nodes" {
+    const testing = std.testing;
+
+    const NUM_NODES = 4;
+    const MEMORY_PER_NODE = 4096; // 4 GB per node
+
+    var nodes = try testing.allocator.alloc(NumaNode, NUM_NODES);
+
+    for (0..NUM_NODES) |i| {
+        var cpu_ids = try testing.allocator.alloc(u32, 2);
+        cpu_ids[0] = @intCast(i * 2);
+        cpu_ids[1] = @intCast(i * 2 + 1);
+
+        nodes[i] = .{
+            .id = @intCast(i),
+            .cpu_ids = cpu_ids,
+            .memory_mb = MEMORY_PER_NODE,
+        };
+    }
+
+    var topology = NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 8,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Verify each node has correct memory
+    for (0..NUM_NODES) |i| {
+        try testing.expectEqual(@as(u64, MEMORY_PER_NODE), topology.nodes[i].memory_mb);
+    }
+
+    // Verify total memory
+    var total_memory: u64 = 0;
+    for (topology.nodes) |node| {
+        total_memory += node.memory_mb;
+    }
+    try testing.expectEqual(@as(u64, MEMORY_PER_NODE * NUM_NODES), total_memory);
+}
+
+test "NUMA node with zero memory_mb indicates unknown" {
+    const testing = std.testing;
+
+    var cpu_ids = try testing.allocator.alloc(u32, 2);
+    cpu_ids[0] = 0;
+    cpu_ids[1] = 1;
+
+    var nodes = try testing.allocator.alloc(NumaNode, 1);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids, .memory_mb = 0 };
+
+    var topology = NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 2,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    // Zero memory_mb is valid for unknown/unavailable
+    try testing.expectEqual(@as(u64, 0), topology.nodes[0].memory_mb);
+}
+
+test "memory_mb field type is u64 for large systems" {
+    const testing = std.testing;
+
+    // Test with very large memory value (8 TB)
+    const large_memory: u64 = 8388608; // 8 TB in MB
+
+    var cpu_ids = try testing.allocator.alloc(u32, 2);
+    cpu_ids[0] = 0;
+    cpu_ids[1] = 1;
+
+    var nodes = try testing.allocator.alloc(NumaNode, 1);
+    nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids, .memory_mb = large_memory };
+
+    var topology = NumaTopology{
+        .nodes = nodes,
+        .total_cpus = 2,
+        .allocator = testing.allocator,
+    };
+    defer topology.deinit();
+
+    try testing.expectEqual(large_memory, topology.nodes[0].memory_mb);
+}
+
+test "parseMeminfo handles whitespace-only lines" {
+    const testing = std.testing;
+
+    const meminfo_content = "\n\n   \nMemTotal:       16384000 kB\n   \n\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    try testing.expectEqual(@as(u64, 16000), result);
+}
+
+test "parseMeminfo case-sensitive: memtotal not MemTotal" {
+    const testing = std.testing;
+
+    const meminfo_content = "memtotal:       16384000 kB\n"; // lowercase
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // Should return 0 (case mismatch)
+    try testing.expectEqual(@as(u64, 0), result);
+}
+
+test "parseMeminfo stops at first MemTotal occurrence" {
+    const testing = std.testing;
+
+    const meminfo_content = "MemTotal:       16384000 kB\nOtherField:     32768000 kB\nMemTotal:       99999999 kB\n";
+    const result = try parseMeminfo(testing.allocator, meminfo_content);
+
+    // Should use the first MemTotal
+    try testing.expectEqual(@as(u64, 16000), result);
 }
