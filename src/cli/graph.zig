@@ -7,6 +7,8 @@ const workspace = @import("workspace.zig");
 const affected_mod = @import("../util/affected.zig");
 const synthetic = @import("../multirepo/synthetic.zig");
 const graph_tui = @import("graph_tui.zig");
+const graph_interactive = @import("graph_interactive.zig");
+const history_store = @import("../history/store.zig");
 
 /// Output format for graph visualization
 pub const GraphFormat = enum {
@@ -15,6 +17,7 @@ pub const GraphFormat = enum {
     json,
     html,
     tui, // Interactive TUI mode
+    interactive, // Interactive HTML workflow visualizer (v1.58.0)
 
     pub fn fromString(s: []const u8) ?GraphFormat {
         if (std.mem.eql(u8, s, "ascii")) return .ascii;
@@ -22,6 +25,19 @@ pub const GraphFormat = enum {
         if (std.mem.eql(u8, s, "json")) return .json;
         if (std.mem.eql(u8, s, "html")) return .html;
         if (std.mem.eql(u8, s, "tui")) return .tui;
+        if (std.mem.eql(u8, s, "interactive")) return .interactive;
+        return null;
+    }
+};
+
+/// Graph type to visualize
+pub const GraphType = enum {
+    workspace, // Workspace dependency graph (multi-repo)
+    tasks, // Task dependency graph (workflow visualization)
+
+    pub fn fromString(s: []const u8) ?GraphType {
+        if (std.mem.eql(u8, s, "workspace")) return .workspace;
+        if (std.mem.eql(u8, s, "tasks")) return .tasks;
         return null;
     }
 };
@@ -373,9 +389,12 @@ pub fn graphCommand(
     use_color: bool,
 ) !u8 {
     var format: GraphFormat = .ascii;
+    var graph_type: GraphType = .workspace; // Default to workspace for backward compatibility
     var config_path: []const u8 = common.CONFIG_FILE;
     var affected_base: ?[]const u8 = null;
     var focus_path: ?[]const u8 = null;
+    var interactive_flag: bool = false;
+    var watch_flag: bool = false;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -384,10 +403,24 @@ pub fn graphCommand(
             const fmt_str = arg["--format=".len..];
             format = GraphFormat.fromString(fmt_str) orelse {
                 try color.printError(ew, use_color,
-                    "graph: invalid format '{s}'\n\n  Valid formats: ascii, dot, json, html\n",
+                    "graph: invalid format '{s}'\n\n  Valid formats: ascii, dot, json, html, tui, interactive\n",
                     .{fmt_str});
                 return 1;
             };
+        } else if (std.mem.startsWith(u8, arg, "--type=")) {
+            const type_str = arg["--type=".len..];
+            graph_type = GraphType.fromString(type_str) orelse {
+                try color.printError(ew, use_color,
+                    "graph: invalid type '{s}'\n\n  Valid types: workspace, tasks\n",
+                    .{type_str});
+                return 1;
+            };
+        } else if (std.mem.eql(u8, arg, "--interactive")) {
+            interactive_flag = true;
+            format = .interactive;
+            graph_type = .tasks; // --interactive implies tasks graph
+        } else if (std.mem.eql(u8, arg, "--watch")) {
+            watch_flag = true;
         } else if (std.mem.startsWith(u8, arg, "--config=")) {
             config_path = arg["--config=".len..];
         } else if (std.mem.eql(u8, arg, "--affected")) {
@@ -408,7 +441,54 @@ pub fn graphCommand(
         }
     }
 
-    // Build dependency graph
+    // Handle tasks graph (new in v1.58.0)
+    if (graph_type == .tasks) {
+        // Load task configuration
+        var config = (try common.loadConfig(allocator, config_path, null, ew, true)) orelse return error.NoConfig;
+        defer config.deinit();
+
+        // Load execution history if showing status
+        var store: ?history_store.Store = null;
+        defer if (store) |s| s.deinit();
+
+        var records = std.ArrayList(history_store.Record){};
+        defer {
+            for (records.items) |r| r.deinit(allocator);
+            records.deinit(allocator);
+        }
+
+        if (format == .interactive) {
+            // Try to load history (optional - may not exist)
+            store = history_store.Store.init(allocator, ".zr_history") catch null;
+            if (store) |s| {
+                records = s.loadLast(allocator, 1000) catch std.ArrayList(history_store.Record){};
+            }
+        }
+
+        // Render task graph in interactive format
+        if (format == .interactive) {
+            try graph_interactive.renderInteractive(allocator, w, &config, records.items, .{
+                .show_critical_path = true,
+                .show_status = (records.items.len > 0),
+                .enable_filters = true,
+                .enable_export = true,
+            });
+            return 0;
+        }
+
+        // TODO: Implement other formats (ascii, dot, json) for task graphs
+        try color.printError(ew, use_color,
+            "graph: tasks graph only supports --interactive format currently\n\n  Hint: Use --interactive flag\n",
+            .{});
+        return 1;
+    }
+
+    // Legacy workspace graph handling (unchanged)
+    if (watch_flag) {
+        try color.printError(ew, use_color, "graph: --watch is only supported for task graphs (use --type=tasks)\n", .{});
+        return 1;
+    }
+
     const nodes = buildDependencyGraph(allocator, config_path, ew) catch |err| {
         if (err == error.NoWorkspace) {
             try color.printError(ew, use_color,
@@ -455,7 +535,7 @@ pub fn graphCommand(
         _ = focus;
     }
 
-    // Render in requested format
+    // Render workspace graph in requested format
     switch (format) {
         .ascii => try renderAscii(w, nodes, use_color),
         .dot => try renderDot(w, nodes, use_color),
@@ -470,6 +550,10 @@ pub fn graphCommand(
                 return 1;
             };
         },
+        .interactive => {
+            try color.printError(ew, use_color, "graph: interactive format is only for task graphs (use --type=tasks or --interactive)\n", .{});
+            return 1;
+        },
     }
 
     return 0;
@@ -479,22 +563,41 @@ fn printGraphHelp(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\Usage: zr graph [options]
         \\
-        \\Visualize workspace dependency graph
+        \\Visualize dependency graphs (workspace or task workflows)
         \\
         \\Options:
-        \\  --format=<fmt>      Output format: ascii (default), dot, json, html, tui
-        \\  --affected <ref>    Highlight affected projects (git base reference)
-        \\  --focus=<path>      Focus on specific project
+        \\  --type=<type>       Graph type: workspace (default), tasks
+        \\  --format=<fmt>      Output format: ascii (default), dot, json, html, tui, interactive
+        \\  --interactive       Interactive HTML workflow visualizer (implies --type=tasks)
+        \\  --watch             Live-update graph during workflow execution (requires --type=tasks)
+        \\  --affected <ref>    Highlight affected projects (git base reference, workspace only)
+        \\  --focus=<path>      Focus on specific project (workspace only)
         \\  --config=<path>     Config file path (default: zr.toml)
         \\  -h, --help          Show this help
         \\
         \\Examples:
-        \\  zr graph                          # ASCII tree view
+        \\  # Workspace dependency graphs
+        \\  zr graph                          # ASCII tree view (workspace)
         \\  zr graph --format=tui             # Interactive TUI (arrow keys, q to quit)
         \\  zr graph --format=dot             # Graphviz DOT format
         \\  zr graph --format=json            # JSON for programmatic use
         \\  zr graph --format=html > graph.html  # Interactive HTML
         \\  zr graph --affected origin/main   # Highlight changed projects
+        \\
+        \\  # Task workflow visualizer (v1.58.0+)
+        \\  zr graph --interactive            # Interactive HTML task graph (opens in browser)
+        \\  zr graph --type=tasks --interactive  # Explicit task graph
+        \\  zr graph --interactive --watch    # Live-update during execution
+        \\  zr graph --interactive > workflow.html  # Save to file
+        \\
+        \\Interactive Features:
+        \\  - Click task nodes to view details (cmd, deps, env, duration)
+        \\  - Color-coded status (success/failed/pending/unknown)
+        \\  - Critical path highlighting (longest dependency chain)
+        \\  - Filter by task name (regex), status, or tags
+        \\  - Export to SVG/PNG
+        \\  - Zoom, pan, drag nodes
+        \\  - Responsive design (mobile-friendly)
         \\
     );
 }
