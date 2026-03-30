@@ -182,8 +182,8 @@ fn detectLinux(allocator: std.mem.Allocator) !NumaTopology {
 
         // Parse memory info from /sys/devices/system/node/nodeN/meminfo
         var meminfo_path_buf: [256]u8 = undefined;
-        const meminfo_path = std.fmt.bufPrint(&meminfo_path_buf, "/sys/devices/system/node/{s}/meminfo", .{entry.name}) catch 0;
-        const memory_mb = if (meminfo_path == 0) 0 else parseMeminfoFile(allocator, meminfo_path_buf[0..meminfo_path]) catch 0;
+        const meminfo_path = std.fmt.bufPrint(&meminfo_path_buf, "/sys/devices/system/node/{s}/meminfo", .{entry.name}) catch continue;
+        const memory_mb = parseMeminfoFile(allocator, meminfo_path) catch 0;
 
         try nodes_list.append(allocator, .{
             .id = node_id,
