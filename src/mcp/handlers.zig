@@ -126,6 +126,7 @@ fn handleListTasks(allocator: std.mem.Allocator, params_json: []const u8) !ToolR
         null, // filter_tags
         false, // profiles_only = false
         false, // members_only = false
+        false, // fuzzy_search = false
         &stdout_writer.interface,
         &stderr_writer.interface,
         false, // use_color = false
