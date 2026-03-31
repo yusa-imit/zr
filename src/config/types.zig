@@ -1076,12 +1076,19 @@ pub const Workflow = struct {
     /// This prevents retry storms where many tasks fail and retry simultaneously.
     /// v1.30.0 feature for enhanced error recovery.
     retry_budget: ?u32 = null,
+    /// Matrix execution strategy: generate N×M task combinations from matrix dimensions.
+    /// Each combination runs in parallel with matrix variables accessible via {{ matrix.var }}.
+    matrix: ?MatrixConfig = null,
 
     pub fn deinit(self: *Workflow, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         if (self.description) |d| allocator.free(d);
         for (self.stages) |*stage| stage.deinit(allocator);
         allocator.free(self.stages);
+        if (self.matrix) |*m| {
+            var matrix_mut = m.*;
+            matrix_mut.deinit(allocator);
+        }
     }
 };
 
@@ -1140,6 +1147,38 @@ pub const MatrixDim = struct {
         allocator.free(self.key);
         for (self.values) |v| allocator.free(v);
         allocator.free(self.values);
+    }
+};
+
+/// Matrix exclusion rule: specify variable combinations to skip during expansion.
+/// Example: {os = "macos", version = "1.0"} excludes macos+1.0 combination.
+pub const MatrixExclusion = struct {
+    /// Key-value pairs that must ALL match for exclusion to apply.
+    conditions: std.StringHashMap([]const u8),
+
+    pub fn deinit(self: *MatrixExclusion, allocator: std.mem.Allocator) void {
+        var it = self.conditions.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        self.conditions.deinit();
+    }
+};
+
+/// Matrix configuration for workflow execution strategy.
+/// Generates N×M task combinations from matrix dimensions.
+pub const MatrixConfig = struct {
+    /// Matrix dimensions: each dimension is a variable with multiple values.
+    dimensions: []MatrixDim,
+    /// Exclusion rules: combinations to skip during expansion.
+    exclude: []MatrixExclusion,
+
+    pub fn deinit(self: *MatrixConfig, allocator: std.mem.Allocator) void {
+        for (self.dimensions) |*dim| dim.deinit(allocator);
+        allocator.free(self.dimensions);
+        for (self.exclude) |*excl| excl.deinit(allocator);
+        allocator.free(self.exclude);
     }
 };
 
