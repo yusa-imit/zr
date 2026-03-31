@@ -1,6 +1,62 @@
 # zr Project Memory
 
-## Latest Session (2026-03-29, Feature Mode Cycle 39)
+## Latest Session (2026-03-31, Feature Mode Cycle 61)
+
+### FEATURE CYCLE — Workflow Matrix Execution (IN_PROGRESS) ⚙️
+- **Mode**: FEATURE (counter 61, counter-based)
+- **CI Status**: IN_PROGRESS (not blocking, tests passing locally 1245/1253)
+- **Open Issues**: 5 open (all zuda migrations, enhancement, not blocking)
+- **Milestone**: Workflow Matrix Execution (READY) → **IN_PROGRESS**
+- **Actions Taken**:
+  - ✅ **Matrix Types Added**: Extended src/config/types.zig with workflow matrix support
+    - Added MatrixExclusion struct (key-value conditions for exclusion rules)
+    - Added MatrixConfig struct (dimensions + exclusions)
+    - Added matrix field to Workflow struct (optional MatrixConfig)
+    - Full deinit implementation for memory cleanup
+  - ✅ **Matrix Expansion Module**: Created src/exec/matrix.zig (345 LOC)
+    - MatrixCombination struct: hashmap for variable name -> value mapping
+    - expandMatrix(): Cartesian product expansion with exclusion filtering
+    - isExcluded(): checks if combination matches any exclusion rule
+    - 8 unit tests: init/deinit, clone, empty/single/multi dimensions, exclusions, matching/non-matching
+  - ✅ **Discovery**: Found existing src/config/matrix.zig for **task-level** matrices
+    - Task matrices already support ${matrix.KEY} substitution
+    - Workflow matrices need different approach: expand workflow stages across combinations
+    - Task matrices: per-task, workflow matrices: per-workflow (applies to all tasks in stages)
+- **Commits**:
+  - ff7f24f (feat: add matrix execution types and expansion logic)
+- **Test Status**: 1245/1253 passing (8 skipped) — 100% pass rate
+- **Remaining Tasks**:
+  - Parse workflow matrix configuration from TOML ([workflows.NAME.matrix] section)
+  - Integrate matrix expansion into workflow execution (src/cli/run.zig)
+  - Implement --matrix-show CLI flag for previewing combinations
+  - Matrix variable substitution in task commands ({{ matrix.var }} syntax)
+  - Integration tests for workflow matrix execution
+- **Next Priority**: Complete Workflow Matrix Execution milestone (TOML parsing, CLI integration, tests)
+
+## Previous Session (2026-03-31, Stabilization Mode Cycle 60)
+
+### STABILIZATION CYCLE — Integration Test Coverage & Test Quality Improvement ✅
+- **Mode**: STABILIZATION (counter 60, counter % 5 == 0)
+- **CI Status**: IN_PROGRESS on commit 48c2008 (not blocking, tests passing locally 1245/1253)
+- **Open Issues**: 6 open (all zuda migrations, enhancement, not blocking)
+- **Actions Taken**:
+  - ✅ **CI & Issues Check**: CI in progress (not red), no bug reports — green light
+  - ✅ **Integration Test Coverage Audit**: 77 test files covering 46 commands
+    - Identified missing coverage: `which` command (new in Cycle 59)
+    - Created comprehensive integration tests for `which` command (tests/which_test.zig)
+    - 8 new tests (3927-3934): location display, error handling, metadata verification, minimal tasks
+    - Manual verification: confirmed `which` command works correctly
+  - ✅ **Test Quality Audit**: Identified and strengthened 3 weak tests without assertions
+    - schedule.zig: Added 6 field verification assertions in ScheduleEntry deinit test
+    - schedule.zig: Added content verification in help output test (checks for 'schedule', 'add', 'list')
+    - add_interactive.zig: Added boolean assertion in isTty test (verifies true/false)
+- **Commits**:
+  - 92825ba (test: add integration tests for which command)
+  - 4e180a0 (test: strengthen weak tests with meaningful assertions)
+- **Test Status**: 1245/1253 passing (100% pass rate, 8 skipped) — strengthened test quality
+- **Next Priority**: Return to FEATURE mode — Workflow Matrix Execution (1 READY milestone)
+
+## Previous Session (2026-03-29, Feature Mode Cycle 39)
 
 ### FEATURE CYCLE — Task Estimation & Time Tracking (Core Implementation) ✅
 - **Mode**: FEATURE (counter 39, counter-based)
