@@ -41,7 +41,11 @@ test "3935: workflow matrix: single dimension expansion" {
 
 // Test 3936: Workflow matrix expansion with 2x3 dimensions
 test "workflow matrix: cartesian product 2x3" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.test]
         \\stages = [
         \\  { tasks = ["test"] },
@@ -52,24 +56,34 @@ test "workflow matrix: cartesian product 2x3" {
         \\cmd = "test ${matrix.os} ${matrix.version}"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "test", "--matrix-show" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "test", "--matrix-show" }, tmp_path);
     defer result.deinit();
 
     // Should display all 6 combinations (2 os * 3 version)
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "os=linux") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "os=macos") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "version=1.0") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "version=2.0") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "version=3.0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "os=linux") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "os=macos") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "version=1.0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "version=2.0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "version=3.0") != null);
 
     // Should show total combinations
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "6 combinations") != null or
-                      std.mem.indexOf(u8, result.stderr, "6 matrix") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "6 combinations") != null or
+                          std.mem.indexOf(u8, result.stderr, "6 matrix") != null);
 }
 
 // Test 3937: Workflow matrix with exclusions
 test "workflow matrix: exclusions filter combinations" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.test]
         \\stages = [
         \\  { tasks = ["test"] },
@@ -87,20 +101,30 @@ test "workflow matrix: exclusions filter combinations" {
         \\cmd = "test ${matrix.os} ${matrix.version}"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "test", "--matrix-show" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "test", "--matrix-show" }, tmp_path);
     defer result.deinit();
 
     // Should display 5 combinations (6 total - 1 excluded)
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "5 combinations") != null or
-                      std.mem.indexOf(u8, result.stderr, "5 matrix") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "5 combinations") != null or
+                          std.mem.indexOf(u8, result.stderr, "5 matrix") != null);
 
     // Should NOT include the excluded combination
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "os=macos:version=1.0") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "os=macos:version=1.0") == null);
 }
 
 // Test 3938: Workflow matrix variable substitution in task commands
 test "workflow matrix: variable substitution in commands" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.ci]
         \\stages = [
         \\  { tasks = ["lint"] },
@@ -111,21 +135,31 @@ test "workflow matrix: variable substitution in commands" {
         \\cmd = "echo linting ${matrix.target} files"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "ci", "--dry-run" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "ci", "--dry-run" }, tmp_path);
     defer result.deinit();
 
     // Dry run should show interpolated commands
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "linting js files") != null or
-                      std.mem.indexOf(u8, result.stdout, "linting js files") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "linting ts files") != null or
-                      std.mem.indexOf(u8, result.stdout, "linting ts files") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "linting rs files") != null or
-                      std.mem.indexOf(u8, result.stdout, "linting rs files") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "linting js files") != null or
+                          std.mem.indexOf(u8, result.stdout, "linting js files") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "linting ts files") != null or
+                          std.mem.indexOf(u8, result.stdout, "linting ts files") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "linting rs files") != null or
+                          std.mem.indexOf(u8, result.stdout, "linting rs files") != null);
 }
 
 // Test 3939: Workflow matrix execution (actual run)
 test "workflow matrix: parallel execution of all combinations" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.parallel-test]
         \\stages = [
         \\  { tasks = ["echo"] },
@@ -136,22 +170,32 @@ test "workflow matrix: parallel execution of all combinations" {
         \\cmd = "echo ${matrix.msg}"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "parallel-test" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "parallel-test" }, tmp_path);
     defer result.deinit();
 
     // Both matrix values should appear in output
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null or
-                      std.mem.indexOf(u8, result.stderr, "hello") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "world") != null or
-                      std.mem.indexOf(u8, result.stderr, "world") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null or
+                          std.mem.indexOf(u8, result.stderr, "hello") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "world") != null or
+                          std.mem.indexOf(u8, result.stderr, "world") != null);
 
     // Should succeed
-    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
 // Test 3940: Workflow matrix with multi-stage workflow
 test "workflow matrix: multi-stage with matrix" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.build-test]
         \\stages = [
         \\  { tasks = ["build"] },
@@ -167,23 +211,33 @@ test "workflow matrix: multi-stage with matrix" {
         \\deps = ["build"]
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "build-test", "--dry-run" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "build-test", "--dry-run" }, tmp_path);
     defer result.deinit();
 
     // Should show both stages for both platforms
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "building x64") != null or
-                      std.mem.indexOf(u8, result.stdout, "building x64") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "building arm64") != null or
-                      std.mem.indexOf(u8, result.stdout, "building arm64") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "testing x64") != null or
-                      std.mem.indexOf(u8, result.stdout, "testing x64") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "testing arm64") != null or
-                      std.mem.indexOf(u8, result.stdout, "testing arm64") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "building x64") != null or
+                          std.mem.indexOf(u8, result.stdout, "building x64") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "building arm64") != null or
+                          std.mem.indexOf(u8, result.stdout, "building arm64") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "testing x64") != null or
+                          std.mem.indexOf(u8, result.stdout, "testing x64") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "testing arm64") != null or
+                          std.mem.indexOf(u8, result.stdout, "testing arm64") != null);
 }
 
 // Test 3941: Workflow without matrix runs normally
 test "workflow matrix: workflow without matrix runs normally" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.simple]
         \\stages = [
         \\  { tasks = ["hello"] },
@@ -193,17 +247,27 @@ test "workflow matrix: workflow without matrix runs normally" {
         \\cmd = "echo hello"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "simple" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "simple" }, tmp_path);
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null or
-                      std.mem.indexOf(u8, result.stderr, "hello") != null);
-    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null or
+                          std.mem.indexOf(u8, result.stderr, "hello") != null);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
 // Test 3942: Matrix-show with workflow that has no matrix
 test "workflow matrix: matrix-show with non-matrix workflow" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.simple]
         \\stages = [
         \\  { tasks = ["hello"] },
@@ -213,18 +277,28 @@ test "workflow matrix: matrix-show with non-matrix workflow" {
         \\cmd = "echo hello"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "simple", "--matrix-show" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "simple", "--matrix-show" }, tmp_path);
     defer result.deinit();
 
     // Should indicate no matrix defined
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "no matrix") != null or
-                      std.mem.indexOf(u8, result.stderr, "No matrix") != null or
-                      std.mem.indexOf(u8, result.stderr, "0 combinations") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "no matrix") != null or
+                          std.mem.indexOf(u8, result.stderr, "No matrix") != null or
+                          std.mem.indexOf(u8, result.stderr, "0 combinations") != null);
 }
 
 // Test 3943: Matrix with sorted keys in variant names
 test "workflow matrix: keys sorted alphabetically in variant names" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.test]
         \\stages = [
         \\  { tasks = ["build"] },
@@ -235,19 +309,29 @@ test "workflow matrix: keys sorted alphabetically in variant names" {
         \\cmd = "echo build"
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "test", "--matrix-show" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "test", "--matrix-show" }, tmp_path);
     defer result.deinit();
 
     // Keys should be sorted: arch < compiler < os
     // (variant names should have keys in alphabetical order)
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "arch=") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "compiler=") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stderr, "os=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "arch=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "compiler=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "os=") != null);
 }
 
 // Test 3944: Matrix variable substitution in task environment variables
 test "workflow matrix: variable substitution in env vars" {
-    const config =
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
         \\[workflows.test]
         \\stages = [
         \\  { tasks = ["build"] },
@@ -259,12 +343,18 @@ test "workflow matrix: variable substitution in env vars" {
         \\env = { ENV_TARGET = "${matrix.target}" }
     ;
 
-    const result = try integration.runZr(&.{ "workflow", "test" }, config);
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "test" }, tmp_path);
     defer result.deinit();
 
     // Both env values should appear
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "prod") != null or
-                      std.mem.indexOf(u8, result.stderr, "prod") != null);
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "dev") != null or
-                      std.mem.indexOf(u8, result.stderr, "dev") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "prod") != null or
+                          std.mem.indexOf(u8, result.stderr, "prod") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "dev") != null or
+                          std.mem.indexOf(u8, result.stderr, "dev") != null);
 }
