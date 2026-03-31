@@ -68,5 +68,6 @@ comptime {
     _ = @import("version_test.zig");
     _ = @import("watch_test.zig");
     _ = @import("workflow_test.zig");
+    _ = @import("workflow_matrix_test.zig");
     _ = @import("workspace_test.zig");
 }
