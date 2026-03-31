@@ -58,6 +58,7 @@ const context_cmd = @import("cli/context.zig");
 const conformance_cmd = @import("cli/conformance.zig");
 const bench_cmd = @import("cli/bench.zig");
 const doctor_cmd = @import("cli/doctor.zig");
+const which_cmd = @import("cli/which.zig");
 const cd_cmd = @import("cli/cd.zig");
 const shell_hook_cmd = @import("cli/shell_hook.zig");
 const abbreviations = @import("cli/abbreviations.zig");
@@ -527,7 +528,7 @@ fn run(
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
-        "template",
+        "template",   "which",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -661,6 +662,9 @@ fn run(
         var profiles_only = false;
         var members_only = false;
         var fuzzy_search = false;
+        var group_by_tags = false;
+        var recent_count: ?usize = null;
+        var search_description: ?[]const u8 = null;
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
@@ -672,6 +676,24 @@ fn run(
                 members_only = true;
             } else if (std.mem.eql(u8, arg, "--fuzzy")) {
                 fuzzy_search = true;
+            } else if (std.mem.eql(u8, arg, "--group-by-tags")) {
+                group_by_tags = true;
+            } else if (std.mem.startsWith(u8, arg, "--recent=")) {
+                const count_str = arg["--recent=".len..];
+                recent_count = std.fmt.parseInt(usize, count_str, 10) catch {
+                    try color.printError(ew, effective_color, "list: invalid --recent count: {s}\n", .{count_str});
+                    return 1;
+                };
+            } else if (std.mem.eql(u8, arg, "--recent")) {
+                // Default to 10 most recent tasks
+                recent_count = 10;
+            } else if (std.mem.startsWith(u8, arg, "--search=")) {
+                search_description = arg["--search=".len..];
+            } else if (std.mem.eql(u8, arg, "--search")) {
+                if (i + 1 < effective_args.len) {
+                    i += 1;
+                    search_description = effective_args[i];
+                }
             } else if (std.mem.startsWith(u8, arg, "--tags=")) {
                 filter_tags = arg["--tags=".len..];
             } else if (std.mem.eql(u8, arg, "--tags")) {
@@ -684,7 +706,7 @@ fn run(
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, profiles_only, members_only, fuzzy_search, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, search_description, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Check if using new graph command flags (--type, --format, --interactive, etc.)
         // If so, delegate to the full graph_cmd handler
@@ -1103,6 +1125,13 @@ fn run(
             try color.printError(ew, effective_color, "Usage: zr template <list|show|apply> [args...]\n", .{});
             return 1;
         }
+    } else if (std.mem.eql(u8, cmd, "which")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "which: missing task name\n\n  Hint: zr which <task>\n", .{});
+            return 1;
+        }
+        const task_name = effective_args[2];
+        return which_cmd.cmdWhich(allocator, task_name, config_path, effective_w, ew, effective_color);
     }
 
     // This should never be reached due to alias expansion logic above
@@ -1124,6 +1153,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
     try w.print("  workflow <name>        Run a workflow by name\n", .{});
     try w.print("  list [pattern] [--tree] [--tags=TAG,...]  List tasks (filters: pattern, tags; --tree for dependency tree)\n", .{});
+    try w.print("  which <task>           Show where a task is defined\n", .{});
     try w.print("  graph [--ascii]        Show task dependency graph (--ascii for tree view)\n", .{});
     try w.print("  history                Show recent run history\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});
