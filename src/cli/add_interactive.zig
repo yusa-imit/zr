@@ -490,6 +490,6 @@ pub fn addWorkflowInteractive(
 
 test "isTty returns boolean" {
     const is_tty = isTty();
-    // Just verify it doesn't crash
-    _ = is_tty;
+    // isTty should return either true or false (never error)
+    try std.testing.expect(is_tty == true or is_tty == false);
 }

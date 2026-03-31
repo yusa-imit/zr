@@ -459,16 +459,26 @@ test "ScheduleEntry deinit" {
         .cwd = try allocator.dupe(u8, "/path/to"),
         .cron_job_id = null,
     };
+
+    // Verify entry fields before deinit
+    try std.testing.expectEqualStrings("test", entry.name);
+    try std.testing.expectEqualStrings("build", entry.task);
+    try std.testing.expectEqualStrings("0 0 * * *", entry.cron);
+    try std.testing.expectEqualStrings("/path/to/zr.toml", entry.config_path);
+    try std.testing.expectEqualStrings("/path/to", entry.cwd);
+    try std.testing.expect(entry.cron_job_id == null);
+
     entry.deinit(allocator);
 }
 
 test "schedule help output" {
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
+    var out_w = std.Io.Writer.fixed(&out_buf);
 
-    try printHelp(&out_w.interface, false);
+    try printHelp(&out_w, false);
 
-    // Note: Cannot easily test output since writer writes to buffer
-    // This test mainly ensures printHelp compiles and doesn't crash
+    const written = out_buf[0..out_w.end];
+    // Verify help text contains expected content
+    try std.testing.expect(std.mem.indexOf(u8, written, "schedule") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "add") != null or std.mem.indexOf(u8, written, "list") != null);
 }
