@@ -278,6 +278,12 @@ test "PluginConfig.deinit frees all memory" {
             break :blk pairs;
         },
     };
+    // Verify fields before deinit
+    try std.testing.expectEqualStrings("myplugin", cfg.name);
+    try std.testing.expectEqual(SourceKind.local, cfg.kind);
+    try std.testing.expectEqualStrings("./plugins/myplugin", cfg.source);
+    try std.testing.expectEqual(@as(usize, 1), cfg.config.len);
+
     cfg.deinit(allocator);
     // If no memory is leaked, test allocator will pass.
 }
@@ -324,9 +330,16 @@ test "PluginRegistry.callInit, callBeforeTask, callAfterTask on empty registry" 
     const allocator = std.testing.allocator;
     var reg = PluginRegistry.init(allocator);
     defer reg.deinit();
-    // Should be no-ops without panicking.
+
+    // Verify empty state before calls
+    try std.testing.expectEqual(@as(usize, 0), reg.count());
+
+    // Should be no-ops without panicking (function calls return void, so no return value to check)
     reg.callInit();
     reg.callBeforeTask("build");
     reg.callAfterTask("build", 0);
+
+    // Verify empty state after calls (no plugins added)
+    try std.testing.expectEqual(@as(usize, 0), reg.count());
 }
 
