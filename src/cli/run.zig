@@ -8,6 +8,7 @@ const watcher = @import("../watch/watcher.zig");
 const progress = @import("../output/progress.zig");
 const tui_runner = @import("tui_runner.zig");
 const levenshtein = @import("../util/levenshtein.zig");
+const matrix = @import("../exec/matrix.zig");
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,
@@ -343,6 +344,7 @@ pub fn cmdWorkflow(
     dry_run: bool,
     max_jobs: u32,
     config_path: []const u8,
+    matrix_show: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -389,6 +391,44 @@ pub fn cmdWorkflow(
         return 1;
     };
 
+    // Expand matrix combinations if workflow has matrix config
+    var combinations: []matrix.MatrixCombination = &[_]matrix.MatrixCombination{};
+    defer {
+        for (combinations) |*combo| combo.deinit();
+        allocator.free(combinations);
+    }
+
+    if (wf.matrix) |*matrix_cfg| {
+        combinations = try matrix.expandMatrix(allocator, matrix_cfg);
+    }
+
+    // If --matrix-show, display all combinations and exit
+    if (matrix_show) {
+        if (wf.matrix == null) {
+            try color.printWarning(w, use_color, "workflow '{s}' has no matrix configuration\n", .{wf_name});
+            return 0;
+        }
+
+        try color.printBold(w, use_color, "Matrix combinations for workflow: {s}\n", .{wf_name});
+        if (wf.description) |desc| {
+            try color.printDim(w, use_color, "  {s}\n", .{desc});
+        }
+        try w.print("\n", .{});
+
+        for (combinations, 0..) |*combo, idx| {
+            try color.printInfo(w, use_color, "Combination {d}:\n", .{idx + 1});
+            var iter = combo.variables.iterator();
+            while (iter.next()) |entry| {
+                try w.print("  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            }
+            try w.print("\n", .{});
+        }
+
+        try color.printDim(w, use_color, "Total combinations: {d}\n", .{combinations.len});
+        try color.printDim(w, use_color, "\nNo tasks were executed. Use 'zr workflow {s}' to run.\n", .{wf_name});
+        return 0;
+    }
+
     // Dry-run: show per-stage execution plans without running.
     if (dry_run) {
         try color.printBold(w, use_color, "Dry run — workflow: {s}\n", .{wf_name});
@@ -417,6 +457,15 @@ pub fn cmdWorkflow(
         }
         try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
         return 0;
+    }
+
+    // TODO(matrix-execution): Full matrix execution not yet implemented.
+    // For now, workflows with matrix configs can only use --matrix-show to preview combinations.
+    // Future enhancement: pass matrix variables as env vars to task execution.
+    if (wf.matrix != null and !dry_run) {
+        try color.printWarning(w, use_color,
+            "workflow: matrix execution not yet implemented\n\n  Hint: Use --matrix-show to preview combinations\n", .{});
+        return 1;
     }
 
     try color.printBold(w, use_color, "Workflow: {s}", .{wf_name});

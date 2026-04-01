@@ -523,6 +523,7 @@ fn handleRunWorkflow(allocator: std.mem.Allocator, params_json: []const u8) !Too
         false, // dry_run
         0,     // max_jobs (0 = use all cores)
         config_path,
+        false, // matrix_show
         &stdout_writer.interface,
         &stderr_writer.interface,
         false, // use_color

@@ -44,21 +44,21 @@ pub fn expandMatrix(
     }
 
     // Start with empty combinations
-    var combinations = std.ArrayList(MatrixCombination).init(allocator);
+    var combinations: std.ArrayList(MatrixCombination) = .{};
     errdefer {
         for (combinations.items) |*combo| combo.deinit();
-        combinations.deinit();
+        combinations.deinit(allocator);
     }
 
     // Add initial empty combination
-    try combinations.append(MatrixCombination.init(allocator));
+    try combinations.append(allocator, MatrixCombination.init(allocator));
 
     // For each dimension, multiply current combinations by dimension values
     for (matrix.dimensions) |dim| {
-        var new_combinations = std.ArrayList(MatrixCombination).init(allocator);
+        var new_combinations: std.ArrayList(MatrixCombination) = .{};
         errdefer {
             for (new_combinations.items) |*combo| combo.deinit();
-            new_combinations.deinit();
+            new_combinations.deinit(allocator);
         }
 
         for (combinations.items) |*existing_combo| {
@@ -70,34 +70,34 @@ pub fn expandMatrix(
                 const val = try allocator.dupe(u8, value);
                 try new_combo.variables.put(key, val);
 
-                try new_combinations.append(new_combo);
+                try new_combinations.append(allocator, new_combo);
             }
         }
 
         // Free old combinations
         for (combinations.items) |*combo| combo.deinit();
-        combinations.deinit();
+        combinations.deinit(allocator);
 
         combinations = new_combinations;
     }
 
     // Apply exclusions
-    var filtered = std.ArrayList(MatrixCombination).init(allocator);
+    var filtered: std.ArrayList(MatrixCombination) = .{};
     errdefer {
         for (filtered.items) |*combo| combo.deinit();
-        filtered.deinit();
+        filtered.deinit(allocator);
     }
 
     for (combinations.items) |*combo| {
         if (isExcluded(combo, matrix.exclude)) {
             combo.deinit();
         } else {
-            try filtered.append(combo.*);
+            try filtered.append(allocator, combo.*);
         }
     }
-    combinations.deinit();
+    combinations.deinit(allocator);
 
-    return filtered.toOwnedSlice();
+    return filtered.toOwnedSlice(allocator);
 }
 
 /// Check if a combination matches any exclusion rule.
@@ -160,12 +160,12 @@ test "expandMatrix with no dimensions" {
 }
 
 test "expandMatrix with single dimension" {
-    const dim_values = [_][]const u8{ "linux", "macos", "windows" };
+    var dim_values = [_][]const u8{ "linux", "macos", "windows" };
     const dim = MatrixDim{
         .key = "os",
         .values = &dim_values,
     };
-    const dimensions = [_]MatrixDim{dim};
+    var dimensions = [_]MatrixDim{dim};
 
     const matrix = MatrixConfig{
         .dimensions = &dimensions,
@@ -185,17 +185,17 @@ test "expandMatrix with single dimension" {
 }
 
 test "expandMatrix with two dimensions (2x3 = 6 combinations)" {
-    const os_values = [_][]const u8{ "linux", "macos" };
+    var os_values = [_][]const u8{ "linux", "macos" };
     const os_dim = MatrixDim{
         .key = "os",
         .values = &os_values,
     };
-    const version_values = [_][]const u8{ "1.0", "2.0", "3.0" };
+    var version_values = [_][]const u8{ "1.0", "2.0", "3.0" };
     const version_dim = MatrixDim{
         .key = "version",
         .values = &version_values,
     };
-    const dimensions = [_]MatrixDim{ os_dim, version_dim };
+    var dimensions = [_]MatrixDim{ os_dim, version_dim };
 
     const matrix = MatrixConfig{
         .dimensions = &dimensions,
@@ -215,17 +215,17 @@ test "expandMatrix with two dimensions (2x3 = 6 combinations)" {
 }
 
 test "expandMatrix with exclusions" {
-    const os_values = [_][]const u8{ "linux", "macos" };
+    var os_values = [_][]const u8{ "linux", "macos" };
     const os_dim = MatrixDim{
         .key = "os",
         .values = &os_values,
     };
-    const version_values = [_][]const u8{ "1.0", "2.0" };
+    var version_values = [_][]const u8{ "1.0", "2.0" };
     const version_dim = MatrixDim{
         .key = "version",
         .values = &version_values,
     };
-    const dimensions = [_]MatrixDim{ os_dim, version_dim };
+    var dimensions = [_]MatrixDim{ os_dim, version_dim };
 
     // Exclude macos + 1.0
     var excl_conditions = std.StringHashMap([]const u8).init(std.testing.allocator);
@@ -234,7 +234,7 @@ test "expandMatrix with exclusions" {
     try excl_conditions.put("version", "1.0");
 
     const exclusion = MatrixExclusion{ .conditions = excl_conditions };
-    const exclusions = [_]MatrixExclusion{exclusion};
+    var exclusions = [_]MatrixExclusion{exclusion};
 
     const matrix = MatrixConfig{
         .dimensions = &dimensions,

@@ -653,7 +653,17 @@ fn run(
             return 1;
         }
         const wf_name = effective_args[2];
-        return run_cmd.cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, effective_w, ew, effective_color);
+
+        // Parse --matrix-show flag
+        var matrix_show = false;
+        var i: usize = 3;
+        while (i < effective_args.len) : (i += 1) {
+            if (std.mem.eql(u8, effective_args[i], "--matrix-show")) {
+                matrix_show = true;
+            }
+        }
+
+        return run_cmd.cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, matrix_show, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "list")) {
         // Parse list options
         var tree_mode = false;
