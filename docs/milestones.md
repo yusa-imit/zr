@@ -5,7 +5,7 @@
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
 - **Next actionable milestone**: TBD (to be established)
 - **READY milestones**: 0
-- **READY milestones**: 1 (Sailor v1.26.0-v1.30.1 Batch Migration)
+- **READY milestones**: 2 (Error Message UX Enhancement, Sailor v1.26.0-v1.30.1 Batch Migration)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -18,6 +18,20 @@
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
 
+### Error Message UX Enhancement
+
+Improve user-facing error messages across all zr modules with actionable suggestions, context-aware help, and visual clarity. Build on Phase 9D error improvements with comprehensive coverage. Includes:
+- Audit all error messages for clarity and actionability (20+ error sites across CLI commands)
+- Add "Hint:" sections with actionable suggestions (inspired by Rust compiler errors)
+- Color-code error types (syntax errors in red, validation warnings in yellow, info in blue)
+- Context-aware error messages (include relevant config snippets, line numbers, file paths)
+- Improve TOML parsing errors with syntax highlighting of problematic lines
+- Add "Did you mean?" suggestions for misspelled task/profile/member names (expand Phase 9C)
+- Standardize error format across all modules (consistent template)
+- Add error code system for documentation lookup (e.g., E001: circular dependency)
+- Create error message catalog documentation (docs/guides/error-codes.md)
+- Integration tests for error message quality (verify hints appear, suggestions are correct)
+**Status: READY** — New milestone established 2026-04-02 (Cycle 72). Enhances Phase 9D with comprehensive error UX coverage.
 
 ### Sailor v1.26.0-v1.30.1 Batch Migration
 
