@@ -20,14 +20,14 @@
 ### Test Infrastructure & Quality Enhancements
 
 Strengthen test suite with meaningful assertions, improve test organization, and add comprehensive integration coverage. Addresses technical debt in test quality where tests only check for memory leaks without verifying actual behavior. Includes:
-- Audit all tests with deinit() but no assertions — add meaningful verification of field values
-- Strengthen weak tests that always pass (no failure conditions)
-- Add integration tests for workflow matrix execution (5 test cases: basic matrix, exclusions, variable substitution, --matrix-show flag, empty matrix)
-- Improve test output formatting and failure diagnostics
-- Add test categorization (unit/integration/benchmark) with separate run targets
-- Create test coverage report generator (identify untested modules)
-- Document test writing best practices in CLAUDE.md
-**Status: READY** — All Phase 1-13 features complete, test quality improvement is high-impact technical debt.
+- ✅ Audit all tests with deinit() but no assertions — add meaningful verification of field values (Cycles 60, 65, 69, 70)
+- ✅ Strengthen weak tests that always pass (no failure conditions) — 13 tests strengthened
+- ✅ Add integration tests for workflow matrix execution — ALREADY COMPLETE (tests/workflow_matrix_test.zig, 10 tests)
+- ⏸️ Improve test output formatting and failure diagnostics — deferred (current diagnostics sufficient)
+- ✅ Add test categorization (unit/integration/benchmark) with separate run targets (Cycle 71)
+- ✅ Create test coverage report generator (identify untested modules) — scripts/test-coverage.sh (Cycle 71)
+- ✅ Document test writing best practices in CLAUDE.md (Cycle 71)
+**Status: IN_PROGRESS** (Cycle 71) — Categorization and coverage reporting complete. Remaining: output formatting (deferred), continued weak test audits.
 
 ### Sailor v1.26.0-v1.30.0 Batch Migration
 
