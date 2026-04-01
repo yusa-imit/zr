@@ -1895,6 +1895,12 @@ test "TaskTemplate: init and deinit" {
         .params = params_list,
     };
 
+    // Verify fields are set correctly before deinit
+    try std.testing.expectEqualStrings("test-template", template.name);
+    try std.testing.expectEqualStrings("echo ${message}", template.cmd);
+    try std.testing.expectEqual(@as(usize, 1), template.params.len);
+    try std.testing.expectEqualStrings("message", template.params[0]);
+
     template.deinit(allocator);
 }
 

@@ -1135,6 +1135,12 @@ test "RemoteTaskResult deinit frees stdout and stderr" {
         .duration_ms = 100,
     };
 
+    // Verify fields before deinit
+    try std.testing.expectEqual(@as(i32, 0), result.exit_code);
+    try std.testing.expectEqualStrings("output", result.stdout);
+    try std.testing.expectEqualStrings("", result.stderr);
+    try std.testing.expectEqual(@as(u64, 100), result.duration_ms);
+
     result.deinit(allocator);
 }
 
@@ -1146,6 +1152,9 @@ test "SerializedTask deinit frees JSON" {
     var serialized = SerializedTask{
         .json = try allocator.dupe(u8, "{}"),
     };
+
+    // Verify JSON field is set correctly before deinit
+    try std.testing.expectEqualStrings("{}", serialized.json);
 
     serialized.deinit(allocator);
 }
