@@ -6,10 +6,16 @@ const std = @import("std");
 //   zig build -Doptimize=ReleaseSafe    # Safe release (1.9MB)
 //   zig build -Doptimize=ReleaseSmall   # Small release (1.2MB)
 //   zig build release                   # Optimized release (1.2MB, stripped)
-//   zig build test                      # Run unit tests
-//   zig build integration-test          # Run integration tests
-//   zig build fuzz-toml                 # Run TOML parser fuzz test (runs indefinitely until Ctrl+C)
-//   zig build fuzz-expr                 # Run expression engine fuzz test (runs indefinitely until Ctrl+C)
+//
+// Test targets:
+//   zig build test                      # Run unit tests (1252 tests in src/)
+//   zig build integration-test          # Run integration tests (black-box CLI tests)
+//   zig build test-perf-streaming       # Run performance tests (output streaming)
+//   zig build test-all                  # Run all tests (unit + integration + perf)
+//
+// Fuzz targets (run indefinitely until Ctrl+C):
+//   zig build fuzz-toml                 # TOML parser fuzzer
+//   zig build fuzz-expr                 # Expression engine fuzzer
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -200,4 +206,11 @@ pub fn build(b: *std.Build) void {
 
     const perf_streaming_step = b.step("test-perf-streaming", "Run output streaming performance tests (1GB+ files)");
     perf_streaming_step.dependOn(&run_perf_streaming.step);
+
+    // --- Test All ---
+    // Composite test target that runs all test categories
+    const test_all_step = b.step("test-all", "Run all tests (unit + integration + performance)");
+    test_all_step.dependOn(&run_exe_tests.step); // unit tests
+    test_all_step.dependOn(&run_int_tests.step); // integration tests
+    test_all_step.dependOn(&run_perf_streaming.step); // performance tests
 }
