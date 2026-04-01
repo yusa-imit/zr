@@ -17,6 +17,20 @@
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
 
+### Sailor v1.26.0-v1.30.0 Batch Migration
+
+Migrate from sailor v1.25.0 to v1.30.0, incorporating 5 releases of testing, quality, documentation, and debugging improvements. All releases are backward compatible with no breaking changes. Includes:
+- **v1.26.0**: Testing & Quality Assurance (292 new tests, memory leak fixes in Tree/Form/Table widgets, termcap/pool/bench/transition/timer/menu/form/chunkedbuffer/richtext_parser edge case coverage)
+- **v1.27.0**: Documentation & Examples (API documentation expansion, comprehensive example gallery, getting started guides, best practices documentation)
+- **v1.28.0**: Ecosystem Integration & Polish (ecosystem integration utilities, polish and refinement, quality of life improvements)
+- **v1.29.0**: Documentation Completion (99.9% API coverage — 1376/1378 documented functions across sixel/budget/test_utils/session/debugger/notification/particles/terminal modules)
+- **v1.30.0**: Error Handling & Debugging Enhancements (debug_log.zig with environment-based conditional logging SAILOR_DEBUG=module:level, stack_trace.zig with formatted assertions/preconditions/postconditions, error_handling_demo.zig example, 23 new tests)
+- Update `build.zig.zon` dependency to v1.30.0
+- Run full test suite to verify backward compatibility
+- Review new utilities: debug_log (scope-based logging), stack_trace (better panic messages)
+- No code changes required (all features are additive, no breaking changes)
+**Status: READY** — All releases are backward compatible, comprehensive test coverage (3405+ tests in sailor).
+
 ### Task Fuzzy Search & Enhanced Discovery
 
 Improve task discovery UX with fuzzy search, categorization, and smart suggestions. Inspired by just's fuzzy search and task's tag system. Includes:
