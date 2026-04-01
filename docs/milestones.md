@@ -5,7 +5,7 @@
 - **Latest**: v1.58.0 (Post-v1.0 Enhancements: Task Estimation, Validation, Visualization)
 - **Next actionable milestone**: None (need new milestones — see Milestone Establishment Process)
 - **READY milestones**: 0
-- **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
+- **BLOCKED milestones**: Sailor v1.26.0-v1.30.0 Batch Migration (awaiting sailor issue #14), zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -29,7 +29,7 @@ Migrate from sailor v1.25.0 to v1.30.0, incorporating 5 releases of testing, qua
 - Run full test suite to verify backward compatibility
 - Review new utilities: debug_log (scope-based logging), stack_trace (better panic messages)
 - No code changes required (all features are additive, no breaking changes)
-**Status: READY** — All releases are backward compatible, comprehensive test coverage (3405+ tests in sailor).
+**Status: BLOCKED** — sailor v1.30.0 has breaking Zig 0.15 compatibility issue (std.BoundedArray removed in Zig 0.15, used in tree.zig:170). Filed https://github.com/yusa-imit/sailor/issues/14, awaiting fix. Staying on v1.25.0 until resolved.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
