@@ -51,6 +51,9 @@ pub const SchedulerConfig = struct {
     /// If set, limits the total number of retries across all tasks in the workflow.
     /// This is typically extracted from workflow.retry_budget when executing workflow stages.
     retry_budget: ?u32 = null,
+    /// Optional extra environment variables to inject into all tasks.
+    /// Used for workflow matrix variables (e.g., MATRIX_OS=linux, MATRIX_VERSION=1.0).
+    extra_env: ?[][2][]const u8 = null,
 };
 
 /// Circuit breaker state for a task (v1.30.0).
@@ -364,6 +367,8 @@ const WorkerCtx = struct {
     cwd: ?[]const u8,
     /// Optional env var overrides from the task definition.
     env: ?[]const [2][]const u8,
+    /// Extra environment variables (e.g., workflow matrix variables).
+    extra_env: ?[]const [2][]const u8,
     /// Toolchains from config [tools] section (pointer to config.toolchains.tools)
     toolchains: []const loader.ToolSpec,
     inherit_stdio: bool,
@@ -430,26 +435,27 @@ const WorkerCtx = struct {
     remote_env: ?[][2][]const u8,
 };
 
-/// Build environment variables with toolchain PATH injection.
-/// Merges task env vars with toolchain bin directories in PATH.
-/// Returns null if both task_env and toolchains are empty, otherwise returns owned array.
-/// If toolchain path building fails (e.g., no HOME), falls back to task_env only.
+/// Build environment variables with toolchain PATH injection and extra_env merging.
+/// Merges task env vars with toolchain bin directories in PATH, then appends extra_env.
+/// Returns null if task_env, toolchains, and extra_env are all empty, otherwise returns owned array.
+/// If toolchain path building fails (e.g., no HOME), falls back to task_env + extra_env only.
 fn buildEnvWithToolchains(
     allocator: std.mem.Allocator,
     task_env: ?[]const [2][]const u8,
     toolchains: []const loader.ToolSpec,
+    extra_env: ?[]const [2][]const u8,
 ) ?[][2][]u8 {
-    if (toolchains.len == 0 and task_env == null) {
+    if (toolchains.len == 0 and task_env == null and extra_env == null) {
         return null; // No env override needed
     }
 
     // Build toolchain env (includes PATH + toolchain-specific vars)
-    const merged_env = toolchain_path.buildToolchainEnv(allocator, toolchains, task_env) catch {
+    const merged_env = toolchain_path.buildToolchainEnv(allocator, toolchains, task_env) catch blk: {
         // If toolchain env building fails, fall back to task env only
         // This can happen if HOME is not set or other env issues
         if (task_env) |env| {
             // Duplicate task env
-            const dup_env = allocator.alloc([2][]u8, env.len) catch return null;
+            const dup_env = allocator.alloc([2][]u8, env.len) catch break :blk null;
             for (env, 0..) |pair, i| {
                 dup_env[i][0] = allocator.dupe(u8, pair[0]) catch {
                     for (dup_env[0..i]) |p| {
@@ -457,7 +463,7 @@ fn buildEnvWithToolchains(
                         allocator.free(p[1]);
                     }
                     allocator.free(dup_env);
-                    return null;
+                    break :blk null;
                 };
                 dup_env[i][1] = allocator.dupe(u8, pair[1]) catch {
                     allocator.free(dup_env[i][0]);
@@ -466,13 +472,56 @@ fn buildEnvWithToolchains(
                         allocator.free(p[1]);
                     }
                     allocator.free(dup_env);
-                    return null;
+                    break :blk null;
                 };
             }
-            return dup_env;
+            break :blk dup_env;
+        } else {
+            break :blk null;
         }
-        return null;
     };
+
+    // Append extra_env if provided
+    if (extra_env) |extra| {
+        const base_len = if (merged_env) |m| m.len else 0;
+        const new_len = base_len + extra.len;
+        const final_env = allocator.alloc([2][]u8, new_len) catch {
+            if (merged_env) |m| toolchain_path.freeToolchainEnv(allocator, m);
+            return null;
+        };
+
+        // Copy existing env
+        if (merged_env) |m| {
+            for (m, 0..) |pair, i| {
+                final_env[i] = pair;
+            }
+            allocator.free(m); // Free the old array (but not the pairs, we moved them)
+        }
+
+        // Append extra_env
+        for (extra, 0..) |pair, i| {
+            final_env[base_len + i][0] = allocator.dupe(u8, pair[0]) catch {
+                // Cleanup on error
+                for (final_env[0 .. base_len + i]) |p| {
+                    allocator.free(p[0]);
+                    allocator.free(p[1]);
+                }
+                allocator.free(final_env);
+                return null;
+            };
+            final_env[base_len + i][1] = allocator.dupe(u8, pair[1]) catch {
+                allocator.free(final_env[base_len + i][0]);
+                for (final_env[0 .. base_len + i]) |p| {
+                    allocator.free(p[0]);
+                    allocator.free(p[1]);
+                }
+                allocator.free(final_env);
+                return null;
+            };
+        }
+        return final_env;
+    }
+
     return merged_env;
 }
 
@@ -523,8 +572,8 @@ fn workerFn(ctx: WorkerCtx) void {
         return;
     }
 
-    // Build environment with toolchain PATH injection
-    const merged_env = buildEnvWithToolchains(ctx.allocator, ctx.env, ctx.toolchains);
+    // Build environment with toolchain PATH injection and extra_env
+    const merged_env = buildEnvWithToolchains(ctx.allocator, ctx.env, ctx.toolchains, ctx.extra_env);
     defer if (merged_env) |env| toolchain_path.freeToolchainEnv(ctx.allocator, env);
 
     // Load checkpoint if enabled (v1.31.0)
@@ -1274,6 +1323,7 @@ fn runTaskSync(
     allocator: std.mem.Allocator,
     task: loader.Task,
     env: ?[]const [2][]const u8,
+    extra_env: ?[]const [2][]const u8,
     toolchains: []const loader.ToolSpec,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
@@ -1320,8 +1370,8 @@ fn runTaskSync(
         return false;
     }
 
-    // Build environment with toolchain PATH injection
-    const merged_env = buildEnvWithToolchains(allocator, env, toolchains);
+    // Build environment with toolchain PATH injection and extra_env
+    const merged_env = buildEnvWithToolchains(allocator, env, toolchains, extra_env);
     defer if (merged_env) |e| toolchain_path.freeToolchainEnv(allocator, e);
 
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
@@ -1420,6 +1470,7 @@ fn runSerialChain(
     allocator: std.mem.Allocator,
     config: *const loader.Config,
     serial_deps: []const []const u8,
+    extra_env: ?[]const [2][]const u8,
     toolchains: []const loader.ToolSpec,
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
@@ -1442,14 +1493,14 @@ fn runSerialChain(
         // Recursively run this dep's own serial chain first
         if (dep_task.deps_serial.len > 0) {
             const chain_ok = try runSerialChain(
-                allocator, config, dep_task.deps_serial, toolchains,
+                allocator, config, dep_task.deps_serial, extra_env, toolchains,
                 inherit_stdio, results, results_mutex, completed,
             );
             if (!chain_ok) return false;
         }
 
         const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
-        const ok = try runTaskSync(allocator, dep_task, task_env, toolchains, inherit_stdio, results, results_mutex);
+        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
@@ -1613,7 +1664,7 @@ pub fn run(
             // Run deps_serial chain synchronously before this task (if any)
             if (task.deps_serial.len > 0) {
                 const serial_ok = try runSerialChain(
-                    allocator, config, task.deps_serial, config.toolchains.tools,
+                    allocator, config, task.deps_serial, sched_config.extra_env, config.toolchains.tools,
                     sched_config.inherit_stdio, &results, &results_mutex, &completed,
                 );
                 if (!serial_ok) {
@@ -1685,6 +1736,7 @@ pub fn run(
                 .cmd = task.cmd,
                 .cwd = task.cwd,
                 .env = task_env_slice,
+                .extra_env = sched_config.extra_env,
                 .toolchains = config.toolchains.tools,
                 .inherit_stdio = sched_config.inherit_stdio,
                 .timeout_ms = task.timeout_ms,

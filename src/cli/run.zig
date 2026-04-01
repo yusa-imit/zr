@@ -459,57 +459,91 @@ pub fn cmdWorkflow(
         return 0;
     }
 
-    // TODO(matrix-execution): Full matrix execution not yet implemented.
-    // For now, workflows with matrix configs can only use --matrix-show to preview combinations.
-    // Future enhancement: pass matrix variables as env vars to task execution.
-    if (wf.matrix != null and !dry_run) {
-        try color.printWarning(w, use_color,
-            "workflow: matrix execution not yet implemented\n\n  Hint: Use --matrix-show to preview combinations\n", .{});
-        return 1;
-    }
+    // Matrix execution: if workflow has matrix config, run it once per combination.
+    // Each combination's variables are injected as MATRIX_* environment variables.
+    const num_combinations = if (combinations.len > 0) combinations.len else 1;
+    const has_matrix = wf.matrix != null and combinations.len > 0;
 
-    try color.printBold(w, use_color, "Workflow: {s}", .{wf_name});
-    if (wf.description) |desc| {
-        try color.printDim(w, use_color, " — {s}", .{desc});
+    if (has_matrix) {
+        try color.printBold(w, use_color, "Workflow: {s}", .{wf_name});
+        if (wf.description) |desc| {
+            try color.printDim(w, use_color, " — {s}", .{desc});
+        }
+        try w.print("\n", .{});
+        try color.printDim(w, use_color, "  Running {d} matrix combinations sequentially\n", .{num_combinations});
+    } else {
+        try color.printBold(w, use_color, "Workflow: {s}", .{wf_name});
+        if (wf.description) |desc| {
+            try color.printDim(w, use_color, " — {s}", .{desc});
+        }
+        try w.print("\n", .{});
     }
-    try w.print("\n", .{});
 
     const overall_start_ns = std.time.nanoTimestamp();
     var any_failed = false;
 
-    for (wf.stages) |stage| {
-        try color.printInfo(w, use_color, "\nStage: {s}\n", .{stage.name});
+    // Outer loop: iterate through matrix combinations (or run once if no matrix)
+    for (0..num_combinations) |combo_idx| {
+        // Build extra_env from matrix combination variables
+        var extra_env_list: std.ArrayList([2][]const u8) = .{};
+        defer {
+            for (extra_env_list.items) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            extra_env_list.deinit(allocator);
+        }
 
-        if (stage.tasks.len == 0) continue;
-
-        // Manual approval prompt if required
-        if (stage.approval) {
-            try color.printWarning(w, use_color, "  Manual approval required. Continue? (y/N): ", .{});
-            const stdin = std.fs.File.stdin();
-            var buf: [128]u8 = undefined;
-            const n = stdin.read(&buf) catch 0;
-            if (n > 0) {
-                const input = buf[0..n];
-                const trimmed = std.mem.trim(u8, input, " \t\r\n");
-                if (std.mem.eql(u8, trimmed, "y") or std.mem.eql(u8, trimmed, "Y")) {
-                    // Approved, continue
-                } else {
-                    try color.printDim(w, use_color, "  Stage '{s}' skipped by user\n", .{stage.name});
-                    continue;
-                }
-            } else {
-                try color.printDim(w, use_color, "  Stage '{s}' skipped (no input)\n", .{stage.name});
-                continue;
+        if (has_matrix) {
+            const combo = &combinations[combo_idx];
+            try color.printInfo(w, use_color, "\n=== Matrix combination {d}/{d} ===\n", .{ combo_idx + 1, num_combinations });
+            var iter = combo.variables.iterator();
+            while (iter.next()) |entry| {
+                try color.printDim(w, use_color, "  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                // Add MATRIX_<KEY>=<value> to extra_env
+                const env_key = try std.fmt.allocPrint(allocator, "MATRIX_{s}", .{entry.key_ptr.*});
+                const env_value = try allocator.dupe(u8, entry.value_ptr.*);
+                try extra_env_list.append(allocator, .{ env_key, env_value });
             }
         }
 
-        const stage_start_ns = std.time.nanoTimestamp();
+        const extra_env_slice: ?[][2][]const u8 = if (extra_env_list.items.len > 0) extra_env_list.items else null;
 
-        var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
-            .inherit_stdio = true,
-            .max_jobs = max_jobs,
-            .retry_budget = wf.retry_budget,
-        }) catch |err| {
+        // Inner loop: execute all stages for this matrix combination
+        for (wf.stages) |stage| {
+            try color.printInfo(w, use_color, "\nStage: {s}\n", .{stage.name});
+
+            if (stage.tasks.len == 0) continue;
+
+            // Manual approval prompt if required
+            if (stage.approval) {
+                try color.printWarning(w, use_color, "  Manual approval required. Continue? (y/N): ", .{});
+                const stdin = std.fs.File.stdin();
+                var buf: [128]u8 = undefined;
+                const n = stdin.read(&buf) catch 0;
+                if (n > 0) {
+                    const input = buf[0..n];
+                    const trimmed = std.mem.trim(u8, input, " \t\r\n");
+                    if (std.mem.eql(u8, trimmed, "y") or std.mem.eql(u8, trimmed, "Y")) {
+                        // Approved, continue
+                    } else {
+                        try color.printDim(w, use_color, "  Stage '{s}' skipped by user\n", .{stage.name});
+                        continue;
+                    }
+                } else {
+                    try color.printDim(w, use_color, "  Stage '{s}' skipped (no input)\n", .{stage.name});
+                    continue;
+                }
+            }
+
+            const stage_start_ns = std.time.nanoTimestamp();
+
+            var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
+                .inherit_stdio = true,
+                .max_jobs = max_jobs,
+                .retry_budget = wf.retry_budget,
+                .extra_env = extra_env_slice,
+            }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
                     try color.printError(err_writer, use_color,
@@ -569,6 +603,7 @@ pub fn cmdWorkflow(
                 var failure_result = scheduler.run(allocator, &config, &[_][]const u8{failure_task}, .{
                     .inherit_stdio = true,
                     .max_jobs = max_jobs,
+                    .extra_env = extra_env_slice,
                 }) catch |err| {
                     try color.printError(err_writer, use_color,
                         "workflow: on_failure task '{s}' failed: {s}\n",
@@ -591,6 +626,9 @@ pub fn cmdWorkflow(
             }
         }
     }
+    // End of stages loop for this matrix combination
+}
+// End of matrix combinations loop
 
     const overall_elapsed_ms: u64 = @intCast(@divTrunc(
         std.time.nanoTimestamp() - overall_start_ns, std.time.ns_per_ms));
@@ -599,6 +637,10 @@ pub fn cmdWorkflow(
     if (!any_failed) {
         try color.printSuccess(w, use_color,
             "Workflow '{s}' completed ({d}ms)\n", .{ wf_name, overall_elapsed_ms });
+        if (has_matrix) {
+            try color.printDim(w, use_color,
+                "  All {d} matrix combinations succeeded\n", .{num_combinations});
+        }
         return 0;
     } else {
         try color.printError(w, use_color,
