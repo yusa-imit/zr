@@ -636,8 +636,15 @@ test "workspace: Workspace struct deinit is safe" {
         .ignore = ignore,
         .member_dependencies = &.{},
     };
+
+    // Verify fields are set correctly before deinit
+    try std.testing.expectEqual(@as(usize, 2), ws.members.len);
+    try std.testing.expectEqualStrings("packages/*", ws.members[0]);
+    try std.testing.expectEqualStrings("apps/*", ws.members[1]);
+    try std.testing.expectEqual(@as(usize, 1), ws.ignore.len);
+    try std.testing.expectEqualStrings("**/node_modules", ws.ignore[0]);
+
     ws.deinit(allocator);
-    // If we get here without crash/leak, the test passes
 }
 
 test "resolveWorkspaceMembers: glob pattern finds dirs with config" {
