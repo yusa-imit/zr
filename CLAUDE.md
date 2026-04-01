@@ -242,6 +242,68 @@ User-facing errors must follow this pattern:
   Hint: [Actionable suggestion]
 ```
 
+### Test Writing Best Practices
+
+zr maintains 93%+ test coverage with a focus on meaningful assertions and real behavior verification.
+
+**Test Categories**:
+- **Unit tests** (`src/**/*.zig`): Test individual functions in isolation (1252 tests, 93.3% file coverage)
+- **Integration tests** (`tests/*_test.zig`): Black-box CLI testing with real zr binary (1172 tests, 65 files)
+- **Performance tests** (`tests/perf_*.zig`): Resource usage verification (<50MB memory for 1GB+ files)
+- **Fuzz tests** (`tests/fuzz_*.zig`): Randomized input testing for parsers/engines
+
+**Build targets**:
+```bash
+zig build test                 # Unit tests only
+zig build integration-test     # Integration tests only
+zig build test-perf-streaming  # Performance tests only
+zig build test-all             # All tests (unit + integration + perf)
+scripts/test-coverage.sh       # Coverage report (shows untested files)
+```
+
+**Writing Meaningful Tests**:
+
+1. **Test behavior, not implementation**
+   - ❌ Bad: `try testing.expect(result.len == 3)` — tests internal structure
+   - ✅ Good: `try testing.expectEqualStrings("expected output", result)` — tests actual behavior
+
+2. **Every test must have failure conditions**
+   - ❌ Bad: Tests that always pass (no assertions, tautologies like `1 == 1`)
+   - ✅ Good: Tests that verify specific invariants and can fail if code changes
+
+3. **Avoid copying implementation as expected value**
+   - ❌ Bad: `const expected = computeHash(input); try testing.expectEqual(expected, computeHash(input))`
+   - ✅ Good: `const expected = "known-hash-value"; try testing.expectEqual(expected, computeHash(input))`
+
+4. **Test edge cases and error paths**
+   - Empty inputs, null values, boundary conditions (0, max, negative)
+   - Error cases (invalid syntax, missing files, permission denied)
+   - Concurrent access, race conditions (for shared state)
+
+5. **deinit tests should verify state**
+   - ❌ Bad: Call `deinit()` without checking anything (only tests for leaks, not correctness)
+   - ✅ Good: Verify fields are set correctly BEFORE calling `deinit()` (tests both correctness and cleanup)
+
+6. **Integration tests: test user-facing behavior**
+   - Use `runZr()` helper to spawn real zr binary
+   - Verify stdout/stderr output, exit codes, file system changes
+   - Create minimal TOML configs that isolate the feature being tested
+
+7. **Test naming convention**: `test "descriptive name of what is tested"`
+   - ❌ Bad: `test "test1"`, `test "basic"`
+   - ✅ Good: `test "TaskConfig.deinit cleans up allocated fields"`, `test "levenshtein distance handles empty strings"`
+
+**Coverage goals**:
+- **80% minimum** file coverage (enforced by `test-coverage.sh`)
+- **93%+ current** coverage (167/179 files tested)
+- Untested files: mostly language providers (`src/lang/*.zig`) — integration-tested via toolchain tests
+
+**TDD workflow**:
+1. `test-writer` agent writes failing tests first
+2. `zig-developer` agent implements minimum code to pass tests
+3. Refactor with tests still passing
+4. All tests run before commit (`zig build test && zig build integration-test`)
+
 ---
 
 ## Git Workflow
