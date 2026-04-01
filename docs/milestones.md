@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.58.0 (Post-v1.0 Enhancements: Task Estimation, Validation, Visualization)
-- **Next actionable milestone**: None (need new milestones — see Milestone Establishment Process)
-- **READY milestones**: 0
+- **Next actionable milestone**: Test Infrastructure & Quality Enhancements
+- **READY milestones**: 1 (Test Infrastructure & Quality Enhancements)
 - **BLOCKED milestones**: Sailor v1.26.0-v1.30.0 Batch Migration (awaiting sailor issue #14), zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -16,6 +16,18 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Test Infrastructure & Quality Enhancements
+
+Strengthen test suite with meaningful assertions, improve test organization, and add comprehensive integration coverage. Addresses technical debt in test quality where tests only check for memory leaks without verifying actual behavior. Includes:
+- Audit all tests with deinit() but no assertions — add meaningful verification of field values
+- Strengthen weak tests that always pass (no failure conditions)
+- Add integration tests for workflow matrix execution (5 test cases: basic matrix, exclusions, variable substitution, --matrix-show flag, empty matrix)
+- Improve test output formatting and failure diagnostics
+- Add test categorization (unit/integration/benchmark) with separate run targets
+- Create test coverage report generator (identify untested modules)
+- Document test writing best practices in CLAUDE.md
+**Status: READY** — All Phase 1-13 features complete, test quality improvement is high-impact technical debt.
 
 ### Sailor v1.26.0-v1.30.0 Batch Migration
 
