@@ -5,7 +5,8 @@
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
 - **Next actionable milestone**: TBD (to be established)
 - **READY milestones**: 0
-- **BLOCKED milestones**: Sailor v1.26.0-v1.30.0 Batch Migration (awaiting sailor issue #14), zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
+- **READY milestones**: 1 (Sailor v1.26.0-v1.30.1 Batch Migration)
+- **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -18,19 +19,20 @@
 
 
 
-### Sailor v1.26.0-v1.30.0 Batch Migration
+### Sailor v1.26.0-v1.30.1 Batch Migration
 
-Migrate from sailor v1.25.0 to v1.30.0, incorporating 5 releases of testing, quality, documentation, and debugging improvements. All releases are backward compatible with no breaking changes. Includes:
+Migrate from sailor v1.25.0 to v1.30.1, incorporating 5 major releases plus 1 bug fix release of testing, quality, documentation, and debugging improvements. All releases are backward compatible with no breaking changes. Includes:
 - **v1.26.0**: Testing & Quality Assurance (292 new tests, memory leak fixes in Tree/Form/Table widgets, termcap/pool/bench/transition/timer/menu/form/chunkedbuffer/richtext_parser edge case coverage)
 - **v1.27.0**: Documentation & Examples (API documentation expansion, comprehensive example gallery, getting started guides, best practices documentation)
 - **v1.28.0**: Ecosystem Integration & Polish (ecosystem integration utilities, polish and refinement, quality of life improvements)
 - **v1.29.0**: Documentation Completion (99.9% API coverage — 1376/1378 documented functions across sixel/budget/test_utils/session/debugger/notification/particles/terminal modules)
 - **v1.30.0**: Error Handling & Debugging Enhancements (debug_log.zig with environment-based conditional logging SAILOR_DEBUG=module:level, stack_trace.zig with formatted assertions/preconditions/postconditions, error_handling_demo.zig example, 23 new tests)
-- Update `build.zig.zon` dependency to v1.30.0
+- **v1.30.1**: Zig 0.15 Compatibility Fix (std.BoundedArray → std.BoundedArrayAligned in tree.zig, resolves build errors from v1.26.0-v1.30.0)
+- Update `build.zig.zon` dependency to v1.30.1 (issue #44)
 - Run full test suite to verify backward compatibility
 - Review new utilities: debug_log (scope-based logging), stack_trace (better panic messages)
 - No code changes required (all features are additive, no breaking changes)
-**Status: BLOCKED** — sailor v1.30.0 has breaking Zig 0.15 compatibility issue (std.BoundedArray removed in Zig 0.15, used in tree.zig:170). Filed https://github.com/yusa-imit/sailor/issues/14, awaiting fix. Staying on v1.25.0 until resolved.
+**Status: READY** — Blocker resolved! sailor v1.30.1 released with Zig 0.15 fix (issue #44). Previous block: v1.30.0 had std.BoundedArray usage (removed in Zig 0.15), now fixed in v1.30.1.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
