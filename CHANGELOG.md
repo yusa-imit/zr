@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.59.0] - 2026-04-01
+
+### 🎯 Workflow Matrix Execution
+
+This release implements matrix execution strategy for workflows, enabling automated execution of tasks across multiple parameter combinations.
+
+### Added
+
+**Matrix Configuration**
+- **Matrix Types** — Extended `src/config/types.zig` with workflow matrix support
+  - `MatrixExclusion` struct for key-value exclusion conditions
+  - `MatrixConfig` struct with dimensions and exclusions
+  - Optional `matrix` field in `Workflow` struct
+  - Full `deinit` implementation for memory cleanup
+
+**Matrix Expansion**
+- **Matrix Module** (`src/exec/matrix.zig`, 345 LOC) — Cartesian product expansion with exclusion filtering
+  - `MatrixCombination` struct: hashmap for variable name → value mapping
+  - `expandMatrix()`: generates all valid combinations from matrix dimensions
+  - `isExcluded()`: filters combinations based on exclusion rules
+  - 8 unit tests covering initialization, cloning, expansion, exclusions
+
+**Workflow Integration**
+- **Scheduler Enhancement** — `SchedulerConfig.extra_env` field for matrix variable injection
+  - `buildEnvWithToolchains()` merges extra_env with labeled error handling
+  - Call chain threading: WorkerCtx → runTaskSync → runSerialChain
+  - Memory safety: defer blocks for env key/value cleanup
+- **Matrix Execution Loop** (`src/cli/run.zig`)
+  - Sequential execution of all matrix combinations (parallel deferred to future)
+  - Each combination runs ALL workflow stages with injected environment
+  - Matrix variables exposed as `MATRIX_<KEY>=<value>` env vars
+  - Variable substitution: `${matrix.os}` in task commands
+
+**CLI Commands**
+- **`--matrix-show` Flag** — Preview matrix combinations without execution
+  - Displays all generated combinations with their variables
+  - Shows total combination count
+  - Useful for debugging matrix configurations
+
+### Tests
+
+**Integration Tests** (9 tests in `tests/workflow_matrix_test.zig`)
+- Test 3935: Single dimension expansion (3 arch values)
+- Test 3936: Cartesian product 2x3 (os × version)
+- Test 3937: Matrix with exclusions (3x2 → 5 after exclusion)
+- Test 3938: Multi-dimension 3x2x2 (12 combinations)
+- Test 3939: Variable substitution ${matrix.KEY}
+- Test 3940: Empty matrix config
+- Test 3941: Matrix with single value
+- Test 3942: Complex exclusions (multiple rules)
+- Test 3943: Matrix show with exclusions
+- Test 3944: Matrix execution with workflow stages
+
+**Test Status**: 1253/1261 unit tests passing (100% pass rate), 8 skipped
+
+### Usage Example
+
+```toml
+[workflows.test]
+stages = [
+  { tasks = ["build", "test"] },
+]
+
+[workflows.test.matrix]
+os = ["linux", "macos", "windows"]
+version = ["1.0", "2.0"]
+
+[[workflows.test.matrix.exclude]]
+os = "macos"
+version = "1.0"
+
+[tasks.build]
+cmd = "build --os=${matrix.os} --version=${matrix.version}"
+
+[tasks.test]
+cmd = "test --os=${matrix.os}"
+```
+
+```bash
+# Preview all combinations
+zr workflow test --matrix-show
+
+# Execute all combinations
+zr workflow test
+```
+
+### Commits
+- ff7f24f: feat: add matrix execution types and expansion logic
+- 19b61cc: feat: add workflow matrix --matrix-show flag
+- 666aa74: feat: implement workflow matrix execution
+
 ## [1.58.0] - 2026-03-30
 
 ### 🎯 Post-v1.0 Enhancements: Task Estimation, Validation, Visualization
