@@ -73,5 +73,11 @@ test "OwnerPattern deinit" {
     };
     pattern.owners[0] = try allocator.dupe(u8, "@team");
 
+    // Verify fields are set correctly before deinit
+    try std.testing.expectEqualStrings("src/**", pattern.pattern);
+    try std.testing.expectEqual(@as(usize, 1), pattern.owners.len);
+    try std.testing.expectEqualStrings("@team", pattern.owners[0]);
+
     pattern.deinit(allocator);
+    // Note: After deinit, fields are freed but not nulled - testing allocator will catch any leaks
 }
