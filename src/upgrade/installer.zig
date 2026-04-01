@@ -128,7 +128,6 @@ fn replaceBinary(current_path: []const u8, new_path: []const u8) !void {
     }
 }
 
-test "replaceBinary creates backup" {
-    // This would require mocking file system operations
-    // Skip for now as it's integration-level testing
-}
+// NOTE: replaceBinary() and downloadBinary() require integration tests
+// with actual filesystem operations. These should be added to tests/upgrade_test.zig
+// covering: successful upgrade, backup creation, permission preservation, error handling
