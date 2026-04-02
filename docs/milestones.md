@@ -3,9 +3,9 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: TBD (to be established)
-- **READY milestones**: 1 (Error Message UX Enhancement)
-- **BLOCKED milestones**: Sailor v1.26.0-v1.30.1 Batch Migration (awaiting sailor issue #15), zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
+- **Next actionable milestone**: Sailor v1.26.0-v1.30.2 Batch Migration
+- **READY milestones**: 2 (Sailor v1.26.0-v1.30.2 Batch Migration, Error Message UX Enhancement)
+- **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -32,20 +32,21 @@ Improve user-facing error messages across all zr modules with actionable suggest
 - Integration tests for error message quality (verify hints appear, suggestions are correct)
 **Status: READY** — New milestone established 2026-04-02 (Cycle 72). Enhances Phase 9D with comprehensive error UX coverage.
 
-### Sailor v1.26.0-v1.30.1 Batch Migration
+### Sailor v1.26.0-v1.30.2 Batch Migration
 
-Migrate from sailor v1.25.0 to v1.30.1, incorporating 5 major releases plus 1 bug fix release of testing, quality, documentation, and debugging improvements. All releases are backward compatible with no breaking changes. Includes:
+Migrate from sailor v1.25.0 to v1.30.2, incorporating 5 major releases plus 2 bug fix releases of testing, quality, documentation, and debugging improvements. All releases are backward compatible with no breaking changes. Includes:
 - **v1.26.0**: Testing & Quality Assurance (292 new tests, memory leak fixes in Tree/Form/Table widgets, termcap/pool/bench/transition/timer/menu/form/chunkedbuffer/richtext_parser edge case coverage)
 - **v1.27.0**: Documentation & Examples (API documentation expansion, comprehensive example gallery, getting started guides, best practices documentation)
 - **v1.28.0**: Ecosystem Integration & Polish (ecosystem integration utilities, polish and refinement, quality of life improvements)
 - **v1.29.0**: Documentation Completion (99.9% API coverage — 1376/1378 documented functions across sixel/budget/test_utils/session/debugger/notification/particles/terminal modules)
 - **v1.30.0**: Error Handling & Debugging Enhancements (debug_log.zig with environment-based conditional logging SAILOR_DEBUG=module:level, stack_trace.zig with formatted assertions/preconditions/postconditions, error_handling_demo.zig example, 23 new tests)
-- **v1.30.1**: Zig 0.15 Compatibility Fix (attempted fix broken — see issue #44)
-- Update `build.zig.zon` dependency to v1.30.1 (issue #44)
+- **v1.30.1**: Zig 0.15 Compatibility Fix (attempted fix broken — see issue #15)
+- **v1.30.2**: Zig 0.15.2 Compatibility Fix (resolved issue #15 — replaced BoundedArrayAligned with manual FlatList struct, commit 5f7f362)
+- Update `build.zig.zon` dependency to v1.30.2 (resolves issues #43, #45)
 - Run full test suite to verify backward compatibility
 - Review new utilities: debug_log (scope-based logging), stack_trace (better panic messages)
 - No code changes required (all features are additive, no breaking changes)
-**Status: BLOCKED** — sailor v1.30.1 released but **still broken** on Zig 0.15.2. Release notes claim to replace `std.BoundedArray` → `std.BoundedArrayAligned`, but **both types do not exist in Zig 0.15.x** (removed in Zig 0.14 → 0.15 migration). Filed https://github.com/yusa-imit/sailor/issues/15. Reverted to v1.25.0. Awaiting v1.30.2 with actual Zig 0.15 compatibility fix (likely requires replacing with manual array indexing or std.ArrayList).
+**Status: READY** — sailor v1.30.2 released (2026-04-02) with Zig 0.15.2 fix. Issue #15 closed with fix in commit 5f7f362. Ready for migration.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
