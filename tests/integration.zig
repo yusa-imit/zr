@@ -23,6 +23,7 @@ comptime {
     _ = @import("env_test.zig");
     _ = @import("integration_dotenv.zig");
     _ = @import("error_recovery_test.zig");
+    _ = @import("error_messages_test.zig");
     _ = @import("estimate_test.zig");
     _ = @import("export_test.zig");
     _ = @import("failures_test.zig");
