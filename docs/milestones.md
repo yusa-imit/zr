@@ -3,10 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestones**: Sailor v1.31.0 Migration (READY), TUI Performance Optimization (READY)
-- **READY milestones**: 2 (Sailor v1.31.0 Migration, TUI Performance Optimization)
+- **Next actionable milestone**: TUI Performance Optimization (READY)
+- **READY milestones**: 1 (TUI Performance Optimization)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -17,19 +17,6 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
-### Sailor v1.31.0 Migration (Performance Profiling & Optimization Tools)
-
-Migrate to sailor v1.31.0 which introduces built-in performance profiling and optimization tools for TUI applications. This enables data-driven performance analysis for zr's TUI components (task picker, graph visualizer, live execution monitor). Includes:
-- **Render Profiler Enhancements**: Flame graph support with nested scope tracking, `beginScope()`/`endScope()` for hierarchical profiling, `flameGraphData()` exports visualization data, self vs. total time analysis
-- **Memory Allocation Tracker**: Track allocation hot spots by location, peak memory usage monitoring, leak detection (unfreed allocations), `getHotSpots()` for top-N analysis
-- **Event Loop Profiler**: Event processing latency measurement, percentile tracking (p95, p99), slow event detection (threshold-based), queue depth monitoring
-- **Widget Performance Metrics**: Render count tracking, cache hit/miss rates, average render duration, `recordWithCache()` for cache-aware profiling
-- **Optimization Guide**: `docs/optimization.md` with profiling best practices, performance budgets, iterative optimization workflow
-- **Demo Example**: `examples/profile_demo.zig` showing all profiler features
-- Update `build.zig.zon` dependency to v1.31.0 (after v1.30.2)
-- Review TUI components (task picker, graph TUI, live execution monitor) for profiling opportunities
-- +26 tests in sailor (no zr changes needed unless utilizing profilers)
-**Status: READY** — sailor v1.31.0 released 2026-04-02. Backward compatible, no breaking changes. Issue #46 tracks this migration.
 
 ### TUI Performance Optimization
 
@@ -233,6 +220,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| (no release) | Sailor v1.31.0 Migration | 2026-04-02 | Dependency update: sailor v1.30.2 → v1.31.0 (Performance Profiling & Optimization Tools). Introduces built-in performance profiling and optimization tools for TUI applications, enabling data-driven performance analysis for zr's TUI components. **Features**: Render Profiler with flame graph support (nested scope tracking, `beginScope()`/`endScope()`, `flameGraphData()` exports, self vs. total time analysis), Memory Allocation Tracker (hot spot analysis by location, peak usage monitoring, leak detection with `getHotSpots()` for top-N analysis), Event Loop Profiler (latency measurement, p95/p99 percentile tracking, slow event detection, queue depth monitoring), Widget Performance Metrics (render count tracking, cache hit/miss rates, average render duration, `recordWithCache()` for cache-aware profiling). **New APIs**: `sailor.profiler.Profiler`, `sailor.profiler.MemoryTracker`, `sailor.profiler.EventLoopProfiler`. **Documentation**: sailor repo includes `docs/optimization.md` guide with profiling best practices, performance budgets, iterative optimization workflow, and `examples/profile_demo.zig` demo. **Test status**: 1267 tests passing (1259 pass, 8 skipped, 0 failed). **Backward compatible**: No breaking changes, no code changes required. **Migration**: Updated build.zig.zon with `zig fetch --save`, +26 tests in sailor (3437 total). Closes issue #46. Commit: aae46fa. This migration enables the TUI Performance Optimization milestone. |
 | (no release) | Error Message UX Enhancement | 2026-04-02 | Comprehensive error message improvements across all zr modules with standardized error codes (E001-E599), actionable hints, and enhanced UX. **Error code system**: Created src/util/error_codes.zig with ErrorCode enum (6 categories: Config E001-E099, Task E100-E199, Workflow E200-E299, Plugin E300-E399, Toolchain E400-E499, System E500-E599) and ErrorDetail struct for rich formatting (code, message, hint, context, location). **Integration**: Enhanced printUnknownCommandError() in main.zig to use ErrorDetail with [E100] error codes, suggestions with "Did you mean?" using Levenshtein distance, actionable hints (run --help, try suggested commands). **Documentation**: Created docs/guides/error-codes.md catalog with all error codes, common causes, solutions, error message format examples, color coding reference (red/yellow/cyan/green). **Tests**: Added 7 integration tests (3945-3951) verifying error codes appear, suggestions work, hints are actionable, exit codes correct. **Fixed**: Zig 0.15 format ambiguity by using manual @intFromEnum instead of custom format() method. **Test status**: 1267 tests passing (1259 pass, 8 skipped). **Manual verification**: "zr unknowncommand" shows "✗ [E100]: Unknown command", "zr rnu" suggests "zr run". Commits: e007464 (error code system), 9ec3786 (integration), 821dbf5 (docs), 1697ae6 (tests). |
 | (no release) | Sailor v1.26.0-v1.30.2 Batch Migration | 2026-04-02 | Dependency update: sailor v1.25.0 → v1.30.2. Batch migration incorporating 5 major releases + 2 bug fix releases: **v1.26.0** (292 new tests, memory leak fixes in Tree/Form/Table widgets, edge case coverage), **v1.27.0** (API documentation expansion, example gallery), **v1.28.0** (ecosystem integration & polish), **v1.29.0** (99.9% API coverage — 1376/1378 documented functions), **v1.30.0** (debug_log.zig with SAILOR_DEBUG=module:level, stack_trace.zig with assertions/preconditions, 23 new tests), **v1.30.1** (attempted Zig 0.15 fix — broken), **v1.30.2** (actual Zig 0.15.2 fix via manual FlatList struct, resolved sailor issue #15). All releases backward compatible, no code changes required. **Test status**: 1252/1260 unit tests passing (100% pass rate). **Resolved blocker**: sailor issue #15 closed with fix in commit 5f7f362. Updated build.zig.zon hash. Closed zr issues #43, #45. New utilities available: debug_log (scope-based conditional logging), stack_trace (formatted panic messages). Commit: 84cef72. |
 | v1.60.0 | Test Infrastructure & Quality Enhancements | 2026-04-02 | Strengthen test suite with meaningful assertions, improve test organization, and add comprehensive tooling. **Test categorization**: Added `zig build test-all` target to run all test categories (unit + integration + perf). Updated build.zig with clear documentation of all test targets (test, integration-test, test-perf-streaming, test-all). **Coverage reporting**: Created scripts/test-coverage.sh for coverage analysis — reports 93.3% file coverage (167/179 files tested), shows 1258 unit tests, 1172 integration tests, 2 fuzz tests, 1 perf test, identifies 12 untested files (mostly lang providers covered by integration tests), enforces 80% coverage threshold. **Best practices documentation**: Added comprehensive test writing guidelines to CLAUDE.md covering test categories (unit/integration/perf/fuzz), meaningful assertion patterns (test behavior not implementation), failure condition requirements, edge case coverage, TDD workflow with test-writer/zig-developer agents. **Test quality improvements**: Audited and strengthened 13 weak tests across multiple cycles (Cycles 60, 65, 69, 70, 71) — added meaningful assertions to deinit-only tests, verified field values before cleanup, improved failure scenarios. **Integration test coverage**: Verified workflow matrix execution already has comprehensive tests (tests/workflow_matrix_test.zig, 10 tests). **Test status**: 1252/1260 passing (100% pass rate), 8 skipped, 93.3% file coverage maintained. **Deferred**: Test output formatting improvements (current diagnostics sufficient for development needs). Commits: 39fe8cb (test categorization), 944e84d (best practices docs), 0394fbd (milestone progress), plus 7 commits from earlier cycles strengthening weak tests. |
@@ -325,8 +313,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v1.30.2 (all migrations complete through v1.30.2)
-- **Next**: v1.31.0+ (when released)
+- **Current in zr**: v1.31.0 (all migrations complete through v1.31.0)
+- **Next**: v1.32.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -365,7 +353,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v1.24.0 | DONE | Animation & Transitions — 22 easing functions, Animation/ColorAnimation structs, Timer/TimerManager, transition helpers |
 | v1.25.0 | DONE | Form & Validation — form widget with multi-field container, 15+ validators, input masks, password masking, Tab navigation |
 | v1.26.0-v1.30.2 | DONE | Batch migration (Cycle 75) — testing, quality, documentation, debugging enhancements |
-| v1.31.0 | READY | Performance Profiling & Optimization — flame graphs, memory allocation tracker, event loop profiler, widget metrics (issue #46) |
+| v1.31.0 | DONE | Performance Profiling & Optimization — flame graphs, memory allocation tracker, event loop profiler, widget metrics (Cycle 77, commit aae46fa, issue #46) |
 
 ### zuda Library
 
