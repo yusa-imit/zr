@@ -10,6 +10,7 @@ const unicode = @import("../util/unicode.zig");
 const sailor = @import("sailor");
 const stui = sailor.tui;
 const tui_mouse = @import("tui_mouse.zig");
+const TuiProfiler = @import("../util/tui_profiler.zig").TuiProfiler;
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -190,13 +191,25 @@ fn drawScreen(
     items: []const Item,
     selected: usize,
     use_color: bool,
+    profiler: ?*TuiProfiler,
 ) !void {
+    if (profiler) |p| {
+        try p.beginScope("drawScreen");
+    }
+    defer if (profiler) |p| {
+        p.endScope() catch {};
+    };
+
     const screen_width: u16 = 60;
     // +6 for header (2 lines) + footer (1 line) + padding (3 lines)
     const screen_height: u16 = @intCast(@min(@as(usize, 30), items.len + 6));
 
     var buf = try stui.Buffer.init(allocator, screen_width, screen_height);
     defer buf.deinit();
+
+    if (profiler) |p| {
+        try p.trackMemory("Buffer.init", screen_width * screen_height * @sizeOf(stui.Cell));
+    }
 
     // Header with item count and position indicator for accessibility
     var header_buf: [128]u8 = undefined;
@@ -216,18 +229,31 @@ fn drawScreen(
     }
 
     // Item list using sailor List widget
+    if (profiler) |p| {
+        try p.beginScope("buildItemLabels");
+    }
     const labels = try buildItemLabels(allocator, items);
     defer freeItemLabels(allocator, labels);
+    if (profiler) |p| {
+        p.endScope() catch {};
+    }
 
     // Leave room for header (3 lines) and footer (1 line)
     const list_height = if (screen_height > 4) screen_height - 4 else 1;
     const list_area = stui.Rect.new(0, 3, screen_width, list_height);
+
+    if (profiler) |p| {
+        try p.beginScope("List.render");
+    }
     const list = stui.widgets.List.init(labels)
         .withSelected(selected)
         .withSelectedStyle(stui.Style{ .fg = .bright_cyan })
         .withHighlightSymbol("> ");
 
     list.render(&buf, list_area);
+    if (profiler) |p| {
+        p.endScope() catch {};
+    }
 
     // Footer: show currently selected item details for accessibility
     if (selected < items.len) {
@@ -242,7 +268,13 @@ fn drawScreen(
         buf.setString(0, footer_y, footer, stui.Style{ .fg = .bright_black });
     }
 
+    if (profiler) |p| {
+        try p.beginScope("renderBuffer");
+    }
     try renderBuffer(&buf, w, use_color);
+    if (profiler) |p| {
+        p.endScope() catch {};
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -330,32 +362,49 @@ fn cmdInteractiveInner(
     try tui_mouse.enableMouseTracking(w, .drag);
     defer tui_mouse.disableMouseTracking(w) catch {};
 
+    // Initialize performance profiler (disabled by default, enable via ZR_PROFILE=1)
+    const enable_profiling = std.process.hasEnvVarConstant("ZR_PROFILE");
+    var profiler: ?TuiProfiler = if (enable_profiling)
+        try TuiProfiler.init(allocator)
+    else
+        null;
+    defer if (profiler) |*p| p.deinit();
+
     var selected: usize = 0;
     const item_count = items.items.len;
 
-    try drawScreen(allocator, w, items.items, selected, use_color);
+    try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
     try w.flush();
 
     while (true) {
         const byte = readByte() orelse break;
+
+        // Track event processing latency
+        var event_guard = if (profiler) |*p|
+            p.trackEvent("keyboard_input", 0)
+        else
+            undefined;
+        defer if (profiler) |_| {
+            event_guard.end() catch {};
+        };
 
         switch (byte) {
             'q', 'Q' => break,
 
             'k' => {
                 if (item_count > 0 and selected > 0) selected -= 1;
-                try drawScreen(allocator, w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                 try w.flush();
             },
 
             'j' => {
                 if (item_count > 0 and selected + 1 < item_count) selected += 1;
-                try drawScreen(allocator, w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                 try w.flush();
             },
 
             'r', 'R' => {
-                try drawScreen(allocator, w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                 try w.flush();
             },
 
@@ -363,14 +412,14 @@ fn cmdInteractiveInner(
             'g' => {
                 // Go to top
                 if (item_count > 0) selected = 0;
-                try drawScreen(allocator, w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                 try w.flush();
             },
 
             'G' => {
                 // Go to bottom
                 if (item_count > 0) selected = item_count - 1;
-                try drawScreen(allocator, w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                 try w.flush();
             },
 
@@ -402,7 +451,7 @@ fn cmdInteractiveInner(
                                             const clicked_idx = evt.y - 3;
                                             if (clicked_idx < item_count) {
                                                 selected = clicked_idx;
-                                                try drawScreen(allocator, w, items.items, selected, use_color);
+                                                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                                                 try w.flush();
                                             }
                                         }
@@ -418,25 +467,25 @@ fn cmdInteractiveInner(
                         // Arrow up
                         'A' => {
                             if (item_count > 0 and selected > 0) selected -= 1;
-                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                             try w.flush();
                         },
                         // Arrow down
                         'B' => {
                             if (item_count > 0 and selected + 1 < item_count) selected += 1;
-                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                             try w.flush();
                         },
                         // Home key (ESC [ H)
                         'H' => {
                             if (item_count > 0) selected = 0;
-                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                             try w.flush();
                         },
                         // End key (ESC [ F)
                         'F' => {
                             if (item_count > 0) selected = item_count - 1;
-                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                             try w.flush();
                         },
                         // Page Up (ESC [ 5 ~) / Page Down (ESC [ 6 ~)
@@ -460,7 +509,7 @@ fn cmdInteractiveInner(
                                     selected = item_count - 1;
                                 }
                             }
-                            try drawScreen(allocator, w, items.items, selected, use_color);
+                            try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                             try w.flush();
                         },
                         else => {},
@@ -500,7 +549,7 @@ fn cmdInteractiveInner(
                 try w.flush();
                 _ = readByte();
 
-                try drawScreen(allocator, w, items.items, selected, use_color);
+                try drawScreen(allocator, w, items.items, selected, use_color, if (profiler) |*p| p else null);
                 try w.flush();
             },
 
