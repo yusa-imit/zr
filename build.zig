@@ -11,7 +11,8 @@ const std = @import("std");
 //   zig build test                      # Run unit tests (1252 tests in src/)
 //   zig build integration-test          # Run integration tests (black-box CLI tests)
 //   zig build test-perf-streaming       # Run performance tests (output streaming)
-//   zig build test-all                  # Run all tests (unit + integration + perf)
+//   zig build test-tui-bench            # Run TUI performance benchmarks (regression detection)
+//   zig build test-all                  # Run all tests (unit + integration + perf + tui bench)
 //
 // Fuzz targets (run indefinitely until Ctrl+C):
 //   zig build fuzz-toml                 # TOML parser fuzzer
@@ -207,10 +208,31 @@ pub fn build(b: *std.Build) void {
     const perf_streaming_step = b.step("test-perf-streaming", "Run output streaming performance tests (1GB+ files)");
     perf_streaming_step.dependOn(&run_perf_streaming.step);
 
+    // TUI performance benchmark tests (regression detection for TUI modes)
+    const tui_bench_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/tui_bench.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = if (target.result.os.tag != .windows) true else null,
+        }),
+    });
+    tui_bench_tests.root_module.addImport("zr", zr_module);
+    tui_bench_tests.root_module.addImport("sailor", sailor_dep.module("sailor"));
+    tui_bench_tests.root_module.addImport("zuda", zuda_dep.module("zuda"));
+
+    const run_tui_bench = std.Build.Step.Run.create(b, "run TUI benchmark tests");
+    run_tui_bench.addArtifactArg(tui_bench_tests);
+    run_tui_bench.has_side_effects = true;
+
+    const tui_bench_step = b.step("test-tui-bench", "Run TUI performance benchmark tests with regression detection");
+    tui_bench_step.dependOn(&run_tui_bench.step);
+
     // --- Test All ---
     // Composite test target that runs all test categories
     const test_all_step = b.step("test-all", "Run all tests (unit + integration + performance)");
     test_all_step.dependOn(&run_exe_tests.step); // unit tests
     test_all_step.dependOn(&run_int_tests.step); // integration tests
     test_all_step.dependOn(&run_perf_streaming.step); // performance tests
+    test_all_step.dependOn(&run_tui_bench.step); // TUI benchmarks
 }
