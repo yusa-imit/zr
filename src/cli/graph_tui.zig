@@ -7,6 +7,7 @@ const color = @import("../output/color.zig");
 const graph_mod = @import("graph.zig");
 const GraphNode = graph_mod.GraphNode;
 const tui_mouse = @import("tui_mouse.zig");
+const TuiProfiler = @import("../util/tui_profiler.zig").TuiProfiler;
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -195,12 +196,27 @@ pub fn graphTui(
     try tui_mouse.enableMouseTracking(w, .drag);
     defer tui_mouse.disableMouseTracking(w) catch {};
 
+    // Initialize performance profiler (disabled by default, enable via ZR_PROFILE=1)
+    const enable_profiling = std.process.hasEnvVarConstant("ZR_PROFILE");
+    var profiler: ?TuiProfiler = if (enable_profiling)
+        try TuiProfiler.init(allocator)
+    else
+        null;
+    defer if (profiler) |*p| p.deinit();
+
     var selected: usize = 0;
     var offset: usize = 0;
     var quit = false;
     var drag_state = DragState{};
 
     while (!quit) {
+        // Track frame render time
+        if (profiler) |*p| {
+            try p.beginScope("graph_frame");
+        }
+        defer if (profiler) |*p| {
+            p.endScope() catch {};
+        };
         // Get terminal size
         const term_size = try sailor.term.getSize();
         const term_width = term_size.cols;
@@ -212,8 +228,15 @@ pub fn graphTui(
         const virtual_width = term_width;
 
         // Create large virtual buffer for entire tree
+        if (profiler) |*p| {
+            try p.beginScope("Buffer.init_virtual");
+        }
         var virtual_buf = try stui.Buffer.init(allocator, virtual_width, virtual_height);
         defer virtual_buf.deinit();
+        if (profiler) |*p| {
+            p.endScope() catch {};
+            try p.trackMemory("virtual_buffer", virtual_width * virtual_height * @sizeOf(stui.Cell));
+        }
 
         const virtual_area = stui.layout.Rect{ .x = 0, .y = 0, .width = virtual_width, .height = virtual_height };
 
@@ -226,22 +249,56 @@ pub fn graphTui(
             .withSelectedStyle(stui.Style{ .fg = .bright_green, .bold = true })
             .withNodeStyle(stui.Style{});
 
+        if (profiler) |*p| {
+            try p.beginScope("Tree.render");
+        }
         tree.render(&virtual_buf, virtual_area);
+        if (profiler) |*p| {
+            p.endScope() catch {};
+        }
 
         // Create viewport for visible portion (uses sailor v1.7.0 viewport clipping)
         const viewport = stui.viewport.Viewport.init(0, 0, term_width, term_height);
 
         // Create terminal buffer and clip visible portion from virtual buffer
+        if (profiler) |*p| {
+            try p.beginScope("Buffer.init_terminal");
+        }
         var term_buf = try stui.Buffer.init(allocator, term_width, term_height);
         defer term_buf.deinit();
+        if (profiler) |*p| {
+            p.endScope() catch {};
+            try p.trackMemory("terminal_buffer", term_width * term_height * @sizeOf(stui.Cell));
+        }
 
+        if (profiler) |*p| {
+            try p.beginScope("viewport.renderClipped");
+        }
         viewport.renderClipped(&virtual_buf, &term_buf);
+        if (profiler) |*p| {
+            p.endScope() catch {};
+        }
 
         // Render clipped buffer to terminal
+        if (profiler) |*p| {
+            try p.beginScope("renderBuffer");
+        }
         try renderBuffer(&term_buf, w, use_color);
+        if (profiler) |*p| {
+            p.endScope() catch {};
+        }
 
         // Handle input
         if (readByte()) |byte| {
+            // Track event processing latency
+            var event_guard = if (profiler) |*p|
+                p.trackEvent("input_processing", 0)
+            else
+                undefined;
+            defer if (profiler) |_| {
+                event_guard.end() catch {};
+            };
+
             switch (byte) {
                 'q', 'Q' => quit = true, // q to quit
                 'j', 'J' => { // Down arrow (j or down arrow)
