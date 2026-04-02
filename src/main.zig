@@ -88,6 +88,7 @@ const glob = @import("util/glob.zig");
 const affected = @import("util/affected.zig");
 const numa = @import("util/numa.zig");
 const profiler = @import("util/profiler.zig");
+const error_codes = @import("util/error_codes.zig");
 const resource = @import("exec/resource.zig");
 const resource_monitor = @import("exec/resource_monitor.zig");
 const metrics_export = @import("exec/metrics_export.zig");
@@ -275,8 +276,55 @@ pub fn main() !void {
     }
 }
 
+/// Print unknown command error with suggestions using error code system.
+fn printUnknownCommandError(
+    allocator: std.mem.Allocator,
+    unknown_cmd: []const u8,
+    known_commands: []const []const u8,
+    ew: *std.Io.Writer,
+    use_color: bool,
+) !void {
+    // Find suggestions
+    const suggestions = try levenshtein.findClosestMatches(
+        allocator,
+        unknown_cmd,
+        known_commands,
+        3, // max distance: allow up to 3 edits
+        3, // max suggestions: show at most 3 alternatives
+    );
+    defer allocator.free(suggestions);
+
+    // Build hint with suggestions
+    var hint_buf: [512]u8 = undefined;
+    var hint_stream = std.io.fixedBufferStream(&hint_buf);
+    const hint_writer = hint_stream.writer();
+
+    if (suggestions.len > 0) {
+        try hint_writer.print("Did you mean one of these?\n", .{});
+        for (suggestions) |suggestion| {
+            try hint_writer.print("    zr {s}\n", .{suggestion.name});
+        }
+        try hint_writer.print("\nOr run 'zr --help' to see all available commands.", .{});
+    } else {
+        try hint_writer.print("Run 'zr --help' to see all available commands.", .{});
+    }
+
+    // Create error detail (allocate message buffer because unknown_cmd is stack-local)
+    var msg_buf: [256]u8 = undefined;
+    const msg = try std.fmt.bufPrint(&msg_buf, "Unknown command: {s}", .{unknown_cmd});
+
+    const err = error_codes.ErrorDetail{
+        .code = .task_not_found, // Reusing task_not_found for now (command is similar to task)
+        .message = msg,
+        .hint = hint_stream.getWritten(),
+    };
+
+    try err.print(ew, use_color);
+}
+
 /// Suggest similar commands using Levenshtein distance.
 /// Prints "Did you mean?" suggestions to the error writer if close matches are found.
+/// DEPRECATED: Use printUnknownCommandError instead for new code.
 fn suggestSimilarCommands(
     allocator: std.mem.Allocator,
     unknown_cmd: []const u8,
@@ -591,10 +639,7 @@ fn run(
             if (err != error.FileNotFound) {
                 try color.printError(ew, effective_color, "Failed to load aliases: {}\n", .{err});
             }
-            try color.printError(ew, effective_color, "Unknown command: {s}\n", .{cmd});
-            try suggestSimilarCommands(allocator, cmd, &known_commands, ew, effective_color);
-            try ew.print("\n", .{});
-            try printHelp(effective_w, effective_color);
+            try printUnknownCommandError(allocator, cmd, &known_commands, ew, effective_color);
             return 1;
         };
         defer alias_config.deinit();
@@ -624,10 +669,7 @@ fn run(
             return try run(allocator, expanded_args.items, w, ew, use_color);
         } else {
             // Not a builtin and not an alias
-            try color.printError(ew, effective_color, "Unknown command: {s}\n", .{cmd});
-            try suggestSimilarCommands(allocator, cmd, &known_commands, ew, effective_color);
-            try ew.print("\n", .{});
-            try printHelp(effective_w, effective_color);
+            try printUnknownCommandError(allocator, cmd, &known_commands, ew, effective_color);
             return 1;
         }
     }

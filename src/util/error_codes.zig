@@ -67,8 +67,17 @@ pub const ErrorDetail = struct {
     ) !void {
         const color = @import("../output/color.zig");
 
-        // Error symbol and code
-        try color.printError(writer, use_color, "[{s}]: {s}\n", .{ self.code, self.message });
+        // Error symbol and code (build manually to avoid writer type issues)
+        if (use_color) {
+            try writer.writeAll("\x1b[91m"); // bright red
+            try writer.writeAll("✗");
+            try writer.writeAll("\x1b[0m"); // reset
+            try writer.writeAll(" ");
+        } else {
+            try writer.writeAll("✗ ");
+        }
+        // Format error code manually to avoid Zig 0.15 format ambiguity
+        try writer.print("[E{d:0>3}]: {s}\n", .{ @intFromEnum(self.code), self.message });
 
         // Location info if available
         if (self.file_path) |path| {
@@ -174,11 +183,12 @@ pub const errors = struct {
 const testing = std.testing;
 
 test "ErrorCode format" {
-    var buf: [10]u8 = undefined;
-    const result = try std.fmt.bufPrint(&buf, "{s}", .{ErrorCode.task_not_found});
+    var buf: [256]u8 = undefined;
+    // Format using the manual approach to match the actual usage
+    const result = try std.fmt.bufPrint(&buf, "E{d:0>3}", .{@intFromEnum(ErrorCode.task_not_found)});
     try testing.expectEqualStrings("E100", result);
 
-    const result2 = try std.fmt.bufPrint(&buf, "{s}", .{ErrorCode.config_parse_error});
+    const result2 = try std.fmt.bufPrint(&buf, "E{d:0>3}", .{@intFromEnum(ErrorCode.config_parse_error)});
     try testing.expectEqualStrings("E001", result2);
 }
 
