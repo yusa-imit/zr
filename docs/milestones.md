@@ -3,9 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: Sailor v1.26.0-v1.30.2 Batch Migration
-- **READY milestones**: 2 (Sailor v1.26.0-v1.30.2 Batch Migration, Error Message UX Enhancement)
+- **Next actionable milestone**: Error Message UX Enhancement
+- **READY milestones**: 1 (Error Message UX Enhancement)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
+- **DONE**: Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -31,22 +32,6 @@ Improve user-facing error messages across all zr modules with actionable suggest
 - Create error message catalog documentation (docs/guides/error-codes.md)
 - Integration tests for error message quality (verify hints appear, suggestions are correct)
 **Status: READY** — New milestone established 2026-04-02 (Cycle 72). Enhances Phase 9D with comprehensive error UX coverage.
-
-### Sailor v1.26.0-v1.30.2 Batch Migration
-
-Migrate from sailor v1.25.0 to v1.30.2, incorporating 5 major releases plus 2 bug fix releases of testing, quality, documentation, and debugging improvements. All releases are backward compatible with no breaking changes. Includes:
-- **v1.26.0**: Testing & Quality Assurance (292 new tests, memory leak fixes in Tree/Form/Table widgets, termcap/pool/bench/transition/timer/menu/form/chunkedbuffer/richtext_parser edge case coverage)
-- **v1.27.0**: Documentation & Examples (API documentation expansion, comprehensive example gallery, getting started guides, best practices documentation)
-- **v1.28.0**: Ecosystem Integration & Polish (ecosystem integration utilities, polish and refinement, quality of life improvements)
-- **v1.29.0**: Documentation Completion (99.9% API coverage — 1376/1378 documented functions across sixel/budget/test_utils/session/debugger/notification/particles/terminal modules)
-- **v1.30.0**: Error Handling & Debugging Enhancements (debug_log.zig with environment-based conditional logging SAILOR_DEBUG=module:level, stack_trace.zig with formatted assertions/preconditions/postconditions, error_handling_demo.zig example, 23 new tests)
-- **v1.30.1**: Zig 0.15 Compatibility Fix (attempted fix broken — see issue #15)
-- **v1.30.2**: Zig 0.15.2 Compatibility Fix (resolved issue #15 — replaced BoundedArrayAligned with manual FlatList struct, commit 5f7f362)
-- Update `build.zig.zon` dependency to v1.30.2 (resolves issues #43, #45)
-- Run full test suite to verify backward compatibility
-- Review new utilities: debug_log (scope-based logging), stack_trace (better panic messages)
-- No code changes required (all features are additive, no breaking changes)
-**Status: READY** — sailor v1.30.2 released (2026-04-02) with Zig 0.15.2 fix. Issue #15 closed with fix in commit 5f7f362. Ready for migration.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
@@ -238,6 +223,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| (no release) | Sailor v1.26.0-v1.30.2 Batch Migration | 2026-04-02 | Dependency update: sailor v1.25.0 → v1.30.2. Batch migration incorporating 5 major releases + 2 bug fix releases: **v1.26.0** (292 new tests, memory leak fixes in Tree/Form/Table widgets, edge case coverage), **v1.27.0** (API documentation expansion, example gallery), **v1.28.0** (ecosystem integration & polish), **v1.29.0** (99.9% API coverage — 1376/1378 documented functions), **v1.30.0** (debug_log.zig with SAILOR_DEBUG=module:level, stack_trace.zig with assertions/preconditions, 23 new tests), **v1.30.1** (attempted Zig 0.15 fix — broken), **v1.30.2** (actual Zig 0.15.2 fix via manual FlatList struct, resolved sailor issue #15). All releases backward compatible, no code changes required. **Test status**: 1252/1260 unit tests passing (100% pass rate). **Resolved blocker**: sailor issue #15 closed with fix in commit 5f7f362. Updated build.zig.zon hash. Closed zr issues #43, #45. New utilities available: debug_log (scope-based conditional logging), stack_trace (formatted panic messages). Commit: 84cef72. |
 | v1.60.0 | Test Infrastructure & Quality Enhancements | 2026-04-02 | Strengthen test suite with meaningful assertions, improve test organization, and add comprehensive tooling. **Test categorization**: Added `zig build test-all` target to run all test categories (unit + integration + perf). Updated build.zig with clear documentation of all test targets (test, integration-test, test-perf-streaming, test-all). **Coverage reporting**: Created scripts/test-coverage.sh for coverage analysis — reports 93.3% file coverage (167/179 files tested), shows 1258 unit tests, 1172 integration tests, 2 fuzz tests, 1 perf test, identifies 12 untested files (mostly lang providers covered by integration tests), enforces 80% coverage threshold. **Best practices documentation**: Added comprehensive test writing guidelines to CLAUDE.md covering test categories (unit/integration/perf/fuzz), meaningful assertion patterns (test behavior not implementation), failure condition requirements, edge case coverage, TDD workflow with test-writer/zig-developer agents. **Test quality improvements**: Audited and strengthened 13 weak tests across multiple cycles (Cycles 60, 65, 69, 70, 71) — added meaningful assertions to deinit-only tests, verified field values before cleanup, improved failure scenarios. **Integration test coverage**: Verified workflow matrix execution already has comprehensive tests (tests/workflow_matrix_test.zig, 10 tests). **Test status**: 1252/1260 passing (100% pass rate), 8 skipped, 93.3% file coverage maintained. **Deferred**: Test output formatting improvements (current diagnostics sufficient for development needs). Commits: 39fe8cb (test categorization), 944e84d (best practices docs), 0394fbd (milestone progress), plus 7 commits from earlier cycles strengthening weak tests. |
 | v1.59.0 | Workflow Matrix Execution | 2026-04-01 | Implement matrix execution strategy for workflows to run same tasks with different parameters. Inspired by GitHub Actions matrix strategy. **Matrix types**: Extended src/config/types.zig with MatrixExclusion/MatrixConfig structs, added matrix field to Workflow. **Matrix expansion**: Created src/exec/matrix.zig (345 LOC) with MatrixCombination hashmap, expandMatrix() for Cartesian product with exclusion filtering, 8 unit tests. **Matrix integration**: SchedulerConfig.extra_env field for matrix variable injection, buildEnvWithToolchains() merges extra_env with labeled error handling, WorkerCtx/runTaskSync/runSerialChain call chain threading. **CLI**: cmdWorkflow() sequential execution loop, --matrix-show flag displays all combinations without execution, environment injection as MATRIX_<KEY>=<value> env vars to all workflow tasks. **Integration tests**: 9 tests (3935-3944) covering single/multi-dimension expansion, Cartesian product (2x3, 3x2x2), exclusions, variable substitution (${matrix.KEY}), error cases. **Commits**: ff7f24f (types+expansion), 19b61cc (--matrix-show flag), 666aa74 (workflow integration). **Test status**: 1253/1261 passing (100% pass rate), 8 skipped. **Implementation notes**: Sequential execution strategy (parallel deferred to future), each combination runs ALL workflow stages with injected env vars, memory safety via defer blocks for env key/value cleanup. Usage: `zr workflow test --matrix-show` (preview), `zr workflow test` (execute all combinations). TOML example: `[workflows.test.matrix]` with `os = ["linux", "macos"]`, `version = ["1.0", "2.0"]`, `exclude = [{os = "macos", version = "1.0"}]`. |
 | (no release) | Task Fuzzy Search & Enhanced Discovery | 2026-03-31 | Enhanced task discovery UX with fuzzy search, categorization, filtering, and introspection. **Fuzzy search**: `zr list --fuzzy <pattern>` uses Levenshtein distance (max distance: 3) to rank tasks by edit distance. **Task categorization**: `zr list --group-by-tags` groups output by task tags with untagged tasks section. **Recent tasks**: `zr list --recent[=N]` shows last N executed tasks from history (default 10). **Description search**: `zr list --search="keyword"` matches task names and descriptions. **Task introspection**: `zr which <task>` shows task definition location (file path), command, description, dependencies, tags. **Integration**: Extended cmdList() signature with group_by_tags, recent_count, search_description parameters. Updated main.zig CLI parsing (lines 656-723) with new flags. Updated MCP handlers with new parameters. **Tests**: Updated 10 existing list tests + 2 new which tests. All 1245/1253 unit tests passing (100% pass rate). **Deferred**: Interactive picker for `zr run` without arguments and fuzzy search integration tests (planned for future iteration). Core discovery features enable quick task location, historical analysis, and tag-based organization without full-text indexing. Usage: `zr list --fuzzy build`, `zr list --group-by-tags`, `zr list --recent=5`, `zr list --search="test"`, `zr which build`. |
@@ -328,8 +314,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v1.25.0 (all migrations complete through v1.25.0)
-- **Next**: v1.26.0+ (when released)
+- **Current in zr**: v1.30.2 (all migrations complete through v1.30.2)
+- **Next**: v1.31.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -367,6 +353,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v1.23.0 | DONE | Plugin Architecture & Extensibility — widget trait system, custom renderer hooks, theme plugins, composition helpers (Padding, Centered, Aligned, Stack, Constrained) |
 | v1.24.0 | DONE | Animation & Transitions — 22 easing functions, Animation/ColorAnimation structs, Timer/TimerManager, transition helpers |
 | v1.25.0 | DONE | Form & Validation — form widget with multi-field container, 15+ validators, input masks, password masking, Tab navigation |
+| v1.26.0-v1.30.2 | DONE | Batch migration (Cycle 75) — testing, quality, documentation, debugging enhancements |
+| v1.31.0 | READY | Performance Profiling & Optimization — flame graphs, memory allocation tracker, event loop profiler, widget metrics (issue #46) |
 
 ### zuda Library
 
