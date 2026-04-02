@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: Error Message UX Enhancement (READY for release)
-- **READY milestones**: 0 (all completed in Cycle 76)
+- **Next actionable milestones**: Sailor v1.31.0 Migration (READY), TUI Performance Optimization (READY)
+- **READY milestones**: 2 (Sailor v1.31.0 Migration, TUI Performance Optimization)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -17,7 +17,31 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+### Sailor v1.31.0 Migration (Performance Profiling & Optimization Tools)
 
+Migrate to sailor v1.31.0 which introduces built-in performance profiling and optimization tools for TUI applications. This enables data-driven performance analysis for zr's TUI components (task picker, graph visualizer, live execution monitor). Includes:
+- **Render Profiler Enhancements**: Flame graph support with nested scope tracking, `beginScope()`/`endScope()` for hierarchical profiling, `flameGraphData()` exports visualization data, self vs. total time analysis
+- **Memory Allocation Tracker**: Track allocation hot spots by location, peak memory usage monitoring, leak detection (unfreed allocations), `getHotSpots()` for top-N analysis
+- **Event Loop Profiler**: Event processing latency measurement, percentile tracking (p95, p99), slow event detection (threshold-based), queue depth monitoring
+- **Widget Performance Metrics**: Render count tracking, cache hit/miss rates, average render duration, `recordWithCache()` for cache-aware profiling
+- **Optimization Guide**: `docs/optimization.md` with profiling best practices, performance budgets, iterative optimization workflow
+- **Demo Example**: `examples/profile_demo.zig` showing all profiler features
+- Update `build.zig.zon` dependency to v1.31.0 (after v1.30.2)
+- Review TUI components (task picker, graph TUI, live execution monitor) for profiling opportunities
+- +26 tests in sailor (no zr changes needed unless utilizing profilers)
+**Status: READY** — sailor v1.31.0 released 2026-04-02. Backward compatible, no breaking changes. Issue #46 tracks this migration.
+
+### TUI Performance Optimization
+
+Leverage sailor v1.31.0's profiling tools to systematically optimize zr's TUI performance. Identify and eliminate rendering bottlenecks, reduce memory allocations, and improve responsiveness. Includes:
+- **Baseline Profiling**: Profile all TUI modes (task picker, graph visualizer, live execution monitor, interactive workflow editor) with sailor's Render Profiler to identify hot spots
+- **Memory Optimization**: Use MemoryTracker to identify allocation hot spots, reduce heap allocations in render loops, implement object pooling for frequently created widgets
+- **Event Loop Optimization**: Profile event processing latency with EventLoopProfiler, optimize slow event handlers (keyboard input, mouse events, terminal resize)
+- **Widget Caching**: Improve cache hit rates for static/semi-static widgets (task list, graph nodes), implement lazy evaluation for expensive computations
+- **Benchmark Suite**: Create `tests/tui_bench.zig` for regression testing (target: <16ms per frame for 60 FPS, <50MB memory for 1000-task graph)
+- **Performance Budget**: Establish and document performance budgets per TUI component (max render time, max memory usage, max event latency)
+- **Documentation**: Add "TUI Performance" guide with optimization techniques, profiling workflow, common pitfalls
+**Status: READY** — Depends on Sailor v1.31.0 Migration for profiling tools. Current TUI performance is acceptable but not systematically optimized. Opportunity for 2-5x improvement in complex graphs/large task lists.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
