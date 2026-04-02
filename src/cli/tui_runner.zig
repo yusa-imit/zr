@@ -9,6 +9,7 @@ const color = @import("../output/color.zig");
 const sailor = @import("sailor");
 const stui = sailor.tui;
 const tui_mouse = @import("tui_mouse.zig");
+const TuiProfiler = @import("../util/tui_profiler.zig").TuiProfiler;
 
 const IS_POSIX = builtin.os.tag != .windows;
 
@@ -79,8 +80,10 @@ pub const TuiRunner = struct {
     scroll_offset: usize,
     mutex: std.Thread.Mutex,
     should_quit: std.atomic.Value(bool),
+    profiler: ?TuiProfiler,
 
     pub fn init(allocator: std.mem.Allocator) TuiRunner {
+        const enable_profiling = std.process.hasEnvVarConstant("ZR_PROFILE");
         return .{
             .allocator = allocator,
             .tasks = .empty,
@@ -88,6 +91,10 @@ pub const TuiRunner = struct {
             .scroll_offset = 0,
             .mutex = .{},
             .should_quit = std.atomic.Value(bool).init(false),
+            .profiler = if (enable_profiling)
+                TuiProfiler.init(allocator) catch null
+            else
+                null,
         };
     }
 
@@ -96,6 +103,9 @@ pub const TuiRunner = struct {
             task.deinit();
         }
         self.tasks.deinit(self.allocator);
+        if (self.profiler) |*p| {
+            p.deinit();
+        }
     }
 
     /// Add a task to the runner.
@@ -166,14 +176,28 @@ pub const TuiRunner = struct {
 
     /// Render the TUI screen to the writer using sailor.tui widgets.
     pub fn render(self: *TuiRunner, w: anytype, use_color: bool, terminal_height: usize) !void {
+        if (self.profiler) |*p| {
+            try p.beginScope("render_frame");
+        }
+        defer if (self.profiler) |*p| {
+            p.endScope() catch {};
+        };
+
         self.mutex.lock();
         defer self.mutex.unlock();
 
         const screen_width: u16 = 80;
         const screen_height: u16 = @intCast(@min(terminal_height, 50));
 
+        if (self.profiler) |*p| {
+            try p.beginScope("Buffer.init");
+        }
         var buf = try stui.Buffer.init(self.allocator, screen_width, screen_height);
         defer buf.deinit();
+        if (self.profiler) |*p| {
+            p.endScope() catch {};
+            try p.trackMemory("screen_buffer", screen_width * screen_height * @sizeOf(stui.Cell));
+        }
 
         // Layout: header (2), task list block, log block
         const full_area = stui.Rect.new(0, 0, screen_width, screen_height);
@@ -197,6 +221,9 @@ pub const TuiRunner = struct {
 
         // --- Task list ---
         if (self.tasks.items.len > 0) {
+            if (self.profiler) |*p| {
+                try p.beginScope("buildTaskLabels");
+            }
             var labels = try self.allocator.alloc([]const u8, self.tasks.items.len);
             defer {
                 for (labels) |l| self.allocator.free(l);
@@ -205,11 +232,17 @@ pub const TuiRunner = struct {
             for (self.tasks.items, 0..) |*task, i| {
                 labels[i] = try buildTaskLabel(self.allocator, task);
             }
+            if (self.profiler) |*p| {
+                p.endScope() catch {};
+            }
 
             const task_block = stui.widgets.Block.init()
                 .withTitle("Tasks", .top_left)
                 .withTitleStyle(stui.Style{ .bold = true });
 
+            if (self.profiler) |*p| {
+                try p.beginScope("List.render");
+            }
             const task_list = stui.widgets.List.init(labels)
                 .withSelected(self.selected_task)
                 .withBlock(task_block)
@@ -217,6 +250,9 @@ pub const TuiRunner = struct {
                 .withHighlightSymbol("> ");
 
             task_list.render(&buf, chunks[1]);
+            if (self.profiler) |*p| {
+                p.endScope() catch {};
+            }
         } else {
             buf.setString(2, chunks[1].y, "(no tasks)", stui.Style{ .dim = true });
         }
@@ -268,6 +304,9 @@ pub const TuiRunner = struct {
         }
 
         // --- Flush buffer to writer ---
+        if (self.profiler) |*p| {
+            try p.beginScope("flushBuffer");
+        }
         try w.writeAll("\x1b[2J\x1b[H");
         var y: u16 = 0;
         while (y < buf.height) : (y += 1) {
@@ -285,6 +324,9 @@ pub const TuiRunner = struct {
             if (y + 1 < buf.height) {
                 try w.writeAll("\n");
             }
+        }
+        if (self.profiler) |*p| {
+            p.endScope() catch {};
         }
     }
 
