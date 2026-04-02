@@ -88,6 +88,7 @@ const glob = @import("util/glob.zig");
 const affected = @import("util/affected.zig");
 const numa = @import("util/numa.zig");
 const profiler = @import("util/profiler.zig");
+const tui_profiler = @import("util/tui_profiler.zig");
 const error_codes = @import("util/error_codes.zig");
 const resource = @import("exec/resource.zig");
 const resource_monitor = @import("exec/resource_monitor.zig");
@@ -1536,5 +1537,6 @@ test "workspace command: run missing task name returns error" {
 // Force remote module test discovery by referencing it
 comptime {
     _ = remote.RemoteExecutor;
+    _ = tui_profiler.TuiProfiler;
 }
 
