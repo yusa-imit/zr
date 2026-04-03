@@ -42,6 +42,143 @@ pub const NumaTopology = struct {
     }
 };
 
+/// NUMA-aware allocator that binds memory allocations to a specific NUMA node.
+/// Falls back to standard allocation if NUMA binding is unavailable or fails.
+/// This is a wrapper around a base allocator (e.g., page_allocator, GeneralPurposeAllocator).
+pub const NumaAllocator = struct {
+    base_allocator: std.mem.Allocator,
+    node_id: u32,
+
+    /// Create a NUMA-aware allocator that binds allocations to the specified node.
+    pub fn init(base_allocator: std.mem.Allocator, node_id: u32) NumaAllocator {
+        return .{
+            .base_allocator = base_allocator,
+            .node_id = node_id,
+        };
+    }
+
+    /// Get the std.mem.Allocator interface for this NUMA allocator.
+    pub fn allocator(self: *NumaAllocator) std.mem.Allocator {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = resize,
+                .remap = remap,
+                .free = free,
+            },
+        };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const self: *NumaAllocator = @ptrCast(@alignCast(ctx));
+
+        // First allocate using base allocator
+        const ptr = self.base_allocator.rawAlloc(len, ptr_align, ret_addr) orelse return null;
+
+        // Try to bind the allocated memory to the NUMA node
+        bindMemoryToNode(ptr, len, self.node_id) catch {
+            // Binding failed, but we still return the allocation (best-effort)
+        };
+
+        return ptr;
+    }
+
+    fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+        const self: *NumaAllocator = @ptrCast(@alignCast(ctx));
+        return self.base_allocator.rawResize(buf, buf_align, new_len, ret_addr);
+    }
+
+    fn remap(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        const self: *NumaAllocator = @ptrCast(@alignCast(ctx));
+
+        // Try to remap using base allocator
+        const new_ptr = self.base_allocator.rawRemap(buf, buf_align, new_len, ret_addr) orelse return null;
+
+        // If the memory was relocated, rebind to NUMA node
+        if (new_ptr != buf.ptr) {
+            bindMemoryToNode(new_ptr, new_len, self.node_id) catch {
+                // Binding failed, but we still return the allocation (best-effort)
+            };
+        }
+
+        return new_ptr;
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
+        const self: *NumaAllocator = @ptrCast(@alignCast(ctx));
+        self.base_allocator.rawFree(buf, buf_align, ret_addr);
+    }
+};
+
+/// Bind a memory region to a specific NUMA node (platform-specific).
+/// This is a best-effort operation — errors are ignored if NUMA is unavailable.
+fn bindMemoryToNode(ptr: [*]u8, len: usize, node_id: u32) !void {
+    const builtin = @import("builtin");
+    const os_tag = builtin.os.tag;
+
+    if (os_tag == .linux) {
+        return bindMemoryLinux(ptr, len, node_id);
+    } else if (os_tag == .windows) {
+        return bindMemoryWindows(ptr, len, node_id);
+    } else {
+        // macOS and other platforms: no NUMA support, silently succeed
+        return;
+    }
+}
+
+/// Bind memory to NUMA node on Linux using mbind() syscall.
+fn bindMemoryLinux(ptr: [*]u8, len: usize, node_id: u32) !void {
+    const linux = std.os.linux;
+
+    // MPOL_BIND: strict binding to specified nodes
+    const MPOL_BIND: i32 = 2;
+    // MPOL_MF_STRICT: fail if can't bind to specified nodes
+    const MPOL_MF_STRICT: i32 = 1;
+
+    // Create nodemask with single bit set for our target node
+    // Linux uses a bitmask where bit N represents NUMA node N
+    var nodemask: [16]u64 = [_]u64{0} ** 16; // Support up to 1024 nodes (16 * 64 bits)
+    const word_idx = node_id / 64;
+    const bit_idx = node_id % 64;
+
+    if (word_idx >= nodemask.len) {
+        return error.InvalidNumaNode; // Node ID too large
+    }
+
+    nodemask[word_idx] = @as(u64, 1) << @intCast(bit_idx);
+
+    // Call mbind: int mbind(void *addr, unsigned long len, int mode, const unsigned long *nodemask, unsigned long maxnode, unsigned flags)
+    const result = linux.syscall6(
+        .mbind,
+        @intFromPtr(ptr),
+        len,
+        @intCast(MPOL_BIND),
+        @intFromPtr(&nodemask),
+        1024, // maxnode: we support up to 1024 NUMA nodes
+        @intCast(MPOL_MF_STRICT),
+    );
+
+    if (result != 0) {
+        // mbind failed, but we treat this as non-fatal (best-effort)
+        return error.MbindFailed;
+    }
+}
+
+/// Bind memory to NUMA node on Windows (not implemented yet, VirtualAllocExNuma required).
+/// Windows NUMA allocation requires VirtualAllocExNuma which is a different allocation API,
+/// not a post-allocation binding operation. This would require redesigning the allocator.
+/// For now, this is a no-op on Windows.
+fn bindMemoryWindows(ptr: [*]u8, len: usize, node_id: u32) !void {
+    _ = ptr;
+    _ = len;
+    _ = node_id;
+    // Windows NUMA requires VirtualAllocExNuma which is different from mbind
+    // We would need to replace the allocation itself, not bind after allocation
+    // For v1 we just skip NUMA binding on Windows (best-effort)
+    return;
+}
+
 /// Get total system memory in MB (cross-platform).
 /// Returns 0 on failure or if detection is unavailable.
 fn getTotalSystemMemory() !u64 {
@@ -593,6 +730,54 @@ test "NumaNode.deinit frees cpu_ids" {
 
     // Should not crash when deinit is called
     node.deinit(testing.allocator);
+}
+
+test "NumaAllocator.init creates allocator with correct fields" {
+    const testing = std.testing;
+
+    const numa_alloc = NumaAllocator.init(testing.allocator, 0);
+    try testing.expectEqual(@as(u32, 0), numa_alloc.node_id);
+}
+
+test "NumaAllocator can allocate and free memory" {
+    const testing = std.testing;
+
+    var numa_alloc = NumaAllocator.init(testing.allocator, 0);
+    const alloc = numa_alloc.allocator();
+
+    // Allocate memory
+    const ptr = try alloc.alloc(u8, 1024);
+    defer alloc.free(ptr);
+
+    // Should be able to write to the memory
+    ptr[0] = 42;
+    ptr[1023] = 99;
+    try testing.expectEqual(@as(u8, 42), ptr[0]);
+    try testing.expectEqual(@as(u8, 99), ptr[1023]);
+}
+
+test "NumaAllocator allocation survives NUMA binding failure" {
+    const testing = std.testing;
+
+    // Even if NUMA binding fails, allocation should succeed (best-effort)
+    // Use a very high node ID that likely doesn't exist
+    var numa_alloc = NumaAllocator.init(testing.allocator, 9999);
+    const alloc = numa_alloc.allocator();
+
+    const ptr = try alloc.alloc(u8, 128);
+    defer alloc.free(ptr);
+
+    // Memory should still be usable
+    ptr[0] = 123;
+    try testing.expectEqual(@as(u8, 123), ptr[0]);
+}
+
+test "bindMemoryToNode handles invalid node gracefully" {
+    // Should not crash on invalid node ID (best-effort)
+    var buf: [64]u8 = undefined;
+    bindMemoryToNode(&buf, buf.len, 9999) catch {
+        // Expected to fail, but should not crash
+    };
 }
 
 test "getCpuNode returns correct node for valid CPU" {
