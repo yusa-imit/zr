@@ -43,6 +43,7 @@ const plugin_cli = @import("cli/plugin.zig");
 const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
 const tui = @import("cli/tui.zig");
+const task_picker = @import("cli/task_picker.zig");
 const live_cmd = @import("cli/live.zig");
 const interactive_run = @import("cli/interactive_run.zig");
 const validate_cmd = @import("cli/validate.zig");
@@ -677,8 +678,46 @@ fn run(
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "run: missing task name\n\n  Hint: zr run <task-name>\n", .{});
-            return 1;
+            // No task name provided — launch interactive picker
+            if (!std.fs.File.stdout().isTty()) {
+                try color.printError(ew, effective_color, "run: missing task name (no TTY for interactive picker)\n\n  Hint: zr run <task-name>\n", .{});
+                return 1;
+            }
+
+            // Load config for picker
+            var config = (try common.loadConfig(allocator, config_path, profile_name, ew, effective_color)) orelse return 1;
+            defer config.deinit();
+
+            // Run interactive picker
+            const picker_result = task_picker.runPicker(
+                allocator,
+                &config,
+                .{
+                    .fuzzy_search = true,
+                    .show_preview = true,
+                    .initial_query = "",
+                },
+                effective_w,
+            ) catch |err| {
+                try color.printError(ew, effective_color, "Failed to launch interactive picker: {}\n", .{err});
+                return 1;
+            };
+
+            if (!picker_result.executed) {
+                // User cancelled (q or Esc)
+                return 0;
+            }
+
+            // User selected a task/workflow — execute it
+            if (picker_result.kind == .task) {
+                // Reload config (picker consumed it)
+                config.deinit();
+                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null);
+            } else {
+                // Workflow selected — delegate to workflow command
+                config.deinit();
+                return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color);
+            }
         }
         const task_name = effective_args[2];
         return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null);
