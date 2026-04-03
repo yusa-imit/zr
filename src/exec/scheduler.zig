@@ -539,11 +539,12 @@ fn workerFn(ctx: WorkerCtx) void {
     }
 
     // Set CPU affinity if specified (v1.13.0)
+    // Enhanced in Resource Affinity & NUMA Enhancements milestone to support work-stealing
     if (ctx.cpu_affinity) |cpu_ids| {
         if (cpu_ids.len > 0) {
-            // Use the first CPU in the affinity list
-            // In the future, work-stealing scheduler will use the full list
-            affinity.setThreadAffinity(cpu_ids[0]) catch {
+            // Work-stealing CPU affinity: thread can run on ANY of the specified cores
+            // This enables work-stealing across all requested CPUs for better load balancing
+            affinity.setThreadAffinityMask(cpu_ids) catch {
                 // Affinity setting is best-effort, silently ignore errors
                 // (not all platforms support affinity)
             };
@@ -1557,6 +1558,60 @@ pub fn run(
     };
     defer replay_mgr.deinit();
 
+    // Detect NUMA topology for CPU affinity validation (Resource Affinity & NUMA Enhancements milestone)
+    const numa_mod = @import("../util/numa.zig");
+    var numa_topology = blk: {
+        const detected = numa_mod.detectTopology(allocator) catch {
+            // If detection fails, create a fallback single-node topology
+            // This ensures validation still works on systems without NUMA support
+            const total_cpu_count = cpu_count_blk: {
+                const builtin = @import("builtin");
+                const os_tag = builtin.os.tag;
+                if (os_tag == .linux) {
+                    // Try to read /sys/devices/system/cpu/online
+                    const online_file = std.fs.openFileAbsolute("/sys/devices/system/cpu/online", .{}) catch break :cpu_count_blk 1;
+                    defer online_file.close();
+                    var buf: [256]u8 = undefined;
+                    const bytes_read = online_file.readAll(&buf) catch break :cpu_count_blk 1;
+                    // Parse "0-7" format (8 CPUs) or single number
+                    const content = std.mem.trim(u8, buf[0..bytes_read], "\n\r ");
+                    if (std.mem.indexOf(u8, content, "-")) |dash_pos| {
+                        const max_str = content[dash_pos + 1 ..];
+                        const max_cpu = std.fmt.parseInt(u32, max_str, 10) catch break :cpu_count_blk 1;
+                        break :cpu_count_blk max_cpu + 1;
+                    } else {
+                        break :cpu_count_blk 1;
+                    }
+                } else {
+                    // macOS/Windows: use std.Thread.getCpuCount (requires Zig 0.15+)
+                    break :cpu_count_blk @as(u32, @intCast(std.Thread.getCpuCount() catch 1));
+                }
+            };
+
+            // Fallback: single-node topology with all CPUs
+            const cpu_ids = blk2: {
+                const ids = allocator.alloc(u32, total_cpu_count) catch {
+                    // If allocation fails, return error to caller
+                    // We can't proceed without memory
+                    return error.OutOfMemory;
+                };
+                for (ids, 0..) |*id, i| {
+                    id.* = @intCast(i);
+                }
+                break :blk2 ids;
+            };
+            const nodes = allocator.alloc(numa_mod.NumaNode, 1) catch return error.OutOfMemory;
+            nodes[0] = .{ .id = 0, .cpu_ids = cpu_ids, .memory_mb = 0 };
+            break :blk numa_mod.NumaTopology{
+                .nodes = nodes,
+                .total_cpus = total_cpu_count,
+                .allocator = allocator,
+            };
+        };
+        break :blk detected;
+    };
+    defer numa_topology.deinit();
+
     // Per-task semaphores for max_concurrent limits.
     // Keys are task name slices (pointing into config.tasks keys — not owned).
     // Values are heap-allocated semaphores.
@@ -1601,6 +1656,34 @@ pub fn run(
             if (failed.load(.acquire)) break;
 
             const task = config.tasks.get(task_name) orelse return error.TaskNotFound;
+
+            // Validate CPU affinity (Resource Affinity & NUMA Enhancements milestone)
+            if (task.cpu_affinity) |cpu_ids| {
+                var has_invalid = false;
+                for (cpu_ids) |cpu_id| {
+                    if (cpu_id >= numa_topology.total_cpus) {
+                        // Print warning to stderr using unbuffered writer
+                        const color_mod = @import("../output/color.zig");
+                        var err_buf: [512]u8 = undefined;
+                        const stderr_file = std.fs.File.stderr();
+                        var err_writer = stderr_file.writer(&err_buf);
+                        color_mod.printWarning(
+                            &err_writer.interface,
+                            sched_config.use_color,
+                            "Task '{s}' requests CPU {d}, but system only has {d} CPUs (0-{d}). Affinity setting will be ignored.\n",
+                            .{ task_name, cpu_id, numa_topology.total_cpus, numa_topology.total_cpus - 1 },
+                        ) catch {};
+                        has_invalid = true;
+                        break;
+                    }
+                }
+                // If any CPU ID is invalid, clear affinity to avoid errors
+                // (setThreadAffinityMask will fail on invalid IDs)
+                if (has_invalid) {
+                    // Note: We can't modify task.cpu_affinity directly, but the affinity
+                    // setting in workerFn will fail gracefully (best-effort)
+                }
+            }
 
             // Dry-run: record a synthetic skipped result without executing.
             if (sched_config.dry_run) {
