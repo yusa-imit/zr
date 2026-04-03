@@ -21,16 +21,15 @@
 ### Resource Affinity & NUMA Enhancements
 
 Complete the deferred CPU affinity and NUMA memory allocation features for fine-grained resource control in compute-intensive workflows. Currently parsed but not enforced — this milestone implements the actual enforcement. Includes:
-- **Work-stealing CPU affinity**: Task with `cpu_affinity = [0, 1, 2, 3]` uses work-stealing across all specified cores (currently only uses first core)
-- **NUMA memory allocation**: Enforce `numa_node` field — allocate task memory on specified NUMA node
-- **NUMA-aware scheduler**: Worker threads pinned to NUMA nodes with memory-local task assignment
-- **Affinity validation**: Warn if requested cores exceed available cores, fallback to available range
+- ✅ **Work-stealing CPU affinity**: Task with `cpu_affinity = [0, 1, 2, 3]` uses work-stealing across all specified cores (Cycle 83)
+- ✅ **Affinity validation**: Warn if requested cores exceed available cores, fallback to available range (Cycle 83)
+- ✅ **NUMA memory allocation APIs**: NumaAllocator wrapper for binding memory to NUMA nodes via mbind (Linux), best-effort on Windows/macOS (Cycle 84)
+- 🚧 **NUMA-aware scheduler integration**: Replace ctx.allocator with NUMA allocator in worker threads (IN_PROGRESS)
 - **Performance benchmarks**: Add benchmarks comparing NUMA-aware vs non-aware execution on multi-socket systems
 - **Cross-platform testing**: Linux (`sched_setaffinity` + `mbind`), Windows (`SetThreadAffinityMask` + `VirtualAllocExNuma`), macOS (best-effort thread policy)
-- **Integration with scheduler**: Update `src/exec/scheduler.zig` to use NUMA topology from `src/util/numa.zig`
 - **Documentation**: Update configuration.md with NUMA best practices, benchmark results
 - **Integration tests**: Tests for CPU affinity enforcement, NUMA memory allocation, scheduler integration
-**Status: READY** — NUMA topology detection complete (Cycle 58), parser support complete. Implementation is platform-specific code for enforcement.
+**Status: IN_PROGRESS** — NUMA allocator complete (Cycle 84), scheduler integration remaining. Implementation is platform-specific code for enforcement.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
