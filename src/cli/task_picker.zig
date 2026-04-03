@@ -500,7 +500,7 @@ test "fuzzyFilter exact substring match" {
     };
 
     const items_slice: []const PickerItem = &items;
-    const filtered = try fuzzyFilter(allocator, items_slice, "build");
+    var filtered = try fuzzyFilter(allocator, items_slice, "build");
     defer filtered.deinit(allocator);
 
     try std.testing.expectEqual(@as(usize, 2), filtered.items.len);
@@ -518,7 +518,7 @@ test "fuzzyFilter Levenshtein distance" {
     };
 
     const items_slice: []const PickerItem = &items;
-    const filtered = try fuzzyFilter(allocator, items_slice, "build");
+    var filtered = try fuzzyFilter(allocator, items_slice, "build");
     defer filtered.deinit(allocator);
 
     try std.testing.expectEqual(@as(usize, 2), filtered.items.len);
@@ -535,7 +535,7 @@ test "fuzzyFilter empty query returns all" {
     };
 
     const items_slice: []const PickerItem = &items;
-    const filtered = try fuzzyFilter(allocator, items_slice, "");
+    var filtered = try fuzzyFilter(allocator, items_slice, "");
     defer filtered.deinit(allocator);
 
     try std.testing.expectEqual(@as(usize, 2), filtered.items.len);
@@ -550,7 +550,7 @@ test "fuzzyFilter no matches" {
     };
 
     const items_slice: []const PickerItem = &items;
-    const filtered = try fuzzyFilter(allocator, items_slice, "xxxxxxxxx");
+    var filtered = try fuzzyFilter(allocator, items_slice, "xxxxxxxxx");
     defer filtered.deinit(allocator);
 
     try std.testing.expectEqual(@as(usize, 0), filtered.items.len);
