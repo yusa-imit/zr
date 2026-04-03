@@ -125,8 +125,25 @@ pub fn cmdSetup(
 }
 
 // Tests
-test "setup command smoke test" {
-    // Basic smoke test - just verify module compiles
+test "setup command basic validation" {
     const allocator = std.testing.allocator;
-    _ = allocator;
+
+    // Create null file writers to discard output
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var buf: [4096]u8 = undefined;
+    var writer = null_file.writer(&buf);
+    var err_buf: [1024]u8 = undefined;
+    var err_writer = null_file.writer(&err_buf);
+
+    // Call setup with no args - should work without crashing
+    const result = cmdSetup(allocator, &[_][]const u8{}, &writer.interface, &err_writer.interface, false) catch |err| {
+        // Expected to fail if no zr.toml exists in current directory
+        try std.testing.expect(err == error.FileNotFound or err == error.AccessDenied);
+        return;
+    };
+
+    // If it succeeded, verify it returned a valid exit code
+    try std.testing.expect(result == 0 or result == 1);
 }

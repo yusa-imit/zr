@@ -845,13 +845,20 @@ fn printRunHelp(w: *std.Io.Writer, use_color: bool) !void {
 // Tests
 // ============================================================================
 
-test "repo command help" {
+test "repo command help returns success" {
     const t = std.testing;
-    var buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var w = stdout.writer(&buf);
-    var ew = stdout.writer(&buf);
 
-    const result = try cmdRepo(t.allocator, "help", &[_][]const u8{}, &w.interface, &ew.interface, false);
+    // Create null file writers to discard output
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var buf: [4096]u8 = undefined;
+    var writer = null_file.writer(&buf);
+    var err_buf: [1024]u8 = undefined;
+    var err_writer = null_file.writer(&err_buf);
+
+    const result = try cmdRepo(t.allocator, "help", &[_][]const u8{}, &writer.interface, &err_writer.interface, false);
+
+    // Verify successful exit (exit code 0 means help was printed)
     try t.expectEqual(@as(u8, 0), result);
 }

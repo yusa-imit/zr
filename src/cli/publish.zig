@@ -236,7 +236,10 @@ fn printPublishHelp() !void {
     std.debug.print("{s}\n", .{help});
 }
 
-test "cmdPublish help" {
+test "cmdPublish help does not error" {
     const args = [_][]const u8{"--help"};
+    // Verify --help flag is parsed and handled without error
     try cmdPublish(std.testing.allocator, &args);
+    // If we reach here, the help was printed successfully without error
+    try std.testing.expect(true); // Explicit assertion that we reached this point
 }

@@ -303,11 +303,17 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     , .{});
 }
 
-test "affected: help prints" {
-    // Test that printHelp compiles and runs without error
-    const file = std.fs.File.stdout();
+test "affected: help prints without error" {
+    // Create null file writer to discard output
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
     var buf: [1024]u8 = undefined;
-    var writer = file.writer(&buf);
-    // Call printHelp - it will write to stdout but we just care it doesn't crash
-    _ = printHelp(&writer.interface, false) catch {};
+    var writer = null_file.writer(&buf);
+
+    // Verify printHelp executes without error
+    try printHelp(&writer.interface, false);
+
+    // If we reach here, help was printed successfully
+    try std.testing.expect(true);
 }

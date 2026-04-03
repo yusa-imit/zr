@@ -159,10 +159,12 @@ fn printHelp(writer: *std.Io.Writer) !void {
     );
 }
 
-test "cmdVersion help" {
+test "cmdVersion help does not error" {
     const allocator = std.testing.allocator;
 
     const args = [_][]const u8{"--help"};
-    // This should print help and exit normally - we just check it doesn't crash
+    // Verify --help flag is parsed and handled without error
     try cmdVersion(allocator, &args);
+    // If we reach here, the help was printed successfully without error
+    try std.testing.expect(true); // Explicit assertion that we reached this point
 }
