@@ -23,15 +23,32 @@ Complete reference for all `zr` CLI commands.
 
 ### `run`
 
-Run a task and its dependencies.
+Run a task and its dependencies. If no task is specified, launches an interactive task picker.
 
 ```bash
-zr run <task>
+zr run [task]
 ```
+
+**Interactive Task Picker:**
+
+When `zr run` is called without a task name, an interactive TUI picker is launched (requires TTY):
+
+```bash
+zr run  # launches interactive picker
+```
+
+**Picker Features:**
+- **Real-time fuzzy search** — Filter tasks as you type using substring matching and Levenshtein distance (max distance: 3)
+- **Keyboard navigation** — Arrow keys, `j`/`k` (vim-style), `g` (top), `G` (bottom)
+- **Metadata preview** — Shows selected task's command, description, dependencies, tags
+- **Task and workflow support** — Unified picker for both tasks and workflows
+- **Search mode** — Press `/` to enter search, `Esc`/`Enter` to exit search
+- **Execute or quit** — Press `Enter` to run selected task, `q`/`Esc` to cancel
 
 **Examples:**
 ```bash
-zr run build
+zr run  # interactive picker
+zr run build  # run specific task
 zr run test build lint  # run multiple tasks
 zr run --dry-run deploy  # show execution plan without running
 zr run --profile prod build  # use a profile
