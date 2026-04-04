@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.57.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.57.0)
+[![Version](https://img.shields.io/badge/version-1.60.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.60.0)
 
 ---
 
