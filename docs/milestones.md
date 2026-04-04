@@ -3,9 +3,9 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: zuda Graph Migration OR zuda WorkStealingDeque Migration
-- **READY milestones**: 2 (zuda Graph Migration, zuda WorkStealingDeque Migration)
-- **BLOCKED milestones**: 0
+- **Next actionable milestone**: None — all zuda migrations BLOCKED pending zuda v2.0.0 compat fixes
+- **READY milestones**: 0
+- **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
 - **DONE**: Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -81,7 +81,7 @@ Create a form-based interactive TUI for building tasks without manually editing 
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
-Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24, #36, #37). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement. zuda v2.0.0 resolves all blocking issues (issue #12 CLOSED). Includes:
+Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24, #36, #37). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement. Includes:
 - ✅ **zuda v2.0.0 dependency**: Updated build.zig.zon from v1.15.0 → v2.0.0 (all tests passing)
 - ⏸️ **DAG migration**: Replace src/graph/dag.zig with zuda.compat.zr_dag
 - ⏸️ **Topo sort migration**: Replace src/graph/topo_sort.zig with compat wrapper
@@ -90,7 +90,7 @@ Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src
 - ⏸️ **Test verification**: Ensure all graph tests pass with zuda implementation
 - ⏸️ **Code removal**: Delete custom implementations after migration complete
 - ⏸️ **Issue closure**: Close GitHub issues #23, #24, #36, #37
-**Status: READY** — zuda issue #12 resolved in v2.0.0, dependency updated, all tests passing. Ready for migration.
+**Status: BLOCKED** — zuda v2.0.0 compat.zr_dag has API bugs (hasVertex, neighborIterator, nodes field missing). Filed https://github.com/yusa-imit/zuda/issues/21. Awaiting fix.
 
 ### zuda Levenshtein Migration
 
@@ -106,7 +106,7 @@ Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.qu
 - ⏸️ **Performance benchmarks**: Verify work-stealing performance matches or exceeds custom implementation
 - ⏸️ **Code removal**: Delete src/exec/workstealing.zig after migration complete
 - ⏸️ **Issue closure**: Close GitHub issue #22
-**Status: READY** — zuda issue #13 resolved in v2.0.0, dependency updated, ready for migration and test verification.
+**Status: BLOCKED** — zuda issue #13 resolved in v2.0.0, but zuda v2.0.0 compat layer has bugs (issue #21). Deferring WorkStealingDeque testing until Graph compat is fixed to avoid duplicate bug reports.
 
 ### zuda Glob Migration
 
