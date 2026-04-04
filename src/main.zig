@@ -74,6 +74,7 @@ const add_cmd = @import("cli/add.zig");
 const config_editor = @import("cli/config_editor.zig");
 const failures_cmd = @import("cli/failures.zig");
 const template_cmd = @import("cli/template.zig");
+const ci_cmd = @import("cli/ci.zig");
 const mcp_server = @import("mcp/server.zig");
 const lsp_server = @import("lsp/server.zig");
 const estimate_cmd = @import("cli/estimate.zig");
@@ -578,7 +579,7 @@ fn run(
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
-        "template",   "which",
+        "template",   "which",      "ci",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -1215,6 +1216,46 @@ fn run(
         } else {
             try color.printError(ew, effective_color, "Unknown template subcommand: {s}\n", .{subcommand});
             try color.printError(ew, effective_color, "Usage: zr template <list|show|apply> [args...]\n", .{});
+            return 1;
+        }
+    } else if (std.mem.eql(u8, cmd, "ci")) {
+        const ci_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        if (ci_args.len == 0) {
+            try ci_cmd.printHelp(effective_w);
+            return 0;
+        }
+        const subcommand = ci_args[0];
+        const sub_args = if (ci_args.len > 1) ci_args[1..] else &[_][]const u8{};
+
+        if (std.mem.eql(u8, subcommand, "generate")) {
+            // Parse flags
+            var ci_platform: ?[]const u8 = null;
+            var ci_template_type: ?[]const u8 = null;
+            var ci_output_path: ?[]const u8 = null;
+
+            for (sub_args) |arg| {
+                if (std.mem.startsWith(u8, arg, "--platform=")) {
+                    ci_platform = arg["--platform=".len..];
+                } else if (std.mem.startsWith(u8, arg, "--type=")) {
+                    ci_template_type = arg["--type=".len..];
+                } else if (std.mem.startsWith(u8, arg, "--output=")) {
+                    ci_output_path = arg["--output=".len..];
+                }
+            }
+
+            return ci_cmd.cmdGenerate(allocator, ci_platform, ci_template_type, ci_output_path, effective_w, ew, effective_color) catch |err| {
+                if (err == error.InvalidPlatform or err == error.InvalidTemplateType or
+                    err == error.PlatformNotDetected or err == error.TemplateNotFound)
+                {
+                    return 1;
+                }
+                return err;
+            };
+        } else if (std.mem.eql(u8, subcommand, "list")) {
+            return ci_cmd.cmdList(allocator, effective_w, effective_color);
+        } else {
+            try color.printError(ew, effective_color, "Unknown ci subcommand: {s}\n", .{subcommand});
+            try ci_cmd.printHelp(ew);
             return 1;
         }
     } else if (std.mem.eql(u8, cmd, "which")) {
