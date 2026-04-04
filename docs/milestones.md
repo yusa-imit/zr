@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: None — check for new milestones or establish based on open issues
-- **READY milestones**: 0
+- **Next actionable milestone**: Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88)
+- **READY milestones**: 1 (Sailor v1.32.0-v1.34.0)
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
 - **DONE**: Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -12,6 +12,38 @@
 ---
 
 ## Active Milestones
+
+### Sailor v1.32.0-v1.34.0 Batch Migration
+
+Batch dependency update: sailor v1.31.0 → v1.34.0. Incorporates 3 major releases with new TUI capabilities and system integration features. All releases are backward compatible with no breaking changes.
+
+**v1.32.0 - Advanced Layout Capabilities**:
+- Nested grid layouts with automatic sizing
+- Aspect ratio constraints (16:9, 4:3, etc.) during resize
+- Min/max size propagation with 4 enforcement strategies
+- Auto-margin/padding helpers (symmetric, all-sides)
+- Layout debugging inspector (tree visualization)
+- +91 tests (total: 3478)
+
+**v1.33.0 - Specialized Widgets & Components**:
+- LogViewer: Scrollable log display with filtering and search
+- MetricsPanel: Real-time metrics (gauge/counter/rate) with thresholds
+- ConfigEditor: Hierarchical config editing (JSON/TOML tree view)
+- SplitPane: Resizable panes with drag handles (horizontal/vertical)
+- Breadcrumb: Navigation breadcrumb trail with truncation modes
+- Tooltip: Contextual help tooltips with smart positioning (5 strategies, auto-boundary detection)
+- +53 tests for Tooltip widget (total: ~2516)
+
+**v1.34.0 - Terminal Clipboard & System Integration**:
+- Clipboard Integration: OSC 52 API for writing to system clipboard (clipboard, primary, system selections)
+- Terminal Emulator Detection: Runtime identification (xterm, kitty, iTerm2, WezTerm, Alacritty, Windows Terminal)
+- Terminal Capability Detection: Feature query system (truecolor, mouse, clipboard, bracketed paste)
+- Enhanced Paste Bracketing: Safe multi-line paste with PasteHandler/PasteReader (line splitting, streaming, 10KB+ pastes)
+- +127 tests (total: 2901)
+
+**Migration**: Update `build.zig.zon` dependency, run `zig fetch --save`, verify all tests pass. No code changes required (backward compatible).
+
+**Status**: READY — all three versions released and available for migration.
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
