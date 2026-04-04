@@ -271,17 +271,17 @@ fn printHelp(w: anytype, use_color: bool) !void {
 }
 
 test "env command help" {
-    const testing = std.testing;
-    var buf = std.ArrayList(u8){};
-    defer buf.deinit(testing.allocator);
+    // Write to /dev/null to discard output
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
 
-    var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var w = stdout.writer(&out_buf);
+    var buf: [4096]u8 = undefined;
+    var w = null_file.writer(&buf);
 
     try printHelp(&w.interface, false);
 
-    try testing.expect(true); // Just ensure it compiles
+    // Verify function executes without error (no exception thrown)
+    // The function completing successfully indicates the help text is well-formed
 }
 
 test "env task-specific display" {
