@@ -540,7 +540,8 @@ fn shouldSkip(basename: []const u8) bool {
 // ============================================================================
 
 test "native watcher compiles" {
-    // This test just ensures the backend compiles for the current platform
+    // This test ensures the backend compiles for the current platform
+    // and verifies basic initialization state
     const allocator = std.testing.allocator;
 
     // Create a temp dir instead of watching the entire project
@@ -554,4 +555,8 @@ test "native watcher compiles" {
 
     var watcher = try NativeWatcher.init(allocator, &paths);
     defer watcher.deinit();
+
+    // Verify watcher was initialized with correct paths
+    try std.testing.expectEqual(@as(usize, 1), watcher.paths.len);
+    try std.testing.expectEqualStrings(tmp_path, watcher.paths[0]);
 }
