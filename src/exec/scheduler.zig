@@ -11,6 +11,7 @@ const toolchain_path = @import("../toolchain/path.zig");
 const toolchain_types = @import("../toolchain/types.zig");
 const toolchain_installer = @import("../toolchain/installer.zig");
 const affinity = @import("../util/affinity.zig");
+const numa = @import("../util/numa.zig");
 const timeline = @import("timeline.zig");
 const replay = @import("replay.zig");
 const hooks = @import("hooks.zig");
@@ -551,6 +552,14 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // Set up NUMA-aware allocator if numa_node is specified (Resource Affinity & NUMA Enhancements milestone)
+    // This binds task-scoped allocations to the specified NUMA node for better memory locality
+    var numa_allocator_instance: numa.NumaAllocator = undefined;
+    const task_allocator: std.mem.Allocator = if (ctx.numa_node) |node_id| blk: {
+        numa_allocator_instance = numa.NumaAllocator.init(ctx.allocator, node_id);
+        break :blk numa_allocator_instance.allocator();
+    } else ctx.allocator;
+
     // Execute "before" hooks (v1.24.0)
     const before_ctx = hooks.HookContext{
         .task_name = ctx.task_name,
@@ -558,35 +567,35 @@ fn workerFn(ctx: WorkerCtx) void {
         .duration_ms = null,
         .error_message = null,
     };
-    if (!executeHooks(ctx.allocator, ctx.task_hooks, .before, before_ctx)) {
+    if (!executeHooks(task_allocator, ctx.task_hooks, .before, before_ctx)) {
         // Before hook failed with abort_task strategy
-        const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+        const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
         ctx.results_mutex.lock();
         defer ctx.results_mutex.unlock();
-        ctx.results.append(ctx.allocator, .{
+        ctx.results.append(task_allocator, .{
             .task_name = owned_name,
             .success = false,
             .exit_code = 255,
             .duration_ms = 0,
-        }) catch ctx.allocator.free(owned_name);
+        }) catch task_allocator.free(owned_name);
         if (!ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     }
 
     // Build environment with toolchain PATH injection and extra_env
-    const merged_env = buildEnvWithToolchains(ctx.allocator, ctx.env, ctx.toolchains, ctx.extra_env);
-    defer if (merged_env) |env| toolchain_path.freeToolchainEnv(ctx.allocator, env);
+    const merged_env = buildEnvWithToolchains(task_allocator, ctx.env, ctx.toolchains, ctx.extra_env);
+    defer if (merged_env) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
 
     // Load checkpoint if enabled (v1.31.0)
     var checkpoint_state: ?checkpoint.CheckpointState = null;
-    defer if (checkpoint_state) |*cs| cs.deinit(ctx.allocator);
+    defer if (checkpoint_state) |*cs| cs.deinit(task_allocator);
 
     if (ctx.checkpoint_config) |ckpt_cfg| {
         if (ckpt_cfg.enabled) {
-            var fs_storage = checkpoint.FileSystemStorage.init(ckpt_cfg.checkpoint_dir, ctx.allocator) catch null;
+            var fs_storage = checkpoint.FileSystemStorage.init(ckpt_cfg.checkpoint_dir, task_allocator) catch null;
             if (fs_storage) |*storage| {
-                defer storage.storage().deinit(ctx.allocator);
-                checkpoint_state = storage.storage().load(ctx.task_name, ctx.allocator) catch null;
+                defer storage.storage().deinit(task_allocator);
+                checkpoint_state = storage.storage().load(ctx.task_name, task_allocator) catch null;
             }
         }
     }
@@ -601,7 +610,7 @@ fn workerFn(ctx: WorkerCtx) void {
             .output_file = ctx.output_file,
             .max_buffer_size = 1024 * 1024, // 1MB default
         };
-        output_cap = output_capture.OutputCapture.init(ctx.allocator, capture_config) catch null;
+        output_cap = output_capture.OutputCapture.init(task_allocator, capture_config) catch null;
     }
 
     // Check cache hit — skip execution if already succeeded with same cmd+env
@@ -609,7 +618,7 @@ fn workerFn(ctx: WorkerCtx) void {
         if (ctx.cache_key) |key| {
             // First check local cache
             var local_hit = false;
-            var store = cache_store.CacheStore.init(ctx.allocator) catch null;
+            var store = cache_store.CacheStore.init(task_allocator) catch null;
             if (store) |*s| {
                 defer s.deinit();
                 local_hit = s.hasHit(key);
@@ -618,13 +627,13 @@ fn workerFn(ctx: WorkerCtx) void {
             // If local miss, try remote cache (Phase 7)
             if (!local_hit and ctx.cache_remote_config != null) {
                 if (ctx.cache_remote_config) |remote_cfg| {
-                    var remote_cache = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
+                    var remote_cache = cache_remote.RemoteCache.init(task_allocator, remote_cfg.*);
                     defer remote_cache.deinit();
                     // Pull from remote (null = miss)
                     if (remote_cache.pull(key) catch null) |_data| {
                         // Remote hit: save to local cache for next time
                         // (data itself is just a marker, no actual artifact yet)
-                        ctx.allocator.free(_data);
+                        task_allocator.free(_data);
                         if (store) |*s| s.recordHit(key) catch {};
                         local_hit = true;
                     }
@@ -633,16 +642,16 @@ fn workerFn(ctx: WorkerCtx) void {
 
             if (local_hit) {
                 // Cache hit: record a skipped success result
-                const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+                const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
                 ctx.results_mutex.lock();
                 defer ctx.results_mutex.unlock();
-                ctx.results.append(ctx.allocator, .{
+                ctx.results.append(task_allocator, .{
                     .task_name = owned_name,
                     .success = true,
                     .exit_code = 0,
                     .duration_ms = 0,
                     .skipped = true,
-                }) catch ctx.allocator.free(owned_name);
+                }) catch task_allocator.free(owned_name);
                 return;
             }
         }
@@ -654,26 +663,26 @@ fn workerFn(ctx: WorkerCtx) void {
     defer if (checkpoint_env_added) {
         // Free the ZR_CHECKPOINT env var we added
         if (final_env) |env| {
-            ctx.allocator.free(env[env.len - 1][0]);
-            ctx.allocator.free(env[env.len - 1][1]);
+            task_allocator.free(env[env.len - 1][0]);
+            task_allocator.free(env[env.len - 1][1]);
         }
     };
 
     if (checkpoint_state) |ckpt| {
         // Add ZR_CHECKPOINT=<json_state> to environment
         const base_env = final_env orelse &[_][2][]u8{};
-        const new_env = ctx.allocator.alloc([2][]u8, base_env.len + 1) catch null;
+        const new_env = task_allocator.alloc([2][]u8, base_env.len + 1) catch null;
         if (new_env) |env| {
             // Copy existing env
             for (base_env, 0..) |pair, i| {
                 env[i] = pair;
             }
             // Add ZR_CHECKPOINT
-            env[env.len - 1][0] = ctx.allocator.dupe(u8, "ZR_CHECKPOINT") catch "";
-            env[env.len - 1][1] = ctx.allocator.dupe(u8, ckpt.state) catch "";
+            env[env.len - 1][0] = task_allocator.dupe(u8, "ZR_CHECKPOINT") catch "";
+            env[env.len - 1][1] = task_allocator.dupe(u8, ckpt.state) catch "";
 
             // Free old env array (but not the individual strings, they're still in new_env)
-            if (final_env) |old| ctx.allocator.free(old);
+            if (final_env) |old| task_allocator.free(old);
             final_env = env;
             checkpoint_env_added = true;
         }
@@ -685,22 +694,22 @@ fn workerFn(ctx: WorkerCtx) void {
     // Handle dependency-only tasks (tasks without cmd)
     if (ctx.cmd.len == 0) {
         // Skip execution for cmd-less tasks - they only run their dependencies
-        const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch return;
+        const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
         ctx.results_mutex.lock();
         defer ctx.results_mutex.unlock();
-        ctx.results.append(ctx.allocator, .{
+        ctx.results.append(task_allocator, .{
             .task_name = owned_name,
             .success = true,
             .exit_code = 0,
             .duration_ms = 0,
-        }) catch ctx.allocator.free(owned_name);
+        }) catch task_allocator.free(owned_name);
         return;
     }
 
     // Evaluate output_if condition to determine whether to show task output
     var should_show_output = ctx.inherit_stdio;
     if (ctx.output_if) |output_cond| {
-        const show_output = expr.evalCondition(ctx.allocator, output_cond, ctx.env) catch true;
+        const show_output = expr.evalCondition(task_allocator, output_cond, ctx.env) catch true;
         if (!show_output) {
             should_show_output = false;
         }
@@ -717,7 +726,7 @@ fn workerFn(ctx: WorkerCtx) void {
     if (ctx.checkpoint_config) |ckpt_cfg| {
         if (ckpt_cfg.enabled and !should_show_output) {
             checkpoint_callback_ctx = CheckpointCallbackCtx{
-                .allocator = ctx.allocator,
+                .allocator = task_allocator,
                 .task_name = ctx.task_name,
                 .checkpoint_config = ckpt_cfg,
                 .last_save_ms = &last_save_ms,
@@ -739,7 +748,7 @@ fn workerFn(ctx: WorkerCtx) void {
     // Check if remote execution is requested (v1.46.0)
     var proc_result: process.ProcessResult = if (ctx.remote_target) |remote_target_str| blk: {
         // Create remote executor and parse target
-        var executor = remote.RemoteExecutor.init(ctx.allocator, .{
+        var executor = remote.RemoteExecutor.init(task_allocator, .{
             .ssh_timeout_ms = ctx.timeout_ms orelse 30_000,
             .http_timeout_ms = ctx.timeout_ms orelse 30_000,
         });
@@ -755,12 +764,12 @@ fn workerFn(ctx: WorkerCtx) void {
             // Clean up target allocation manually (deinit is private)
             switch (target) {
                 .ssh => |ssh| {
-                    if (ssh.owns_user) ctx.allocator.free(ssh.user);
-                    if (ssh.owns_host) ctx.allocator.free(ssh.host);
+                    if (ssh.owns_user) task_allocator.free(ssh.user);
+                    if (ssh.owns_host) task_allocator.free(ssh.host);
                 },
                 .http => |http| {
-                    if (http.owns_scheme) ctx.allocator.free(http.scheme);
-                    if (http.owns_host) ctx.allocator.free(http.host);
+                    if (http.owns_scheme) task_allocator.free(http.scheme);
+                    if (http.owns_host) task_allocator.free(http.host);
                 },
             }
         }
@@ -770,7 +779,7 @@ fn workerFn(ctx: WorkerCtx) void {
         const combined_env = if (ctx.remote_env) |remote_env| blk2: {
             const local_env = proc_env orelse &[_][2][]const u8{};
             const total_len = local_env.len + remote_env.len;
-            const combined = ctx.allocator.alloc([2][]const u8, total_len) catch break :blk2 local_env;
+            const combined = task_allocator.alloc([2][]const u8, total_len) catch break :blk2 local_env;
 
             // Copy local env
             for (local_env, 0..) |pair, i| {
@@ -783,7 +792,7 @@ fn workerFn(ctx: WorkerCtx) void {
             break :blk2 combined;
         } else proc_env orelse &[_][2][]const u8{};
         defer if (ctx.remote_env != null and combined_env.ptr != (proc_env orelse &[_][2][]const u8{}).ptr) {
-            ctx.allocator.free(combined_env);
+            task_allocator.free(combined_env);
         };
 
         // Create temporary task with remote-specific fields
@@ -803,7 +812,7 @@ fn workerFn(ctx: WorkerCtx) void {
         const remote_result = switch (target) {
             .ssh => |_| blk3: {
                 var ssh_executor = remote.SSHExecutor{
-                    .allocator = ctx.allocator,
+                    .allocator = task_allocator,
                     .config = .{
                         .ssh_timeout_ms = ctx.timeout_ms orelse 30_000,
                     },
@@ -813,8 +822,8 @@ fn workerFn(ctx: WorkerCtx) void {
                     // SSH connection failure or other error
                     break :blk3 remote.RemoteTaskResult{
                         .exit_code = 255, // SSH convention for connection failure
-                        .stdout = ctx.allocator.dupe(u8, "") catch "",
-                        .stderr = ctx.allocator.dupe(u8, "SSH connection failed") catch "",
+                        .stdout = task_allocator.dupe(u8, "") catch "",
+                        .stderr = task_allocator.dupe(u8, "SSH connection failed") catch "",
                         .duration_ms = 0,
                         .timed_out = false,
                     };
@@ -823,7 +832,7 @@ fn workerFn(ctx: WorkerCtx) void {
             },
             .http => |_| blk3: {
                 var http_executor = remote.HTTPExecutor{
-                    .allocator = ctx.allocator,
+                    .allocator = task_allocator,
                     .config = .{
                         .http_timeout_ms = ctx.timeout_ms orelse 30_000,
                     },
@@ -833,8 +842,8 @@ fn workerFn(ctx: WorkerCtx) void {
                     // HTTP request failure
                     break :blk3 remote.RemoteTaskResult{
                         .exit_code = 1,
-                        .stdout = ctx.allocator.dupe(u8, "") catch "",
-                        .stderr = ctx.allocator.dupe(u8, "HTTP request failed") catch "",
+                        .stdout = task_allocator.dupe(u8, "") catch "",
+                        .stderr = task_allocator.dupe(u8, "HTTP request failed") catch "",
                         .duration_ms = 0,
                         .timed_out = false,
                     };
@@ -844,8 +853,8 @@ fn workerFn(ctx: WorkerCtx) void {
         };
         defer {
             // Manually free RemoteTaskResult fields (deinit is private)
-            ctx.allocator.free(remote_result.stdout);
-            ctx.allocator.free(remote_result.stderr);
+            task_allocator.free(remote_result.stdout);
+            task_allocator.free(remote_result.stderr);
         }
 
         // Map RemoteTaskResult to ProcessResult
@@ -854,7 +863,7 @@ fn workerFn(ctx: WorkerCtx) void {
             .duration_ms = remote_result.duration_ms,
             .success = remote_result.exit_code == 0,
         };
-    } else process.run(ctx.allocator, .{
+    } else process.run(task_allocator, .{
         .cmd = ctx.cmd,
         .cwd = ctx.cwd,
         .env = proc_env,
@@ -864,7 +873,7 @@ fn workerFn(ctx: WorkerCtx) void {
         .enable_monitor = ctx.monitor,
         .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
         .monitor_use_color = ctx.use_color,
-        .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
+        .monitor_allocator = if (ctx.monitor) task_allocator else null,
         .output_callback = if (needs_callback) combinedOutputCallback else null,
         .output_ctx = if (needs_callback) @ptrCast(&combined_ctx) else null,
     }) catch process.ProcessResult{
@@ -938,15 +947,15 @@ fn workerFn(ctx: WorkerCtx) void {
 
                 // Record retry event (v1.14.0)
                 if (ctx.timeline_tracker) |tt| {
-                    const context_buf = std.fmt.allocPrint(ctx.allocator, "retry {d}/{d} (delay: {d}ms)", .{ retry_count, ctx.retry_max, delay_ms }) catch null;
-                    defer if (context_buf) |buf| ctx.allocator.free(buf);
+                    const context_buf = std.fmt.allocPrint(task_allocator, "retry {d}/{d} (delay: {d}ms)", .{ retry_count, ctx.retry_max, delay_ms }) catch null;
+                    defer if (context_buf) |buf| task_allocator.free(buf);
                     tt.recordEvent(.retry_started, ctx.task_name, context_buf) catch {};
                 }
 
                 if (delay_ms > 0) {
                     std.Thread.sleep(delay_ms * std.time.ns_per_ms);
                 }
-                proc_result = process.run(ctx.allocator, .{
+                proc_result = process.run(task_allocator, .{
                     .cmd = ctx.cmd,
                     .cwd = ctx.cwd,
                     .env = proc_env,
@@ -956,7 +965,7 @@ fn workerFn(ctx: WorkerCtx) void {
                     .enable_monitor = ctx.monitor,
                     .monitor_task_name = if (ctx.monitor) ctx.task_name else null,
                     .monitor_use_color = ctx.use_color,
-                    .monitor_allocator = if (ctx.monitor) ctx.allocator else null,
+                    .monitor_allocator = if (ctx.monitor) task_allocator else null,
                     .output_callback = if (needs_callback) combinedOutputCallback else null,
                     .output_ctx = if (needs_callback) @ptrCast(&combined_ctx) else null,
                 }) catch process.ProcessResult{
@@ -1008,19 +1017,19 @@ fn workerFn(ctx: WorkerCtx) void {
     };
 
     // Execute "after" hooks (always run)
-    _ = executeHooks(ctx.allocator, ctx.task_hooks, .after, after_ctx);
+    _ = executeHooks(task_allocator, ctx.task_hooks, .after, after_ctx);
 
     // Execute specific hooks based on result
     if (was_timeout) {
-        _ = executeHooks(ctx.allocator, ctx.task_hooks, .timeout, after_ctx);
+        _ = executeHooks(task_allocator, ctx.task_hooks, .timeout, after_ctx);
     } else if (proc_result.success) {
-        _ = executeHooks(ctx.allocator, ctx.task_hooks, .success, after_ctx);
+        _ = executeHooks(task_allocator, ctx.task_hooks, .success, after_ctx);
     } else {
-        _ = executeHooks(ctx.allocator, ctx.task_hooks, .failure, after_ctx);
+        _ = executeHooks(task_allocator, ctx.task_hooks, .failure, after_ctx);
     }
 
     // Allocate an owned copy of the name for TaskResult
-    const owned_name = ctx.allocator.dupe(u8, ctx.task_name) catch {
+    const owned_name = task_allocator.dupe(u8, ctx.task_name) catch {
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     };
@@ -1028,7 +1037,7 @@ fn workerFn(ctx: WorkerCtx) void {
     ctx.results_mutex.lock();
     defer ctx.results_mutex.unlock();
 
-    ctx.results.append(ctx.allocator, .{
+    ctx.results.append(task_allocator, .{
         .task_name = owned_name,
         .success = proc_result.success,
         .exit_code = proc_result.exit_code,
@@ -1037,7 +1046,7 @@ fn workerFn(ctx: WorkerCtx) void {
         .peak_memory_bytes = proc_result.peak_memory_bytes,
         .avg_cpu_percent = proc_result.avg_cpu_percent,
     }) catch {
-        ctx.allocator.free(owned_name);
+        task_allocator.free(owned_name);
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     };
@@ -1052,16 +1061,16 @@ fn workerFn(ctx: WorkerCtx) void {
         if (ctx.replay_mgr) |rm| {
             // Get timeline events for this task
             var task_events = if (ctx.timeline_tracker) |tt|
-                tt.getTaskEvents(ctx.allocator, ctx.task_name) catch std.ArrayList(timeline.TimelineEvent){}
+                tt.getTaskEvents(task_allocator, ctx.task_name) catch std.ArrayList(timeline.TimelineEvent){}
             else
                 std.ArrayList(timeline.TimelineEvent){};
-            defer task_events.deinit(ctx.allocator);
+            defer task_events.deinit(task_allocator);
 
             // Get captured output if available (v1.37.0)
             var stdout_buf: []const u8 = &[_]u8{};
             const stderr_buf: []const u8 = &[_]u8{};
             var needs_free = false;
-            defer if (needs_free) ctx.allocator.free(stdout_buf);
+            defer if (needs_free) task_allocator.free(stdout_buf);
 
             if (output_cap) |*oc| {
                 if (oc.config.mode == .buffer) {
@@ -1094,14 +1103,14 @@ fn workerFn(ctx: WorkerCtx) void {
     if (proc_result.success and ctx.cache) {
         if (ctx.cache_key) |key| {
             // Write to local cache
-            var store = cache_store.CacheStore.init(ctx.allocator) catch null;
+            var store = cache_store.CacheStore.init(task_allocator) catch null;
             if (store) |*s| {
                 defer s.deinit();
                 s.recordHit(key) catch {};
             }
             // Push to remote cache (Phase 7)
             if (ctx.cache_remote_config) |remote_cfg| {
-                var remote_cache = cache_remote.RemoteCache.init(ctx.allocator, remote_cfg.*);
+                var remote_cache = cache_remote.RemoteCache.init(task_allocator, remote_cfg.*);
                 defer remote_cache.deinit();
                 // Push marker (empty data for now, just indicates success)
                 remote_cache.push(key, &[_]u8{}) catch {};
