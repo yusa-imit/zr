@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: None — all zuda migrations BLOCKED pending zuda v2.0.0 compat fixes
-- **READY milestones**: 0
+- **Next actionable milestone**: CI/CD Integration Templates OR Task Templates & Scaffolding (both READY)
+- **READY milestones**: 2 (CI/CD Integration Templates, Task Templates & Scaffolding)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
 - **DONE**: Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -16,6 +16,94 @@
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
+
+
+### CI/CD Integration Templates
+
+Provide pre-built CI/CD templates and automation tools to streamline zr adoption in continuous integration pipelines. Make it trivial to integrate zr into GitHub Actions, GitLab CI, CircleCI, and other popular CI platforms. Includes:
+- ⏸️ **GitHub Actions Templates**: Pre-built workflow files for common zr patterns (build, test, deploy, monorepo affected builds)
+  - `.github/workflows/zr-ci.yml` — Basic CI template (install zr, run tasks)
+  - `.github/workflows/zr-monorepo.yml` — Monorepo template (affected detection, parallel builds, cache)
+  - `.github/workflows/zr-release.yml` — Release automation template (version bump, publish, tagging)
+  - Templates installable via `zr init --ci=github-actions`
+- ⏸️ **GitLab CI Templates**: `.gitlab-ci.yml` templates for GitLab CI/CD
+  - Basic CI template (install, cache, parallel jobs)
+  - Monorepo template (rules, changes detection, DAG dependencies)
+  - Templates installable via `zr init --ci=gitlab`
+- ⏸️ **CircleCI Templates**: `.circleci/config.yml` templates for CircleCI
+  - Orb-style configuration with zr executor
+  - Workflow templates for build/test/deploy
+  - Templates installable via `zr init --ci=circleci`
+- ⏸️ **`zr ci generate`**: New command to generate CI config for detected platform
+  - Auto-detect existing CI files (.github/workflows/, .gitlab-ci.yml, .circleci/)
+  - Interactive prompts for CI configuration (cache strategy, matrix builds, deployment targets)
+  - Generate optimized CI config based on zr.toml tasks and project structure
+- ⏸️ **CI Best Practices Guide**: Documentation for CI/CD integration patterns
+  - Cache key strategies (content-hash vs version-based)
+  - Artifact management (upload/download between jobs)
+  - Secret handling (env vars, vault integration)
+  - Parallelization strategies (matrix vs affected)
+  - CI-specific optimizations (shallow clone, cache warmup, incremental builds)
+- ⏸️ **Template Registry**: Extensible template system in `src/ci/templates/`
+  - Template struct with platform/type/content
+  - Template renderer with variable substitution (${PROJECT_NAME}, ${TASKS}, etc.)
+  - Registry pattern for template discovery
+- ⏸️ **Integration Tests**: Black-box tests for CI template generation (8+ tests)
+  - Generate GitHub Actions template and verify YAML structure
+  - Generate GitLab CI template and verify includes/rules
+  - Generate CircleCI template and verify workflows/jobs
+  - Interactive mode test (simulated prompts)
+  - Platform auto-detection test
+**Status: READY** — Addresses common adoption barrier (integrating zr into existing CI pipelines). No external dependencies blocking. All implementation can proceed immediately.
+
+### Task Templates & Scaffolding
+
+Provide a library of reusable task templates for common development workflows, reducing boilerplate and accelerating zr.toml configuration. Similar to Cookiecutter or Yeoman generators, but task-focused. Includes:
+- ⏸️ **Built-in Task Templates**: Pre-defined task patterns for common workflows
+  - `build` template: Language-specific build commands (go build, cargo build, npm build, etc.)
+  - `test` template: Test runner configurations (go test, cargo test, npm test, pytest, etc.)
+  - `lint` template: Linter setups (eslint, clippy, ruff, golangci-lint, etc.)
+  - `deploy` template: Deployment patterns (docker push, k8s apply, terraform apply, etc.)
+  - `ci` template: CI-optimized tasks (cache setup, artifact upload, parallelization)
+  - `release` template: Versioning and publishing workflows (semantic-release, cargo publish, npm publish)
+- ⏸️ **`zr template list`**: List all available templates with descriptions
+  - Categorize by type (build, test, lint, deploy, ci, release)
+  - Show template variables and customization options
+  - Display usage examples for each template
+- ⏸️ **`zr template add <name>`**: Interactive template application
+  - Prompt for template variables (project name, language, toolchain version, etc.)
+  - Detect project context (language, existing tools, dependencies)
+  - Generate task configuration with sensible defaults
+  - Append to zr.toml or create new section
+  - Validate generated config before saving
+- ⏸️ **`zr template show <name>`**: Preview template content before applying
+  - Display template TOML with variable placeholders
+  - Show required variables and validation rules
+  - Preview example configuration with sample values
+- ⏸️ **Template Engine**: Variable substitution and conditional generation
+  - Support ${VAR} placeholders with default values
+  - Conditional blocks for language-specific features
+  - Template inheritance (extend base templates)
+  - Template composition (combine multiple templates)
+- ⏸️ **Custom Template Support**: User-defined templates in `.zr/templates/`
+  - Local template directory for project-specific patterns
+  - Global templates in `~/.zr/templates/` for cross-project reuse
+  - Template validation schema
+  - Template metadata (name, description, author, tags, variables)
+- ⏸️ **Template Registry Module**: `src/template/` directory with registry pattern
+  - `registry.zig`: Template discovery and registration
+  - `engine.zig`: Variable substitution and rendering
+  - `builtin/`: Built-in template definitions
+  - `loader.zig`: Custom template loading from filesystem
+- ⏸️ **Integration Tests**: Black-box tests for template application (10+ tests)
+  - List templates and verify categories
+  - Apply build template and verify generated task
+  - Apply template with custom variables
+  - Preview template without modifying config
+  - Load custom template from local directory
+  - Validate template with missing variables
+  - Detect language and apply appropriate template
+**Status: READY** — Reduces configuration friction for new users. No external dependencies. Complements CI templates milestone. All implementation can proceed immediately.
 
 
 ### Resource Affinity & NUMA Enhancements
