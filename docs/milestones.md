@@ -24,12 +24,12 @@ Complete the deferred CPU affinity and NUMA memory allocation features for fine-
 - ✅ **Work-stealing CPU affinity**: Task with `cpu_affinity = [0, 1, 2, 3]` uses work-stealing across all specified cores (Cycle 83)
 - ✅ **Affinity validation**: Warn if requested cores exceed available cores, fallback to available range (Cycle 83)
 - ✅ **NUMA memory allocation APIs**: NumaAllocator wrapper for binding memory to NUMA nodes via mbind (Linux), best-effort on Windows/macOS (Cycle 84)
-- 🚧 **NUMA-aware scheduler integration**: Replace ctx.allocator with NUMA allocator in worker threads (IN_PROGRESS)
+- ✅ **NUMA-aware scheduler integration**: Integrated NumaAllocator into worker threads — all task-scoped allocations bound to NUMA node when specified (Cycle 86)
 - **Performance benchmarks**: Add benchmarks comparing NUMA-aware vs non-aware execution on multi-socket systems
 - **Cross-platform testing**: Linux (`sched_setaffinity` + `mbind`), Windows (`SetThreadAffinityMask` + `VirtualAllocExNuma`), macOS (best-effort thread policy)
 - **Documentation**: Update configuration.md with NUMA best practices, benchmark results
 - **Integration tests**: Tests for CPU affinity enforcement, NUMA memory allocation, scheduler integration
-**Status: IN_PROGRESS** — NUMA allocator complete (Cycle 84), scheduler integration remaining. Implementation is platform-specific code for enforcement.
+**Status: IN_PROGRESS** — Core implementation complete (Cycle 86). Remaining: benchmarks, tests, documentation.
 
 ### Task Fuzzy Search & Enhanced Discovery
 
