@@ -3,47 +3,15 @@
 ## Current Status
 
 - **Latest**: v1.60.0 (Test Infrastructure & Quality Enhancements)
-- **Next actionable milestone**: Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88)
-- **READY milestones**: 1 (Sailor v1.32.0-v1.34.0)
+- **Next actionable milestone**: None — check for new milestones or establish based on open issues
+- **READY milestones**: 0
 - **BLOCKED milestones**: zuda Graph Migration (awaiting zuda issue #12), zuda WorkStealingDeque (awaiting zuda issue #13)
-- **DONE**: Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
 
 ## Active Milestones
-
-### Sailor v1.32.0-v1.34.0 Batch Migration
-
-Batch dependency update: sailor v1.31.0 → v1.34.0. Incorporates 3 major releases with new TUI capabilities and system integration features. All releases are backward compatible with no breaking changes.
-
-**v1.32.0 - Advanced Layout Capabilities**:
-- Nested grid layouts with automatic sizing
-- Aspect ratio constraints (16:9, 4:3, etc.) during resize
-- Min/max size propagation with 4 enforcement strategies
-- Auto-margin/padding helpers (symmetric, all-sides)
-- Layout debugging inspector (tree visualization)
-- +91 tests (total: 3478)
-
-**v1.33.0 - Specialized Widgets & Components**:
-- LogViewer: Scrollable log display with filtering and search
-- MetricsPanel: Real-time metrics (gauge/counter/rate) with thresholds
-- ConfigEditor: Hierarchical config editing (JSON/TOML tree view)
-- SplitPane: Resizable panes with drag handles (horizontal/vertical)
-- Breadcrumb: Navigation breadcrumb trail with truncation modes
-- Tooltip: Contextual help tooltips with smart positioning (5 strategies, auto-boundary detection)
-- +53 tests for Tooltip widget (total: ~2516)
-
-**v1.34.0 - Terminal Clipboard & System Integration**:
-- Clipboard Integration: OSC 52 API for writing to system clipboard (clipboard, primary, system selections)
-- Terminal Emulator Detection: Runtime identification (xterm, kitty, iTerm2, WezTerm, Alacritty, Windows Terminal)
-- Terminal Capability Detection: Feature query system (truecolor, mouse, clipboard, bracketed paste)
-- Enhanced Paste Bracketing: Safe multi-line paste with PasteHandler/PasteReader (line splitting, streaming, 10KB+ pastes)
-- +127 tests (total: 2901)
-
-**Migration**: Update `build.zig.zon` dependency, run `zig fetch --save`, verify all tests pass. No code changes required (backward compatible).
-
-**Status**: READY — all three versions released and available for migration.
 
 > **Note**: Version numbers below are **historical references only**. Actual release version is determined at release time as `build.zig.zon` current version + 1. See "Milestone Establishment Process" for rules.
 
@@ -252,6 +220,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| (no release) | Sailor v1.32.0-v1.34.0 Batch Migration | 2026-04-04 | Batch dependency update: sailor v1.31.0 → v1.34.0. Incorporates 3 major releases with new TUI capabilities and system integration features. **v1.32.0 - Advanced Layout Capabilities**: Nested grid layouts with automatic sizing, aspect ratio constraints (16:9, 4:3, etc.) during resize, min/max size propagation with 4 enforcement strategies, auto-margin/padding helpers (symmetric, all-sides), layout debugging inspector (tree visualization), +91 tests (total: 3478). **v1.33.0 - Specialized Widgets & Components**: LogViewer (scrollable log display with filtering/search), MetricsPanel (real-time metrics with gauge/counter/rate and thresholds), ConfigEditor (hierarchical config editing for JSON/TOML tree view), SplitPane (resizable panes with drag handles, horizontal/vertical), Breadcrumb (navigation breadcrumb trail with truncation modes), Tooltip (contextual help tooltips with 5 positioning strategies, auto-boundary detection, arrow indicators, builder pattern API), +53 tests for Tooltip widget (total: ~2516). **v1.34.0 - Terminal Clipboard & System Integration**: Clipboard Integration (OSC 52 API for writing to system clipboard with 3 selection types: clipboard, primary, system; base64-encoded transport, cross-platform support), Terminal Emulator Detection (runtime identification via env vars: xterm, kitty, iTerm2, WezTerm, Alacritty, Windows Terminal, fallback to xterm), Terminal Capability Detection (feature query system for truecolor, mouse tracking, clipboard OSC 52, bracketed paste; terminfo integration on Linux via XTGETTCAP), Enhanced Paste Bracketing (PasteHandler/PasteReader for safe multi-line paste operations with LF/CRLF/CR support, zero-allocation streaming, 10KB+ paste handling), +127 tests (total: 2901). **Migration**: All releases backward compatible with no breaking changes. Updated build.zig.zon dependency hash. **Test status**: 1285/1293 passing (100% pass rate). Closed issues #47, #48, #49. Commit: 32af276. Cycle 88. |
 | (no release) | Resource Affinity & NUMA Enhancements | 2026-04-04 | Complete CPU affinity and NUMA memory allocation enforcement for fine-grained resource control in compute-intensive workflows. **Implementation** (Cycles 83-86): Work-stealing CPU affinity across ALL specified cores via `setThreadAffinityMask()` instead of single-core pinning (Cycle 83), CPU affinity validation with warnings for cores exceeding system total (Cycle 83), NUMA topology detection via `numa.detectTopology()` with fallback to single-node (Cycle 83), NumaAllocator wrapper binding memory to NUMA nodes via platform-specific APIs — Linux `mbind()` with `MPOL_BIND`, Windows reserved for `VirtualAllocExNuma`, macOS no-op (Cycle 84), NUMA-aware scheduler integration replacing 65+ uses of ctx.allocator with task_allocator in workerFn for task-scoped allocations (output buffers, checkpoint storage, cache ops, env vars, process execution, hooks, results, timeline) (Cycle 86). **Tests** (Cycle 87): 12 integration tests (tests/numa_affinity_test.zig) covering work-stealing across cores, NUMA node allocation, combined NUMA+affinity, invalid CPU IDs/nodes graceful degradation, single core pinning, parallel tasks with different NUMA nodes, duplicate CPU handling, default behavior, workflows with mixed NUMA, dependencies. 8 performance benchmarks (tests/numa_bench.zig) comparing baseline vs NUMA vs affinity vs combined with allocation-heavy workloads (100MB dd), multi-threaded tasks, overhead measurement, parallel NUMA execution. **Documentation** (Cycle 87): Comprehensive NUMA best practices in docs/guides/configuration.md — platform support details (Linux full, Windows partial, macOS best-effort), performance characteristics (overhead ~microseconds for affinity, ~10-100ns per allocation for NUMA; benefits 2-10% affinity, 20-50% NUMA), when to use NUMA (multi-socket, memory-intensive, long-running), anti-patterns (cross-node CPU/memory, short tasks), topology mapping (`numactl --hardware`), verification (`numa_maps`). **Test status**: 1285 unit tests passing. **Key insight**: Work-stealing enables load balancing while maintaining cache locality; best-effort design ensures allocation succeeds even if NUMA binding fails. Commits: 61f3e4a (affinity), 0b02908 (NUMA alloc), e8a3826 (integration), 38dfa31 (tests), fad5a25 (benchmarks), 0a32d96 (docs). Cycles 83-87. |
 | (no release) | Interactive Task Picker UX | 2026-04-04 | Interactive TUI task picker for enhanced task discovery and execution. Launched when `zr run` is called without task argument. **Core features**: Real-time fuzzy search (substring + Levenshtein distance ≤3), keyboard navigation (arrows, j/k vim bindings, g/G top/bottom), metadata preview pane (cmd, description, deps, tags displayed side-by-side), task/workflow unified picker. **Implementation**: Created src/cli/task_picker.zig (560 LOC) with fuzzyFilter(), renderPreviewPane(), keyboard event handling. Integrated into main.zig for `zr run` without args. TTY detection with graceful fallback. **Search**: Press `/` to enter search mode, Esc/Enter to exit. Execute selected task with Enter, cancel with q/Esc. **Tests**: 4 unit tests (fuzzyFilter exact match, Levenshtein, empty query, no matches), 7 integration tests (non-TTY behavior, explicit task bypass, workflow picker, empty config, mixed tasks/workflows, dependencies). All 1281 unit tests passing. **Documentation**: Updated docs/guides/commands.md with picker features, keyboard shortcuts, usage examples. **Test fixes**: Fixed const/mut ArrayList mismatch in tests (lines 504, 522, 539, 554). **Commits**: 850b777 (implementation), 408628b (test fix), 6d947d1 (integration tests), 3faec18 (docs). **Future enhancements**: Multi-select mode, recent tasks highlighting, tag filtering (Tab), execution history integration (deferred). Binary builds successfully, CI green. Cycle 82. |
 | (no release) | TUI Performance Optimization | 2026-04-03 | Comprehensive TUI performance profiling infrastructure using sailor v1.31.0 profiling tools. **Profiling Integration**: Integrated `TuiProfiler` into all three TUI modes — task picker (tui.zig), graph visualizer (graph_tui.zig), live execution monitor (tui_runner.zig). Added profiling scopes for render phases (drawScreen, Tree.render, List.render, Buffer.init, viewport.renderClipped, renderBuffer, buildLabels), memory tracking for buffer allocations, event processing latency measurement (keyboard, mouse, resize). Enable via `ZR_PROFILE=1` environment variable. **Benchmark Suite**: 13 comprehensive benchmarks in tests/tui_bench.zig covering all TUI modes with small/medium/large datasets (10/100/1000 tasks). Stress tests for rapid keyboard input (500 keys), mouse drag (1000 moves), window resize (50 events). Performance budgets: <16ms frame time (60 FPS), <50MB memory, <5ms p99 event latency. **Results**: All benchmarks pass with 90-99% headroom under budget. Frame times: 0.04-0.63ms avg (96-99% under budget). Memory: 24KB-4.6MB peak (91-99.9% under budget). Event latency p99: 0.49-4.63ms (7-90% under budget). **Documentation**: Created docs/guides/tui-performance.md (545 LOC) with profiling workflow, optimization techniques, performance budget violation response, TuiProfiler API reference, troubleshooting guide. **Test status**: 1277 tests passing (1269 pass, 8 skipped). **Implementation notes**: Current TUI performance already excellent, profiling infrastructure established for future optimization if needed. Commits: dc393f4 (tui.zig), 25f6c84 (graph_tui.zig), 836eb6a (tui_runner.zig). Cycle 79. |
@@ -348,8 +317,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v1.31.0 (all migrations complete through v1.31.0)
-- **Next**: v1.32.0+ (when released)
+- **Current in zr**: v1.34.0 (all migrations complete through v1.34.0)
+- **Next**: v1.35.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -389,6 +358,9 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v1.25.0 | DONE | Form & Validation — form widget with multi-field container, 15+ validators, input masks, password masking, Tab navigation |
 | v1.26.0-v1.30.2 | DONE | Batch migration (Cycle 75) — testing, quality, documentation, debugging enhancements |
 | v1.31.0 | DONE | Performance Profiling & Optimization — flame graphs, memory allocation tracker, event loop profiler, widget metrics (Cycle 77, commit aae46fa, issue #46) |
+| v1.32.0 | DONE | Advanced Layout Capabilities — nested grids, aspect ratio constraints, min/max size propagation, auto-margin/padding, layout debugging (Cycle 88, commit 32af276, issue #47) |
+| v1.33.0 | DONE | Specialized Widgets — LogViewer, MetricsPanel, ConfigEditor, SplitPane, Breadcrumb, Tooltip (Cycle 88, commit 32af276, issue #48) |
+| v1.34.0 | DONE | Terminal Clipboard & System Integration — OSC 52 clipboard API, terminal detection, capability detection, paste bracketing (Cycle 88, commit 32af276, issue #49) |
 
 ### zuda Library
 
