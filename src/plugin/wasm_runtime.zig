@@ -1031,7 +1031,13 @@ test "PluginInterface: init and deinit" {
     var plugin = PluginInterface.init(allocator);
     defer plugin.deinit();
 
+    // Verify instance is properly initialized
+    try std.testing.expect(plugin.instance.allocator.ptr == allocator.ptr);
+    try std.testing.expectEqual(@as(usize, 0), plugin.instance.host_functions.count());
+
+    // Verify lifecycle hooks can be registered
     try plugin.registerLifecycleHooks();
+    try std.testing.expectEqual(@as(usize, 3), plugin.instance.host_functions.count());
 }
 
 test "Value: type conversions" {

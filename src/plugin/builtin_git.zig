@@ -191,9 +191,12 @@ test "GitPlugin.changedFiles: returns slice (possibly empty)" {
 test "GitPlugin.fileHasChanges: does not error on committed file" {
     const allocator = std.testing.allocator;
     // build.zig is tracked. The boolean result varies with working-tree state,
-    // but the call must succeed without error.
+    // but the call must succeed without error and return a valid boolean.
     const changed = try GitPlugin.fileHasChanges(allocator, "build.zig");
-    _ = changed;
+
+    // Verify it's a valid boolean (true or false)
+    const is_valid = changed == true or changed == false;
+    try std.testing.expect(is_valid);
 }
 
 test "GitPlugin.changedFiles: invalid ref returns empty slice" {

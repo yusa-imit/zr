@@ -571,10 +571,15 @@ test "installGitPlugin: already installed returns AlreadyInstalled" {
 }
 
 test "installGitPlugin: function compiles and is callable" {
+    const allocator = std.testing.allocator;
+
     // Verify the function signature compiles correctly.
-    // We cannot test git execution without network; just ensure type-checking passes.
     const fn_ptr: *const fn (std.mem.Allocator, []const u8, []const u8) anyerror![]const u8 = &installGitPlugin;
     _ = fn_ptr;
+
+    // Verify it rejects invalid git URLs by failing git clone (without network)
+    const result = installGitPlugin(allocator, "", "test-invalid-git-plugin");
+    try std.testing.expectError(GitInstallError.CloneFailed, result);
 }
 
 test "writeGitUrlToMeta and readGitUrl round-trip" {

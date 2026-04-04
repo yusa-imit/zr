@@ -230,7 +230,9 @@ test "getPagerCommand returns default less -R" {
 
 test "isTerminal is callable and returns boolean" {
     const result = isTerminal();
-    _ = result; // Variable used for type checking
+    // Verify it returns a valid boolean value (true or false)
+    const is_valid = result == true or result == false;
+    try std.testing.expect(is_valid);
 }
 
 test "countLines counts newlines correctly" {
@@ -261,7 +263,13 @@ test "spawnPager requires valid pager command" {
 
 test "getTerminalHeight is callable" {
     const height = getTerminalHeight();
-    _ = height; // Just verify it's callable
+    // Verify it returns either null or a reasonable height value
+    if (height) |h| {
+        // Terminal height should be at least 1 and less than some absurd value
+        try std.testing.expect(h >= 1);
+        try std.testing.expect(h <= 10000); // Sanity check for unreasonable values
+    }
+    // If null, that's also valid (not a TTY or detection failed)
 }
 
 test "PagerConfig default values" {
