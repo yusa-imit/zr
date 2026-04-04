@@ -5,6 +5,7 @@ const Template = types.Template;
 const Platform = types.Platform;
 const TemplateType = types.TemplateType;
 const github_actions = @import("github_actions.zig");
+const gitlab = @import("gitlab.zig");
 
 /// Template registry for discovering and accessing templates
 pub const Registry = struct {
@@ -26,6 +27,11 @@ pub const Registry = struct {
     pub fn registerBuiltins(self: *Registry) !void {
         // Register GitHub Actions templates
         for (github_actions.templates) |template| {
+            try self.templates.append(self.allocator, template);
+        }
+
+        // Register GitLab CI templates
+        for (gitlab.templates) |template| {
             try self.templates.append(self.allocator, template);
         }
     }
@@ -87,8 +93,8 @@ test "Registry.registerBuiltins loads templates" {
 
     try registry.registerBuiltins();
 
-    // Should have at least GitHub Actions templates (3)
-    try testing.expect(registry.templates.items.len >= 3);
+    // Should have GitHub Actions templates (3) + GitLab CI templates (3) = 6
+    try testing.expect(registry.templates.items.len >= 6);
 }
 
 test "Registry.find with no filters returns all" {
@@ -166,7 +172,7 @@ test "Registry.get returns null for non-existent" {
 
     try registry.registerBuiltins();
 
-    // GitLab CI templates not implemented yet
-    const template = registry.get(.gitlab_ci, .basic_ci);
+    // CircleCI templates not implemented yet
+    const template = registry.get(.circleci, .basic_ci);
     try testing.expectEqual(@as(?Template, null), template);
 }
