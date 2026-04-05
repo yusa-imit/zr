@@ -4,6 +4,7 @@ const types = @import("../toolchain/types.zig");
 const ToolVersion = types.ToolVersion;
 const LanguageProvider = provider.LanguageProvider;
 const DownloadSpec = provider.DownloadSpec;
+const ArchiveType = provider.ArchiveType;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
@@ -179,4 +180,127 @@ fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageP
     });
 
     return try tasks.toOwnedSlice(allocator);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "RustProvider name" {
+    try testing.expectEqualStrings("rust", RustProvider.name);
+}
+
+test "resolveDownloadUrl linux-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 75, .patch = 0 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://static.rust-lang.org/dist/rust-1.75.0-x86_64-unknown-linux-gnu.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl linux-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 76, .patch = 0 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://static.rust-lang.org/dist/rust-1.76.0-aarch64-unknown-linux-gnu.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 77, .patch = 1 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://static.rust-lang.org/dist/rust-1.77.1-x86_64-apple-darwin.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 78, .patch = 0 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://static.rust-lang.org/dist/rust-1.78.0-aarch64-apple-darwin.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 75, .patch = 0 };
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://static.rust-lang.org/dist/rust-1.75.0-x86_64-pc-windows-msvc.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 83, .patch = 0 };
+    const platform = PlatformInfo{ .os = "win", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://static.rust-lang.org/dist/rust-1.83.0-aarch64-pc-windows-msvc.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl unsupported platform" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 75, .patch = 0 };
+    const platform = PlatformInfo{ .os = "freebsd", .arch = "x64" };
+
+    try testing.expectError(error.UnsupportedPlatform, resolveDownloadUrl(allocator, version, platform));
+}
+
+test "getBinaryPath unix" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bin/rustc", path);
+}
+
+test "getBinaryPath windows" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bin/rustc.exe", path);
+}
+
+test "getEnvironmentVars is null" {
+    try testing.expect(RustProvider.getEnvironmentVars == null);
+}
+
+test "fetchLatestVersion returns hardcoded 1.83.0" {
+    const allocator = testing.allocator;
+    const version = try fetchLatestVersion(allocator);
+
+    try testing.expectEqual(@as(u32, 1), version.major);
+    try testing.expectEqual(@as(u32, 83), version.minor);
+    try testing.expectEqual(@as(u32, 0), version.patch);
 }
