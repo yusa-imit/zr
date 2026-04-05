@@ -4,6 +4,7 @@ const types = @import("../toolchain/types.zig");
 const ToolVersion = types.ToolVersion;
 const LanguageProvider = provider.LanguageProvider;
 const DownloadSpec = provider.DownloadSpec;
+const ArchiveType = provider.ArchiveType;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
@@ -214,4 +215,115 @@ fn extractFromPyprojectToml(allocator: std.mem.Allocator, content: []const u8, t
             });
         }
     }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "PythonProvider name" {
+    try testing.expectEqualStrings("python", PythonProvider.name);
+}
+
+test "resolveDownloadUrl linux-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 3, .minor = 12, .patch = 1 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.12.1+20240107-x86_64-unknown-linux-gnu.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl linux-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 3, .minor = 11, .patch = 7 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.11.7+20240107-aarch64-unknown-linux-gnu.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 3, .minor = 10, .patch = 13 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.10.13+20240107-x86_64-apple-darwin.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 3, .minor = 12, .patch = 0 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.12.0+20240107-aarch64-apple-darwin.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 3, .minor = 12, .patch = 1 };
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.12.1+20240107-x86_64-pc-windows-msvc-shared.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl unsupported platform" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 3, .minor = 12, .patch = 1 };
+    const platform = PlatformInfo{ .os = "freebsd", .arch = "x64" };
+
+    try testing.expectError(error.UnsupportedPlatform, resolveDownloadUrl(allocator, version, platform));
+}
+
+test "getBinaryPath unix" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bin/python3", path);
+}
+
+test "getBinaryPath windows" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("python.exe", path);
+}
+
+test "getEnvironmentVars is null" {
+    try testing.expect(PythonProvider.getEnvironmentVars == null);
+}
+
+test "fetchLatestVersion returns hardcoded 3.12.7" {
+    const allocator = testing.allocator;
+    const version = try fetchLatestVersion(allocator);
+
+    try testing.expectEqual(@as(u32, 3), version.major);
+    try testing.expectEqual(@as(u32, 12), version.minor);
+    try testing.expectEqual(@as(u32, 7), version.patch);
 }
