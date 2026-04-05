@@ -4,6 +4,7 @@ const types = @import("../toolchain/types.zig");
 const ToolVersion = types.ToolVersion;
 const LanguageProvider = provider.LanguageProvider;
 const DownloadSpec = provider.DownloadSpec;
+const ArchiveType = provider.ArchiveType;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
@@ -121,4 +122,106 @@ fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageP
     });
 
     return try tasks.toOwnedSlice(allocator);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "DenoProvider name" {
+    try testing.expectEqualStrings("deno", DenoProvider.name);
+}
+
+test "resolveDownloadUrl linux-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 40, .patch = 0 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-unknown-linux-gnu.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl linux-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 40, .patch = 5 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/denoland/deno/releases/download/v1.40.5/deno-aarch64-unknown-linux-gnu.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 39, .patch = 0 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/denoland/deno/releases/download/v1.39.0/deno-x86_64-apple-darwin.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 40, .patch = 2 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/denoland/deno/releases/download/v1.40.2/deno-aarch64-apple-darwin.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 40, .patch = 0 };
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-pc-windows-msvc.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl unsupported platform" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 40, .patch = 0 };
+    const platform = PlatformInfo{ .os = "freebsd", .arch = "x64" };
+
+    try testing.expectError(error.UnsupportedPlatform, resolveDownloadUrl(allocator, version, platform));
+}
+
+test "getBinaryPath unix" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("deno", path);
+}
+
+test "getBinaryPath windows" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("deno.exe", path);
+}
+
+test "getEnvironmentVars is null" {
+    try testing.expect(DenoProvider.getEnvironmentVars == null);
 }
