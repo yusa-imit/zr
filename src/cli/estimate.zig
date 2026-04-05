@@ -371,5 +371,53 @@ fn formatDuration(ms: f64) []const u8 {
     }
 }
 
-// Tests moved to history/stats.zig
 // Integration tests in tests/estimate_test.zig
+
+// Unit tests
+const testing = std.testing;
+
+test "formatDuration: milliseconds" {
+    const result = formatDuration(500.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("500ms", result);
+}
+
+test "formatDuration: seconds" {
+    const result = formatDuration(5000.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("5.0s", result);
+}
+
+test "formatDuration: minutes" {
+    const result = formatDuration(120_000.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("2.0min", result);
+}
+
+test "formatDuration: edge case zero" {
+    const result = formatDuration(0.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("0ms", result);
+}
+
+test "formatDuration: edge case 999ms" {
+    const result = formatDuration(999.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("999ms", result);
+}
+
+test "formatDuration: edge case 1000ms" {
+    const result = formatDuration(1000.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("1.0s", result);
+}
+
+test "formatDuration: fractional seconds" {
+    const result = formatDuration(1500.0);
+    defer std.heap.page_allocator.free(result);
+    try testing.expectEqualStrings("1.5s", result);
+}
+
+// Note: printEstimationJson and printWorkflowEstimationJson tests deferred
+// These functions use deprecated std.Io.Writer interface which is difficult to test
+// in unit tests. They are covered by integration tests in tests/estimate_test.zig
