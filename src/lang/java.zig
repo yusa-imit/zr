@@ -4,6 +4,7 @@ const types = @import("../toolchain/types.zig");
 const ToolVersion = types.ToolVersion;
 const LanguageProvider = provider.LanguageProvider;
 const DownloadSpec = provider.DownloadSpec;
+const ArchiveType = provider.ArchiveType;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
@@ -226,4 +227,129 @@ fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageP
     }
 
     return try tasks.toOwnedSlice(allocator);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "JavaProvider name" {
+    try testing.expectEqualStrings("java", JavaProvider.name);
+}
+
+test "resolveDownloadUrl linux-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 21, .minor = 0, .patch = 1 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/adoptium/temurin21.0.1-binaries/releases/download/jdk-21.0.1/OpenJDK21.0.1U-jdk_linux-x64_hotspot_21.0.1.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl linux-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 17, .minor = 0, .patch = 9 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/adoptium/temurin17.0.9-binaries/releases/download/jdk-17.0.9/OpenJDK17.0.9U-jdk_linux-aarch64_hotspot_17.0.9.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 11, .minor = 0, .patch = 21 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/adoptium/temurin11.0.21-binaries/releases/download/jdk-11.0.21/OpenJDK11.0.21U-jdk_macos-x64_hotspot_11.0.21.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 21, .minor = 0, .patch = 2 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/adoptium/temurin21.0.2-binaries/releases/download/jdk-21.0.2/OpenJDK21.0.2U-jdk_macos-aarch64_hotspot_21.0.2.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 21, .minor = 0, .patch = 1 };
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/adoptium/temurin21.0.1-binaries/releases/download/jdk-21.0.1/OpenJDK21.0.1U-jdk_windows-x64_hotspot_21.0.1.tar.gz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_gz, spec.archive_type);
+}
+
+test "resolveDownloadUrl unsupported platform" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 21, .minor = 0, .patch = 1 };
+    const platform = PlatformInfo{ .os = "freebsd", .arch = "x64" };
+
+    try testing.expectError(error.UnsupportedPlatform, resolveDownloadUrl(allocator, version, platform));
+}
+
+test "getBinaryPath unix" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bin/java", path);
+}
+
+test "getBinaryPath windows" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bin/java.exe", path);
+}
+
+test "getEnvironmentVars sets JAVA_HOME" {
+    const allocator = testing.allocator;
+    const install_dir = "/opt/java/jdk-21.0.1";
+
+    var env_map = try getEnvironmentVars(allocator, install_dir);
+    defer {
+        var it = env_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.value_ptr.*);
+        }
+        env_map.deinit();
+    }
+
+    try testing.expectEqual(@as(usize, 1), env_map.count());
+    const java_home = env_map.get("JAVA_HOME").?;
+    try testing.expectEqualStrings(install_dir, java_home);
+}
+
+test "fetchLatestVersion returns hardcoded 21.0.1" {
+    const allocator = testing.allocator;
+    const version = try fetchLatestVersion(allocator);
+
+    try testing.expectEqual(@as(u32, 21), version.major);
+    try testing.expectEqual(@as(u32, 0), version.minor);
+    try testing.expectEqual(@as(u32, 1), version.patch);
 }
