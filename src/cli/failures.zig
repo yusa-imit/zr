@@ -111,3 +111,40 @@ pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions) 
     std.debug.print("Cleared {d} failure report(s).\n", .{count});
     return 0;
 }
+
+// Unit tests
+const testing = std.testing;
+
+test "FailuresOptions: default values" {
+    const opts = FailuresOptions{};
+    try testing.expect(opts.task == null);
+    try testing.expectEqualStrings(".zr/failures", opts.storage_dir);
+    try testing.expect(opts.use_color == true);
+}
+
+test "FailuresOptions: custom task filter" {
+    const opts = FailuresOptions{ .task = "build" };
+    try testing.expect(opts.task != null);
+    try testing.expectEqualStrings("build", opts.task.?);
+}
+
+test "FailuresOptions: custom storage dir" {
+    const opts = FailuresOptions{ .storage_dir = "/tmp/failures" };
+    try testing.expectEqualStrings("/tmp/failures", opts.storage_dir);
+}
+
+test "FailuresOptions: disable color" {
+    const opts = FailuresOptions{ .use_color = false };
+    try testing.expect(opts.use_color == false);
+}
+
+test "FailuresOptions: all custom values" {
+    const opts = FailuresOptions{
+        .task = "test",
+        .storage_dir = "/custom/path",
+        .use_color = false,
+    };
+    try testing.expectEqualStrings("test", opts.task.?);
+    try testing.expectEqualStrings("/custom/path", opts.storage_dir);
+    try testing.expect(opts.use_color == false);
+}
