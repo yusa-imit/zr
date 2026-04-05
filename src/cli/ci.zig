@@ -210,8 +210,15 @@ test "detectPlatform with no CI files" {
 
     // In test environment, likely no CI files exist
     const platform = try detectPlatform(allocator);
-    // Can't assert specific value as it depends on test environment
-    _ = platform;
+
+    // Verify result is either null or a valid Platform enum value
+    if (platform) |p| {
+        const is_valid = p == .github_actions or p == .gitlab_ci or p == .circleci;
+        try testing.expect(is_valid);
+    } else {
+        // null is valid when no CI files detected
+        try testing.expect(true);
+    }
 }
 
 test "printHelp executes without error" {

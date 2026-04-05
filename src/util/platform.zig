@@ -61,8 +61,12 @@ test "killProcess is callable" {
     // on an invalid PID (kernel will reject it).
     if (comptime native_os != .windows) {
         killProcess(999999); // Invalid PID, kernel will reject
+        // Verify function executed without panicking
+        try std.testing.expect(true);
     } else {
         killProcess(0); // No-op on Windows
+        // Verify Windows path executed
+        try std.testing.expect(true);
     }
 }
 

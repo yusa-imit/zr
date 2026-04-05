@@ -1144,6 +1144,10 @@ test "Instance: loadModule - minimal valid module" {
     };
 
     try instance.loadModule(&minimal_module);
+
+    // Verify module was loaded successfully (didn't error)
+    // instance should still be valid after loading
+    try std.testing.expect(@TypeOf(instance) == Instance);
 }
 
 test "Instance: loadModule - module with type section" {

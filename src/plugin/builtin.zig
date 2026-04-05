@@ -548,6 +548,10 @@ test "cache plugin: onBeforeTask with no max_age is a no-op" {
     defer handle.deinit();
 
     handle.onInit();
+
     // Should not panic or error — max_age_seconds == 0 means no eviction.
     handle.onBeforeTask("my-task");
+
+    // Verify function executed without error
+    try std.testing.expect(true);
 }

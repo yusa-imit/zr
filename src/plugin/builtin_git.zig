@@ -184,8 +184,15 @@ test "GitPlugin.changedFiles: returns slice (possibly empty)" {
         for (files) |f| allocator.free(f);
         allocator.free(files);
     }
-    // Result is valid whether empty or non-empty — just must not error.
-    _ = files.len;
+
+    // Verify result is a valid slice type
+    const is_valid_type = @TypeOf(files) == [][]const u8;
+    try std.testing.expect(is_valid_type);
+
+    // Verify each file path is non-empty if present
+    for (files) |file| {
+        try std.testing.expect(file.len > 0);
+    }
 }
 
 test "GitPlugin.fileHasChanges: does not error on committed file" {

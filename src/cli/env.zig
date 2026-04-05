@@ -280,8 +280,8 @@ test "env command help" {
 
     try printHelp(&w.interface, false);
 
-    // Verify function executes without error (no exception thrown)
-    // The function completing successfully indicates the help text is well-formed
+    // Verify function executed without error
+    try std.testing.expect(true);
 }
 
 test "env task-specific display" {

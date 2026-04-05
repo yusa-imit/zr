@@ -823,5 +823,13 @@ test "TomlLexer no memory leaks during tokenization" {
     defer lexer.deinit();
 
     try lexer.tokenize();
+
+    // Verify tokens were generated
+    try std.testing.expect(lexer.tokens.items.len > 0);
+
+    // Verify at least section, key, equals, string tokens exist
+    const has_tokens = lexer.tokens.items.len >= 4;
+    try std.testing.expect(has_tokens);
+
     // deinit() called in defer — test framework detects leaks
 }

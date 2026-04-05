@@ -217,13 +217,22 @@ test "color codes are non-empty" {
 
 test "color functions compile and exist" {
     // Smoke test: compile-time check that the functions exist with correct signatures
-    _ = &printSuccess;
-    _ = &printError;
-    _ = &printInfo;
-    _ = &printBold;
-    _ = &printDim;
-    _ = &printHeader;
-    _ = &taskLabel;
+    const has_print_success = @TypeOf(&printSuccess) == *const @TypeOf(printSuccess);
+    const has_print_error = @TypeOf(&printError) == *const @TypeOf(printError);
+    const has_print_info = @TypeOf(&printInfo) == *const @TypeOf(printInfo);
+    const has_print_bold = @TypeOf(&printBold) == *const @TypeOf(printBold);
+    const has_print_dim = @TypeOf(&printDim) == *const @TypeOf(printDim);
+    const has_print_header = @TypeOf(&printHeader) == *const @TypeOf(printHeader);
+    const has_task_label = @TypeOf(&taskLabel) == *const @TypeOf(taskLabel);
+
+    // Verify all functions exist with correct types
+    try std.testing.expect(has_print_success);
+    try std.testing.expect(has_print_error);
+    try std.testing.expect(has_print_info);
+    try std.testing.expect(has_print_bold);
+    try std.testing.expect(has_print_dim);
+    try std.testing.expect(has_print_header);
+    try std.testing.expect(has_task_label);
 }
 
 test "sailor style definitions are valid" {

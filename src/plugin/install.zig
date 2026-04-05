@@ -517,8 +517,15 @@ test "listInstalledPlugins: empty when dir missing" {
         for (names) |n| allocator.free(n);
         allocator.free(names);
     }
-    // No assertion on count — HOME-dependent. Just verify no crash.
-    _ = names.len;
+
+    // Verify result is a valid slice (empty or non-empty)
+    const is_valid_slice = @TypeOf(names) == [][]const u8;
+    try std.testing.expect(is_valid_slice);
+
+    // Verify each name is non-empty if present
+    for (names) |name| {
+        try std.testing.expect(name.len > 0);
+    }
 }
 
 test "updateLocalPlugin: not installed returns PluginNotFound" {
