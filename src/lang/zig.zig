@@ -4,6 +4,7 @@ const types = @import("../toolchain/types.zig");
 const ToolVersion = types.ToolVersion;
 const LanguageProvider = provider.LanguageProvider;
 const DownloadSpec = provider.DownloadSpec;
+const ArchiveType = provider.ArchiveType;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
@@ -131,4 +132,110 @@ fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageP
     });
 
     return try tasks.toOwnedSlice(allocator);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "ZigProvider name" {
+    try testing.expectEqualStrings("zig", ZigProvider.name);
+}
+
+test "resolveDownloadUrl linux-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 0, .minor = 13, .patch = 0 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_xz, spec.archive_type);
+}
+
+test "resolveDownloadUrl linux-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 0, .minor = 12, .patch = 0 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://ziglang.org/download/0.12.0/zig-linux-aarch64-0.12.0.tar.xz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_xz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 0, .minor = 13, .patch = 0 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://ziglang.org/download/0.13.0/zig-macos-x86_64-0.13.0.tar.xz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_xz, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 0, .minor = 13, .patch = 0 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://ziglang.org/download/0.13.0/zig-macos-aarch64-0.13.0.tar.xz", spec.url);
+    try testing.expectEqual(ArchiveType.tar_xz, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 0, .minor = 13, .patch = 0 };
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 0, .minor = 13, .patch = 0 };
+    const platform = PlatformInfo{ .os = "win", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://ziglang.org/download/0.13.0/zig-windows-aarch64-0.13.0.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "getBinaryPath unix" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("zig", path);
+}
+
+test "getBinaryPath windows" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("zig.exe", path);
+}
+
+test "getEnvironmentVars is null" {
+    try testing.expect(ZigProvider.getEnvironmentVars == null);
 }
