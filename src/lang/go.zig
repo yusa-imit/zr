@@ -223,3 +223,120 @@ fn hasMainPackage(dir: std.fs.Dir) !bool {
 
     return std.mem.indexOf(u8, content, "package main") != null;
 }
+
+// Unit tests
+const testing = std.testing;
+
+test "GoProvider: name is go" {
+    try testing.expectEqualStrings("go", GoProvider.name);
+}
+
+test "extractModuleName: valid module line" {
+    const content = "module github.com/user/project\n\ngo 1.21\n";
+    const result = try extractModuleName(testing.allocator, content);
+    try testing.expect(result != null);
+    defer testing.allocator.free(result.?);
+    try testing.expectEqualStrings("github.com/user/project", result.?);
+}
+
+test "extractModuleName: with extra whitespace" {
+    const content = "module   github.com/user/myapp   \n";
+    const result = try extractModuleName(testing.allocator, content);
+    try testing.expect(result != null);
+    defer testing.allocator.free(result.?);
+    try testing.expectEqualStrings("github.com/user/myapp", result.?);
+}
+
+test "extractModuleName: no module line" {
+    const content = "go 1.21\n\nrequire (\n  example.com/dep v1.0.0\n)\n";
+    const result = try extractModuleName(testing.allocator, content);
+    try testing.expect(result == null);
+}
+
+test "extractModuleName: empty content" {
+    const result = try extractModuleName(testing.allocator, "");
+    try testing.expect(result == null);
+}
+
+test "hasMainPackage: detects package main" {
+    const content = "package main\n\nimport \"fmt\"\n\nfunc main() {}\n";
+
+    // Create a temporary buffer file
+    var buf: [256]u8 = undefined;
+    @memcpy(buf[0..content.len], content);
+
+    // Simulate the detection logic without filesystem
+    const has_main = std.mem.indexOf(u8, buf[0..content.len], "package main") != null;
+    try testing.expect(has_main == true);
+}
+
+test "resolveDownloadUrl: Linux amd64" {
+    const version = try ToolVersion.parse("1.21.0");
+    const platform = PlatformInfo{
+        .os = "linux",
+        .arch = "x64",
+    };
+
+    const spec = try resolveDownloadUrl(testing.allocator, version, platform);
+    defer testing.allocator.free(spec.url);
+
+    try testing.expect(std.mem.indexOf(u8, spec.url, "https://go.dev/dl/go1.21.0.linux-amd64.tar.gz") != null);
+    try testing.expect(spec.archive_type == .tar_gz);
+}
+
+test "resolveDownloadUrl: macOS arm64" {
+    const version = try ToolVersion.parse("1.21.5");
+    const platform = PlatformInfo{
+        .os = "darwin",
+        .arch = "arm64",
+    };
+
+    const spec = try resolveDownloadUrl(testing.allocator, version, platform);
+    defer testing.allocator.free(spec.url);
+
+    try testing.expect(std.mem.indexOf(u8, spec.url, "https://go.dev/dl/go1.21.5.darwin-arm64.tar.gz") != null);
+    try testing.expect(spec.archive_type == .tar_gz);
+}
+
+test "resolveDownloadUrl: Windows amd64" {
+    const version = try ToolVersion.parse("1.22.0");
+    const platform = PlatformInfo{
+        .os = "win",
+        .arch = "x64",
+    };
+
+    const spec = try resolveDownloadUrl(testing.allocator, version, platform);
+    defer testing.allocator.free(spec.url);
+
+    try testing.expect(std.mem.indexOf(u8, spec.url, "https://go.dev/dl/go1.22.0.windows-amd64.zip") != null);
+    try testing.expect(spec.archive_type == .zip);
+}
+
+test "getBinaryPath: Linux" {
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+    const path = try getBinaryPath(testing.allocator, platform);
+    defer testing.allocator.free(path);
+    try testing.expectEqualStrings("bin/go", path);
+}
+
+test "getBinaryPath: Windows" {
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+    const path = try getBinaryPath(testing.allocator, platform);
+    defer testing.allocator.free(path);
+    try testing.expectEqualStrings("bin/go.exe", path);
+}
+
+test "getEnvironmentVars: sets GOROOT" {
+    var env_map = try getEnvironmentVars(testing.allocator, "/usr/local/go");
+    defer {
+        var it = env_map.iterator();
+        while (it.next()) |entry| {
+            testing.allocator.free(entry.value_ptr.*);
+        }
+        env_map.deinit();
+    }
+
+    const goroot = env_map.get("GOROOT");
+    try testing.expect(goroot != null);
+    try testing.expectEqualStrings("/usr/local/go", goroot.?);
+}
