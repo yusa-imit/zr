@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.61.0] - 2026-04-05
+
+### 🎯 Task Templates & Scaffolding
+
+This release provides a comprehensive task template system with 31 built-in templates for common development workflows, reducing boilerplate and accelerating zr.toml configuration.
+
+### Added
+
+**Built-in Template Library**
+- **31 Built-in Templates** across 6 categories
+  - **Build** (6): go-build, cargo-build, npm-build, zig-build, maven-build, make-build
+  - **Test** (7): pytest, jest, cargo-test, go-test, junit, rspec, vitest
+  - **Lint** (6): eslint, clippy, ruff, golangci-lint, checkstyle, rubocop
+  - **Deploy** (4): docker-push, k8s-deploy, terraform-apply, heroku-deploy
+  - **CI** (4): cache-setup, artifact-upload, parallel-matrix, docker-build-ci
+  - **Release** (4): semantic-release, cargo-publish, npm-publish, docker-tag
+
+**Template System Architecture**
+- **Template Registry** (`src/template/registry.zig`) — Template discovery, lookup, category filtering
+- **Template Engine** (`src/template/engine.zig`) — Variable substitution with ${VAR} syntax
+- **Template Types** (`src/template/types.zig`) — Template/TemplateVariable/Category definitions
+- **Custom Template Loader** (`src/template/loader.zig`) — Load user-defined templates from filesystem
+- **Built-in Templates** (`src/template/builtin/*.zig`) — 6 category modules with template definitions
+
+**CLI Commands**
+- **`zr template list [--builtin]`** — List all available templates by category
+  - Show template names and descriptions in organized format
+  - Support for both built-in and user-defined templates
+- **`zr template show <name> [--builtin]`** — Preview template details
+  - Display template TOML with variable placeholders
+  - Show required vs optional variables
+  - Display default values
+- **`zr template add <name> [--builtin]`** — Apply template with variable substitution
+  - `--var KEY=VALUE` flags for variable input
+  - `--output <path>` for file output (default: stdout)
+  - Variable validation (required variables, defaults)
+
+**Template Features**
+- **Variable Substitution** — ${VAR} syntax with default values
+- **Required Variables** — Validation ensures required variables are provided
+- **Default Values** — Optional variables use sensible defaults
+- **Custom Templates** — Support for .zr/templates/ and ~/.zr/templates/
+- **TOML Generation** — Templates generate valid zr.toml task configurations
+
+### Tests
+
+**Integration Tests** (10 tests: 4000-4009)
+- Template list with category grouping verification
+- Template show with variable display
+- Template add with variable substitution (go-build, cargo-build, pytest, eslint)
+- Required variable validation
+- Default value handling
+- Error cases (nonexistent template, missing variables)
+
+**Test Status**: 1320 unit tests passing (8 skipped)
+
+### Implementation Details
+
+- Commits: 8bbdfbe (template system), d0051bd (loader + tests), c0e6719 (milestone)
+- Total: ~1,700 LOC added across 13 files
+- Complete milestone: Task Templates & Scaffolding
+
 ## [1.59.0] - 2026-04-01
 
 ### 🎯 Workflow Matrix Execution
