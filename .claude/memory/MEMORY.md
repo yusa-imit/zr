@@ -1,6 +1,25 @@
 # zr Project Memory
 
-## Latest Session (2026-04-04, Stabilization Mode Cycle 85)
+## Latest Session (2026-04-05, Stabilization Mode Cycle 95)
+
+### STABILIZATION CYCLE — Test Quality Improvement ✅
+- **Mode**: STABILIZATION (counter 95, counter % 5 == 0)
+- **CI Status**: IN_PROGRESS (not red, tests passing locally 1320/1328)
+- **Open Issues**: 6 open (all zuda migrations, 0 bugs)
+- **Actions Taken**:
+  - ✅ **Mode Determination**: Read/incremented `.claude/session-counter` (94 → 95 → STABILIZATION MODE)
+  - ✅ **CI & Issues Check**: CI in progress (not red), no bug reports — green light
+  - ✅ **Weak Test Audit**: Identified and strengthened 5 weak tests with tautological assertions
+    - **main.zig:1390**: Replaced `expect(true)` with actual smoke tests (printHelp + run with minimal args)
+    - **cli/affected.zig:318**: Removed tautology, test both color modes (true/false)
+    - **cli/publish.zig:244**: Added error path testing (invalid options, missing bump values)
+    - **cli/version.zig:169**: Documented std.process.exit() limitation, reference integration tests
+    - **plugin/install.zig:482**: Replaced weak assertion with retry verification after cleanup
+- **Commits**: 1 commit (d0df25f)
+- **Test Status**: 1320 passed; 8 skipped; 0 failed — improved test quality
+- **Next Priority**: Return to FEATURE mode — 0 READY milestones (all complete or blocked)
+
+## Previous Session (2026-04-05, Feature Mode Cycle 94)
 
 ### STABILIZATION CYCLE — Test Quality Improvement COMPLETE ✅
 - **Mode**: STABILIZATION (counter 85, counter % 5 == 0)
