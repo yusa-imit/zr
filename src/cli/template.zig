@@ -3,6 +3,7 @@ const Config = @import("../config/types.zig").Config;
 const TaskTemplate = @import("../config/types.zig").TaskTemplate;
 const loader = @import("../config/loader.zig");
 const color = @import("../output/color.zig");
+const template_cmd = @import("../cli/template_cmd.zig");
 
 /// List all available templates in the configuration.
 pub fn listTemplates(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
@@ -388,4 +389,104 @@ test "template commands: showTemplate with non-existent template" {
 
     const exit_code = try showTemplate(allocator, &[_][]const u8{"nonexistent"});
     try std.testing.expectEqual(@as(u8, 1), exit_code);
+}
+
+/// List built-in templates (separate from user-defined templates in zr.toml)
+pub fn listBuiltinTemplates(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+    _ = allocator;
+    _ = args;
+
+    var out_buf: [8192]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    defer out_w.interface.flush() catch {};
+
+    try template_cmd.listTemplates(&out_w.interface, null);
+    return 0;
+}
+
+/// Show a built-in template
+pub fn showBuiltinTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+    _ = allocator;
+
+    var out_buf: [8192]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    defer out_w.interface.flush() catch {};
+
+    var err_buf: [2048]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+    defer err_w.interface.flush() catch {};
+
+    if (args.len == 0) {
+        try err_w.interface.print("Error: template name required\n", .{});
+        try err_w.interface.print("Usage: zr template show <name>\n", .{});
+        return 1;
+    }
+
+    template_cmd.showTemplate(&out_w.interface, args[0]) catch |err| {
+        if (err == error.TemplateNotFound) {
+            return 1;
+        }
+        return err;
+    };
+
+    return 0;
+}
+
+/// Add a built-in template to the current project
+pub fn addBuiltinTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+    var out_buf: [8192]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    defer out_w.interface.flush() catch {};
+
+    var err_buf: [2048]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+    defer err_w.interface.flush() catch {};
+
+    if (args.len == 0) {
+        try err_w.interface.print("Error: template name required\n", .{});
+        try err_w.interface.print("Usage: zr template add <name> [--var KEY=VALUE ...] [--output <path>]\n", .{});
+        return 1;
+    }
+
+    const template_name = args[0];
+
+    // Parse additional arguments for --var and --output
+    var variables = std.StringHashMap([]const u8).init(allocator);
+    defer variables.deinit();
+
+    var output_path: ?[]const u8 = null;
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--var") and i + 1 < args.len) {
+            i += 1;
+            const var_arg = args[i];
+            // Parse KEY=VALUE
+            if (std.mem.indexOfScalar(u8, var_arg, '=')) |eq_pos| {
+                const key = var_arg[0..eq_pos];
+                const value = var_arg[eq_pos + 1 ..];
+                try variables.put(key, value);
+            } else {
+                try err_w.interface.print("Error: Invalid --var format, expected KEY=VALUE\n", .{});
+                return 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--output") and i + 1 < args.len) {
+            i += 1;
+            output_path = args[i];
+        }
+    }
+
+    template_cmd.addTemplate(allocator, &out_w.interface, template_name, variables, output_path) catch |err| {
+        if (err == error.TemplateNotFound or err == error.MissingRequiredVariable) {
+            return 1;
+        }
+        return err;
+    };
+
+    return 0;
 }

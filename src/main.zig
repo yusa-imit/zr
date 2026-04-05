@@ -1201,21 +1201,45 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "template")) {
         const template_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         if (template_args.len == 0) {
-            try color.printError(ew, effective_color, "Usage: zr template <list|show|apply> [args...]\n", .{});
+            try color.printError(ew, effective_color, "Usage: zr template <list|show|add> [--builtin] [args...]\n", .{});
             return 1;
         }
         const subcommand = template_args[0];
         const sub_args = if (template_args.len > 1) template_args[1..] else &[_][]const u8{};
 
+        // Check for --builtin flag
+        var use_builtin = false;
+        for (sub_args) |arg| {
+            if (std.mem.eql(u8, arg, "--builtin")) {
+                use_builtin = true;
+                break;
+            }
+        }
+
         if (std.mem.eql(u8, subcommand, "list")) {
-            return template_cmd.listTemplates(allocator, sub_args);
+            if (use_builtin) {
+                return template_cmd.listBuiltinTemplates(allocator, sub_args);
+            } else {
+                return template_cmd.listTemplates(allocator, sub_args);
+            }
         } else if (std.mem.eql(u8, subcommand, "show")) {
-            return template_cmd.showTemplate(allocator, sub_args);
+            if (use_builtin) {
+                return template_cmd.showBuiltinTemplate(allocator, sub_args);
+            } else {
+                return template_cmd.showTemplate(allocator, sub_args);
+            }
+        } else if (std.mem.eql(u8, subcommand, "add")) {
+            if (use_builtin) {
+                return template_cmd.addBuiltinTemplate(allocator, sub_args);
+            } else {
+                return template_cmd.applyTemplate(allocator, sub_args);
+            }
         } else if (std.mem.eql(u8, subcommand, "apply")) {
+            // 'apply' is the old name for user-defined templates
             return template_cmd.applyTemplate(allocator, sub_args);
         } else {
             try color.printError(ew, effective_color, "Unknown template subcommand: {s}\n", .{subcommand});
-            try color.printError(ew, effective_color, "Usage: zr template <list|show|apply> [args...]\n", .{});
+            try color.printError(ew, effective_color, "Usage: zr template <list|show|add> [--builtin] [args...]\n", .{});
             return 1;
         }
     } else if (std.mem.eql(u8, cmd, "ci")) {
