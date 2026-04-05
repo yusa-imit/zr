@@ -4,6 +4,7 @@ const types = @import("../toolchain/types.zig");
 const ToolVersion = types.ToolVersion;
 const LanguageProvider = provider.LanguageProvider;
 const DownloadSpec = provider.DownloadSpec;
+const ArchiveType = provider.ArchiveType;
 const PlatformInfo = provider.PlatformInfo;
 const ProjectInfo = provider.ProjectInfo;
 
@@ -170,4 +171,106 @@ fn extractTasks(allocator: std.mem.Allocator, dir_path: []const u8) ![]LanguageP
     }
 
     return try tasks.toOwnedSlice(allocator);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "BunProvider name" {
+    try testing.expectEqualStrings("bun", BunProvider.name);
+}
+
+test "resolveDownloadUrl linux-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 0, .patch = 36 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/oven-sh/bun/releases/download/bun-v1.0.36/bun-linux-x64.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl linux-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 1, .patch = 0 };
+    const platform = PlatformInfo{ .os = "linux", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/oven-sh/bun/releases/download/bun-v1.1.0/bun-linux-aarch64.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 0, .patch = 0 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/oven-sh/bun/releases/download/bun-v1.0.0/bun-darwin-x64.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl darwin-arm64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 2, .patch = 3 };
+    const platform = PlatformInfo{ .os = "darwin", .arch = "arm64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/oven-sh/bun/releases/download/bun-v1.2.3/bun-darwin-aarch64.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl windows-x64" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 0, .patch = 36 };
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const spec = try resolveDownloadUrl(allocator, version, platform);
+    defer allocator.free(spec.url);
+
+    try testing.expectEqualStrings("https://github.com/oven-sh/bun/releases/download/bun-v1.0.36/bun-windows-x64.zip", spec.url);
+    try testing.expectEqual(ArchiveType.zip, spec.archive_type);
+}
+
+test "resolveDownloadUrl unsupported platform" {
+    const allocator = testing.allocator;
+    const version = ToolVersion{ .major = 1, .minor = 0, .patch = 0 };
+    const platform = PlatformInfo{ .os = "freebsd", .arch = "x64" };
+
+    try testing.expectError(error.UnsupportedPlatform, resolveDownloadUrl(allocator, version, platform));
+}
+
+test "getBinaryPath unix" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "linux", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bun", path);
+}
+
+test "getBinaryPath windows" {
+    const allocator = testing.allocator;
+    const platform = PlatformInfo{ .os = "win", .arch = "x64" };
+
+    const path = try getBinaryPath(allocator, platform);
+    defer allocator.free(path);
+
+    try testing.expectEqualStrings("bun.exe", path);
+}
+
+test "getEnvironmentVars is null" {
+    try testing.expect(BunProvider.getEnvironmentVars == null);
 }
