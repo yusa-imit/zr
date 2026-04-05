@@ -304,16 +304,16 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
 }
 
 test "affected: help prints without error" {
-    // Create null file writer to discard output
+    // Create null file writer to verify no crash
     const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
     defer null_file.close();
 
     var buf: [1024]u8 = undefined;
     var writer = null_file.writer(&buf);
 
-    // Verify printHelp executes without error
+    // Verify printHelp executes without error (primary test: no crash/panic)
     try printHelp(&writer.interface, false);
 
-    // If we reach here, help was printed successfully
-    try std.testing.expect(true);
+    // Test both color modes
+    try printHelp(&writer.interface, true);
 }

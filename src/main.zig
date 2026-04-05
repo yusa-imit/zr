@@ -1387,8 +1387,24 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printDim(w, use_color, "Profile env: ZR_PROFILE=<name> (alternative to --profile)\n", .{});
 }
 
-test "basic functionality" {
-    try std.testing.expect(true);
+test "basic functionality - program structure" {
+    // Verify main module compiles successfully and exports expected functions
+    const allocator = std.testing.allocator;
+
+    // Test that run function signature is correct
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var buf: [4096]u8 = undefined;
+    var writer = null_file.writer(&buf);
+
+    // Verify help text can be printed (basic smoke test)
+    try printHelp(&writer.interface, false);
+
+    // Verify we can call run with minimal args (should show help)
+    const args = [_][]const u8{"zr"};
+    const exit_code = try run(allocator, &args, &writer.interface, &writer.interface, true);
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
 }
 
 test "--no-color and --jobs are consumed before command dispatch" {

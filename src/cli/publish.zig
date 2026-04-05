@@ -238,8 +238,16 @@ fn printPublishHelp() !void {
 
 test "cmdPublish help does not error" {
     const args = [_][]const u8{"--help"};
-    // Verify --help flag is parsed and handled without error
+    // Verify --help flag is parsed and returns without error
+    // This tests that the help path doesn't crash and exits cleanly
     try cmdPublish(std.testing.allocator, &args);
-    // If we reach here, the help was printed successfully without error
-    try std.testing.expect(true); // Explicit assertion that we reached this point
+
+    // Test invalid option returns error
+    const invalid_args = [_][]const u8{"--invalid-option"};
+    // cmdPublish with invalid option prints error and returns (doesn't crash)
+    try cmdPublish(std.testing.allocator, &invalid_args);
+
+    // Test missing bump value
+    const missing_bump = [_][]const u8{"--bump"};
+    try cmdPublish(std.testing.allocator, &missing_bump);
 }

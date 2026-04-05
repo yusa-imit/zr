@@ -479,7 +479,11 @@ test "installLocalPlugin and removePlugin round-trip" {
         InstallError.AlreadyInstalled => {
             // Clean up if left from a previous run, then retry once.
             try removePlugin(allocator, "zr-test-roundtrip-12345");
-            try std.testing.expect(true); // Already cleaned up.
+            // Verify cleanup succeeded by attempting install again
+            const retry_dest = try installLocalPlugin(allocator, src_path, "zr-test-roundtrip-12345");
+            defer allocator.free(retry_dest);
+            // Cleanup for next test run
+            try removePlugin(allocator, "zr-test-roundtrip-12345");
             return;
         },
         else => return err,

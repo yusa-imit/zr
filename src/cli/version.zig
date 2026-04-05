@@ -163,8 +163,11 @@ test "cmdVersion help does not error" {
     const allocator = std.testing.allocator;
 
     const args = [_][]const u8{"--help"};
-    // Verify --help flag is parsed and handled without error
+    // Verify --help flag is parsed and returns without error
+    // This tests that the help path doesn't crash and exits cleanly
     try cmdVersion(allocator, &args);
-    // If we reach here, the help was printed successfully without error
-    try std.testing.expect(true); // Explicit assertion that we reached this point
+
+    // Note: Cannot easily test error paths like "--bump missing_value" or invalid bump types
+    // because cmdVersion calls std.process.exit() directly, which terminates the test process.
+    // Those error paths are tested via integration tests in tests/version_test.zig
 }
