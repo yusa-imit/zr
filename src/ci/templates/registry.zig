@@ -6,6 +6,7 @@ const Platform = types.Platform;
 const TemplateType = types.TemplateType;
 const github_actions = @import("github_actions.zig");
 const gitlab = @import("gitlab.zig");
+const circleci = @import("circleci.zig");
 
 /// Template registry for discovering and accessing templates
 pub const Registry = struct {
@@ -32,6 +33,11 @@ pub const Registry = struct {
 
         // Register GitLab CI templates
         for (gitlab.templates) |template| {
+            try self.templates.append(self.allocator, template);
+        }
+
+        // Register CircleCI templates
+        for (circleci.templates) |template| {
             try self.templates.append(self.allocator, template);
         }
     }
@@ -93,8 +99,8 @@ test "Registry.registerBuiltins loads templates" {
 
     try registry.registerBuiltins();
 
-    // Should have GitHub Actions templates (3) + GitLab CI templates (3) = 6
-    try testing.expect(registry.templates.items.len >= 6);
+    // Should have GitHub Actions (3) + GitLab CI (3) + CircleCI (3) = 9
+    try testing.expect(registry.templates.items.len >= 9);
 }
 
 test "Registry.find with no filters returns all" {
@@ -163,7 +169,7 @@ test "Registry.get finds exact match" {
     try testing.expectEqual(TemplateType.basic_ci, template.?.template_type);
 }
 
-test "Registry.get returns null for non-existent" {
+test "Registry.get returns CircleCI template" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
@@ -172,7 +178,9 @@ test "Registry.get returns null for non-existent" {
 
     try registry.registerBuiltins();
 
-    // CircleCI templates not implemented yet
+    // CircleCI templates now available
     const template = registry.get(.circleci, .basic_ci);
-    try testing.expectEqual(@as(?Template, null), template);
+    try testing.expect(template != null);
+    try testing.expectEqual(Platform.circleci, template.?.platform);
+    try testing.expectEqual(TemplateType.basic_ci, template.?.template_type);
 }
