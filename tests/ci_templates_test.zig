@@ -542,3 +542,221 @@ test "zr ci generate outputs template information in success message" {
     try std.testing.expect(std.mem.indexOf(u8, output, "Generated") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "Template:") != null);
 }
+
+// ── Test 10: CircleCI Templates ────────────────────────────────────────────
+
+test "zr ci generate CircleCI basic template creates valid YAML" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify file was created
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify CircleCI-specific structure
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "version:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "executors:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "jobs:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "workflows:") != null);
+}
+
+test "zr ci generate CircleCI basic template includes zr installation" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify zr install command
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "install_zr") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "curl") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "zr-linux-x86_64.tar.gz") != null);
+}
+
+test "zr ci generate CircleCI basic template uses executors" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify executor usage
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "zr-executor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "docker:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "resource_class:") != null);
+}
+
+test "zr ci generate CircleCI basic template includes caching" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify cache commands
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "restore_cache") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "save_cache") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "zr.toml") != null);
+}
+
+test "zr ci generate CircleCI monorepo template uses parameterized jobs" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci", "--type=monorepo" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify parameterized jobs
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "parameters:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "project:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "<< parameters.project >>") != null);
+}
+
+test "zr ci generate CircleCI monorepo template includes affected detection" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci", "--type=monorepo" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify affected detection job
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "detect_affected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "zr affected") != null);
+}
+
+test "zr ci generate CircleCI monorepo template uses workspace persistence" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci", "--type=monorepo" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify workspace commands
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "persist_to_workspace") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "attach_workspace") != null);
+}
+
+test "zr ci generate CircleCI release template triggers on tags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci", "--type=release" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify tag filtering
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "filters:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "tags:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "/^v.*/") != null);
+}
+
+test "zr ci generate CircleCI release template includes publish job" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "generate", "--platform=circleci", "--type=release" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    const generated_file = try tmp.dir.readFileAlloc(allocator, ".circleci/config.yml", 16 * 1024);
+    defer allocator.free(generated_file);
+
+    // Verify release jobs
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "publish:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "create_github_release") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated_file, "GITHUB_TOKEN") != null);
+}
+
+test "zr ci list shows CircleCI templates" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "ci", "list" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify CircleCI templates are listed
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "circleci") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "CircleCI") != null);
+}
