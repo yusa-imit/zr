@@ -14,6 +14,7 @@ Complete reference for all `zr` CLI commands.
 - [Repository Commands](#repository-commands)
 - [Publishing Commands](#publishing-commands)
 - [Development Commands](#development-commands)
+- [CI/CD Commands](#cicd-commands)
 - [MCP & LSP Commands](#mcp--lsp-commands)
 - [Global Options](#global-options)
 
@@ -1177,6 +1178,100 @@ zr schedule <subcommand>
 zr schedule add test "0 2 * * *"  # 2 AM daily
 zr schedule list
 zr schedule remove 1
+```
+
+---
+
+## CI/CD Commands
+
+### `ci generate`
+
+Generate CI/CD configuration files from pre-built templates.
+
+```bash
+zr ci generate [OPTIONS]
+```
+
+**Examples:**
+```bash
+# Auto-detect platform (looks for .github/workflows, .gitlab-ci.yml, .circleci/config.yml)
+zr ci generate
+
+# Explicit platform and template type
+zr ci generate --platform=github-actions --type=basic
+zr ci generate --platform=gitlab --type=monorepo
+zr ci generate --platform=circleci --type=release
+
+# Custom output path
+zr ci generate --platform=github-actions --output=.github/workflows/custom.yml
+```
+
+**Options:**
+- `--platform <name>` — CI platform: `github-actions`, `gitlab`, `circleci`
+- `--type <type>` — Template type: `basic`, `monorepo`, `release` (default: `basic`)
+- `--output <path>` — Custom output file path (default: platform-specific)
+
+**Template Types:**
+- `basic` — Basic CI workflow (install zr, build, test)
+- `monorepo` — Monorepo workflow with affected detection and matrix builds
+- `release` — Release automation (tag-triggered, publish, GitHub release)
+
+**Variable Substitution:**
+
+Templates support variable substitution with default values:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `${DEFAULT_BRANCH}` | `main` | Default branch name |
+| `${RUNNER}` | `ubuntu-latest` | CI runner image |
+| `${IMAGE}` | Platform-specific | Docker image (GitLab/CircleCI) |
+| `${BUILD_TASK}` | `build` | Build task name |
+| `${TEST_TASK}` | `test` | Test task name |
+| `${PUBLISH_TASK}` | `publish` | Publish task name (release) |
+| `${ARTIFACTS_PATH}` | `zig-out` | Build artifacts path |
+
+**Platform-Specific Defaults:**
+
+GitHub Actions:
+- Output: `.github/workflows/zr-ci.yml` (basic), `zr-monorepo.yml` (monorepo), `zr-release.yml` (release)
+- Features: Matrix strategy, actions/checkout, GitHub token
+
+GitLab CI:
+- Output: `.gitlab-ci.yml`
+- Features: Stages, rules, artifacts, cache, Docker images
+
+CircleCI:
+- Output: `.circleci/config.yml`
+- Features: Executors, parameterized jobs, workspace persistence, filters
+
+---
+
+### `ci list`
+
+List all available CI/CD templates.
+
+```bash
+zr ci list
+```
+
+**Example output:**
+```
+Available CI/CD Templates:
+
+github-actions:
+  - basic     Basic continuous integration workflow with zr
+  - monorepo  Monorepo workflow with affected builds and caching
+  - release   Automated release workflow with versioning and publishing
+
+gitlab:
+  - basic     Basic continuous integration workflow with zr
+  - monorepo  Monorepo workflow with affected builds and caching
+  - release   Automated release workflow with versioning and publishing
+
+circleci:
+  - basic     Basic continuous integration workflow with zr
+  - monorepo  Monorepo workflow with affected builds and matrix execution
+  - release   Automated release workflow with versioning and publishing
 ```
 
 ---
