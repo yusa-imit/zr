@@ -752,11 +752,14 @@ fn run(
         var tree_mode = false;
         var filter_pattern: ?[]const u8 = null;
         var filter_tags: ?[]const u8 = null;
+        var exclude_tags: ?[]const u8 = null;
         var profiles_only = false;
         var members_only = false;
         var fuzzy_search = false;
         var group_by_tags = false;
         var recent_count: ?usize = null;
+        var frequent_count: ?usize = null;
+        var slow_threshold_ms: ?u64 = null;
         var search_description: ?[]const u8 = null;
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
@@ -780,6 +783,24 @@ fn run(
             } else if (std.mem.eql(u8, arg, "--recent")) {
                 // Default to 10 most recent tasks
                 recent_count = 10;
+            } else if (std.mem.startsWith(u8, arg, "--frequent=")) {
+                const count_str = arg["--frequent=".len..];
+                frequent_count = std.fmt.parseInt(usize, count_str, 10) catch {
+                    try color.printError(ew, effective_color, "list: invalid --frequent count: {s}\n", .{count_str});
+                    return 1;
+                };
+            } else if (std.mem.eql(u8, arg, "--frequent")) {
+                // Default to top 10 most frequent tasks
+                frequent_count = 10;
+            } else if (std.mem.startsWith(u8, arg, "--slow=")) {
+                const threshold_str = arg["--slow=".len..];
+                slow_threshold_ms = std.fmt.parseInt(u64, threshold_str, 10) catch {
+                    try color.printError(ew, effective_color, "list: invalid --slow threshold: {s}\n", .{threshold_str});
+                    return 1;
+                };
+            } else if (std.mem.eql(u8, arg, "--slow")) {
+                // Default to 30 seconds (30000 ms)
+                slow_threshold_ms = 30000;
             } else if (std.mem.startsWith(u8, arg, "--search=")) {
                 search_description = arg["--search=".len..];
             } else if (std.mem.eql(u8, arg, "--search")) {
@@ -794,12 +815,19 @@ fn run(
                     i += 1;
                     filter_tags = effective_args[i];
                 }
+            } else if (std.mem.startsWith(u8, arg, "--exclude-tags=")) {
+                exclude_tags = arg["--exclude-tags=".len..];
+            } else if (std.mem.eql(u8, arg, "--exclude-tags")) {
+                if (i + 1 < effective_args.len) {
+                    i += 1;
+                    exclude_tags = effective_args[i];
+                }
             } else if (!std.mem.startsWith(u8, arg, "--")) {
                 // First non-flag argument is the filter pattern
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, search_description, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Check if using new graph command flags (--type, --format, --interactive, etc.)
         // If so, delegate to the full graph_cmd handler

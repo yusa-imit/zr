@@ -124,11 +124,14 @@ fn handleListTasks(allocator: std.mem.Allocator, params_json: []const u8) !ToolR
         false, // tree_mode = false
         filter_pattern,
         null, // filter_tags
+        null, // exclude_tags
         false, // profiles_only = false
         false, // members_only = false
         false, // fuzzy_search = false
         false, // group_by_tags = false
         null, // recent_count = null
+        null, // frequent_count = null
+        null, // slow_threshold_ms = null
         null, // search_description = null
         &stdout_writer.interface,
         &stderr_writer.interface,
