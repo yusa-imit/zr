@@ -77,17 +77,67 @@ zr list [pattern] [OPTIONS]
 zr list  # all tasks and workflows
 zr list test  # tasks matching "test"
 zr list --tree  # show dependency tree
-zr list --tags ci  # filter by tags
-zr list --tags ci,build  # multiple tags
+zr list --tags ci  # filter by tags (requires ALL tags)
+zr list --tags ci,build  # tasks with BOTH ci AND build tags
+zr list --exclude-tags slow  # hide tasks with "slow" tag
+zr list --search="docker build"  # full-text search (name/description/command)
+zr list --frequent=10  # top 10 most executed tasks
+zr list --slow=30000  # tasks averaging >30s execution time
 zr list --profiles  # list all profile names (v1.23.0+)
 zr list --members  # list all workspace members (v1.23.0+)
 ```
 
 **Options:**
 - `--tree` — Show tasks as a dependency tree
-- `--tags <tags>` — Filter by comma-separated tags
+- `--tags <tags>` — Filter by comma-separated tags (AND logic: tasks must have ALL specified tags)
+- `--exclude-tags <tags>` — Hide tasks with ANY of these tags (v1.64.0+)
+- `--search <text>` — Full-text search across task names, descriptions, and commands (v1.64.0+)
+- `--frequent[=N]` — Show top N most frequently executed tasks from history (default: 10) (v1.64.0+)
+- `--slow[=THRESHOLD]` — Show tasks exceeding average execution time in milliseconds (default: 30000) (v1.64.0+)
 - `--profiles` — List only profile names (useful for shell completion)
 - `--members` — List only workspace member paths (useful for shell completion)
+- `--fuzzy` — Use fuzzy matching with Levenshtein distance
+- `--group-by-tags` — Group output by task tags
+- `--recent[=N]` — Show N most recently executed tasks (default: 10)
+
+**Enhanced Task Discovery** (v1.64.0+):
+
+The `--tags` filter uses AND logic, requiring tasks to have ALL specified tags:
+```bash
+# Find tasks that are BOTH ci AND integration tests
+zr list --tags=ci,integration
+
+# Exclude slow or flaky tests
+zr list --tags=ci --exclude-tags=slow,flaky
+```
+
+Full-text search includes task names, descriptions, AND command text:
+```bash
+# Find all tasks that use docker (searches commands too)
+zr list --search=docker
+
+# Find database-related tasks
+zr list --search=postgres
+```
+
+Discover frequently used or slow tasks from execution history:
+```bash
+# Show your top 5 most-run tasks
+zr list --frequent=5
+
+# Find tasks that take longer than 1 minute on average
+zr list --slow=60000
+```
+
+**Combined Filters:**
+All filters can be combined for powerful queries:
+```bash
+# Find frequently-used ci tasks, excluding slow ones
+zr list --frequent=20 --tags=ci --exclude-tags=slow
+
+# Find tasks using "docker" that aren't deployment tasks
+zr list --search=docker --exclude-tags=deploy
+```
 
 ---
 
