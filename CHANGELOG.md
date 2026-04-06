@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.64.0] - 2026-04-07
+
+### 🔍 Enhanced Task Discovery & Search
+
+This release dramatically improves task discoverability with powerful filtering capabilities, making it easy to navigate large projects with 100+ tasks. All filters support combined AND logic for complex queries.
+
+### Added
+
+**Advanced Task Filters**
+- **--exclude-tags** — Hide tasks with ANY of the specified tags
+  - `zr list --exclude-tags=slow` hides all tasks tagged "slow"
+  - `zr list --exclude-tags=slow,flaky` hides tasks with either tag
+  - Useful for filtering out problematic tests in CI
+- **--frequent[=N]** — Show top N most executed tasks from history
+  - `zr list --frequent` shows top 10 most-run tasks (default)
+  - `zr list --frequent=5` limits to top 5
+  - Ranked by execution count from `.zr/history.jsonl`
+  - Helps identify commonly-used workflows
+- **--slow[=THRESHOLD]** — Show tasks exceeding average execution time
+  - `zr list --slow` shows tasks averaging >30s (default: 30000ms)
+  - `zr list --slow=60000` shows tasks averaging >1 minute
+  - Uses historical statistics from execution history
+  - Identifies performance bottlenecks
+
+**Filter Improvements**
+- **--tags now uses AND logic** — Changed from ANY (OR) to ALL (AND) for precise filtering
+  - `zr list --tags=ci,integration` requires BOTH tags (not just one)
+  - Breaking change: tasks must have ALL specified tags
+  - More intuitive behavior for complex projects
+- **--search full-text** — Now searches task names, descriptions, AND commands
+  - `zr list --search=docker` matches commands containing "docker"
+  - Previously only searched names and descriptions
+  - Enables discovery based on implementation details
+
+**Combined Filters**
+- All filters work together with AND logic:
+  - `zr list --frequent=20 --tags=ci --exclude-tags=slow`
+  - `zr list --search=docker --exclude-tags=deploy`
+  - `zr list --tags=ci,test --slow=10000 --exclude-tags=flaky`
+- JSON output (`--format json`) supports all filters
+- 6 comprehensive integration tests (7000-7005)
+
+**Documentation**
+- Enhanced "Task Discovery" section in `docs/guides/commands.md`
+- Examples for all filter combinations
+- Usage patterns for large projects
+
+### Changed
+- **Breaking**: `--tags` filter changed from ANY (OR) to ALL (AND) logic
+  - Old: `--tags=ci,test` matched tasks with ci OR test
+  - New: `--tags=ci,test` matches tasks with ci AND test
+  - Use `--tags=ci` separately from `--tags=test` to get OR behavior
+
+### Implementation
+- Updated `cmdList()` signature with 3 new parameters
+- Enhanced filtering logic in `src/cli/list.zig`
+- Updated CLI parsing in `src/main.zig`
+- Updated MCP handlers for API compatibility
+- All 1408 unit tests passing (8 skipped)
+
 ## [1.63.0] - 2026-04-07
 
 ### 🎯 Workspace-Level Task Inheritance
