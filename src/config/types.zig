@@ -62,6 +62,20 @@ pub const GlobalResourceConfig = struct {
     max_cpu_percent: ?u8 = null,
 };
 
+/// Named concurrency group with worker limit (v1.62.0).
+/// Allows fine-grained control over parallel execution for heterogeneous workloads.
+/// Example: GPU tasks limited to 2, network tasks limited to 10, rest use default pool.
+pub const ConcurrencyGroup = struct {
+    /// Group name (e.g., "gpu", "memory_intensive", "network").
+    name: []const u8,
+    /// Maximum concurrent tasks in this group (null = use default max_workers).
+    max_workers: ?u32 = null,
+
+    pub fn deinit(self: *ConcurrencyGroup, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+    }
+};
+
 /// Remote cache backend type (PRD §5.7.3 Phase 7).
 pub const RemoteCacheType = enum {
     s3,
@@ -260,6 +274,8 @@ pub const Config = struct {
     plugins: []PluginConfig = &.{},
     /// Global resource limits from [global.resources] section.
     global_resources: GlobalResourceConfig = .{},
+    /// Concurrency groups from [concurrency_groups.NAME] sections (v1.62.0).
+    concurrency_groups: std.StringHashMap(ConcurrencyGroup) = undefined,
     /// Toolchain config from [tools] section (Phase 5).
     toolchains: ToolchainConfig = .{ .tools = &.{} },
     /// Architecture constraints from [[constraints]] sections (Phase 6).
@@ -284,6 +300,7 @@ pub const Config = struct {
             .workflows = std.StringHashMap(Workflow).init(allocator),
             .profiles = std.StringHashMap(Profile).init(allocator),
             .templates = std.StringHashMap(TaskTemplate).init(allocator),
+            .concurrency_groups = std.StringHashMap(ConcurrencyGroup).init(allocator),
             .workspace = null,
             .plugins = &.{},
             .toolchains = ToolchainConfig.init(allocator),
@@ -316,6 +333,11 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.templates.deinit();
+        var cgit = self.concurrency_groups.iterator();
+        while (cgit.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.concurrency_groups.deinit();
         if (self.workspace) |*ws| ws.deinit(self.allocator);
         for (self.plugins) |*p| {
             var pc = p.*;
@@ -985,6 +1007,10 @@ pub const Task = struct {
     /// Each entry is [key, value] (owned, duped).
     /// v1.45.0 feature for remote execution.
     remote_env: ?[][2][]const u8 = null,
+    /// Concurrency group name for this task (null = use default worker pool).
+    /// If specified, the task will use the worker limit from [concurrency_groups.NAME].
+    /// v1.62.0 feature for heterogeneous workload management.
+    concurrency_group: ?[]const u8 = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1045,6 +1071,8 @@ pub const Task = struct {
         if (self.retry_on_codes.len > 0) allocator.free(self.retry_on_codes);
         for (self.retry_on_patterns) |pattern| allocator.free(pattern);
         if (self.retry_on_patterns.len > 0) allocator.free(self.retry_on_patterns);
+        // v1.62.0 concurrency group
+        if (self.concurrency_group) |cg| allocator.free(cg);
     }
 };
 

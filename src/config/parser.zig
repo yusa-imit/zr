@@ -351,6 +351,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_remote_cwd: ?[]const u8 = null;
     var task_remote_env = std.ArrayList([2][]const u8){};
     defer task_remote_env.deinit(allocator);
+    // Concurrency group (v1.62.0) — non-owning slice for group name
+    var task_concurrency_group: ?[]const u8 = null;
 
     // Subsection state (v1.19.0) — for handling subsections appearing before main task
     var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
@@ -498,6 +500,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         for (plugin_list.items) |*pc| pc.deinit(allocator);
         plugin_list.deinit(allocator);
     }
+
+    // Concurrency group parsing state (v1.62.0) — [concurrency_groups.X]
+    var current_concurrency_group: ?[]const u8 = null;
+    var cgroup_max_workers: ?u32 = null;
 
     // Toolchain parsing state (Phase 5)
     var in_tools: bool = false;
@@ -1130,6 +1136,26 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (err == error.MalformedSectionHeader) return err;
                 return err;
             };
+        } else if (std.mem.startsWith(u8, trimmed, "[concurrency_groups.") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            // Section: [concurrency_groups.X] — v1.62.0 concurrency group definition
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            // Flush pending concurrency group (if any)
+            if (current_concurrency_group) |cgn| {
+                const cg = types.ConcurrencyGroup{
+                    .name = try allocator.dupe(u8, cgn),
+                    .max_workers = cgroup_max_workers,
+                };
+                try config.concurrency_groups.put(try allocator.dupe(u8, cgn), cg);
+                current_concurrency_group = null;
+                cgroup_max_workers = null;
+            }
+            // Parse new concurrency group name: "[concurrency_groups.X]" → X
+            current_concurrency_group = validateSectionHeader(trimmed, "[concurrency_groups.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".watch]") != null) {
             // Section: [tasks.X.watch] — watch configuration for task X (v1.17.0)
             in_workspace = false;
@@ -1750,6 +1776,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "message")) {
                     constraint_message = value;
                 }
+            } else if (current_concurrency_group != null and current_task == null and current_workflow == null and current_profile == null and current_plugin_name == null and !in_workspace) {
+                // Inside [concurrency_groups.X] — parse max_workers (v1.62.0)
+                if (std.mem.eql(u8, key, "max_workers")) {
+                    cgroup_max_workers = std.fmt.parseInt(u32, value, 10) catch |err| {
+                        std.debug.print("Error: Invalid max_workers value: {s}\n", .{value});
+                        return err;
+                    };
+                }
             } else if (current_plugin_name != null and current_task == null and current_workflow == null and current_profile == null and !in_workspace) {
                 // Inside [plugins.X] — parse source and config fields
                 if (std.mem.eql(u8, key, "source")) {
@@ -2367,6 +2401,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             }
                         }
                     }
+                } else if (std.mem.eql(u8, key, "concurrency_group")) {
+                    // Concurrency group name for this task (v1.62.0)
+                    task_concurrency_group = value;
                 }
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)
@@ -2783,6 +2820,15 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         // Clear plugin_list so defer doesn't double-free
         plugin_list.clearRetainingCapacity();
         config.plugins = owned;
+    }
+
+    // Flush final pending concurrency group (v1.62.0)
+    if (current_concurrency_group) |cgn| {
+        const cg = types.ConcurrencyGroup{
+            .name = try allocator.dupe(u8, cgn),
+            .max_workers = cgroup_max_workers,
+        };
+        try config.concurrency_groups.put(try allocator.dupe(u8, cgn), cg);
     }
 
     // Flush toolchain specs (Phase 5)
