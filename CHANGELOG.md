@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.63.0] - 2026-04-07
+
+### 🎯 Workspace-Level Task Inheritance
+
+This release completes workspace-level task inheritance, enabling monorepos to define common tasks once in the workspace root that all members inherit automatically. This eliminates duplication for lint, test, format, and other shared tasks.
+
+### Added
+
+**Workspace Shared Tasks**
+- **Root-Level Definition** — `[workspace.shared_tasks.NAME]` sections in workspace root `zr.toml`
+  - Define common tasks (lint, test, format, build) in one place
+  - All workspace members automatically inherit these tasks
+  - No manual configuration needed in each member directory
+- **Automatic Inheritance** — Members receive all workspace shared tasks on load
+  - CLI integration in `src/cli/workspace.zig` (3 call sites)
+  - `inheritWorkspaceSharedTasks()` called after member config load
+  - Works in `zr workspace run`, affected detection, and filtered execution
+- **Override Semantics** — Member tasks completely replace workspace tasks with same name
+  - No merging of task fields (complete replacement)
+  - Member can customize inherited task behavior when needed
+  - Override detected by checking member's task HashMap before inheritance
+- **Visibility Markers** — `zr list` shows inherited tasks with `(inherited)` marker
+  - Clear distinction between local and inherited tasks
+  - `Task.inherited` boolean field set during inheritance
+  - Rendered in list output alongside task descriptions
+- **Dependency Resolution** — Inherited tasks can depend on member-local tasks
+  - Standard DAG resolution handles cross-dependencies
+  - No special handling needed for inherited task dependencies
+
+**Configuration Example**
+```toml
+# Root zr.toml
+[workspace]
+members = ["packages/*", "apps/*"]
+
+[workspace.shared_tasks.lint]
+cmd = "eslint ."
+description = "Run linter on all files"
+
+[workspace.shared_tasks.test]
+cmd = "jest"
+description = "Run unit tests"
+
+[workspace.shared_tasks.format]
+cmd = "prettier --write ."
+description = "Format code"
+```
+
+**Member Behavior**
+```bash
+cd packages/api
+zr list              # Shows: lint (inherited), test (inherited), format (inherited)
+zr run lint          # Runs workspace lint command
+```
+
+**Member Override Example**
+```toml
+# packages/api/zr.toml - Override test task
+[tasks.test]
+cmd = "cargo test"  # Replaces workspace "jest" command
+description = "Run Rust tests"
+```
+
+**Benefits**
+- **DRY Principle** — Define common tasks once in workspace root
+- **Consistency** — All members use same commands by default
+- **Flexibility** — Members can override when needed
+- **Discoverability** — Clear markers show task origin
+
+### Changed
+
+**CLI Integration**
+- `cmdWorkspaceRun()` — Inherit workspace tasks for all members (line 301, 379)
+- `cmdWorkspaceRunFiltered()` — Load root config and inherit for affected members (line 530)
+- All workspace member loading paths now call `inheritWorkspaceSharedTasks()`
+
+**Documentation**
+- Added "Workspace-Level Task Inheritance" section to `docs/guides/configuration.md`
+  - Comprehensive examples with root and member configs
+  - Override semantics and visibility marker documentation
+  - Usage patterns and benefits explanation
+  - Updated Table of Contents with workspace subsections
+
+### Tests
+
+- **15 Integration Tests** — `tests/workspace_inheritance_test.zig` (6000-6014)
+  - Basic inheritance of single/multiple tasks
+  - Override semantics (member replaces workspace task)
+  - Cross-dependencies between inherited and local tasks
+  - Null inheritance (members with no workspace)
+  - Validation (nonexistent shared tasks, name collisions)
+- **All 1408 Unit Tests Passing** — Zero regressions
+
+### Implementation
+
+**Data Structures** (Cycle 104)
+- `Workspace.shared_tasks` HashMap in `src/config/types.zig`
+- `Task.inherited` boolean field for display markers
+
+**TOML Parsing** (Cycle 104)
+- `[workspace.shared_tasks.NAME]` section parsing in `src/config/parser.zig`
+- Shared tasks stored in workspace struct during config load
+
+**Inheritance Logic** (Cycle 104)
+- `inheritWorkspaceSharedTasks()` function in `src/config/loader.zig`
+- Deep copy shared tasks into member config
+- Skip if member already defines task (override)
+- Mark copied tasks with `inherited = true`
+
+**CLI Wiring** (Cycle 106)
+- All workspace member loading paths call inheritance function
+- Graceful fallback if workspace has no shared tasks
+- Error handling via `catch {}` (non-critical failures)
+
+**Total**: ~500 LOC (data structures, parsing, inheritance, CLI integration, tests, docs)
+
+This milestone completes the Workspace-Level Task Inheritance feature, making monorepo task management significantly more maintainable.
+
 ## [1.62.0] - 2026-04-06
 
 ### 🚀 Task Parallel Execution Groups
