@@ -635,6 +635,7 @@ test "workspace: Workspace struct deinit is safe" {
         .members = members,
         .ignore = ignore,
         .member_dependencies = &.{},
+        .shared_tasks = std.StringHashMap(loader.Task).init(allocator),
     };
 
     // Verify fields are set correctly before deinit
@@ -675,6 +676,7 @@ test "resolveWorkspaceMembers: glob pattern finds dirs with config" {
         .members = patterns[0..],
         .ignore = &.{},
         .member_dependencies = &.{},
+        .shared_tasks = std.StringHashMap(loader.Task).init(allocator),
     };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
@@ -717,6 +719,7 @@ test "resolveWorkspaceMembers: literal path with config" {
         .members = patterns[0..],
         .ignore = &.{},
         .member_dependencies = &.{},
+        .shared_tasks = std.StringHashMap(loader.Task).init(allocator),
     };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
@@ -749,6 +752,7 @@ test "resolveWorkspaceMembers: literal path without config returns empty" {
         .members = patterns[0..],
         .ignore = &.{},
         .member_dependencies = &.{},
+        .shared_tasks = std.StringHashMap(loader.Task).init(allocator),
     };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
@@ -767,6 +771,7 @@ test "resolveWorkspaceMembers: empty members list" {
         .members = &.{},
         .ignore = &.{},
         .member_dependencies = &.{},
+        .shared_tasks = std.StringHashMap(loader.Task).init(allocator),
     };
 
     const result = try resolveWorkspaceMembers(allocator, ws, "zr.toml");
