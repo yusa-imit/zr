@@ -32,14 +32,16 @@ Extend parallel execution control with task-level concurrency groups and resourc
 ### Workspace-Level Task Inheritance
 
 Enable task definition sharing across workspace members to reduce duplication in monorepos. Currently each member must define identical tasks (lint, test, build). This milestone implements inheritance with override capabilities. Includes:
-- **Workspace-level tasks**: Define common tasks in root `zr.toml` under `[workspace.shared_tasks]`
-- **Member inheritance**: Members automatically inherit workspace tasks unless overridden
-- **Override semantics**: Member task with same name overrides workspace task (complete replacement, not merge)
-- **Visibility**: `zr list` in member shows both inherited and local tasks with `(inherited)` marker
-- **Dependency resolution**: Inherited tasks can depend on member-local tasks
-- **Integration tests**: 15 tests covering inheritance, override, cross-dependencies, validation
-- **Documentation**: Update docs/guides/configuration.md with inheritance examples and override rules
-**Status: READY** — No dependencies. Reduces TOML duplication in monorepos with dozens of similar projects.
+- ✅ **Workspace-level tasks**: Define common tasks in root `zr.toml` under `[workspace.shared_tasks.NAME]`
+- ✅ **TOML parsing**: Parse `[workspace.shared_tasks.NAME]` sections into Workspace.shared_tasks HashMap
+- ✅ **Inheritance API**: `inheritWorkspaceSharedTasks()` function to merge shared tasks into member config
+- ✅ **Override semantics**: Member task with same name overrides workspace task (complete replacement, not merge)
+- ✅ **Visibility**: `zr list` in member shows both inherited and local tasks with `(inherited)` marker
+- ✅ **Dependency resolution**: Inherited tasks can depend on member-local tasks (via standard DAG)
+- ✅ **Integration tests**: 15 tests (6000-6014) covering inheritance, override, cross-dependencies, validation
+- ⏳ **CLI Integration**: Wire up `inheritWorkspaceSharedTasks()` in member loading paths (PENDING)
+- ⏳ **Documentation**: Update docs/guides/configuration.md with inheritance examples and override rules (PENDING)
+**Status: IN PROGRESS** (Cycle 104) — Core implementation complete. Needs: CLI integration to call inheritance function, end-to-end testing, documentation.
 
 ### Enhanced Task Discovery & Search
 
