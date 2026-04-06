@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.63.0 (Workspace-Level Task Inheritance)
-- **Active milestone**: Enhanced Task Discovery & Search (IN PROGRESS → DONE, awaiting release)
+- **Latest**: v1.64.0 (Enhanced Task Discovery & Search)
+- **Active milestone**: None (awaiting new milestone establishment)
 - **READY milestones**: 0
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
-- **DONE**: Enhanced Task Discovery & Search (Cycle 107), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Sailor v1.37.0 Migration (Cycle 108), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -17,6 +17,20 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Sailor v1.37.0 Migration
+
+Dependency update: sailor v1.36.0 → v1.37.0. v2.0.0 API bridge release enabling smooth transition to sailor v2.0 with backward compatibility. Includes:
+- ✅ **Deprecation warning system**: Compile-time warnings for deprecated v1.x APIs to guide v2.0.0 migration
+- ✅ **Buffer.set() API**: Renamed setChar() → set() for consistency (both APIs available)
+- ✅ **Style inference helpers**: withForeground/Background/Colors method chaining for cleaner style composition
+- ✅ **Widget lifecycle standardization**: Consistent init/deinit patterns across all widgets (Block.init() → Block{})
+- ✅ **Migration guide**: docs/v1-to-v2-migration.md in sailor repo
+- ✅ **Update dependency**: Updated build.zig.zon to v1.37.0
+- ✅ **Build verification**: All 1408 unit tests passing (8 skipped, 0 failed)
+- ✅ **Code compatibility check**: Fixed 6 Block.init() call sites across analytics_tui, graph_tui, tui_runner
+- ✅ **Integration tests**: All existing tests pass without modification (backward compatible)
+**Status: DONE** — Completed 2026-04-07 (Cycle 108). v1.37.0 provides v1.x/v2.0 API bridge with zero breaking changes. Fixed stateless widget API changes (Block.init() → Block{}). All tests passing. This release prepares codebase for eventual v2.0.0 migration while maintaining full backward compatibility. Related: GitHub issue #51.
 
 ### Task Parallel Execution Groups
 
