@@ -101,6 +101,79 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
     return config;
 }
 
+/// Merge workspace shared tasks into a member config (v1.63.0).
+/// Shared tasks are inherited unless the member defines a task with the same name (override).
+/// Call this after loading both workspace root and member configs.
+pub fn inheritWorkspaceSharedTasks(
+    allocator: std.mem.Allocator,
+    member_config: *Config,
+    workspace_config: *const Config,
+) !void {
+    // If workspace has no shared tasks, nothing to inherit
+    if (workspace_config.workspace == null) return;
+    const workspace = workspace_config.workspace.?;
+
+    // Iterate over workspace shared tasks
+    var shared_it = workspace.shared_tasks.iterator();
+    while (shared_it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        const shared_task = entry.value_ptr.*;
+
+        // Skip if member already defines this task (member overrides workspace)
+        if (member_config.tasks.contains(task_name)) {
+            continue;
+        }
+
+        // Deep copy the shared task into member's task map
+        const task_name_copy = try allocator.dupe(u8, task_name);
+        errdefer allocator.free(task_name_copy);
+
+        const task_copy = try copyTask(allocator, &shared_task);
+        errdefer {
+            var mut_task = task_copy;
+            mut_task.deinit(allocator);
+        }
+
+        try member_config.tasks.put(task_name_copy, task_copy);
+    }
+}
+
+/// Deep copy a task (v1.63.0 helper for shared task inheritance).
+fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
+    var result = task.*;
+
+    // Deep copy all owned strings and slices
+    result.name = try allocator.dupe(u8, task.name);
+    result.cmd = try allocator.dupe(u8, task.cmd);
+    result.cwd = if (task.cwd) |c| try allocator.dupe(u8, c) else null;
+    result.description = if (task.description) |d| try allocator.dupe(u8, d) else null;
+
+    // Copy dependency arrays
+    result.deps = try allocator.alloc([]const u8, task.deps.len);
+    for (task.deps, 0..) |dep, i| {
+        result.deps[i] = try allocator.dupe(u8, dep);
+    }
+
+    result.deps_serial = try allocator.alloc([]const u8, task.deps_serial.len);
+    for (task.deps_serial, 0..) |dep, i| {
+        result.deps_serial[i] = try allocator.dupe(u8, dep);
+    }
+
+    result.deps_optional = try allocator.alloc([]const u8, task.deps_optional.len);
+    for (task.deps_optional, 0..) |dep, i| {
+        result.deps_optional[i] = try allocator.dupe(u8, dep);
+    }
+
+    // Copy environment variables
+    result.env = try allocator.alloc([2][]const u8, task.env.len);
+    for (task.env, 0..) |pair, i| {
+        result.env[i][0] = try allocator.dupe(u8, pair[0]);
+        result.env[i][1] = try allocator.dupe(u8, pair[1]);
+    }
+
+    return result;
+}
+
 /// Load .env file from project root and merge into all task environments.
 /// Silently ignores if .env file doesn't exist.
 fn loadDotenvIntoConfig(allocator: std.mem.Allocator, config: *Config) !void {
