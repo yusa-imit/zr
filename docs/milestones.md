@@ -6,7 +6,7 @@
 - **Active milestone**: None (all READY milestones complete)
 - **READY milestones**: 0
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
-- **DONE**: CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -17,6 +17,40 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Sailor v1.35.0-v1.36.0 Migration
+
+Dependency update: sailor v1.34.0 → v1.36.0. Batch migration incorporating 2 major releases with accessibility enhancements and performance monitoring capabilities. Includes:
+- ✅ **v1.35.0 - Accessibility Overhaul** (Cycle 101):
+  - ARIA Attributes module with 30+ widget roles (button, checkbox, slider, table, tree)
+  - AriaAttributes struct with 8 state flags
+  - Builder pattern API for ARIA attributes
+  - Screen reader announcement generation with live region support
+  - Focus Trap implementation for modal/popup focus containment
+  - Configurable tab cycling behavior
+  - FocusTrapStack for nested dialog support
+  - Standard keyboard shortcuts (Ctrl+C/X/V, undo/redo, select-all)
+  - Accessibility demo showcasing all features
+  - +63 new tests (3,022 total, all passing)
+  - Zero memory leaks
+  - Cross-platform verification (6 targets: Linux/macOS/Windows on x86_64/ARM64)
+- ✅ **v1.36.0 - Performance Monitoring System** (Cycle 101):
+  - render_metrics.zig: Widget rendering metrics with percentile analysis (min/max/avg/p50/p95/p99)
+  - memory_metrics.zig: Allocation tracking per widget (peak and current bytes)
+  - event_metrics.zig: Event processing latency and queue depth
+  - MetricsDashboard widget with 3 layout modes (vertical/horizontal/grid)
+  - Auto-formatted time and memory units
+  - Color-coded performance warnings (yellow: P95 >10ms, red: P99 >10ms)
+  - Performance regression tests with baselines (<50μs avg, <100μs P95 for block widgets)
+  - Example implementation (metrics_dashboard.zig) with realistic workloads
+  - +143 new tests (3,162 total, all passing)
+  - **Zero breaking changes** (fully backward compatible)
+  - Establishes performance baselines ahead of v2.0.0
+- ✅ **Migration** (Cycle 101):
+  - Updated build.zig.zon: v1.34.0 → v1.36.0
+  - All 1408 unit tests passing (8 skipped)
+  - No code changes required (backward compatible)
+**Status: DONE** — Completed 2026-04-06 (Cycle 101). Both releases fully integrated, all tests passing, zero breaking changes. Accessibility features enable screen reader support and WCAG compliance. Performance monitoring tools establish optimization baselines for future work.
 
 ### CLI Command Unit Test Coverage Enhancement
 
@@ -350,6 +384,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 | Version | Name | Date | Summary |
 |---------|------|------|---------|
+| (no release) | Sailor v1.35.0-v1.36.0 Migration | 2026-04-06 | Batch dependency update: sailor v1.34.0 → v1.36.0. Incorporates 2 major releases with accessibility and performance monitoring features. **v1.35.0 - Accessibility Overhaul**: ARIA attributes module with 30+ widget roles (button, checkbox, slider, table, tree), AriaAttributes struct with 8 state flags, builder pattern API, screen reader announcement generation with live region support, focus trap implementation for modal/popup focus containment with configurable tab cycling and FocusTrapStack for nested dialogs, standard keyboard shortcuts (Ctrl+C/X/V, undo/redo, select-all), accessibility demo, +63 new tests (3,022 total, all passing), zero memory leaks, cross-platform verification (6 targets). **v1.36.0 - Performance Monitoring System**: render_metrics.zig (widget rendering with percentile analysis: min/max/avg/p50/p95/p99), memory_metrics.zig (allocation tracking per widget: peak/current bytes), event_metrics.zig (processing latency and queue depth), MetricsDashboard widget with 3 layout modes (vertical/horizontal/grid), auto-formatted time/memory units, color-coded warnings (yellow: P95 >10ms, red: P99 >10ms), performance regression tests with baselines (<50μs avg, <100μs P95 for block widgets), metrics_dashboard.zig example with realistic workloads, +143 new tests (3,162 total, all passing). **Migration** (Cycle 101): Updated build.zig.zon dependency hash, all 1408 unit tests passing (8 skipped), zero breaking changes (fully backward compatible). **Benefits**: Accessibility features enable screen reader support and WCAG compliance. Performance monitoring establishes optimization baselines ahead of v2.0.0. Closed issue #50. Commit: (pending). |
 | v1.61.0 | Task Templates & Scaffolding | 2026-04-05 | Comprehensive task template system with 31 built-in templates for common development workflows. **Built-in Templates** (31 total, 6 categories): Build (6: go-build, cargo-build, npm-build, zig-build, maven-build, make-build), Test (7: pytest, jest, cargo-test, go-test, junit, rspec, vitest), Lint (6: eslint, clippy, ruff, golangci-lint, checkstyle, rubocop), Deploy (4: docker-push, k8s-deploy, terraform-apply, heroku-deploy), CI (4: cache-setup, artifact-upload, parallel-matrix, docker-build-ci), Release (4: semantic-release, cargo-publish, npm-publish, docker-tag). **Implementation** (Cycle 94): Template infrastructure in src/template/ (types.zig, engine.zig, registry.zig, loader.zig, builtin/*.zig), variable substitution engine with ${VAR} syntax and default values, template registry with discovery/lookup/category filtering, custom template loader for .zr/templates/ and ~/.zr/templates/, 6 category modules with template definitions. **CLI Commands**: `zr template list [--builtin]` with category grouping, `zr template show <name> [--builtin]` with variable display, `zr template add <name> [--builtin] [--var KEY=VALUE ...] [--output <path>]` with variable substitution and validation. **Features**: Required variable validation, default value application, TOML content generation, support for both built-in and user-defined templates. **Integration Tests** (Cycle 94: d0051bd): 10 comprehensive tests (4000-4009) — template list with categories, show with variable display, add with substitution (go-build, cargo-build, pytest, eslint), required variable validation, default value handling, error cases (nonexistent template, missing variables). **Test status**: 1320 unit tests passing (8 skipped). **Total**: ~1,700 LOC across 13 files. Commits: 8bbdfbe (template system), d0051bd (loader + tests), c0e6719 (milestone), 7e03b70 (version). Reduces configuration friction with language-specific scaffolding for build, test, lint, deploy, CI, and release tasks. Release: https://github.com/yusa-imit/zr/releases/tag/v1.61.0 |
 | (no release) | CI/CD Integration Templates | 2026-04-05 | Pre-built CI/CD templates and automation tools for streamlined zr adoption in continuous integration pipelines. **Platform Support**: GitHub Actions, GitLab CI, CircleCI (3 platforms × 3 template types = 9 templates). **Template Types**: (1) Basic CI — standard workflow with zr install, cache, build/test jobs; (2) Monorepo — affected detection, matrix/parameterized builds, workspace/artifact passing; (3) Release — tag-triggered automation with publish and GitHub release creation. **Implementation** (Cycles 91-93): Template infrastructure in src/ci/templates/ (types.zig, engine.zig, registry.zig), variable substitution engine with ${VAR} syntax and default values (DEFAULT_BRANCH, RUNNER, IMAGE, BUILD_TASK, TEST_TASK, PUBLISH_TASK, ARTIFACTS_PATH), GitHub Actions templates (Cycle 91: a40c191 — 3 templates in github_actions.zig), GitLab CI templates (Cycle 92: f51c169 — 3 templates in gitlab.zig with stages/rules/artifacts), CircleCI templates (Cycle 93: 0fd0d4f — 3 templates in circleci.zig with executors/parameterized jobs/workspace persistence). **CLI Commands**: `zr ci generate` with platform auto-detection (.github/workflows, .gitlab-ci.yml, .circleci), --platform/--type/--output flags, platform-specific output paths. `zr ci list` to show all available templates organized by platform. **Integration Tests** (Cycles 91-93): 35 comprehensive tests — 24 GitHub Actions tests (Cycle 91: 9079251 — YAML structure, zr install, caching, monorepo matrix, release tags, variable substitution, error cases), 11 CircleCI tests (Cycle 93: efce51f — executors, parameterized jobs, workspace persistence, tag filtering, GitHub release API). **Documentation** (Cycle 93: f809d53): Comprehensive CI/CD Commands section in docs/guides/commands.md with usage examples, variable substitution reference table, platform-specific features/defaults, template type descriptions, output path conventions. **Test status**: 1304 unit tests passing (8 skipped), 35 CI template integration tests. **Key features**: Platform auto-detection, variable substitution with defaults, extensible registry pattern, 3-tier template hierarchy (basic/monorepo/release), comprehensive YAML validation tests. Commits: a40c191 (infrastructure + GitHub Actions), f51c169 (GitLab CI), 0fd0d4f (CircleCI), 9079251 (GitHub Actions tests), efce51f (CircleCI tests), f809d53 (docs). Cycle 93. |
 | (no release) | Sailor v1.32.0-v1.34.0 Batch Migration | 2026-04-04 | Batch dependency update: sailor v1.31.0 → v1.34.0. Incorporates 3 major releases with new TUI capabilities and system integration features. **v1.32.0 - Advanced Layout Capabilities**: Nested grid layouts with automatic sizing, aspect ratio constraints (16:9, 4:3, etc.) during resize, min/max size propagation with 4 enforcement strategies, auto-margin/padding helpers (symmetric, all-sides), layout debugging inspector (tree visualization), +91 tests (total: 3478). **v1.33.0 - Specialized Widgets & Components**: LogViewer (scrollable log display with filtering/search), MetricsPanel (real-time metrics with gauge/counter/rate and thresholds), ConfigEditor (hierarchical config editing for JSON/TOML tree view), SplitPane (resizable panes with drag handles, horizontal/vertical), Breadcrumb (navigation breadcrumb trail with truncation modes), Tooltip (contextual help tooltips with 5 positioning strategies, auto-boundary detection, arrow indicators, builder pattern API), +53 tests for Tooltip widget (total: ~2516). **v1.34.0 - Terminal Clipboard & System Integration**: Clipboard Integration (OSC 52 API for writing to system clipboard with 3 selection types: clipboard, primary, system; base64-encoded transport, cross-platform support), Terminal Emulator Detection (runtime identification via env vars: xterm, kitty, iTerm2, WezTerm, Alacritty, Windows Terminal, fallback to xterm), Terminal Capability Detection (feature query system for truecolor, mouse tracking, clipboard OSC 52, bracketed paste; terminfo integration on Linux via XTGETTCAP), Enhanced Paste Bracketing (PasteHandler/PasteReader for safe multi-line paste operations with LF/CRLF/CR support, zero-allocation streaming, 10KB+ paste handling), +127 tests (total: 2901). **Migration**: All releases backward compatible with no breaking changes. Updated build.zig.zon dependency hash. **Test status**: 1285/1293 passing (100% pass rate). Closed issues #47, #48, #49. Commit: 32af276. Cycle 88. |
@@ -449,8 +484,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v1.34.0 (all migrations complete through v1.34.0)
-- **Next**: v1.35.0+ (when released)
+- **Current in zr**: v1.36.0 (all migrations complete through v1.36.0)
+- **Next**: v1.37.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -493,6 +528,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v1.32.0 | DONE | Advanced Layout Capabilities — nested grids, aspect ratio constraints, min/max size propagation, auto-margin/padding, layout debugging (Cycle 88, commit 32af276, issue #47) |
 | v1.33.0 | DONE | Specialized Widgets — LogViewer, MetricsPanel, ConfigEditor, SplitPane, Breadcrumb, Tooltip (Cycle 88, commit 32af276, issue #48) |
 | v1.34.0 | DONE | Terminal Clipboard & System Integration — OSC 52 clipboard API, terminal detection, capability detection, paste bracketing (Cycle 88, commit 32af276, issue #49) |
+| v1.35.0 | DONE | Accessibility Overhaul — ARIA attributes (30+ roles), focus trap, keyboard shortcuts, screen reader support (Cycle 101) |
+| v1.36.0 | DONE | Performance Monitoring System — render/memory/event metrics, MetricsDashboard widget, regression tests (Cycle 101, issue #50) |
 
 ### zuda Library
 
