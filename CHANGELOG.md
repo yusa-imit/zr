@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.62.0] - 2026-04-06
+
+### 🚀 Task Parallel Execution Groups
+
+This release introduces concurrency groups for fine-grained parallel execution control in heterogeneous workloads. Define named groups with independent worker limits to manage GPU tasks, database connections, and API rate limits separately.
+
+### Added
+
+**Concurrency Groups**
+- **Named Group Definitions** — `[concurrency_groups.NAME]` sections with `max_workers` limits
+  - Define groups like `gpu` (limit=2), `network` (limit=10), `database` (limit=5)
+  - Each group has independent worker pool separate from global `max_workers`
+  - Groups run concurrently with each other (not subject to global limit)
+- **Task-Level Assignment** — `concurrency_group = "group_name"` field in task config
+  - Tasks without `concurrency_group` use default global worker pool
+  - Tasks with group use that group's semaphore for concurrency control
+  - Nonexistent groups fall back to global semaphore (defensive)
+- **Scheduler Integration** — Per-group semaphores in `src/exec/scheduler.zig`
+  - Dynamic semaphore creation for each concurrency group
+  - Group semaphores replace global semaphore for grouped tasks
+  - Proper cleanup and release of group semaphores on task completion
+- **Use Cases**:
+  - GPU-bound tasks (limit to GPU count)
+  - Network tasks with rate limits or connection pools
+  - Database operations limited by connection pool size
+  - Memory-intensive tasks requiring exclusive RAM access
+
+**Configuration**
+```toml
+[concurrency_groups.gpu]
+max_workers = 2
+
+[concurrency_groups.network]
+max_workers = 10
+
+[tasks.train_model]
+cmd = "./train.py --gpu"
+concurrency_group = "gpu"
+
+[tasks.fetch_data]
+cmd = "curl https://api.example.com/data"
+concurrency_group = "network"
+```
+
+**Documentation**
+- Added comprehensive "Concurrency Groups" section to `docs/guides/configuration.md`
+  - Use cases and examples (basic, advanced, mixed workloads)
+  - Field reference tables for groups and tasks
+  - Integration with dependencies, retry, cache, workflows
+  - Behavior explanation (independent pools, per-group limits)
+
+**Testing**
+- **20 Integration Tests** (tests 5000-5019) covering:
+  - Basic group execution with limits
+  - Multiple groups with independent limits
+  - Mixed tasks (with/without groups)
+  - Null max_workers inheritance
+  - Nonexistent group fallback
+  - Parallel execution respecting limits
+  - Independent worker pools per group
+  - Dependencies with concurrency groups
+  - Unlimited groups (max_workers=0)
+  - --jobs flag independence
+  - Workflow stage integration
+  - Retry, cache, max_concurrent compatibility
+  - CPU affinity, NUMA hints, timeout compatibility
+
+### Changed
+- Scheduler worker pool logic now supports per-group semaphores in addition to global
+- Task execution respects `concurrency_group` field for semaphore selection
+
+### Compatibility
+- **Fully Backward Compatible** — Tasks without `concurrency_group` behave identically to v1.61.0
+- All existing configurations continue to work unchanged
+- Zero breaking changes to TOML schema or CLI
+
 ## [1.61.0] - 2026-04-05
 
 ### 🎯 Task Templates & Scaffolding
