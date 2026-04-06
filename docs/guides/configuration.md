@@ -13,6 +13,7 @@ This document describes the complete `zr.toml` configuration schema.
 - [Cache](#cache)
 - [Workspace](#workspace)
 - [Resource Limits](#resource-limits)
+- [Concurrency Groups](#concurrency-groups-v1620)
 - [Toolchains](#toolchains)
 - [Plugins](#plugins)
 - [Aliases](#aliases)
@@ -445,6 +446,103 @@ cmd = "./run-simulation"
 cpu_affinity = [0, 1]  # pin to cores 0-1
 numa_node = 0  # bind to NUMA node 0
 ```
+
+### Concurrency Groups (v1.62.0)
+
+Concurrency groups allow fine-grained control over parallel execution for heterogeneous workloads. Define named groups with independent worker limits, then assign tasks to groups.
+
+**Use Cases:**
+- GPU-bound tasks limited to GPU count (e.g., max_workers = 2)
+- Network tasks limited by rate limit or connection pool (e.g., max_workers = 10)
+- Database operations limited by connection count (e.g., max_workers = 5)
+- Memory-intensive tasks limited by available RAM
+
+**Basic Example:**
+
+```toml
+# Define concurrency groups
+[concurrency_groups.gpu]
+max_workers = 2  # Only 2 GPU tasks can run concurrently
+
+[concurrency_groups.network]
+max_workers = 10  # Up to 10 network tasks can run concurrently
+
+[concurrency_groups.database]
+max_workers = 5  # Limit database connections
+
+# Assign tasks to groups
+[tasks.train_model]
+cmd = "./train.py --gpu"
+concurrency_group = "gpu"  # Uses gpu group limit (2)
+
+[tasks.fetch_data]
+cmd = "curl https://api.example.com/data"
+concurrency_group = "network"  # Uses network group limit (10)
+
+[tasks.migrate_db]
+cmd = "./migrate.sh"
+concurrency_group = "database"  # Uses database group limit (5)
+
+[tasks.regular_task]
+cmd = "echo hello"
+# No concurrency_group = uses default max_workers
+```
+
+**Concurrency Group Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_workers` | integer | null | Maximum concurrent tasks in this group. `null` or `0` means use global `max_workers` (default CPU count). |
+
+**Task Assignment:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `concurrency_group` | string | null | Name of the concurrency group for this task. If `null`, uses default global worker pool. If the specified group doesn't exist, falls back to global pool. |
+
+**Behavior:**
+- Tasks without `concurrency_group` share the default worker pool (controlled by global `max_workers` or `--jobs` flag)
+- Tasks in a group share that group's worker pool independently of other groups
+- Groups run concurrently with each other (e.g., 2 GPU tasks + 10 network tasks can run simultaneously)
+- Worker limits are per-group, not global (group A limit=1, group B limit=1 → 2 tasks total can run in parallel)
+
+**Advanced Example: Mixed Workload:**
+
+```toml
+[concurrency_groups.gpu]
+max_workers = 2
+
+[concurrency_groups.api_calls]
+max_workers = 50  # High limit for I/O-bound work
+
+[tasks.preprocess]
+cmd = "./preprocess.sh"
+# No group = uses default pool
+
+[tasks.train_fast]
+cmd = "./train.py --mode fast"
+concurrency_group = "gpu"
+
+[tasks.train_accurate]
+cmd = "./train.py --mode accurate"
+concurrency_group = "gpu"
+
+[tasks.upload_results]
+cmd = "curl -X POST https://api.example.com/results"
+concurrency_group = "api_calls"
+retry_max = 3  # Retries work with groups
+
+[tasks.notify_slack]
+cmd = "./notify.sh"
+concurrency_group = "api_calls"
+```
+
+**Integration with Other Features:**
+- Works with dependencies (`deps`, `deps_serial`, `deps_if`)
+- Compatible with `retry_max`, `cache`, `max_concurrent` (per-task limit)
+- Respects `cpu_affinity` and `numa_node` hints
+- Works in workflows and stages
+- Independent of `--jobs` flag (groups have their own limits)
 
 ### Toolchain Requirements
 
