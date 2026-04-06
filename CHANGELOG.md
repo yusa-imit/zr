@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.65.0] - 2026-04-07
+
+### 🎨 Sailor v1.37.0 Migration (v2.0.0 API Bridge)
+
+This release updates the sailor TUI library dependency to v1.37.0, preparing the codebase for the upcoming sailor v2.0.0 API with zero breaking changes. All existing functionality remains intact.
+
+### Changed
+
+**Dependency Updates**
+- **sailor v1.36.0 → v1.37.0** — v2.0.0 API bridge release
+  - Stateless widget lifecycle standardization (Block, Paragraph, Gauge)
+  - `Block.init()` → `Block{}` (direct construction for stateless widgets)
+  - Deprecation warning system for gradual v2.0.0 migration
+  - Style inference helpers (withForeground, withBackground, withColors, makeBold, etc.)
+  - Buffer.set() API introduced alongside deprecated setChar()
+  - Comprehensive v1-to-v2 migration guide in sailor repo
+
+**Widget API Compatibility**
+- Updated 6 Block widget call sites across TUI modules
+  - analytics_tui.zig: 3 fixes (dashboard header, duration histogram, cache scatter plot, time series chart)
+  - graph_tui.zig: 1 fix (dependency graph tree block)
+  - tui_runner.zig: 2 fixes (task list block, log viewer block)
+- All changes backward compatible (v1.x APIs still work with deprecation warnings)
+- Zero functional changes — purely API modernization
+
+### Fixed
+- Widget lifecycle patterns now consistent across all TUI components
+- Method chaining syntax updated for stateless widget construction
+
+### Technical Details
+- Total tests: 1408 passing (8 skipped, 0 failed)
+- Cross-platform compatibility verified (macOS, Linux, Windows)
+- Prepares codebase for future sailor v2.0.0 adoption
+- Related: GitHub issue #51
+
 ## [1.64.0] - 2026-04-07
 
 ### 🔍 Enhanced Task Discovery & Search
