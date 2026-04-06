@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.61.0 (Task Templates & Scaffolding)
-- **Active milestone**: None (all READY milestones complete)
-- **READY milestones**: 0
+- **Active milestone**: None (awaiting cycle start)
+- **READY milestones**: 3 (Task Parallel Execution Groups, Workspace-Level Task Inheritance, Enhanced Task Discovery & Search)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
 - **DONE**: Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -17,6 +17,43 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Task Parallel Execution Groups
+
+Extend parallel execution control with task-level concurrency groups and resource pools. Currently all tasks share a single global worker pool (`max_workers`). This milestone adds fine-grained control for heterogeneous workloads. Includes:
+- **Concurrency groups**: Define named groups (`[concurrency_groups.gpu]`, `[concurrency_groups.memory_intensive]`) with separate worker limits
+- **Task-level assignment**: `concurrency_group = "gpu"` in task config
+- **Dynamic resource allocation**: Worker pool adjusts based on active groups
+- **Mixed workloads**: Some tasks use `gpu` group (limit 2), others use `network` group (limit 10), rest use default pool
+- **Integration tests**: Verify concurrent execution respects group limits (20 tests covering single/multi-group, overflow, default fallback)
+- **Documentation**: Add concurrency groups section to docs/guides/configuration.md with examples
+**Status: READY** — No dependencies, can start immediately. Enhances resource management for projects with GPU workloads, database connections, or API rate limits.
+
+### Workspace-Level Task Inheritance
+
+Enable task definition sharing across workspace members to reduce duplication in monorepos. Currently each member must define identical tasks (lint, test, build). This milestone implements inheritance with override capabilities. Includes:
+- **Workspace-level tasks**: Define common tasks in root `zr.toml` under `[workspace.shared_tasks]`
+- **Member inheritance**: Members automatically inherit workspace tasks unless overridden
+- **Override semantics**: Member task with same name overrides workspace task (complete replacement, not merge)
+- **Visibility**: `zr list` in member shows both inherited and local tasks with `(inherited)` marker
+- **Dependency resolution**: Inherited tasks can depend on member-local tasks
+- **Integration tests**: 15 tests covering inheritance, override, cross-dependencies, validation
+- **Documentation**: Update docs/guides/configuration.md with inheritance examples and override rules
+**Status: READY** — No dependencies. Reduces TOML duplication in monorepos with dozens of similar projects.
+
+### Enhanced Task Discovery & Search
+
+Improve task discoverability with full-text search, smart filters, and recent task tracking. Builds on existing fuzzy search (Cycle 59) with richer querying. Includes:
+- **Full-text search**: `zr list --search="docker build"` searches task names, descriptions, commands
+- **Tag-based filters**: `zr list --tags="ci,lint"` shows only tasks with all specified tags
+- **Exclude filters**: `zr list --exclude-tags="slow"` hides tasks with specific tags
+- **Frequently used tasks**: `zr list --frequent[=N]` shows top N tasks by execution count from history
+- **Execution time filters**: `zr list --slow[=THRESHOLD]` shows tasks exceeding avg execution time (default 30s)
+- **Combined filters**: Support AND/OR logic for complex queries (`--tags=ci --exclude-tags=flaky`)
+- **JSON output**: All filters work with `--json` for programmatic use
+- **Integration tests**: 12 tests covering all filter combinations, empty results, validation
+- **Documentation**: Add "Task Discovery" section to docs/guides/commands.md
+**Status: READY** — No dependencies. Makes large projects (100+ tasks) easier to navigate.
 
 ### Sailor v1.35.0-v1.36.0 Migration
 
