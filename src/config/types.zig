@@ -1022,6 +1022,9 @@ pub const Task = struct {
     /// If specified, the task will use the worker limit from [concurrency_groups.NAME].
     /// v1.62.0 feature for heterogeneous workload management.
     concurrency_group: ?[]const u8 = null,
+    /// True if this task was inherited from workspace.shared_tasks (v1.63.0).
+    /// Used by `zr list` to display "(inherited)" marker.
+    inherited: bool = false,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);

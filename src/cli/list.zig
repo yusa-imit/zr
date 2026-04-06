@@ -367,6 +367,10 @@ pub fn cmdList(
                 if (task.description) |desc| {
                     try color.printDim(w, use_color, " {s}", .{desc});
                 }
+                // Mark inherited tasks (v1.63.0)
+                if (task.inherited) {
+                    try color.printDim(w, use_color, " (inherited)", .{});
+                }
 
                 // Show duration estimate if available
                 if (records_list.items.len > 0) {
@@ -400,6 +404,10 @@ pub fn cmdList(
                 if (task.description) |desc| {
                     try color.printDim(w, use_color, " {s}", .{desc});
                 }
+                // Mark inherited tasks (v1.63.0)
+                if (task.inherited) {
+                    try color.printDim(w, use_color, " (inherited)", .{});
+                }
 
                 // Show duration estimate if available
                 if (records_list.items.len > 0) {
@@ -423,6 +431,10 @@ pub fn cmdList(
             try color.printInfo(w, use_color, "{s:<20}", .{name});
             if (task.description) |desc| {
                 try color.printDim(w, use_color, " {s}", .{desc});
+            }
+            // Mark inherited tasks (v1.63.0)
+            if (task.inherited) {
+                try color.printDim(w, use_color, " (inherited)", .{});
             }
 
             // Show duration estimate if available

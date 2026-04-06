@@ -128,11 +128,11 @@ pub fn inheritWorkspaceSharedTasks(
         const task_name_copy = try allocator.dupe(u8, task_name);
         errdefer allocator.free(task_name_copy);
 
-        const task_copy = try copyTask(allocator, &shared_task);
-        errdefer {
-            var mut_task = task_copy;
-            mut_task.deinit(allocator);
-        }
+        var task_copy = try copyTask(allocator, &shared_task);
+        errdefer task_copy.deinit(allocator);
+
+        // Mark as inherited for display in `zr list`
+        task_copy.inherited = true;
 
         try member_config.tasks.put(task_name_copy, task_copy);
     }
