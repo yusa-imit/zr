@@ -126,7 +126,7 @@ fn renderDashboard(allocator: std.mem.Allocator, report: *types.AnalyticsReport)
 
 /// Render header with summary statistics
 fn renderHeader(allocator: std.mem.Allocator, buffer: *stui.Buffer, area: stui.Rect, report: *types.AnalyticsReport) !void {
-    const block = stui.widgets.Block.init()
+    const block = (stui.widgets.Block{})
         .withTitle("Analytics Dashboard", .top_left)
         .withTitleStyle(stui.Style{ .bold = true });
 
@@ -200,7 +200,7 @@ fn renderHistogram(allocator: std.mem.Allocator, buffer: *stui.Buffer, area: stu
     try bins.append(allocator, .{ .label = "5s+", .count = counts[4] });
 
     const hist = stui.widgets.Histogram.init(bins.items)
-        .withBlock(stui.widgets.Block.init().withTitle("Task Duration Distribution", .top_left))
+        .withBlock((stui.widgets.Block{}).withTitle("Task Duration Distribution", .top_left))
         .withBarStyle(.{ .fg = .green })
         .withOrientation(.vertical);
 
@@ -229,7 +229,7 @@ fn renderTimeSeriesChart(allocator: std.mem.Allocator, buffer: *stui.Buffer, are
 
     var chart = try stui.widgets.TimeSeriesChart.init(allocator, timestamps.items, values.items);
     defer chart.deinit();
-    chart.block = stui.widgets.Block.init().withTitle("Build Time Trends", .top_left);
+    chart.block = (stui.widgets.Block{}).withTitle("Build Time Trends", .top_left);
     chart.line_style = .{ .fg = .blue };
     chart.y_axis_label = "Duration (ms)";
 
@@ -264,7 +264,7 @@ fn renderScatterPlot(allocator: std.mem.Allocator, buffer: *stui.Buffer, area: s
     };
 
     var scatter = stui.widgets.ScatterPlot.init(&series)
-        .withBlock(stui.widgets.Block.init().withTitle("Cache Hit Rate vs Build Time", .top_left));
+        .withBlock((stui.widgets.Block{}).withTitle("Cache Hit Rate vs Build Time", .top_left));
     scatter.x_axis_label = "Cache Hit Rate (%)";
     scatter.y_axis_label = "Duration (ms)";
 

@@ -243,7 +243,7 @@ pub fn graphTui(
         const tree = stui.widgets.Tree.init(tree_nodes)
             .withSelected(selected)
             .withOffset(offset)
-            .withBlock(stui.widgets.Block.init()
+            .withBlock((stui.widgets.Block{})
                 .withTitle("Dependency Graph (j/k/click: navigate, scroll: move, q: quit)", .top_center)
                 .withBorders(.all))
             .withSelectedStyle(stui.Style{ .fg = .bright_green, .bold = true })

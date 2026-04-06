@@ -236,7 +236,7 @@ pub const TuiRunner = struct {
                 p.endScope() catch {};
             }
 
-            const task_block = stui.widgets.Block.init()
+            const task_block = (stui.widgets.Block{})
                 .withTitle("Tasks", .top_left)
                 .withTitleStyle(stui.Style{ .bold = true });
 
@@ -264,7 +264,7 @@ pub const TuiRunner = struct {
             const log_title = try std.fmt.allocPrint(self.allocator, "Logs ({s})", .{selected.name});
             defer self.allocator.free(log_title);
 
-            const log_block = stui.widgets.Block.init()
+            const log_block = (stui.widgets.Block{})
                 .withTitle(log_title, .top_left)
                 .withTitleStyle(stui.Style{ .bold = true });
 
@@ -295,7 +295,7 @@ pub const TuiRunner = struct {
                 }
             }
         } else {
-            const no_task_block = stui.widgets.Block.init()
+            const no_task_block = (stui.widgets.Block{})
                 .withTitle("Logs", .top_left)
                 .withTitleStyle(stui.Style{ .bold = true });
             no_task_block.render(&buf, chunks[2]);
