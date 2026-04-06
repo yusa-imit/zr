@@ -1633,6 +1633,18 @@ pub fn run(
         task_semaphores.deinit();
     }
 
+    // Concurrency group semaphores (v1.62.0).
+    // Keys are group names (pointing into config.concurrency_groups keys — not owned).
+    // Values are heap-allocated semaphores.
+    var group_semaphores = std.StringHashMap(*std.Thread.Semaphore).init(allocator);
+    defer {
+        var gs_it = group_semaphores.iterator();
+        while (gs_it.next()) |entry| {
+            allocator.destroy(entry.value_ptr.*);
+        }
+        group_semaphores.deinit();
+    }
+
     // Tracks tasks that have been run and whether they succeeded.
     // Used for deps_serial deduplication across levels.
     var completed = std.StringHashMap(bool).init(allocator);
@@ -1767,14 +1779,34 @@ pub fn run(
 
             if (failed.load(.acquire)) break;
 
-            // Acquire the global concurrency slot first to avoid hold-and-wait deadlock.
+            // Determine which concurrency semaphore to use (v1.62.0).
+            // If task has concurrency_group, use that group's semaphore; otherwise use global.
+            var concurrency_sem: *std.Thread.Semaphore = &semaphore;
+            if (task.concurrency_group) |group_name| {
+                if (config.concurrency_groups.get(group_name)) |group| {
+                    // Get or create semaphore for this group
+                    if (group_semaphores.get(group_name)) |existing| {
+                        concurrency_sem = existing;
+                    } else {
+                        const permits = group.max_workers orelse concurrency;
+                        const new_sem = try allocator.create(std.Thread.Semaphore);
+                        errdefer allocator.destroy(new_sem);
+                        new_sem.* = std.Thread.Semaphore{ .permits = permits };
+                        try group_semaphores.put(group_name, new_sem);
+                        concurrency_sem = new_sem;
+                    }
+                }
+                // If group doesn't exist in config, fall back to global semaphore (defensive)
+            }
+
+            // Acquire the concurrency slot first to avoid hold-and-wait deadlock.
             // The task semaphore is acquired after, so a blocked task_sem never holds
-            // a global slot while waiting.
-            semaphore.wait();
+            // a concurrency slot while waiting.
+            concurrency_sem.wait();
 
             // If failure was detected while we were waiting, release and stop
             if (failed.load(.acquire)) {
-                semaphore.post();
+                concurrency_sem.post();
                 break;
             }
 
@@ -1843,7 +1875,7 @@ pub fn run(
                 .retry_on_patterns = task.retry_on_patterns,
                 .results = &results,
                 .results_mutex = &results_mutex,
-                .semaphore = &semaphore,
+                .semaphore = concurrency_sem,
                 .task_semaphore = task_sem_ptr,
                 .failed = &failed,
                 .cache = task.cache,
@@ -1871,7 +1903,7 @@ pub fn run(
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
                 // If spawn fails, release the semaphore slots we reserved and the name
                 if (task_sem_ptr) |ts| ts.post();
-                semaphore.post();
+                concurrency_sem.post();
                 allocator.free(owned_task_name);
                 if (cache_key) |k| allocator.free(k);
                 failed.store(true, .release);
