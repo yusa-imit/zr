@@ -271,6 +271,106 @@ fn validateSectionHeader(line: []const u8, prefix: []const u8) ParseError![]cons
     return line[start..][0..end];
 }
 
+/// Duplicate dependency slice array (for workspace shared tasks, v1.63.0)
+fn dupeDeps(allocator: std.mem.Allocator, deps: []const []const u8) ![][]const u8 {
+    const result = try allocator.alloc([]const u8, deps.len);
+    var duped: usize = 0;
+    errdefer {
+        for (result[0..duped]) |d| allocator.free(d);
+        allocator.free(result);
+    }
+    for (deps, 0..) |dep, i| {
+        result[i] = try allocator.dupe(u8, dep);
+        duped += 1;
+    }
+    return result;
+}
+
+/// Duplicate environment variable pairs (for workspace shared tasks, v1.63.0)
+fn dupeEnv(allocator: std.mem.Allocator, env: []const [2][]const u8) ![][2][]const u8 {
+    const result = try allocator.alloc([2][]const u8, env.len);
+    var duped: usize = 0;
+    errdefer {
+        for (result[0..duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(result);
+    }
+    for (env, 0..) |pair, i| {
+        result[i][0] = try allocator.dupe(u8, pair[0]);
+        errdefer allocator.free(result[i][0]);
+        result[i][1] = try allocator.dupe(u8, pair[1]);
+        duped += 1;
+    }
+    return result;
+}
+
+/// Add a workspace shared task to the HashMap (v1.63.0)
+fn addWorkspaceSharedTask(
+    shared_tasks: *std.StringHashMap(Task),
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    cmd: []const u8,
+    cwd: ?[]const u8,
+    description: ?[]const u8,
+    deps: []const []const u8,
+    deps_serial: []const []const u8,
+    deps_optional: []const []const u8,
+    env: []const [2][]const u8,
+    timeout_ms: ?u64,
+    allow_failure: bool,
+) !void {
+    const task_name = try allocator.dupe(u8, name);
+    errdefer allocator.free(task_name);
+
+    const task = Task{
+        .name = task_name,
+        .cmd = try allocator.dupe(u8, cmd),
+        .cwd = if (cwd) |c| try allocator.dupe(u8, c) else null,
+        .description = if (description) |d| try allocator.dupe(u8, d) else null,
+        .deps = try dupeDeps(allocator, deps),
+        .deps_serial = try dupeDeps(allocator, deps_serial),
+        .deps_optional = try dupeDeps(allocator, deps_optional),
+        .env = try dupeEnv(allocator, env),
+        .timeout_ms = timeout_ms,
+        .allow_failure = allow_failure,
+        // Use defaults for fields not typically set in shared tasks
+        .deps_if = &.{},
+        .retry_max = 0,
+        .retry_delay_ms = 0,
+        .retry_backoff = false,
+        .retry_backoff_multiplier = null,
+        .retry_jitter = false,
+        .max_backoff_ms = null,
+        .retry_on_codes = &.{},
+        .retry_on_patterns = &.{},
+        .condition = null,
+        .skip_if = null,
+        .output_if = null,
+        .max_concurrent = 0,
+        .cache = false,
+        .max_cpu = null,
+        .max_memory = null,
+        .toolchain = &.{},
+        .tags = &.{},
+        .cpu_affinity = null,
+        .numa_node = null,
+        .watch = null,
+        .hooks = &.{},
+        .template = null,
+        .params = &.{},
+        .output_file = null,
+        .output_mode = null,
+        .remote = null,
+        .remote_cwd = null,
+        .remote_env = &.{},
+        .concurrency_group = null,
+    };
+
+    try shared_tasks.put(task_name, task);
+}
+
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
     errdefer config.deinit();
@@ -484,6 +584,17 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer ws_ignore.deinit(allocator);
     var ws_member_deps = std.ArrayList([]const u8){};
     defer ws_member_deps.deinit(allocator);
+    // Workspace shared tasks (v1.63.0) — [workspace.shared_tasks.NAME]
+    var ws_shared_tasks = std.StringHashMap(Task).init(allocator);
+    defer {
+        var task_it = ws_shared_tasks.iterator();
+        while (task_it.next()) |entry| {
+            var task = entry.value_ptr.*;
+            task.deinit(allocator);
+        }
+        ws_shared_tasks.deinit();
+    }
+    var ws_shared_task_name: ?[]const u8 = null; // Current shared task being parsed
 
     // Plugin parsing state
     // current_plugin_name: non-owning slice into content (plugin key under [plugins.*])
@@ -882,6 +993,42 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 profile_env.clearRetainingCapacity(); current_profile = null;
             }
             in_workspace = true;
+        } else if (std.mem.startsWith(u8, trimmed, "[workspace.shared_tasks.")) {
+            // Flush pending workspace shared task before starting new one (v1.63.0)
+            if (ws_shared_task_name) |task_name| {
+                const cmd = task_cmd orelse "";
+                try addWorkspaceSharedTask(
+                    &ws_shared_tasks,
+                    allocator,
+                    task_name,
+                    cmd,
+                    task_cwd,
+                    task_desc,
+                    task_deps.items,
+                    task_deps_serial.items,
+                    task_deps_optional.items,
+                    task_env.items,
+                    task_timeout_ms,
+                    task_allow_failure,
+                );
+            }
+            // Reset task state
+            task_deps.clearRetainingCapacity();
+            task_deps_serial.clearRetainingCapacity();
+            task_deps_optional.clearRetainingCapacity();
+            task_env.clearRetainingCapacity();
+            task_cmd = null;
+            task_cwd = null;
+            task_desc = null;
+            task_timeout_ms = null;
+            task_allow_failure = false;
+
+            // Extract task name: "[workspace.shared_tasks.NAME]" → NAME
+            ws_shared_task_name = validateSectionHeader(trimmed, "[workspace.shared_tasks.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
+            in_workspace = false; // Not parsing workspace top-level fields
         } else if (std.mem.eql(u8, trimmed, "[tools]")) {
             // Flush pending sections
             if (current_task) |task_name| {
@@ -2719,8 +2866,27 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         profile_env.clearRetainingCapacity();
     }
 
+    // Flush final workspace shared task (v1.63.0)
+    if (ws_shared_task_name) |task_name| {
+        const cmd = task_cmd orelse "";
+        try addWorkspaceSharedTask(
+            &ws_shared_tasks,
+            allocator,
+            task_name,
+            cmd,
+            task_cwd,
+            task_desc,
+            task_deps.items,
+            task_deps_serial.items,
+            task_deps_optional.items,
+            task_env.items,
+            task_timeout_ms,
+            task_allow_failure,
+        );
+    }
+
     // Flush workspace if present
-    if (in_workspace or ws_members.items.len > 0) {
+    if (in_workspace or ws_members.items.len > 0 or ws_shared_tasks.count() > 0) {
         const members = try allocator.alloc([]const u8, ws_members.items.len);
         var mduped: usize = 0;
         errdefer {
@@ -2751,10 +2917,19 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             member_deps[i] = try allocator.dupe(u8, md);
             mdduped += 1;
         }
+
+        // Transfer shared_tasks HashMap ownership
+        var shared_tasks_map = std.StringHashMap(Task).init(allocator);
+        var task_it = ws_shared_tasks.iterator();
+        while (task_it.next()) |entry| {
+            try shared_tasks_map.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
         config.workspace = Workspace{
             .members = members,
             .ignore = ignore,
             .member_dependencies = member_deps,
+            .shared_tasks = shared_tasks_map,
         };
     }
 

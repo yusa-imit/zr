@@ -41,6 +41,9 @@ pub const Workspace = struct {
     /// Optional: list of workspace member paths this member depends on.
     /// Only present in member configs (e.g., ["packages/core", "packages/utils"]).
     member_dependencies: [][]const u8,
+    /// Shared tasks defined at workspace level (v1.63.0).
+    /// Only present in root workspace config. Members inherit these unless overridden.
+    shared_tasks: std.StringHashMap(Task),
 
     pub fn deinit(self: *Workspace, allocator: std.mem.Allocator) void {
         for (self.members) |m| allocator.free(m);
@@ -49,6 +52,14 @@ pub const Workspace = struct {
         allocator.free(self.ignore);
         for (self.member_dependencies) |dep| allocator.free(dep);
         allocator.free(self.member_dependencies);
+
+        // Deinit shared tasks
+        var task_it = self.shared_tasks.iterator();
+        while (task_it.next()) |entry| {
+            var task = entry.value_ptr.*;
+            task.deinit(allocator);
+        }
+        self.shared_tasks.deinit();
     }
 };
 
