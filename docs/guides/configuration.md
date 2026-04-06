@@ -12,6 +12,9 @@ This document describes the complete `zr.toml` configuration schema.
 - [Matrix Expansion](#matrix-expansion)
 - [Cache](#cache)
 - [Workspace](#workspace)
+  - [Root Configuration](#root-configuration)
+  - [Member Configuration](#member-configuration)
+  - [Workspace-Level Task Inheritance](#workspace-level-task-inheritance-v1630)
 - [Resource Limits](#resource-limits)
 - [Concurrency Groups](#concurrency-groups-v1620)
 - [Toolchains](#toolchains)
@@ -1021,6 +1024,64 @@ member_dependencies = ["packages/shared", "packages/utils"]
 cmd = "npm run build"
 deps = ["../../packages/shared:build"]
 ```
+
+### Workspace-Level Task Inheritance (v1.63.0)
+
+Define common tasks in the workspace root that all members inherit automatically. This reduces duplication for tasks like linting, testing, and formatting.
+
+**Root `zr.toml`:**
+
+```toml
+[workspace]
+members = ["packages/*", "apps/*"]
+
+# Shared tasks inherited by all members
+[workspace.shared_tasks.lint]
+cmd = "eslint ."
+description = "Run linter on all files"
+
+[workspace.shared_tasks.test]
+cmd = "jest"
+description = "Run unit tests"
+
+[workspace.shared_tasks.format]
+cmd = "prettier --write ."
+description = "Format code"
+```
+
+**Member behavior:**
+
+- **Automatic inheritance**: Members automatically receive all workspace shared tasks
+- **Override semantics**: If a member defines a task with the same name, it completely replaces the workspace task (no merging)
+- **Visibility**: Run `zr list` in a member directory to see inherited tasks marked with `(inherited)`
+- **Dependencies**: Inherited tasks can depend on member-local tasks via standard DAG resolution
+
+**Example member override** (`packages/api/zr.toml`):
+
+```toml
+# Override workspace test task with custom command
+[tasks.test]
+cmd = "cargo test"  # Replaces workspace "jest" command
+description = "Run Rust tests"
+
+# Inherit lint and format tasks from workspace (no override)
+```
+
+**Usage:**
+
+```bash
+cd packages/api
+zr list              # Shows: lint (inherited), test (local), format (inherited)
+zr run lint          # Runs workspace lint command
+zr run test          # Runs member-specific cargo test
+```
+
+**Benefits:**
+
+- **DRY principle**: Define common tasks once in workspace root
+- **Consistency**: All members use the same lint/test/format commands by default
+- **Flexibility**: Members can override any shared task when needed
+- **Discoverability**: `(inherited)` marker shows which tasks come from workspace
 
 ---
 

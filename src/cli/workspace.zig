@@ -301,6 +301,11 @@ pub fn cmdWorkspaceRun(
             var member_config = loader.loadFromFile(allocator, member_cfg) catch continue;
             defer member_config.deinit();
 
+            // Inherit workspace shared tasks (v1.63.0)
+            if (root_config_opt) |*root_cfg| {
+                loader.inheritWorkspaceSharedTasks(allocator, &member_config, root_cfg) catch {};
+            }
+
             if (member_config.workspace) |member_ws| {
                 if (member_ws.member_dependencies.len > 0) {
                     const deps_copy = try allocator.alloc([]const u8, member_ws.member_dependencies.len);
@@ -377,6 +382,11 @@ pub fn cmdWorkspaceRun(
             continue;
         };
         defer member_config.deinit();
+
+        // Inherit workspace shared tasks (v1.63.0)
+        if (root_config_opt) |*root_cfg| {
+            loader.inheritWorkspaceSharedTasks(allocator, &member_config, root_cfg) catch {};
+        }
 
         // Skip members that don't define this task
         if (member_config.tasks.get(task_name) == null) {
@@ -495,7 +505,10 @@ pub fn cmdWorkspaceRunFiltered(
     use_color: bool,
 ) !u8 {
     _ = profile_name;
-    _ = config_path;
+
+    // Load workspace root config for shared task inheritance (v1.63.0)
+    var root_config_opt = try common.loadConfig(allocator, config_path, null, ew, use_color);
+    defer if (root_config_opt) |*cfg| cfg.deinit();
 
     var overall_success: bool = true;
     var ran_count: usize = 0;
@@ -523,6 +536,11 @@ pub fn cmdWorkspaceRunFiltered(
             continue;
         };
         defer member_config.deinit();
+
+        // Inherit workspace shared tasks (v1.63.0)
+        if (root_config_opt) |*root_cfg| {
+            loader.inheritWorkspaceSharedTasks(allocator, &member_config, root_cfg) catch {};
+        }
 
         if (member_config.tasks.get(task_name) == null) {
             skip_count += 1;
