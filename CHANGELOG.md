@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.67.0] - 2026-04-07
+
+### 🎯 Advanced Task Composition & Mixins
+
+This release introduces **mixins** — a powerful composition pattern for reducing task configuration duplication. Mixins enable reusable partial task definitions that can be combined with clear merge semantics.
+
+### Added
+
+**Core Feature: Mixins (v1.67.0)**
+- `[mixins.NAME]` sections for defining reusable task fragments
+- `mixins = ["name1", "name2"]` field in tasks for applying mixins
+- Field merging semantics:
+  - `env`: Merged (task overrides mixin values)
+  - `deps`, `deps_serial`, `deps_optional`, `deps_if`: Concatenated (mixin first, then task)
+  - `tags`: Union (deduplicated)
+  - `hooks`: Concatenated (mixin hooks run before task hooks)
+  - Scalar fields (`cmd`, `cwd`, `description`, `timeout_ms`, retry fields): Override (task wins)
+- Nested mixin support — mixins can reference other mixins
+- Cycle detection with `error.CircularMixin` for invalid references
+- Undefined mixin detection with `error.UndefinedMixin`
+- Left-to-right application order for multiple mixins
+
+**Documentation (315 lines)**
+- Comprehensive "Mixins" section in configuration guide
+- Before/after examples showing DRY benefits (39 lines → 13 lines)
+- Field merging semantics table
+- Multiple mixins composition patterns
+- Nested mixins with cycle detection
+- 4 real-world use cases:
+  - CI pipeline configurations
+  - Multi-environment deployments
+  - Language-specific tooling
+  - Resource constraints
+- Benefits and comparison with templates/workspace/profiles
+- Error handling examples
+
+**Integration Tests (20 tests: 8000-8019)**
+- Basic single mixin inheritance
+- Multiple mixins composition
+- Task overrides mixin values
+- Nested mixins (3-level chain)
+- Circular mixin detection
+- Nonexistent mixin reference
+- Env merging semantics
+- Deps concatenation
+- Tags union
+- Mixin with templates
+- Mixin + workspace inheritance
+- Empty mixin (no-op)
+- All supported fields
+- Multiple tasks sharing same mixin
+- Order of application
+- Conditional deps
+- Hooks
+- Retry config
+- JSON output
+
+### Use Cases
+
+**Before Mixins** (repetitive):
+```toml
+[tasks.deploy-frontend]
+cmd = "kubectl apply -f frontend.yaml"
+env = { KUBECONFIG = "/home/user/.kube/prod" }
+deps = ["docker-login", "validate-config"]
+retry_max = 3
+
+[tasks.deploy-backend]
+cmd = "kubectl apply -f backend.yaml"
+env = { KUBECONFIG = "/home/user/.kube/prod" }
+deps = ["docker-login", "validate-config"]
+retry_max = 3
+```
+
+**After Mixins** (DRY):
+```toml
+[mixins.k8s-deploy]
+env = { KUBECONFIG = "/home/user/.kube/prod" }
+deps = ["docker-login", "validate-config"]
+retry_max = 3
+
+[tasks.deploy-frontend]
+cmd = "kubectl apply -f frontend.yaml"
+mixins = ["k8s-deploy"]
+
+[tasks.deploy-backend]
+cmd = "kubectl apply -f backend.yaml"
+mixins = ["k8s-deploy"]
+```
+
+### Technical Details
+- Implementation: 2594 lines across 6 files (types, parser, loader, tests)
+- Total unit tests: 1408 passing (8 skipped, 0 failed)
+- Total integration tests: 1287 passing (including 20 new mixin tests)
+- Backward compatible — no breaking changes
+
+### Files Changed
+- `src/config/types.zig`: Mixin struct, Task.mixins, Config.mixins
+- `src/config/parser.zig`: [mixins.NAME] parsing, nested mixin support
+- `src/config/loader.zig`: Mixin resolution, cycle detection, field merging
+- `tests/mixin_test.zig`: 20 comprehensive integration tests (new)
+- `docs/guides/configuration.md`: 315 lines of documentation
+
 ## [1.66.0] - 2026-04-07
 
 ### 📚 Enhanced Task Retry & Error Recovery Documentation
