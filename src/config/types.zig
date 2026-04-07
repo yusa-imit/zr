@@ -273,12 +273,85 @@ pub const RepoWorkspaceConfig = struct {
     }
 };
 
+/// Task mixin for composition and reusability (v1.67.0).
+/// Defines a set of task fields that can be applied to multiple tasks via the `mixins` field.
+/// Mixin sections are defined as [mixins.NAME] in TOML and applied left-to-right to tasks.
+pub const Mixin = struct {
+    /// Mixin name (from [mixins.NAME] section).
+    name: []const u8,
+    /// Environment variable overrides inherited by tasks (owned, duped).
+    env: [][2][]const u8 = &.{},
+    /// Task dependencies inherited by tasks (owned, duped).
+    deps: [][]const u8 = &.{},
+    /// Sequential dependencies inherited by tasks (owned, duped).
+    deps_serial: [][]const u8 = &.{},
+    /// Conditional dependencies inherited by tasks (owned).
+    deps_if: []ConditionalDep = &.{},
+    /// Optional dependencies inherited by tasks (owned, duped).
+    deps_optional: [][]const u8 = &.{},
+    /// Tags inherited by tasks (owned, duped).
+    tags: [][]const u8 = &.{},
+    /// Command inherited by tasks if task doesn't define one (owned).
+    cmd: ?[]const u8 = null,
+    /// Working directory inherited by tasks (owned).
+    cwd: ?[]const u8 = null,
+    /// Description inherited by tasks (owned).
+    description: ?[]const u8 = null,
+    /// Timeout inherited by tasks (milliseconds).
+    timeout_ms: ?u64 = null,
+    /// Maximum retry attempts inherited by tasks.
+    retry_max: u32 = 0,
+    /// Retry delay inherited by tasks (milliseconds).
+    retry_delay_ms: u64 = 0,
+    /// Retry backoff multiplier inherited by tasks (v1.47.0).
+    retry_backoff_multiplier: ?f64 = null,
+    /// Retry jitter inherited by tasks (v1.47.0).
+    retry_jitter: bool = false,
+    /// Maximum backoff inherited by tasks (v1.47.0).
+    max_backoff_ms: ?u64 = null,
+    /// Hooks inherited by tasks (owned).
+    hooks: []TaskHook = &.{},
+    /// Template inherited by tasks (owned).
+    template: ?[]const u8 = null,
+    /// Nested mixins: list of other mixin names to apply before this mixin's fields (owned, duped).
+    mixins: [][]const u8 = &.{},
+
+    pub fn deinit(self: *Mixin, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (self.env.len > 0) allocator.free(self.env);
+        for (self.deps) |dep| allocator.free(dep);
+        if (self.deps.len > 0) allocator.free(self.deps);
+        for (self.deps_serial) |dep| allocator.free(dep);
+        if (self.deps_serial.len > 0) allocator.free(self.deps_serial);
+        for (self.deps_if) |*dep| dep.deinit(allocator);
+        if (self.deps_if.len > 0) allocator.free(self.deps_if);
+        for (self.deps_optional) |dep| allocator.free(dep);
+        if (self.deps_optional.len > 0) allocator.free(self.deps_optional);
+        for (self.tags) |tag| allocator.free(tag);
+        if (self.tags.len > 0) allocator.free(self.tags);
+        if (self.cmd) |c| allocator.free(c);
+        if (self.cwd) |cwd| allocator.free(cwd);
+        if (self.description) |desc| allocator.free(desc);
+        for (self.hooks) |*h| h.deinit(allocator);
+        if (self.hooks.len > 0) allocator.free(self.hooks);
+        if (self.template) |t| allocator.free(t);
+        for (self.mixins) |mixin_name| allocator.free(mixin_name);
+        if (self.mixins.len > 0) allocator.free(self.mixins);
+    }
+};
+
 pub const Config = struct {
     tasks: std.StringHashMap(Task),
     workflows: std.StringHashMap(Workflow),
     profiles: std.StringHashMap(Profile),
     /// Task templates from [templates.NAME] sections.
     templates: std.StringHashMap(TaskTemplate),
+    /// Task mixins from [mixins.NAME] sections (v1.67.0).
+    mixins: std.StringHashMap(Mixin) = undefined,
     /// Workspace config from [workspace] section, or null if not present.
     workspace: ?Workspace = null,
     /// Plugin configs from [plugins.NAME] sections (owned).
@@ -311,6 +384,7 @@ pub const Config = struct {
             .workflows = std.StringHashMap(Workflow).init(allocator),
             .profiles = std.StringHashMap(Profile).init(allocator),
             .templates = std.StringHashMap(TaskTemplate).init(allocator),
+            .mixins = std.StringHashMap(Mixin).init(allocator),
             .concurrency_groups = std.StringHashMap(ConcurrencyGroup).init(allocator),
             .workspace = null,
             .plugins = &.{},
@@ -344,6 +418,11 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.templates.deinit();
+        var mit = self.mixins.iterator();
+        while (mit.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.mixins.deinit();
         var cgit = self.concurrency_groups.iterator();
         while (cgit.next()) |entry| {
             entry.value_ptr.deinit(self.allocator);
@@ -459,7 +538,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -473,7 +552,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -486,7 +565,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, deps_serial, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -499,7 +578,7 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, env, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, env, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with retry settings (for tests or programmatic use).
@@ -514,7 +593,7 @@ pub const Config = struct {
         retry_delay_ms: u64,
         retry_backoff: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with a condition expression (for tests or programmatic use).
@@ -524,7 +603,7 @@ pub const Config = struct {
         cmd: []const u8,
         condition: ?[]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with conditional dependencies (for tests or programmatic use).
@@ -534,7 +613,7 @@ pub const Config = struct {
         cmd: []const u8,
         deps_if: []const ConditionalDep,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a task with optional dependencies (for tests or programmatic use).
@@ -544,7 +623,7 @@ pub const Config = struct {
         cmd: []const u8,
         deps_optional: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{});
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{});
     }
 
     /// Add a workflow (for tests or programmatic use).
@@ -694,6 +773,7 @@ pub const Config = struct {
             null, // remote not supported in templates yet
             null, // remote_cwd not supported in templates yet
             &[_][2][]const u8{}, // remote_env not supported in templates yet
+            &[_][]const u8{}, // mixins not supported in templates yet
         );
 
         // Free the allocated strings (addTaskImpl dupes them)
@@ -1025,6 +1105,10 @@ pub const Task = struct {
     /// True if this task was inherited from workspace.shared_tasks (v1.63.0).
     /// Used by `zr list` to display "(inherited)" marker.
     inherited: bool = false,
+    /// Mixin names to apply to this task (v1.67.0).
+    /// Each mixin is a reference to a [mixins.NAME] section.
+    /// Fields are merged left-to-right, with task fields overriding mixin fields.
+    mixins: [][]const u8 = &.{},
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1087,6 +1171,9 @@ pub const Task = struct {
         if (self.retry_on_patterns.len > 0) allocator.free(self.retry_on_patterns);
         // v1.62.0 concurrency group
         if (self.concurrency_group) |cg| allocator.free(cg);
+        // v1.67.0 mixins
+        for (self.mixins) |mixin_name| allocator.free(mixin_name);
+        if (self.mixins.len > 0) allocator.free(self.mixins);
     }
 };
 
@@ -1611,6 +1698,7 @@ pub fn addTaskImpl(
     remote: ?[]const u8,
     remote_cwd: ?[]const u8,
     remote_env: []const [2][]const u8,
+    mixins: []const []const u8,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -1872,6 +1960,18 @@ pub fn addTaskImpl(
         allocator.free(re);
     };
 
+    // Dupe mixin names (v1.67.0)
+    const task_mixins = try allocator.alloc([]const u8, mixins.len);
+    var mixins_duped: usize = 0;
+    errdefer {
+        for (task_mixins[0..mixins_duped]) |m| allocator.free(m);
+        if (task_mixins.len > 0) allocator.free(task_mixins);
+    }
+    for (mixins, 0..) |mixin_name, i| {
+        task_mixins[i] = try allocator.dupe(u8, mixin_name);
+        mixins_duped += 1;
+    }
+
     var task = Task{
         .name = task_name,
         .cmd = task_cmd,
@@ -1907,6 +2007,7 @@ pub fn addTaskImpl(
         .remote = task_remote,
         .remote_cwd = task_remote_cwd,
         .remote_env = task_remote_env,
+        .mixins = task_mixins,
     };
 
     // Apply template if specified
@@ -2189,6 +2290,7 @@ test "applyTemplateToTask: automatic template application" {
         null, // remote
         null, // remote_cwd
         &[_][2][]const u8{}, // remote_env
+        &[_][]const u8{}, // mixins
     );
 
     // Verify the task was created with template-expanded fields
@@ -2269,6 +2371,7 @@ test "applyTemplateToTask: task overrides template defaults" {
         null, // remote
         null, // remote_cwd
         &[_][2][]const u8{}, // remote_env
+        &[_][]const u8{}, // mixins
     );
 
     // Verify task uses explicit values, not template defaults

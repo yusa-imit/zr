@@ -472,3 +472,123 @@ fn extractCpuTimes(content: []const u8) !?struct { utime: u64, stime: u64 } {
 ```
 
 **Testing note**: Test with mock /proc content as string literals. Use `try extractValue(content, "Key:")` pattern. Always test both presence and absence of fields, empty content, and malformed input.
+
+## Integration Test Patterns for Composition Features (Mixins, Workspace Inheritance)
+
+### Test Structure Pattern
+
+All composition feature tests (8000-8019 for mixins, 6000-6014 for workspace) follow this pattern:
+
+```zig
+test "XXXX: descriptive feature name" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // 1. Create TOML config as string literal
+    const config_toml =
+        \\[section.subsection]
+        \\field = value
+        \\
+    ;
+
+    // 2. Write config to temp directory
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // 3. Get temp path for zr execution
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // 4. Run zr command with config
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "command_args" }, tmp_path);
+    defer result.deinit();
+
+    // 5. Assert exit code and output
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "expected_substring") != null);
+}
+```
+
+### Mixin-Specific Patterns
+
+**Single mixin test** (test 8000 pattern):
+- Define `[mixins.NAME]` section with fields (env, deps, tags, etc.)
+- Reference with `mixins = ["NAME"]` in task
+- Verify inheritance via `zr list` and task execution output
+
+**Multiple mixins test** (test 8001 pattern):
+- Define two or more mixins with different fields
+- Reference both: `mixins = ["mixin1", "mixin2"]`
+- Verify composition order (left-to-right) via execution output
+
+**Field merging test** (test 8002-8008 patterns):
+- For env merging: Set same key in mixin and task with different values, verify task value wins
+- For deps concatenation: Set deps in mixin and task, run task, verify both execute in order
+- For tags union: Set tags in multiple mixins and task, verify all present in list output (no duplicates)
+- For cmd override: Set cmd in mixin and task, verify task command is executed
+
+**Error handling tests** (test 8004-8005):
+- Circular mixins: `mixins.a.mixins = ["b"]`, `mixins.b.mixins = ["a"]` — expect non-zero exit
+- Nonexistent mixin: Reference undefined mixin name — expect error message in stderr
+
+**Nested mixins test** (test 8003, 8009):
+- Create chain: `mixins.level1` → `mixins.level2` (includes level1) → `mixins.level3` (includes level2)
+- Task uses level3, verify all three levels' fields are inherited
+- Verify DAG resolution via execution output
+
+### Assertion Patterns for Composition Tests
+
+**Exit code**: `try std.testing.expectEqual(@as(u8, 0), result.exit_code);`
+
+**String presence in output**: `try std.testing.expect(std.mem.indexOf(u8, result.stdout, "substring") != null);`
+
+**String absence**: `try std.testing.expect(std.mem.indexOf(u8, result.stderr, "error_pattern") == null);`
+
+**Order verification**: Use `indexOf()` twice and compare indices:
+```zig
+const pos1 = std.mem.indexOf(u8, result.stdout, "first") orelse return error.TestFailed;
+const pos2 = std.mem.indexOf(u8, result.stdout, "second") orelse return error.TestFailed;
+try std.testing.expect(pos1 < pos2);  // first runs before second
+```
+
+**JSON output verification**: For tests 8019-style:
+- Run with `--json` flag
+- Verify expected fields are present in output using `indexOf()` for key names
+- Example: Check both "tag1" and "tag2" exist in output for union verification
+
+### Integration with Existing Features
+
+**Mixin + Workspace test** (test 8011):
+- Set `[workspace]` and `[workspace.shared_tasks.NAME]`
+- Define `[mixins.NAME]` in root
+- Create member with task that references mixin
+- Verify mixin is resolved from workspace root
+
+**Mixin + Templates test** (test 8010):
+- Define `[templates.NAME]` with placeholders
+- Define mixin that has `template = "NAME"` field
+- Verify template is applied when mixin is used
+
+**Mixin + Hooks test** (test 8017):
+- Define mixin with `[[mixin.hooks]]` entries
+- Verify hooks are executed when task using mixin runs
+- Check output contains before/after hook messages
+
+### Key Differences from Unit Tests
+
+- Integration tests use `runZr()` to spawn real binary
+- TOML configs are string literals, not parsed manually
+- Tests verify CLI output, not internal data structures
+- Tests must pass even if mixin implementation is naive (no optimization required)
+- Tests exercise full loading pipeline, not just mixin resolution
+
+### Writing New Mixin Tests
+
+1. Identify feature gap (e.g., "retry config in mixin")
+2. Create minimal TOML that demonstrates feature
+3. Run zr command that exercises the feature
+4. Assert on exit code and output
+5. Use `try std.testing.expect()` with meaningful assertions, never `try std.testing.expect(true)`
+6. Keep test under 50 lines
+7. Document what is being tested in test name (test "XXXX: clear description")

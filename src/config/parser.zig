@@ -56,6 +56,50 @@ fn dupeConstraintScope(allocator: std.mem.Allocator, scope: types.ConstraintScop
     };
 }
 
+/// Copy a ConditionalDep, allocating owned copies of strings.
+fn copyConditionalDep(allocator: std.mem.Allocator, dep: *const types.ConditionalDep) !types.ConditionalDep {
+    const task_owned = try allocator.dupe(u8, dep.task);
+    errdefer allocator.free(task_owned);
+    const condition_owned = try allocator.dupe(u8, dep.condition);
+    errdefer allocator.free(condition_owned);
+    return types.ConditionalDep{
+        .task = task_owned,
+        .condition = condition_owned,
+    };
+}
+
+/// Copy a TaskHook, allocating owned copies of strings and nested structures.
+fn copyTaskHook(allocator: std.mem.Allocator, hook: *const types.TaskHook) !types.TaskHook {
+    const cmd_owned = try allocator.dupe(u8, hook.cmd);
+    errdefer allocator.free(cmd_owned);
+    const working_dir_owned = if (hook.working_dir) |wd| try allocator.dupe(u8, wd) else null;
+    errdefer if (working_dir_owned) |wd| allocator.free(wd);
+
+    // Copy env pairs
+    const env_owned = try allocator.alloc([2][]const u8, hook.env.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (env_owned[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(env_owned);
+    }
+    for (hook.env, 0..) |pair, i| {
+        env_owned[i][0] = try allocator.dupe(u8, pair[0]);
+        env_owned[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
+    return types.TaskHook{
+        .cmd = cmd_owned,
+        .point = hook.point,  // enum, no need to dupe
+        .failure_strategy = hook.failure_strategy,  // enum, no need to dupe
+        .working_dir = working_dir_owned,
+        .env = env_owned,
+    };
+}
+
 /// Helper function to flush a pending stage into workflow_stages.
 /// If stage_name is null but there are tasks, auto-generates a stage name.
 /// Returns true if a stage was flushed, false otherwise.
@@ -453,6 +497,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer task_remote_env.deinit(allocator);
     // Concurrency group (v1.62.0) — non-owning slice for group name
     var task_concurrency_group: ?[]const u8 = null;
+    // Task mixins (v1.67.0) — non-owning slices for mixin names
+    var task_mixins = std.ArrayList([]const u8){};
+    defer task_mixins.deinit(allocator);
 
     // Subsection state (v1.19.0) — for handling subsections appearing before main task
     var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
@@ -526,6 +573,43 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer template_toolchain.deinit(allocator);
     var template_params = std.ArrayList([]const u8){};
     defer template_params.deinit(allocator);
+
+    // Mixin parsing state (v1.67.0) — [mixins.NAME]
+    var current_mixin: ?[]const u8 = null;
+    var mixin_env = std.ArrayList([2][]const u8){};
+    defer mixin_env.deinit(allocator);
+    var mixin_deps = std.ArrayList([]const u8){};
+    defer mixin_deps.deinit(allocator);
+    var mixin_deps_serial = std.ArrayList([]const u8){};
+    defer mixin_deps_serial.deinit(allocator);
+    var mixin_deps_optional = std.ArrayList([]const u8){};
+    defer mixin_deps_optional.deinit(allocator);
+    var mixin_deps_if = std.ArrayList(types.ConditionalDep){};
+    defer {
+        for (mixin_deps_if.items) |*dep| dep.deinit(allocator);
+        mixin_deps_if.deinit(allocator);
+    }
+    var mixin_tags = std.ArrayList([]const u8){};
+    defer mixin_tags.deinit(allocator);
+    var mixin_cmd: ?[]const u8 = null;
+    var mixin_cwd: ?[]const u8 = null;
+    var mixin_description: ?[]const u8 = null;
+    var mixin_timeout_ms: ?u64 = null;
+    var mixin_retry_max: u32 = 0;
+    var mixin_retry_delay_ms: u64 = 0;
+    var mixin_retry_backoff_multiplier: ?f64 = null;
+    var mixin_retry_jitter: bool = false;
+    var mixin_max_backoff_ms: ?u64 = null;
+    var mixin_hooks = std.ArrayList(types.TaskHook){};
+    defer {
+        for (mixin_hooks.items) |*h| h.deinit(allocator);
+        mixin_hooks.deinit(allocator);
+    }
+    var mixin_template: ?[]const u8 = null;
+    var mixin_mixins = std.ArrayList([]const u8){};
+    defer mixin_mixins.deinit(allocator);
+    var in_mixin_env: bool = false;
+    var in_mixin_hooks: bool = false;
 
     // Workflow parsing state — non-owning slices into content
     var current_workflow: ?[]const u8 = null;
@@ -764,7 +848,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -903,7 +987,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -966,7 +1050,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1037,7 +1121,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1239,7 +1323,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1596,7 +1680,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
                 }
             }
 
@@ -1816,6 +1900,175 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_max_memory = null;
 
             current_template = validateSectionHeader(trimmed, "[templates.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
+        } else if (std.mem.startsWith(u8, trimmed, "[mixins.")) {
+            // Flush pending mixin before starting a new one
+            if (current_mixin) |mixin_name| {
+                const mixin_name_owned = try allocator.dupe(u8, mixin_name);
+                errdefer allocator.free(mixin_name_owned);
+
+                // Dupe env
+                const mixin_env_owned = try allocator.alloc([2][]const u8, mixin_env.items.len);
+                var env_duped: usize = 0;
+                errdefer {
+                    for (mixin_env_owned[0..env_duped]) |pair| {
+                        allocator.free(pair[0]);
+                        allocator.free(pair[1]);
+                    }
+                    allocator.free(mixin_env_owned);
+                }
+                for (mixin_env.items, 0..) |pair, i| {
+                    mixin_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
+                    mixin_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
+                    env_duped += 1;
+                }
+
+                // Dupe deps
+                const mixin_deps_owned = try allocator.alloc([]const u8, mixin_deps.items.len);
+                var deps_duped: usize = 0;
+                errdefer {
+                    for (mixin_deps_owned[0..deps_duped]) |d| allocator.free(d);
+                    allocator.free(mixin_deps_owned);
+                }
+                for (mixin_deps.items, 0..) |d, i| {
+                    mixin_deps_owned[i] = try allocator.dupe(u8, d);
+                    deps_duped += 1;
+                }
+
+                // Dupe deps_serial
+                const mixin_deps_serial_owned = try allocator.alloc([]const u8, mixin_deps_serial.items.len);
+                var deps_serial_duped: usize = 0;
+                errdefer {
+                    for (mixin_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
+                    allocator.free(mixin_deps_serial_owned);
+                }
+                for (mixin_deps_serial.items, 0..) |d, i| {
+                    mixin_deps_serial_owned[i] = try allocator.dupe(u8, d);
+                    deps_serial_duped += 1;
+                }
+
+                // Dupe deps_optional
+                const mixin_deps_optional_owned = try allocator.alloc([]const u8, mixin_deps_optional.items.len);
+                var deps_optional_duped: usize = 0;
+                errdefer {
+                    for (mixin_deps_optional_owned[0..deps_optional_duped]) |d| allocator.free(d);
+                    allocator.free(mixin_deps_optional_owned);
+                }
+                for (mixin_deps_optional.items, 0..) |d, i| {
+                    mixin_deps_optional_owned[i] = try allocator.dupe(u8, d);
+                    deps_optional_duped += 1;
+                }
+
+                // Copy deps_if
+                const mixin_deps_if_owned = try allocator.alloc(types.ConditionalDep, mixin_deps_if.items.len);
+                var deps_if_duped: usize = 0;
+                errdefer {
+                    for (mixin_deps_if_owned[0..deps_if_duped]) |*d| d.deinit(allocator);
+                    allocator.free(mixin_deps_if_owned);
+                }
+                for (mixin_deps_if.items, 0..) |dep, i| {
+                    mixin_deps_if_owned[i] = try copyConditionalDep(allocator, &dep);
+                    deps_if_duped += 1;
+                }
+
+                // Dupe tags
+                const mixin_tags_owned = try allocator.alloc([]const u8, mixin_tags.items.len);
+                var tags_duped: usize = 0;
+                errdefer {
+                    for (mixin_tags_owned[0..tags_duped]) |t| allocator.free(t);
+                    allocator.free(mixin_tags_owned);
+                }
+                for (mixin_tags.items, 0..) |t, i| {
+                    mixin_tags_owned[i] = try allocator.dupe(u8, t);
+                    tags_duped += 1;
+                }
+
+                // Dupe optional string fields
+                const mixin_cmd_owned = if (mixin_cmd) |cmd| try allocator.dupe(u8, cmd) else null;
+                errdefer if (mixin_cmd_owned) |c| allocator.free(c);
+                const mixin_cwd_owned = if (mixin_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
+                errdefer if (mixin_cwd_owned) |cwd| allocator.free(cwd);
+                const mixin_desc_owned = if (mixin_description) |desc| try allocator.dupe(u8, desc) else null;
+                errdefer if (mixin_desc_owned) |d| allocator.free(d);
+
+                // Copy hooks
+                const mixin_hooks_owned = try allocator.alloc(types.TaskHook, mixin_hooks.items.len);
+                var hooks_duped: usize = 0;
+                errdefer {
+                    for (mixin_hooks_owned[0..hooks_duped]) |*h| h.deinit(allocator);
+                    allocator.free(mixin_hooks_owned);
+                }
+                for (mixin_hooks.items, 0..) |hook, i| {
+                    mixin_hooks_owned[i] = try copyTaskHook(allocator, &hook);
+                    hooks_duped += 1;
+                }
+
+                // Dupe template
+                const mixin_template_owned = if (mixin_template) |t| try allocator.dupe(u8, t) else null;
+                errdefer if (mixin_template_owned) |t| allocator.free(t);
+
+                // Dupe mixin names (nested mixins)
+                const mixin_mixins_owned = try allocator.alloc([]const u8, mixin_mixins.items.len);
+                var mixins_duped: usize = 0;
+                errdefer {
+                    for (mixin_mixins_owned[0..mixins_duped]) |m| allocator.free(m);
+                    allocator.free(mixin_mixins_owned);
+                }
+                for (mixin_mixins.items, 0..) |m, i| {
+                    mixin_mixins_owned[i] = try allocator.dupe(u8, m);
+                    mixins_duped += 1;
+                }
+
+                const mixin = types.Mixin{
+                    .name = mixin_name_owned,
+                    .env = mixin_env_owned,
+                    .deps = mixin_deps_owned,
+                    .deps_serial = mixin_deps_serial_owned,
+                    .deps_optional = mixin_deps_optional_owned,
+                    .deps_if = mixin_deps_if_owned,
+                    .tags = mixin_tags_owned,
+                    .cmd = mixin_cmd_owned,
+                    .cwd = mixin_cwd_owned,
+                    .description = mixin_desc_owned,
+                    .timeout_ms = mixin_timeout_ms,
+                    .retry_max = mixin_retry_max,
+                    .retry_delay_ms = mixin_retry_delay_ms,
+                    .retry_backoff_multiplier = mixin_retry_backoff_multiplier,
+                    .retry_jitter = mixin_retry_jitter,
+                    .max_backoff_ms = mixin_max_backoff_ms,
+                    .hooks = mixin_hooks_owned,
+                    .template = mixin_template_owned,
+                    .mixins = mixin_mixins_owned,
+                };
+
+                try config.mixins.put(mixin_name_owned, mixin);
+            }
+
+            // Reset mixin state
+            mixin_env.clearRetainingCapacity();
+            mixin_deps.clearRetainingCapacity();
+            mixin_deps_serial.clearRetainingCapacity();
+            mixin_deps_optional.clearRetainingCapacity();
+            mixin_deps_if.clearRetainingCapacity();
+            mixin_tags.clearRetainingCapacity();
+            mixin_cmd = null;
+            mixin_cwd = null;
+            mixin_description = null;
+            mixin_timeout_ms = null;
+            mixin_retry_max = 0;
+            mixin_retry_delay_ms = 0;
+            mixin_retry_backoff_multiplier = null;
+            mixin_retry_jitter = false;
+            mixin_max_backoff_ms = null;
+            mixin_hooks.clearRetainingCapacity();
+            mixin_template = null;
+            mixin_mixins.clearRetainingCapacity();
+            in_mixin_env = false;
+            in_mixin_hooks = false;
+
+            current_mixin = validateSectionHeader(trimmed, "[mixins.") catch |err| {
                 if (err == error.MalformedSectionHeader) return err;
                 return err;
             };
@@ -2551,6 +2804,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "concurrency_group")) {
                     // Concurrency group name for this task (v1.62.0)
                     task_concurrency_group = value;
+                } else if (std.mem.eql(u8, key, "mixins")) {
+                    // Mixin names for this task (v1.67.0)
+                    // Parse array: ["mixin1", "mixin2"]
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const mixins_str = value[1 .. value.len - 1];
+                        var mixins_it = std.mem.splitScalar(u8, mixins_str, ',');
+                        while (mixins_it.next()) |mixin_name| {
+                            const trimmed_mixin = std.mem.trim(u8, mixin_name, " \t\"");
+                            if (trimmed_mixin.len > 0) {
+                                // Non-owning slice — will be duped when task is added
+                                try task_mixins.append(allocator, trimmed_mixin);
+                            }
+                        }
+                    }
                 }
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)
@@ -2681,8 +2948,295 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (current_mixin != null) {
+                // Mixin-level key=value parsing (v1.67.0)
+                if (std.mem.eql(u8, key, "env")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                try mixin_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "cmd")) {
+                    mixin_cmd = value;
+                } else if (std.mem.eql(u8, key, "cwd")) {
+                    mixin_cwd = value;
+                } else if (std.mem.eql(u8, key, "description")) {
+                    mixin_description = value;
+                } else if (std.mem.eql(u8, key, "deps")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try mixin_deps.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_serial")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try mixin_deps_serial.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_optional")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try mixin_deps_optional.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_if")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "[") and std.mem.endsWith(u8, inner, "]")) {
+                        const array_str = inner[1 .. inner.len - 1];
+                        var depth: usize = 0;
+                        var table_start: usize = 0;
+                        var in_quotes = false;
+                        for (array_str, 0..) |c, i| {
+                            if (c == '"') in_quotes = !in_quotes;
+                            if (in_quotes) continue;
+                            if (c == '{') {
+                                if (depth == 0) table_start = i + 1;
+                                depth += 1;
+                            } else if (c == '}' and depth > 0) {
+                                depth -= 1;
+                                if (depth == 0) {
+                                    const table_str = array_str[table_start..i];
+                                    var task_name: ?[]const u8 = null;
+                                    var cond_expr: ?[]const u8 = null;
+                                    var pairs_it = std.mem.splitScalar(u8, table_str, ',');
+                                    while (pairs_it.next()) |pair_str| {
+                                        const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                                        const field_key = std.mem.trim(u8, pair_str[0..eq], " \t");
+                                        const field_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                                        if (std.mem.eql(u8, field_key, "task")) {
+                                            task_name = field_val;
+                                        } else if (std.mem.eql(u8, field_key, "condition")) {
+                                            cond_expr = field_val;
+                                        }
+                                    }
+                                    if (task_name != null and cond_expr != null) {
+                                        try mixin_deps_if.append(allocator, .{
+                                            .task = task_name.?,
+                                            .condition = cond_expr.?,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "tags")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const tags_str = value[1 .. value.len - 1];
+                        var tags_it = std.mem.splitScalar(u8, tags_str, ',');
+                        while (tags_it.next()) |tag| {
+                            const trimmed_tag = std.mem.trim(u8, tag, " \t\"");
+                            if (trimmed_tag.len > 0) {
+                                try mixin_tags.append(allocator, trimmed_tag);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "timeout")) {
+                    mixin_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "retry")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (std.mem.eql(u8, rkey, "max")) {
+                                mixin_retry_max = std.fmt.parseInt(u32, rval, 10) catch 0;
+                            } else if (std.mem.eql(u8, rkey, "delay")) {
+                                mixin_retry_delay_ms = parseDurationMs(rval) orelse 0;
+                            } else if (std.mem.eql(u8, rkey, "backoff_multiplier")) {
+                                mixin_retry_backoff_multiplier = std.fmt.parseFloat(f64, rval) catch null;
+                            } else if (std.mem.eql(u8, rkey, "jitter")) {
+                                mixin_retry_jitter = std.mem.eql(u8, rval, "true");
+                            } else if (std.mem.eql(u8, rkey, "max_backoff")) {
+                                mixin_max_backoff_ms = parseDurationMs(rval);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "template")) {
+                    mixin_template = value;
+                } else if (std.mem.eql(u8, key, "mixins")) {
+                    // Nested mixins (v1.67.0)
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const mixins_str = value[1 .. value.len - 1];
+                        var mixins_it = std.mem.splitScalar(u8, mixins_str, ',');
+                        while (mixins_it.next()) |mixin_name| {
+                            const trimmed_mixin = std.mem.trim(u8, mixin_name, " \t\"");
+                            if (trimmed_mixin.len > 0) {
+                                try mixin_mixins.append(allocator, trimmed_mixin);
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    // Flush final pending mixin (v1.67.0)
+    if (current_mixin) |mixin_name| {
+        const mixin_name_owned = try allocator.dupe(u8, mixin_name);
+        errdefer allocator.free(mixin_name_owned);
+
+        // Dupe env
+        const mixin_env_owned = try allocator.alloc([2][]const u8, mixin_env.items.len);
+        var env_duped: usize = 0;
+        errdefer {
+            for (mixin_env_owned[0..env_duped]) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            allocator.free(mixin_env_owned);
+        }
+        for (mixin_env.items, 0..) |pair, i| {
+            mixin_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
+            mixin_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
+            env_duped += 1;
+        }
+
+        // Dupe deps
+        const mixin_deps_owned = try allocator.alloc([]const u8, mixin_deps.items.len);
+        var deps_duped: usize = 0;
+        errdefer {
+            for (mixin_deps_owned[0..deps_duped]) |d| allocator.free(d);
+            allocator.free(mixin_deps_owned);
+        }
+        for (mixin_deps.items, 0..) |d, i| {
+            mixin_deps_owned[i] = try allocator.dupe(u8, d);
+            deps_duped += 1;
+        }
+
+        // Dupe deps_serial
+        const mixin_deps_serial_owned = try allocator.alloc([]const u8, mixin_deps_serial.items.len);
+        var deps_serial_duped: usize = 0;
+        errdefer {
+            for (mixin_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
+            allocator.free(mixin_deps_serial_owned);
+        }
+        for (mixin_deps_serial.items, 0..) |d, i| {
+            mixin_deps_serial_owned[i] = try allocator.dupe(u8, d);
+            deps_serial_duped += 1;
+        }
+
+        // Dupe deps_optional
+        const mixin_deps_optional_owned = try allocator.alloc([]const u8, mixin_deps_optional.items.len);
+        var deps_optional_duped: usize = 0;
+        errdefer {
+            for (mixin_deps_optional_owned[0..deps_optional_duped]) |d| allocator.free(d);
+            allocator.free(mixin_deps_optional_owned);
+        }
+        for (mixin_deps_optional.items, 0..) |d, i| {
+            mixin_deps_optional_owned[i] = try allocator.dupe(u8, d);
+            deps_optional_duped += 1;
+        }
+
+        // Copy deps_if
+        const mixin_deps_if_owned = try allocator.alloc(types.ConditionalDep, mixin_deps_if.items.len);
+        var deps_if_duped: usize = 0;
+        errdefer {
+            for (mixin_deps_if_owned[0..deps_if_duped]) |*d| d.deinit(allocator);
+            allocator.free(mixin_deps_if_owned);
+        }
+        for (mixin_deps_if.items, 0..) |dep, i| {
+            mixin_deps_if_owned[i] = try copyConditionalDep(allocator, &dep);
+            deps_if_duped += 1;
+        }
+
+        // Dupe tags
+        const mixin_tags_owned = try allocator.alloc([]const u8, mixin_tags.items.len);
+        var tags_duped: usize = 0;
+        errdefer {
+            for (mixin_tags_owned[0..tags_duped]) |t| allocator.free(t);
+            allocator.free(mixin_tags_owned);
+        }
+        for (mixin_tags.items, 0..) |t, i| {
+            mixin_tags_owned[i] = try allocator.dupe(u8, t);
+            tags_duped += 1;
+        }
+
+        // Dupe optional string fields
+        const mixin_cmd_owned = if (mixin_cmd) |cmd| try allocator.dupe(u8, cmd) else null;
+        errdefer if (mixin_cmd_owned) |c| allocator.free(c);
+        const mixin_cwd_owned = if (mixin_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
+        errdefer if (mixin_cwd_owned) |cwd| allocator.free(cwd);
+        const mixin_desc_owned = if (mixin_description) |desc| try allocator.dupe(u8, desc) else null;
+        errdefer if (mixin_desc_owned) |d| allocator.free(d);
+
+        // Copy hooks
+        const mixin_hooks_owned = try allocator.alloc(types.TaskHook, mixin_hooks.items.len);
+        var hooks_duped: usize = 0;
+        errdefer {
+            for (mixin_hooks_owned[0..hooks_duped]) |*h| h.deinit(allocator);
+            allocator.free(mixin_hooks_owned);
+        }
+        for (mixin_hooks.items, 0..) |hook, i| {
+            mixin_hooks_owned[i] = try copyTaskHook(allocator, &hook);
+            hooks_duped += 1;
+        }
+
+        // Dupe template
+        const mixin_template_owned = if (mixin_template) |t| try allocator.dupe(u8, t) else null;
+        errdefer if (mixin_template_owned) |t| allocator.free(t);
+
+        // Dupe mixin names (nested mixins)
+        const mixin_mixins_owned = try allocator.alloc([]const u8, mixin_mixins.items.len);
+        var mixins_duped: usize = 0;
+        errdefer {
+            for (mixin_mixins_owned[0..mixins_duped]) |m| allocator.free(m);
+            allocator.free(mixin_mixins_owned);
+        }
+        for (mixin_mixins.items, 0..) |m, i| {
+            mixin_mixins_owned[i] = try allocator.dupe(u8, m);
+            mixins_duped += 1;
+        }
+
+        const mixin = types.Mixin{
+            .name = mixin_name_owned,
+            .env = mixin_env_owned,
+            .deps = mixin_deps_owned,
+            .deps_serial = mixin_deps_serial_owned,
+            .deps_optional = mixin_deps_optional_owned,
+            .deps_if = mixin_deps_if_owned,
+            .tags = mixin_tags_owned,
+            .cmd = mixin_cmd_owned,
+            .cwd = mixin_cwd_owned,
+            .description = mixin_desc_owned,
+            .timeout_ms = mixin_timeout_ms,
+            .retry_max = mixin_retry_max,
+            .retry_delay_ms = mixin_retry_delay_ms,
+            .retry_backoff_multiplier = mixin_retry_backoff_multiplier,
+            .retry_jitter = mixin_retry_jitter,
+            .max_backoff_ms = mixin_max_backoff_ms,
+            .hooks = mixin_hooks_owned,
+            .template = mixin_template_owned,
+            .mixins = mixin_mixins_owned,
+        };
+
+        try config.mixins.put(mixin_name_owned, mixin);
     }
 
     // Flush final pending stage (including approval and on_failure fields, with auto-generated name if needed)
@@ -2726,7 +3280,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         if (task_matrix_raw) |mraw| {
             try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
         } else {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items);
         }
     }
 

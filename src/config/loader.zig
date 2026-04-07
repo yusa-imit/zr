@@ -98,7 +98,343 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
     // Apply variable substitution to all task fields (v1.55.0)
     try applyVariableSubstitution(allocator, &config);
 
+    // Resolve task mixins (v1.67.0) — apply mixin fields to tasks
+    try resolveMixins(allocator, &config);
+
     return config;
+}
+
+/// Apply task mixins - compose mixin fields into tasks (v1.67.0).
+/// Resolves nested mixins with DAG cycle detection.
+/// Call this after parseToml(), before inheritWorkspaceSharedTasks().
+pub fn resolveMixins(allocator: std.mem.Allocator, config: *Config) !void {
+    // Iterate over all tasks and resolve their mixins
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        const task = entry.value_ptr;
+
+        if (task.mixins.len == 0) continue;
+
+        // Resolve mixins left-to-right
+        for (task.mixins) |mixin_name| {
+            // Validate mixin exists
+            var mixin_it = config.mixins.iterator();
+            var found_mixin: ?*types.Mixin = null;
+            while (mixin_it.next()) |mentry| {
+                if (std.mem.eql(u8, mentry.key_ptr.*, mixin_name)) {
+                    found_mixin = mentry.value_ptr;
+                    break;
+                }
+            }
+
+            if (found_mixin == null) {
+                std.debug.print("error: Mixin '{s}' referenced by task '{s}' not found\n", .{ mixin_name, task_name });
+                return error.UndefinedMixin;
+            }
+            const mixin = found_mixin.?;
+
+            // Check for circular dependencies (cycle detection)
+            var visited = std.StringHashMap(void).init(allocator);
+            defer visited.deinit();
+            if (try detectMixinCycle(allocator, config, mixin_name, &visited)) {
+                std.debug.print("error: Circular mixin reference detected involving '{s}'\n", .{mixin_name});
+                return error.CircularMixin;
+            }
+
+            // Apply mixin fields to task
+            try applyMixinToTask(allocator, task, mixin);
+        }
+    }
+}
+
+/// Detect cyclic mixin dependencies using DFS (v1.67.0).
+fn detectMixinCycle(
+    allocator: std.mem.Allocator,
+    config: *const Config,
+    mixin_name: []const u8,
+    visited: *std.StringHashMap(void),
+) !bool {
+    // Check if already visited (cycle detected)
+    if (visited.contains(mixin_name)) {
+        return true;
+    }
+
+    // Mark as visited
+    try visited.put(try allocator.dupe(u8, mixin_name), {});
+    defer {
+        var it = visited.iterator();
+        while (it.next()) |e| {
+            if (!std.mem.eql(u8, e.key_ptr.*, mixin_name)) {
+                allocator.free(e.key_ptr.*);
+            }
+        }
+    }
+
+    // Get the mixin
+    const mixin = config.mixins.get(mixin_name) orelse return false;
+
+    // Check nested mixins
+    for (mixin.mixins) |nested_name| {
+        if (try detectMixinCycle(allocator, config, nested_name, visited)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Apply a single mixin's fields to a task (v1.67.0).
+fn applyMixinToTask(allocator: std.mem.Allocator, task: *Task, mixin: *const types.Mixin) !void {
+    // Merge env: task overrides mixin
+    if (mixin.env.len > 0) {
+        var merged_env = std.StringHashMap([]const u8).init(allocator);
+        defer merged_env.deinit();
+
+        // First, add mixin env to map
+        for (mixin.env) |pair| {
+            try merged_env.put(pair[0], pair[1]);
+        }
+
+        // Then overlay task env (overriding mixin values)
+        for (task.env) |pair| {
+            try merged_env.put(pair[0], pair[1]);
+        }
+
+        // Rebuild task.env from merged map
+        if (merged_env.count() > task.env.len) {
+            const new_env = try allocator.alloc([2][]const u8, merged_env.count());
+            var idx: usize = 0;
+            var it = merged_env.iterator();
+            while (it.next()) |e| {
+                new_env[idx][0] = try allocator.dupe(u8, e.key_ptr.*);
+                new_env[idx][1] = try allocator.dupe(u8, e.value_ptr.*);
+                idx += 1;
+            }
+
+            // Free old env
+            for (task.env) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            if (task.env.len > 0) allocator.free(task.env);
+
+            task.env = new_env;
+        }
+    }
+
+    // Concatenate deps: mixin first, then task
+    if (mixin.deps.len > 0) {
+        const new_deps = try allocator.alloc([]const u8, mixin.deps.len + task.deps.len);
+        var idx: usize = 0;
+
+        for (mixin.deps) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+        for (task.deps) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+
+        // Free old deps
+        for (task.deps) |dep| {
+            allocator.free(dep);
+        }
+        if (task.deps.len > 0) allocator.free(task.deps);
+
+        task.deps = new_deps;
+    }
+
+    // Concatenate deps_serial
+    if (mixin.deps_serial.len > 0) {
+        const new_deps = try allocator.alloc([]const u8, mixin.deps_serial.len + task.deps_serial.len);
+        var idx: usize = 0;
+
+        for (mixin.deps_serial) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+        for (task.deps_serial) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+
+        // Free old deps_serial
+        for (task.deps_serial) |dep| {
+            allocator.free(dep);
+        }
+        if (task.deps_serial.len > 0) allocator.free(task.deps_serial);
+
+        task.deps_serial = new_deps;
+    }
+
+    // Concatenate deps_optional
+    if (mixin.deps_optional.len > 0) {
+        const new_deps = try allocator.alloc([]const u8, mixin.deps_optional.len + task.deps_optional.len);
+        var idx: usize = 0;
+
+        for (mixin.deps_optional) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+        for (task.deps_optional) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+
+        // Free old deps_optional
+        for (task.deps_optional) |dep| {
+            allocator.free(dep);
+        }
+        if (task.deps_optional.len > 0) allocator.free(task.deps_optional);
+
+        task.deps_optional = new_deps;
+    }
+
+    // Concatenate deps_if
+    if (mixin.deps_if.len > 0) {
+        const new_deps_if = try allocator.alloc(types.ConditionalDep, mixin.deps_if.len + task.deps_if.len);
+        var idx: usize = 0;
+
+        for (mixin.deps_if) |dep| {
+            new_deps_if[idx].task = try allocator.dupe(u8, dep.task);
+            new_deps_if[idx].condition = try allocator.dupe(u8, dep.condition);
+            idx += 1;
+        }
+        for (task.deps_if) |dep| {
+            new_deps_if[idx].task = try allocator.dupe(u8, dep.task);
+            new_deps_if[idx].condition = try allocator.dupe(u8, dep.condition);
+            idx += 1;
+        }
+
+        // Free old deps_if
+        for (task.deps_if) |*dep| {
+            dep.deinit(allocator);
+        }
+        if (task.deps_if.len > 0) allocator.free(task.deps_if);
+
+        task.deps_if = new_deps_if;
+    }
+
+    // Union tags: combine and deduplicate
+    if (mixin.tags.len > 0) {
+        var tag_map = std.StringHashMap(void).init(allocator);
+        defer tag_map.deinit();
+
+        // Add mixin tags
+        for (mixin.tags) |tag| {
+            try tag_map.put(tag, {});
+        }
+        // Add task tags
+        for (task.tags) |tag| {
+            try tag_map.put(tag, {});
+        }
+
+        if (tag_map.count() > task.tags.len) {
+            const new_tags = try allocator.alloc([]const u8, tag_map.count());
+            var idx: usize = 0;
+            var it = tag_map.iterator();
+            while (it.next()) |e| {
+                new_tags[idx] = try allocator.dupe(u8, e.key_ptr.*);
+                idx += 1;
+            }
+
+            // Free old tags
+            for (task.tags) |tag| {
+                allocator.free(tag);
+            }
+            if (task.tags.len > 0) allocator.free(task.tags);
+
+            task.tags = new_tags;
+        }
+    }
+
+    // Concatenate hooks: mixin first, then task
+    if (mixin.hooks.len > 0) {
+        const new_hooks = try allocator.alloc(types.TaskHook, mixin.hooks.len + task.hooks.len);
+        var idx: usize = 0;
+
+        for (mixin.hooks) |hook| {
+            new_hooks[idx] = try copyTaskHookImpl(allocator, &hook);
+            idx += 1;
+        }
+        for (task.hooks) |hook| {
+            new_hooks[idx] = try copyTaskHookImpl(allocator, &hook);
+            idx += 1;
+        }
+
+        // Free old hooks
+        for (task.hooks) |*hook| {
+            hook.deinit(allocator);
+        }
+        if (task.hooks.len > 0) allocator.free(task.hooks);
+
+        task.hooks = new_hooks;
+    }
+
+    // Override fields: task wins if set
+    if (mixin.cmd != null and task.cmd.len == 0) {
+        task.cmd = try allocator.dupe(u8, mixin.cmd.?);
+    }
+    if (mixin.cwd != null and task.cwd == null) {
+        task.cwd = try allocator.dupe(u8, mixin.cwd.?);
+    }
+    if (mixin.description != null and task.description == null) {
+        task.description = try allocator.dupe(u8, mixin.description.?);
+    }
+    if (mixin.timeout_ms != null and task.timeout_ms == null) {
+        task.timeout_ms = mixin.timeout_ms;
+    }
+    if (mixin.retry_max > 0 and task.retry_max == 0) {
+        task.retry_max = mixin.retry_max;
+    }
+    if (mixin.retry_delay_ms > 0 and task.retry_delay_ms == 0) {
+        task.retry_delay_ms = mixin.retry_delay_ms;
+    }
+    if (mixin.retry_backoff_multiplier != null and task.retry_backoff_multiplier == null) {
+        task.retry_backoff_multiplier = mixin.retry_backoff_multiplier;
+    }
+    if (mixin.retry_jitter and !task.retry_jitter) {
+        task.retry_jitter = true;
+    }
+    if (mixin.max_backoff_ms != null and task.max_backoff_ms == null) {
+        task.max_backoff_ms = mixin.max_backoff_ms;
+    }
+    if (mixin.template != null and task.template == null) {
+        task.template = try allocator.dupe(u8, mixin.template.?);
+    }
+}
+
+/// Helper to copy a TaskHook in mixin resolution (v1.67.0).
+fn copyTaskHookImpl(allocator: std.mem.Allocator, hook: *const types.TaskHook) !types.TaskHook {
+    const cmd = try allocator.dupe(u8, hook.cmd);
+    errdefer allocator.free(cmd);
+    const wd = if (hook.working_dir) |w| try allocator.dupe(u8, w) else null;
+    errdefer if (wd) |w| allocator.free(w);
+
+    const env = try allocator.alloc([2][]const u8, hook.env.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (env[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(env);
+    }
+    for (hook.env, 0..) |pair, i| {
+        env[i][0] = try allocator.dupe(u8, pair[0]);
+        env[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
+    return types.TaskHook{
+        .cmd = cmd,
+        .point = hook.point,
+        .failure_strategy = hook.failure_strategy,
+        .working_dir = wd,
+        .env = env,
+    };
 }
 
 /// Merge workspace shared tasks into a member config (v1.63.0).

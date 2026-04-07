@@ -51,6 +51,7 @@ comptime {
     _ = @import("lsp_test.zig");
     _ = @import("mcp_test.zig");
     _ = @import("misc_test.zig");
+    _ = @import("mixin_test.zig");
     _ = @import("monitor_test.zig");
     _ = @import("plugin_test.zig");
     _ = @import("publish_test.zig");
