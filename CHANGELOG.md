@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.66.0] - 2026-04-07
+
+### 📚 Enhanced Task Retry & Error Recovery Documentation
+
+This release completes comprehensive documentation and testing for zr's sophisticated retry mechanisms (implemented in v1.47.0). All retry features were already fully functional, but documentation was minimal and hook interaction tests were missing.
+
+### Added
+
+**Documentation (212 lines)**
+- Comprehensive "Timeouts and Retries" section in configuration guide
+- Backoff strategy examples (linear, exponential, moderate, aggressive)
+- Conditional retry patterns (retry_on_codes, retry_on_patterns)
+- Jitter explanation for thundering herd prevention
+- Smart retry decision guidelines (fatal vs retriable errors)
+- Circuit breaker + retry integration examples
+- Failure hooks execution after retry exhaustion
+- Retry statistics in history display
+
+**Integration Tests (5 new tests: 978-982)**
+- Test retry + failure hook interaction (hook executes after retries exhausted)
+- Test retry + success hook interaction (success hook only on eventual success)
+- Test exponential backoff + failure hook timing
+- Test multiple hooks with retry lifecycle
+- Test hook execution order with retry logic
+
+### Documented Features (v1.47.0)
+
+All these features were **already implemented** but undocumented:
+- `retry_backoff_multiplier` — Configurable backoff multiplier (1.0=linear, 2.0=exponential, 1.5=moderate)
+- `retry_jitter` — Add ±25% random variance to delays (prevents thundering herd)
+- `max_backoff_ms` — Maximum retry delay ceiling (default: 60s)
+- `retry_on_codes` — Only retry on specific exit codes (empty = retry all)
+- `retry_on_patterns` — Only retry when output contains patterns (empty = retry all)
+- Combined conditions — Both exit code AND pattern must match (AND logic)
+- `hooks` with `point = "failure"` — Execute command after all retries exhausted
+- `retry_count` in history — Track total retry attempts across tasks
+
+### Technical Details
+- Total retry tests: 13 (970-982) — backoff, jitter, ceiling, conditional retry, hooks
+- Total unit tests: 1408 passing (8 skipped, 0 failed)
+- Backward compatible — legacy `retry_backoff` boolean still works
+- Zero functional changes — pure documentation and test enhancement
+- Milestone: Enhanced Task Retry & Error Recovery (complete)
+
 ## [1.65.0] - 2026-04-07
 
 ### 🎨 Sailor v1.37.0 Migration (v2.0.0 API Bridge)
