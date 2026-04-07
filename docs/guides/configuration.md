@@ -21,6 +21,7 @@ This document describes the complete `zr.toml` configuration schema.
 - [Plugins](#plugins)
 - [Aliases](#aliases)
 - [Schedules](#schedules)
+- [Mixins](#mixins-v1670)
 - [Templates](#templates)
 - [Versioning](#versioning)
 - [Conformance](#conformance)
@@ -1511,6 +1512,320 @@ tasks = ["test-all"]
 [schedule.weekly-cleanup]
 cron = "0 0 * * 0"  # Sunday midnight
 tasks = ["clean"]
+```
+
+---
+
+## Mixins (v1.67.0)
+
+Mixins enable task reusability through composition, reducing duplication beyond workspace inheritance. A mixin is a partial task definition that can be applied to multiple tasks, with fields merged according to clear semantics.
+
+### Why Mixins?
+
+**Before mixins** (repetitive configuration):
+```toml
+[tasks.deploy-frontend]
+cmd = "kubectl apply -f frontend.yaml"
+env = { KUBECONFIG = "/home/user/.kube/prod", REGION = "us-west-2" }
+deps = ["docker-login", "validate-config"]
+tags = ["deploy", "production"]
+retry_max = 3
+retry_backoff_multiplier = 2.0
+
+[tasks.deploy-backend]
+cmd = "kubectl apply -f backend.yaml"
+env = { KUBECONFIG = "/home/user/.kube/prod", REGION = "us-west-2" }
+deps = ["docker-login", "validate-config"]
+tags = ["deploy", "production"]
+retry_max = 3
+retry_backoff_multiplier = 2.0
+
+[tasks.deploy-database]
+cmd = "kubectl apply -f database.yaml"
+env = { KUBECONFIG = "/home/user/.kube/prod", REGION = "us-west-2" }
+deps = ["docker-login", "validate-config"]
+tags = ["deploy", "production"]
+retry_max = 3
+retry_backoff_multiplier = 2.0
+```
+
+**After mixins** (DRY and maintainable):
+```toml
+[mixins.k8s-deploy]
+env = { KUBECONFIG = "/home/user/.kube/prod", REGION = "us-west-2" }
+deps = ["docker-login", "validate-config"]
+tags = ["deploy", "production"]
+retry_max = 3
+retry_backoff_multiplier = 2.0
+
+[tasks.deploy-frontend]
+cmd = "kubectl apply -f frontend.yaml"
+mixins = ["k8s-deploy"]
+
+[tasks.deploy-backend]
+cmd = "kubectl apply -f backend.yaml"
+mixins = ["k8s-deploy"]
+
+[tasks.deploy-database]
+cmd = "kubectl apply -f database.yaml"
+mixins = ["k8s-deploy"]
+```
+
+### Basic Mixin Definition
+
+Mixins are defined using `[mixins.NAME]` sections with partial task fields:
+
+```toml
+[mixins.common-env]
+env = { NODE_ENV = "production", LOG_LEVEL = "info" }
+
+[mixins.docker-auth]
+deps = ["docker-login"]
+tags = ["docker"]
+```
+
+### Applying Mixins to Tasks
+
+Tasks reference mixins via the `mixins` field (array of mixin names):
+
+```toml
+[tasks.build-image]
+cmd = "docker build -t myapp ."
+mixins = ["common-env", "docker-auth"]
+```
+
+### Field Merging Semantics
+
+When a task applies mixins, fields are merged according to these rules:
+
+| Field Type | Merge Strategy | Example |
+|------------|----------------|---------|
+| **env** | Merged (task overrides) | Mixin: `{A=1, B=2}` + Task: `{B=3, C=4}` → `{A=1, B=3, C=4}` |
+| **deps** | Concatenated (mixin first) | Mixin: `[a, b]` + Task: `[c]` → `[a, b, c]` |
+| **deps_serial** | Concatenated (mixin first) | Same as deps |
+| **deps_optional** | Concatenated (mixin first) | Same as deps |
+| **deps_if** | Concatenated (mixin first) | Same as deps |
+| **tags** | Union (deduplicated) | Mixin: `[docker, ci]` + Task: `[ci, test]` → `[docker, ci, test]` |
+| **hooks** | Concatenated (mixin first) | Mixin hooks run before task hooks |
+| **cmd** | Override (task wins) | Task `cmd` always used if set |
+| **cwd** | Override (task wins) | Task `cwd` used if set, else mixin's |
+| **description** | Override (task wins) | Same override logic |
+| **timeout_ms** | Override (task wins) | Task value preferred if set |
+| **retry_*** | Override (task wins) | All retry fields follow override logic |
+
+### Multiple Mixins Composition
+
+Tasks can apply multiple mixins, which are processed **left-to-right**:
+
+```toml
+[mixins.base]
+env = { LOG_LEVEL = "info" }
+tags = ["base"]
+
+[mixins.docker]
+deps = ["docker-login"]
+tags = ["docker"]
+
+[mixins.prod]
+env = { NODE_ENV = "production", LOG_LEVEL = "error" }
+tags = ["production"]
+
+[tasks.deploy]
+cmd = "deploy.sh"
+mixins = ["base", "docker", "prod"]  # Applied in order
+env = { DEPLOY_REGION = "us-west" }
+tags = ["critical"]
+```
+
+**Result**:
+- `env`: `{LOG_LEVEL="error", NODE_ENV="production", DEPLOY_REGION="us-west"}` (prod overrides base, task adds DEPLOY_REGION)
+- `deps`: `["docker-login"]` (from docker mixin)
+- `tags`: `["base", "docker", "production", "critical"]` (union of all)
+
+### Nested Mixins
+
+Mixins can reference other mixins, enabling composition hierarchies:
+
+```toml
+[mixins.retry-policy]
+retry_max = 3
+retry_backoff_multiplier = 2.0
+retry_jitter = true
+
+[mixins.docker-auth]
+deps = ["docker-login"]
+tags = ["docker"]
+
+[mixins.k8s-deploy]
+mixins = ["retry-policy", "docker-auth"]  # Inherits from other mixins
+env = { KUBECONFIG = "/home/user/.kube/prod" }
+tags = ["k8s"]
+
+[tasks.deploy-app]
+cmd = "kubectl apply -f app.yaml"
+mixins = ["k8s-deploy"]  # Transitively gets retry-policy + docker-auth
+```
+
+**Nested Resolution Order**:
+1. `retry-policy` applied first
+2. `docker-auth` applied second
+3. `k8s-deploy`'s own fields applied last
+4. Task fields override all
+
+**Cycle Detection**: Circular mixin references are detected and return `error.CircularMixin`:
+```toml
+[mixins.a]
+mixins = ["b"]
+
+[mixins.b]
+mixins = ["a"]  # ERROR: Circular mixin reference detected
+```
+
+### Mixin Fields Reference
+
+Mixins support these partial task fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `env` | table | Environment variables (merged) |
+| `deps` | array | Parallel dependencies (concatenated) |
+| `deps_serial` | array | Sequential dependencies (concatenated) |
+| `deps_optional` | array | Optional dependencies (concatenated) |
+| `deps_if` | array | Conditional dependencies (concatenated) |
+| `tags` | array | Task tags (union) |
+| `cmd` | string | Default command (overridden by task) |
+| `cwd` | string | Working directory (overridden by task) |
+| `description` | string | Description (overridden by task) |
+| `timeout_ms` | integer | Timeout (overridden by task) |
+| `retry_max` | integer | Max retries (overridden by task) |
+| `retry_delay_ms` | integer | Retry delay (overridden by task) |
+| `retry_backoff_multiplier` | float | Backoff multiplier (overridden by task) |
+| `retry_jitter` | boolean | Retry jitter (overridden by task) |
+| `max_backoff_ms` | integer | Max backoff ceiling (overridden by task) |
+| `hooks` | array | Execution hooks (concatenated) |
+| `template` | string | Template reference (overridden by task) |
+| `mixins` | array | Nested mixin references |
+
+### Real-World Use Cases
+
+**1. CI Pipeline Configurations**
+```toml
+[mixins.ci-base]
+env = { CI = "true" }
+tags = ["ci"]
+timeout_ms = 300000  # 5 minutes
+
+[mixins.test-coverage]
+env = { COVERAGE = "true" }
+deps = ["build"]
+
+[tasks.unit-tests]
+cmd = "npm test"
+mixins = ["ci-base", "test-coverage"]
+
+[tasks.integration-tests]
+cmd = "npm run test:integration"
+mixins = ["ci-base", "test-coverage"]
+```
+
+**2. Multi-Environment Deployments**
+```toml
+[mixins.deploy-base]
+deps = ["build", "test"]
+retry_max = 3
+retry_backoff_multiplier = 2.0
+
+[mixins.staging-env]
+env = { ENVIRONMENT = "staging", API_URL = "https://api.staging.example.com" }
+tags = ["staging"]
+
+[mixins.production-env]
+env = { ENVIRONMENT = "production", API_URL = "https://api.example.com" }
+tags = ["production"]
+
+[tasks.deploy-staging]
+cmd = "./deploy.sh"
+mixins = ["deploy-base", "staging-env"]
+
+[tasks.deploy-production]
+cmd = "./deploy.sh"
+mixins = ["deploy-base", "production-env"]
+```
+
+**3. Language-Specific Tooling**
+```toml
+[mixins.node-project]
+env = { NODE_ENV = "production" }
+toolchain = ["node@20"]
+tags = ["node"]
+
+[mixins.python-project]
+env = { PYTHONUNBUFFERED = "1" }
+toolchain = ["python@3.12"]
+tags = ["python"]
+
+[tasks.frontend-build]
+cmd = "npm run build"
+mixins = ["node-project"]
+
+[tasks.backend-test]
+cmd = "pytest"
+mixins = ["python-project"]
+```
+
+**4. Resource Constraints**
+```toml
+[mixins.heavy-cpu]
+max_cpu = 8
+max_memory = 8589934592  # 8GB
+tags = ["high-resource"]
+
+[mixins.light-cpu]
+max_cpu = 2
+max_memory = 2147483648  # 2GB
+tags = ["low-resource"]
+
+[tasks.compile-rust]
+cmd = "cargo build --release"
+mixins = ["heavy-cpu"]
+
+[tasks.format-code]
+cmd = "prettier --write ."
+mixins = ["light-cpu"]
+```
+
+### Benefits
+
+1. **DRY Principle**: Define common configurations once, reuse everywhere
+2. **Consistency**: Changes to a mixin automatically apply to all tasks using it
+3. **Maintainability**: Update retry policies, env vars, or tags in one place
+4. **Composability**: Combine multiple mixins for flexible configurations
+5. **Type Safety**: Cycle detection prevents infinite loops
+6. **Clear Semantics**: Explicit merge rules (override, concatenate, union)
+
+### Comparison with Other Features
+
+| Feature | Use Case | Example |
+|---------|----------|---------|
+| **Mixins** | Reusable partial task configs across tasks | Common env vars, retry policies, tags |
+| **Templates** | Parameterized task blueprints with placeholders | Deploy with `{{service_name}}`, `{{region}}` |
+| **Workspace Shared Tasks** | Monorepo task inheritance from root to members | Root defines `build`, all members inherit it |
+| **Profiles** | Environment-specific overrides (dev/prod) | Override `cmd` or `env` per profile |
+
+**When to use mixins**: When you have common configuration shared by multiple tasks that doesn't fit into a single template or workspace pattern.
+
+### Error Handling
+
+**Undefined Mixin**:
+```bash
+$ zr run deploy
+error: Mixin 'nonexistent' referenced by task 'deploy' not found
+```
+
+**Circular Reference**:
+```bash
+$ zr run deploy
+error: Circular mixin reference detected involving 'mixin-a'
 ```
 
 ---
