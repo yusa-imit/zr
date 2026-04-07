@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Latest**: v1.64.0 (Enhanced Task Discovery & Search)
-- **Active milestone**: None (awaiting new milestone establishment)
-- **READY milestones**: 0
+- **Latest**: v1.65.0 (Sailor v1.37.0 Migration)
+- **Active milestones**: 3 READY (Enhanced Task Retry & Error Recovery, Advanced Task Composition & Mixins, Shell Integration & Developer Ergonomics)
+- **READY milestones**: 3
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
 - **DONE**: Sailor v1.37.0 Migration (Cycle 108), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -17,6 +17,46 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Enhanced Task Retry & Error Recovery
+
+Improve task execution resilience with sophisticated retry mechanisms and error recovery strategies. Currently tasks fail immediately on error with basic retry count. This milestone adds exponential backoff, conditional retry, failure hooks, and enhanced error context. Includes:
+- **Exponential backoff**: `retry_backoff = "exponential"` with configurable base/max delays (e.g., 1s, 2s, 4s, 8s up to 60s)
+- **Conditional retry**: `retry_on = ["exit_code != 0", "timeout", "signal"]` — retry only on specific failure types
+- **Failure hooks**: `on_failure = "notify"` task runs on failure (e.g., send alert, log to external system)
+- **Error context preservation**: Capture stdout/stderr/exit_code/duration from all retry attempts
+- **Smart retry decisions**: Skip retry for known-fatal errors (permission denied, syntax errors, missing deps)
+- **Retry statistics**: `zr history` shows retry count, backoff delays, eventual outcome per run
+- **Integration tests**: 15+ tests covering backoff timing, conditional retry, failure hooks, error context
+- **Documentation**: Add retry strategies section to docs/guides/configuration.md with retry decision flowchart
+**Status: READY** — Dependencies: None. All prerequisite features implemented.
+
+### Advanced Task Composition & Mixins
+
+Enable task reusability through mixins and composition patterns to reduce duplication beyond workspace inheritance. Currently tasks can only inherit via workspace shared_tasks or depend on other tasks. This milestone adds mixin composition, task templates with parameters, and dynamic task generation. Includes:
+- **Task mixins**: `mixins = ["common_env", "docker_auth"]` — compose multiple partial task definitions
+- **Mixin definitions**: `[mixins.common_env]` section with partial task fields (env, deps, tags)
+- **Template parameters**: `[task_templates.deploy]` with `{{target}}` placeholders, instantiate via `zr add task --from-template deploy --param target=prod`
+- **Field merging semantics**: env merges (child overrides parent), deps concatenates, tags unions, command overrides
+- **Nested mixins**: Mixins can include other mixins (DAG resolution, cycle detection)
+- **Dynamic task generation**: `zr generate tasks --from-template matrix --params targets.json` creates N tasks from template × parameters
+- **Integration tests**: 20+ tests covering mixin resolution, parameter substitution, merge semantics, cycles
+- **Documentation**: Add composition patterns section to docs/guides/configuration.md with real-world examples
+**Status: READY** — Dependencies: None. Builds on existing loader/parser infrastructure.
+
+### Shell Integration & Developer Ergonomics
+
+Improve command-line ergonomics with enhanced shell integration, smart defaults, and workflow shortcuts. Currently users type full commands for common operations. This milestone adds shell aliases, context-aware defaults, and quick navigation. Includes:
+- **Smart task running**: `zr` (no args) → interactive picker if multiple tasks, auto-run if single task, or run `default` task if defined
+- **Recent task shortcuts**: `zr !!` → re-run last task, `zr !-2` → run 2nd-to-last task from history
+- **Task name abbreviation**: `zr b` → matches `build` if unambiguous, suggests candidates if ambiguous
+- **Shell function generation**: `zr completion --shell=bash --functions` emits `zr_run_last()`, `zr_task_jump()` helper functions
+- **Directory stack integration**: `zr cd <member>` prints path for `cd $(zr cd api)` pattern, `pushd $(zr cd api)`
+- **Environment variable injection**: `eval $(zr env --export)` loads task env into current shell (replaces direnv for simple cases)
+- **Workflow quick-run**: `zr w/<workflow>` shorthand for `zr workflow <workflow>`
+- **Integration tests**: 12+ tests covering smart defaults, abbreviations, shell function outputs
+- **Documentation**: Add shell integration guide to docs/guides/shell-setup.md with per-shell examples (bash/zsh/fish)
+**Status: READY** — Dependencies: None. Extends existing CLI/completion infrastructure.
 
 ### Sailor v1.37.0 Migration
 
