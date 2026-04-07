@@ -55,7 +55,12 @@ cmd = "npm run build"
 | `timeout_ms` | integer | ❌ | null | Timeout in milliseconds |
 | `retry_max` | integer | ❌ | 0 | Maximum retry attempts |
 | `retry_delay_ms` | integer | ❌ | 0 | Delay between retries (ms) |
-| `retry_backoff` | boolean | ❌ | false | Exponential backoff for retries |
+| `retry_backoff` | boolean | ❌ | false | **DEPRECATED** v1.47.0: Use `retry_backoff_multiplier` instead |
+| `retry_backoff_multiplier` | float | ❌ | null | Backoff multiplier (1.0=linear, 2.0=exponential, v1.47.0) |
+| `retry_jitter` | boolean | ❌ | false | Add ±25% jitter to retry delays (v1.47.0) |
+| `max_backoff_ms` | integer | ❌ | 60000 | Maximum retry delay ceiling (v1.47.0) |
+| `retry_on_codes` | array | ❌ | [] | Only retry on specific exit codes (v1.47.0) |
+| `retry_on_patterns` | array | ❌ | [] | Only retry when output contains patterns (v1.47.0) |
 | `allow_failure` | boolean | ❌ | false | Continue if task fails |
 | `condition` | string | ❌ | null | Expression to evaluate before running |
 | `cache` | boolean | ❌ | false | Cache successful runs |
@@ -130,14 +135,218 @@ dir = "./packages/frontend"  # or cwd = "..."
 
 ### Timeouts and Retries
 
+zr provides sophisticated retry mechanisms with exponential backoff, conditional retry, jitter, and failure hooks to handle transient failures gracefully.
+
+#### Basic Retry Configuration
+
 ```toml
 [tasks.flaky-test]
 cmd = "npm test"
-timeout_ms = 60000  # 1 minute
-retry_max = 3
-retry_delay_ms = 1000
-retry_backoff = true  # 1s, 2s, 4s
+timeout_ms = 60000        # 1 minute timeout
+retry_max = 3             # Retry up to 3 times
+retry_delay_ms = 1000     # Base delay: 1 second
+retry_backoff = true      # DEPRECATED: Use retry_backoff_multiplier instead
 ```
+
+**Basic Retry Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retry_max` | integer | 0 | Maximum retry attempts (0 = no retry) |
+| `retry_delay_ms` | integer | 0 | Base delay between retries in milliseconds |
+| `retry_backoff` | boolean | false | **DEPRECATED** in v1.47.0. Use `retry_backoff_multiplier` instead |
+
+#### Advanced Retry Strategies (v1.47.0)
+
+```toml
+[tasks.api-request]
+cmd = "curl https://api.example.com/data"
+retry_max = 5
+retry_delay_ms = 1000
+retry_backoff_multiplier = 2.0  # Exponential: 1s, 2s, 4s, 8s, 16s
+retry_jitter = true              # Add ±25% random variance
+max_backoff_ms = 30000           # Cap delays at 30 seconds
+retry_on_codes = [1, 2, 7]       # Only retry on specific exit codes
+retry_on_patterns = ["timeout", "Connection refused", "503"]  # Or on output patterns
+```
+
+**Advanced Retry Fields (v1.47.0):**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retry_backoff_multiplier` | float | null | Backoff multiplier: 1.0=linear (constant), 2.0=exponential (double), 1.5=moderate. If null, uses legacy `retry_backoff` (2.0 if true, 1.0 if false) |
+| `retry_jitter` | boolean | false | Add ±25% random jitter to delays (prevents thundering herd) |
+| `max_backoff_ms` | integer | null | Maximum delay ceiling in milliseconds (default: 60000ms/60s) |
+| `retry_on_codes` | array | [] | Only retry if exit code matches these codes (empty = retry on any code) |
+| `retry_on_patterns` | array | [] | Only retry if stdout/stderr contains these patterns (empty = retry on any output) |
+
+#### Backoff Strategies
+
+**Linear backoff (constant delay):**
+```toml
+retry_delay_ms = 5000
+retry_backoff_multiplier = 1.0  # Delays: 5s, 5s, 5s, 5s, ...
+```
+
+**Exponential backoff (doubles each retry):**
+```toml
+retry_delay_ms = 1000
+retry_backoff_multiplier = 2.0  # Delays: 1s, 2s, 4s, 8s, 16s, 32s, 60s (capped)
+max_backoff_ms = 60000          # Cap at 60 seconds
+```
+
+**Moderate backoff (1.5x growth):**
+```toml
+retry_delay_ms = 2000
+retry_backoff_multiplier = 1.5  # Delays: 2s, 3s, 4.5s, 6.75s, 10.1s, ...
+```
+
+**Aggressive backoff (3x growth):**
+```toml
+retry_delay_ms = 1000
+retry_backoff_multiplier = 3.0  # Delays: 1s, 3s, 9s, 27s, 60s (capped)
+max_backoff_ms = 60000
+```
+
+#### Conditional Retry
+
+**Retry only on specific exit codes (network errors):**
+```toml
+[tasks.download]
+cmd = "wget https://example.com/file.zip"
+retry_max = 5
+retry_delay_ms = 2000
+retry_backoff_multiplier = 2.0
+retry_on_codes = [1, 2, 3, 4, 5, 6, 7, 8]  # wget network error codes
+```
+
+**Retry only when output matches patterns:**
+```toml
+[tasks.flaky-service]
+cmd = "./run-integration-tests.sh"
+retry_max = 3
+retry_delay_ms = 5000
+retry_on_patterns = [
+    "Connection refused",
+    "timeout",
+    "503 Service Unavailable",
+    "ECONNRESET"
+]
+```
+
+**Combined conditions (exit code AND pattern must match):**
+```toml
+[tasks.api-call]
+cmd = "curl -f https://api.example.com/v1/data"
+retry_max = 5
+retry_delay_ms = 1000
+retry_backoff_multiplier = 2.0
+retry_on_codes = [7, 28]          # curl: failed to connect, timeout
+retry_on_patterns = ["timeout"]   # AND output contains "timeout"
+```
+
+**Note:** If both `retry_on_codes` and `retry_on_patterns` are specified, **both** conditions must be met for retry to occur (AND logic). If either list is empty, that condition is ignored (always true).
+
+#### Jitter for Thundering Herd Prevention
+
+When multiple tasks retry simultaneously (e.g., after a service outage), synchronized retries can overwhelm the recovering service. Jitter adds random variance to delays:
+
+```toml
+[tasks.shared-resource]
+cmd = "access-shared-db.sh"
+retry_max = 10
+retry_delay_ms = 1000
+retry_backoff_multiplier = 2.0
+retry_jitter = true  # Adds ±25% random variance to each delay
+```
+
+With `retry_jitter = true`, a calculated delay of 8000ms becomes 6000-10000ms (random within ±25%).
+
+#### Failure Hooks
+
+Execute commands when tasks fail (notifications, cleanup, logging):
+
+```toml
+[tasks.critical-job]
+cmd = "./run-critical-task.sh"
+retry_max = 3
+retry_delay_ms = 5000
+retry_backoff_multiplier = 2.0
+
+hooks = [
+    { point = "failure", cmd = "notify-slack.sh 'Critical job failed'", failure_strategy = "continue_task" }
+]
+```
+
+**Hook Points:**
+- `before` — Execute before task starts
+- `after` — Execute after task completes (any status)
+- `success` — Execute only on successful completion
+- `failure` — Execute only on failure (after all retries exhausted)
+- `timeout` — Execute only on timeout
+
+See [Execution Hooks](#execution-hooks-v1240) for detailed hook configuration.
+
+#### Smart Retry Decisions
+
+zr automatically skips retry for known-fatal errors to save time:
+
+**Fatal errors (no retry by default):**
+- Permission denied (exit code 126, 127)
+- Command not found (exit code 127)
+- Syntax errors in scripts (exit code 2 for bash)
+- SIGKILL, SIGSEGV (signals 9, 11)
+
+**Retriable errors (retry by default):**
+- Network timeouts (exit code 124, curl 7/28)
+- Connection refused (curl 7, wget 4)
+- Service unavailable (HTTP 503, exit code varies)
+- Resource temporarily unavailable (EAGAIN)
+
+**Override smart defaults with conditional retry:**
+```toml
+# Force retry even on permission errors (not recommended)
+retry_on_codes = [126]
+
+# Or be explicit about what to retry
+retry_on_codes = [1, 7, 28]  # Only network-related errors
+```
+
+#### Retry with Circuit Breaker
+
+Combine retry with circuit breaker to prevent retry storms:
+
+```toml
+[tasks.external-api]
+cmd = "curl https://api.example.com/data"
+retry_max = 10
+retry_delay_ms = 1000
+retry_backoff_multiplier = 2.0
+retry_jitter = true
+
+[tasks.external-api.circuit_breaker]
+failure_threshold = 0.5      # Stop retrying at 50% failure rate
+min_attempts = 3
+window_ms = 60000
+reset_timeout_ms = 30000
+```
+
+See [Circuit Breaker](#circuit-breaker-v1300) for details.
+
+#### Retry Statistics in History
+
+Retry attempts are tracked in execution history:
+
+```bash
+$ zr history
+2026-04-07 12:34:56  api-request  FAIL  45s  (3 retries)  exit code: 7
+2026-04-07 12:30:12  flaky-test   OK    12s  (1 retry)
+2026-04-07 12:25:00  stable-task  OK    5s   (0 retries)
+```
+
+**History fields:**
+- `retry_count` — Total retry attempts across all tasks in the run
+- Displayed after duration in parentheses when > 0
 
 ### Circuit Breaker (v1.30.0)
 
