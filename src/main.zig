@@ -418,8 +418,77 @@ fn run(
     use_color: bool,
 ) !u8 {
     if (args.len < 2) {
-        try printHelp(w, use_color);
-        return 0;
+        // Smart no-args behavior:
+        // 1. If 'default' task exists → run it
+        // 2. If single task exists → run it
+        // 3. If multiple tasks → interactive picker
+        // 4. Otherwise → show help
+
+        // Try to find config file
+        const config_path = (try common.findConfigPath(allocator)) orelse {
+            // No config → show help
+            try printHelp(w, use_color);
+            return 0;
+        };
+        defer allocator.free(config_path);
+
+        // Load config
+        var config = (try common.loadConfig(allocator, config_path, null, ew, use_color)) orelse {
+            // Load failed → error already printed
+            return 1;
+        };
+        defer config.deinit();
+
+        // Check for 'default' task
+        if (config.tasks.get("default")) |_| {
+            // Run default task
+            return run_cmd.cmdRun(allocator, "default", null, false, 0, config_path, false, false, w, ew, use_color, null);
+        }
+
+        // Count tasks
+        const task_count = config.tasks.count();
+        if (task_count == 0) {
+            // No tasks → show help
+            try printHelp(w, use_color);
+            return 0;
+        } else if (task_count == 1) {
+            // Single task → auto-run it
+            var task_it = config.tasks.iterator();
+            const single_task = task_it.next().?;
+            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, 0, config_path, false, false, w, ew, use_color, null);
+        } else {
+            // Multiple tasks → interactive picker
+            if (!std.fs.File.stdout().isTty()) {
+                // No TTY → show help
+                try printHelp(w, use_color);
+                return 0;
+            }
+
+            const picker_result = task_picker.runPicker(
+                allocator,
+                &config,
+                .{
+                    .fuzzy_search = true,
+                    .show_preview = true,
+                    .initial_query = "",
+                },
+                w,
+            ) catch |err| {
+                try color.printError(ew, use_color, "Failed to launch interactive picker: {}\n", .{err});
+                return 1;
+            };
+
+            if (!picker_result.executed) {
+                // User cancelled
+                return 0;
+            }
+
+            if (picker_result.kind == .task) {
+                return run_cmd.cmdRun(allocator, picker_result.name, null, false, 0, config_path, false, false, w, ew, use_color, null);
+            } else {
+                return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color);
+            }
+        }
     }
 
     // Parse global flags using sailor.arg — extract known global flags from args,
