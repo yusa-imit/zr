@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.68.0 (Shell Integration & Developer Ergonomics)
-- **Active milestones**: 0 READY
-- **READY milestones**: 0
+- **Active milestones**: 1 READY (Sailor v1.38.0 & v1.38.1 Migration)
+- **READY milestones**: 1
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda#21, zuda WorkStealingDeque untested pending Graph fix)
 - **DONE**: Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -54,6 +54,17 @@ Improve command-line ergonomics with enhanced shell integration, smart defaults,
 - ✅ **Documentation**: Complete shell integration guide at docs/guides/shell-setup.md with bash/zsh/fish examples, tips, and troubleshooting
 - **Note**: Task name abbreviation, shell function generation, and `eval $(zr env --export)` deferred to future milestones (nice-to-have features; core UX improvements delivered)
 **Status: DONE** — Completed 2026-04-10 (Cycle 114). Implemented 3 core productivity features: (1) Smart no-args behavior with default task/single task/picker logic, (2) History shortcuts !! and !-N for quick re-runs, (3) Workflow shorthand w/<name> for concise workflow execution. All features respect global flags (--profile, --dry-run, --jobs). Integration tests validate all scenarios including edge cases. Documentation provides complete shell setup guide with examples for all major shells. Total implementation: ~140 lines of logic, 252 lines of tests, 398 lines of docs. Zero breaking changes.
+
+### Sailor v1.38.0 & v1.38.1 Migration
+
+Dependency update: sailor v1.37.0 → v1.38.1 (batch migration). v1.38.0 introduces migration tooling for upcoming v2.0.0, v1.38.1 fixes migration script bugs. Both are maintenance releases with zero breaking changes. Includes:
+- **Update dependency**: Update build.zig.zon from v1.37.0 → v1.38.1
+- **Deprecation warnings**: New deprecation warnings for Rect.new(), Block.withTitle() in preparation for v2.0.0
+- **Migration tooling**: Migration script infrastructure (consumer-facing, not required for zr codebase)
+- **Build verification**: Ensure all unit tests pass (expected: 1408/1416 passing)
+- **Integration tests**: Verify all existing tests pass without modification (backward compatible)
+- **Issue closure**: Close GitHub issues #52 (v1.38.0), #53 (v1.38.1)
+**Status: READY** — sailor v1.38.1 released 2026-04-07. No code changes expected (maintenance release). Update dependency and verify tests.
 
 ### Sailor v1.37.0 Migration
 
