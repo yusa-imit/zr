@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.68.0] - 2026-04-10
+
+### 🚀 Shell Integration & Developer Ergonomics
+
+This release enhances command-line productivity with smart defaults, history shortcuts, and workflow shorthands. Run tasks faster with less typing.
+
+### Added
+
+**Core Feature: Smart No-Args Behavior**
+- `zr` (no arguments) now intelligently picks what to do:
+  - Runs `default` task if it exists
+  - Auto-runs single task if only one defined
+  - Launches interactive picker for multiple tasks
+  - Shows help if no config or no tasks
+- Respects all global flags (`--profile`, `--dry-run`, `--jobs`, `--monitor`)
+
+**Core Feature: History Shortcuts**
+- `zr !!` — Re-run the most recently executed task
+- `zr !-N` — Run Nth-to-last task from history (e.g., `!-2` for 2nd-to-last)
+- Loads from `~/.zr_history` (shared across all projects)
+- Validates index format and range with clear error messages
+- Shows "Re-running: <task>" info message before execution
+
+**Core Feature: Workflow Shorthand**
+- `zr w/<workflow>` — Shorthand for `zr workflow <workflow>`
+- Example: `zr w/ci` instead of `zr workflow ci`
+- Respects all global flags (`--profile`, `--dry-run`, `--jobs`)
+- Validates workflow name and shows helpful errors
+
+**Documentation**
+- New comprehensive guide: `docs/guides/shell-setup.md`
+- Shell-specific setup examples (bash/zsh/fish)
+- Completion setup instructions
+- Aliases & abbreviations guide
+- Directory navigation patterns
+- Tips, best practices, and troubleshooting
+- 398 lines of complete shell integration documentation
+
+**Integration Tests (12 tests)**
+- Smart no-args: default task, single task, no config, no tasks (4 tests)
+- History shortcuts: !-N validation, unknown syntax handling (3 tests)
+- Workflow shorthand: w/<name>, w/ without name, nonexistent workflow (3 tests)
+- Combined features: --dry-run, --profile flag interaction (2 tests)
+- All tests cover edge cases and error scenarios
+
+### Implementation Notes
+
+**Total Changes:**
+- ~140 lines of implementation logic across `src/main.zig`
+- 252 lines of integration tests in `tests/shell_ergonomics_test.zig`
+- 398 lines of documentation in `docs/guides/shell-setup.md`
+- Zero breaking changes — all features are additive
+
+**Deferred Features:**
+- Task name abbreviation matching — Deferred to future milestone
+- Shell function generation (`--functions` flag) — Deferred to future milestone
+- `eval $(zr env --export)` — Deferred to future milestone
+- Core UX improvements delivered; nice-to-have features postponed
+
+### Milestone
+
+**Shell Integration & Developer Ergonomics** — DONE (Cycle 114)
+
 ## [1.67.0] - 2026-04-07
 
 ### 🎯 Advanced Task Composition & Mixins
