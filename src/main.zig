@@ -746,6 +746,66 @@ fn run(
         }
     }
 
+    // History-based shortcuts: !! (last task), !-N (Nth-to-last task)
+    if (std.mem.startsWith(u8, cmd, "!")) {
+        // Get history file path
+        const history_path = try std.fs.path.join(allocator, &[_][]const u8{
+            try std.process.getEnvVarOwned(allocator, "HOME"),
+            ".zr_history",
+        });
+        defer allocator.free(history_path);
+
+        const store = try history.Store.init(allocator, history_path);
+        defer store.deinit();
+
+        var records = try store.loadLast(allocator, 100); // Load last 100 for indexing
+        defer {
+            for (records.items) |r| r.deinit(allocator);
+            records.deinit(allocator);
+        }
+
+        if (records.items.len == 0) {
+            try color.printError(ew, effective_color, "No task history found\n\n  Hint: Run a task first to populate history\n", .{});
+            return 1;
+        }
+
+        var target_index: usize = 0;
+        if (std.mem.eql(u8, cmd, "!!")) {
+            // Last task (index 0 in reverse order)
+            target_index = 0;
+        } else if (std.mem.startsWith(u8, cmd, "!-")) {
+            // !-N → Nth-to-last task
+            const offset_str = cmd[2..];
+            const offset = std.fmt.parseInt(usize, offset_str, 10) catch {
+                try color.printError(ew, effective_color, "Invalid history index: {s}\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{cmd});
+                return 1;
+            };
+            if (offset == 0) {
+                try color.printError(ew, effective_color, "Invalid history index: !-0\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{});
+                return 1;
+            }
+            target_index = offset - 1; // !-1 == last (index 0), !-2 == 2nd-to-last (index 1)
+        } else {
+            // Unknown history syntax
+            try color.printError(ew, effective_color, "Unknown history syntax: {s}\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{cmd});
+            return 1;
+        }
+
+        if (target_index >= records.items.len) {
+            try color.printError(ew, effective_color, "History index out of range: only {d} tasks in history\n", .{records.items.len});
+            return 1;
+        }
+
+        // Reverse index (loadLast returns newest first)
+        const task_name = records.items[records.items.len - 1 - target_index].task_name;
+
+        // Print info message
+        try color.printInfo(effective_w, effective_color, "Re-running: {s}\n", .{task_name});
+
+        // Re-run the task (use 'run' command with the task name)
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null);
+    }
+
     if (std.mem.eql(u8, cmd, "run")) {
         if (effective_args.len < 3) {
             // No task name provided — launch interactive picker
