@@ -746,6 +746,16 @@ fn run(
         }
     }
 
+    // Workflow shorthand: w/<workflow> → workflow <workflow>
+    if (std.mem.startsWith(u8, cmd, "w/")) {
+        const workflow_name = cmd[2..]; // Skip "w/"
+        if (workflow_name.len == 0) {
+            try color.printError(ew, effective_color, "w/: missing workflow name\n\n  Hint: zr w/<workflow-name>\n", .{});
+            return 1;
+        }
+        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color);
+    }
+
     // History-based shortcuts: !! (last task), !-N (Nth-to-last task)
     if (std.mem.startsWith(u8, cmd, "!")) {
         // Get history file path
