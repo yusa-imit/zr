@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.68.1] - 2026-04-11
+
+### 🔧 Dependency Updates
+
+**Sailor v1.38.1 Migration**
+- Updated sailor dependency from v1.37.0 to v1.38.1 (batch migration)
+- v1.38.0: Migration tooling infrastructure for upcoming v2.0.0
+- v1.38.1: Migration script bug fixes and test coverage improvements
+- Zero breaking changes - backward compatible maintenance release
+- All 1408 unit tests passing (8 skipped, 0 failed)
+- No code changes required in zr codebase
+
+### Changed
+- `build.zig.zon`: sailor v1.37.0 → v1.38.1 with correct tarball hash
+- Closed issues #52 (sailor v1.38.0), #53 (sailor v1.38.1)
+
 ## [1.68.0] - 2026-04-10
 
 ### 🚀 Shell Integration & Developer Ergonomics
