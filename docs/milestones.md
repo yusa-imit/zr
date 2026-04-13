@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.68.1 (Sailor v1.38.0 & v1.38.1 Migration)
-- **Active milestones**: 0 READY
-- **READY milestones**: 0
+- **Active milestones**: 3 READY + 2 BLOCKED
+- **READY milestones**: 3 (Task Name Abbreviation & Fuzzy Matching, Task Environment Export & Shell Functions, Real-Time Task Output Filtering & Grep)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
 - **DONE**: Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -65,6 +65,45 @@ Dependency update: sailor v1.37.0 → v1.38.1 (batch migration). v1.38.0 introdu
 - **Integration tests**: Verify all existing tests pass without modification (backward compatible)
 - **Issue closure**: Close GitHub issues #52 (v1.38.0), #53 (v1.38.1)
 **Status: DONE** — Completed 2026-04-11 (Cycle 118). Updated build.zig.zon from v1.37.0 to v1.38.1 with correct hash. All 1408 unit tests passing (8 skipped, 0 failed). Zero code changes required - backward compatible maintenance release. Closed issues #52, #53. Release v1.68.1.
+
+### Task Name Abbreviation & Fuzzy Matching
+
+Reduce typing friction with intelligent task name abbreviation and fuzzy matching. Currently users must type complete task names (`zr build-docker-production`) even when unambiguous. This milestone adds prefix matching, unique prefix resolution, and fuzzy fallback for typos. Includes:
+- **Prefix matching**: `zr b` runs `build` if unique, prompts if ambiguous (build, bench, backup)
+- **Unique prefix resolution**: `zr dep` → `deploy` if only task starting with "dep"
+- **Fuzzy fallback**: `zr tset` suggests "test" (Levenshtein distance ≤2, already implemented in v1.0)
+- **Abbreviation hints**: `zr list` shows minimum unique prefix for each task
+- **Workspace awareness**: Abbreviations work across workspace members (qualified prefix: `member:prefix`)
+- **Integration tests**: 8 tests covering unique match, ambiguous prompt, fuzzy suggestions, workspace context
+- **Documentation**: Add "Task Abbreviation" section to docs/guides/shell-setup.md
+**Status: READY** — All dependencies met. Existing levenshtein fuzzy matching provides foundation (src/util/levenshtein.zig). Implementation requires: (1) prefix trie in src/cli/run.zig, (2) ambiguity resolver with interactive picker, (3) minimum unique prefix calculator for `zr list` output, (4) workspace-aware prefix lookup. Estimated: ~200 LOC implementation, 150 LOC tests, 100 LOC docs.
+
+### Task Environment Export & Shell Functions
+
+Enable seamless shell environment integration with task-defined variables and generated shell functions. Currently task environment variables only apply within task execution, not to parent shell. This milestone adds `zr env --export` for sourcing and automatic shell function generation. Includes:
+- **Environment export**: `eval $(zr env --export)` loads all task env vars into current shell
+- **Task-specific export**: `eval $(zr env --export build)` loads only build task's environment
+- **Profile-aware export**: `eval $(zr env --export --profile prod)` respects profile overrides
+- **Shell function generation**: `eval $(zr shell-functions)` creates `zr_build()`, `zr_test()` functions in shell
+- **Auto-complete integration**: Generated functions include completion hints for fish/zsh
+- **Workspace support**: `eval $(zr env --export --workspace)` loads all workspace member envs
+- **Integration tests**: 10 tests covering env export formats (bash/zsh/fish), function generation, profile merging
+- **Documentation**: Add "Shell Environment Integration" section to docs/guides/shell-setup.md
+**Status: READY** — All dependencies met. Existing env resolution in src/config/task.zig provides foundation. Implementation requires: (1) shell-specific formatters in src/cli/env.zig (bash: `export FOO=bar`, fish: `set -x FOO bar`), (2) function generator creating shell wrappers, (3) profile merging logic, (4) workspace aggregation. Estimated: ~250 LOC implementation, 180 LOC tests, 120 LOC docs.
+
+### Real-Time Task Output Filtering & Grep
+
+Add live filtering and pattern matching for task output streams, enabling quick debugging and log analysis without post-processing. Currently users must pipe task output to `grep` manually or review full logs. This milestone adds built-in filtering with highlighting and tail-follow. Includes:
+- **Live grep**: `zr build --grep="error|warning"` shows only matching lines (regex support)
+- **Inverted match**: `zr test --grep-v="verbose debug"` hides matching lines (noise reduction)
+- **Highlight mode**: `zr --highlight="TODO|FIXME"` shows all output with pattern highlighting
+- **Context lines**: `zr --grep="ERROR" -C 3` shows 3 lines before/after matches (like grep -C)
+- **Color preservation**: Filtered output preserves ANSI colors from original commands
+- **Tail follow**: `zr watch build --grep="compilation" --follow` combines file watching with live filtering
+- **Multi-task filtering**: `zr run --all --grep="failed"` filters output from parallel tasks
+- **Integration tests**: 12 tests covering regex matching, inverted filters, context lines, color preservation, parallel tasks
+- **Documentation**: Add "Output Filtering" section to docs/guides/commands.md
+**Status: READY** — All dependencies met. Existing output streaming in src/output/formatter.zig provides foundation. Implementation requires: (1) regex filter in src/cli/run.zig wrapping task stdout/stderr, (2) highlight mode with ANSI color injection, (3) context buffer for -C option, (4) parallel task output multiplexing with per-task filters. Estimated: ~300 LOC implementation, 220 LOC tests, 150 LOC docs.
 
 ### Sailor v1.37.0 Migration
 
