@@ -303,17 +303,67 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     , .{});
 }
 
-test "affected: help prints without error" {
-    // Create null file writer to verify no crash
-    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
-    defer null_file.close();
+test "affected: help prints output without colors" {
+    // Use temp file for capturing output
+    const temp_path = "/tmp/zr_test_affected_help.txt";
+    const test_file = std.fs.createFileAbsolute(temp_path, .{}) catch return;
+    defer {
+        test_file.close();
+        std.fs.deleteFileAbsolute(temp_path) catch {};
+    }
 
     var buf: [1024]u8 = undefined;
-    var writer = null_file.writer(&buf);
+    var writer = test_file.writer(&buf);
 
-    // Verify printHelp executes without error (primary test: no crash/panic)
+    // Call printHelp with color disabled
     try printHelp(&writer.interface, false);
 
-    // Test both color modes
+    // Read back what was written
+    const file = std.fs.openFileAbsolute(temp_path, .{}) catch return;
+    defer file.close();
+
+    const content = file.readToEndAlloc(std.testing.allocator, 4096) catch return;
+    defer std.testing.allocator.free(content);
+
+    // Verify output is not empty
+    try std.testing.expect(content.len > 0);
+
+    // Verify essential help content is present
+    try std.testing.expect(std.mem.indexOf(u8, content, "zr affected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "Usage:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "--base") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "--include-dependents") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "--exclude-self") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "Examples:") != null);
+}
+
+test "affected: help with colors produces output" {
+    // Use temp file for capturing output
+    const temp_path = "/tmp/zr_test_affected_help_color.txt";
+    const test_file = std.fs.createFileAbsolute(temp_path, .{}) catch return;
+    defer {
+        test_file.close();
+        std.fs.deleteFileAbsolute(temp_path) catch {};
+    }
+
+    var buf: [1024]u8 = undefined;
+    var writer = test_file.writer(&buf);
+
+    // Call printHelp with color enabled
     try printHelp(&writer.interface, true);
+
+    // Read back what was written
+    const file = std.fs.openFileAbsolute(temp_path, .{}) catch return;
+    defer file.close();
+
+    const content = file.readToEndAlloc(std.testing.allocator, 4096) catch return;
+    defer std.testing.allocator.free(content);
+
+    // Verify output is not empty
+    try std.testing.expect(content.len > 0);
+
+    // Verify help content is present (color codes may be interspersed)
+    try std.testing.expect(std.mem.indexOf(u8, content, "Usage:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "--list") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "Global flags") != null);
 }
