@@ -512,9 +512,28 @@ pub fn cmdList(
         // Standard flat list
         try color.printHeader(w, use_color, "Tasks:", .{});
 
+        // Calculate unique prefixes for abbreviation hints
+        const run_module = @import("run.zig");
+        var unique_prefixes = try run_module.calculateUniquePrefix(allocator, &config.tasks);
+        defer {
+            var prefix_it = unique_prefixes.iterator();
+            while (prefix_it.next()) |entry| {
+                allocator.free(entry.value_ptr.*);
+            }
+            unique_prefixes.deinit();
+        }
+
         for (names.items) |name| {
             const task = config.tasks.get(name).?;
             try w.print("  ", .{});
+
+            // Show unique prefix hint if different from full name
+            if (unique_prefixes.get(name)) |prefix| {
+                if (!std.mem.eql(u8, prefix, name)) {
+                    try color.printDim(w, use_color, "[{s}] ", .{prefix});
+                }
+            }
+
             try color.printInfo(w, use_color, "{s:<20}", .{name});
             if (task.description) |desc| {
                 try color.printDim(w, use_color, " {s}", .{desc});

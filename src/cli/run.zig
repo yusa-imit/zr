@@ -27,46 +27,68 @@ pub fn cmdRun(
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
-    if (config.tasks.get(task_name) == null) {
-        // Build list of available task names for suggestions
-        var task_names_list = std.ArrayList([]const u8){};
-        defer task_names_list.deinit(allocator);
-        var task_iter = config.tasks.iterator();
-        while (task_iter.next()) |entry| {
-            try task_names_list.append(allocator, entry.key_ptr.*);
-        }
+    // Try prefix matching if exact match fails
+    var resolved_task_name: []const u8 = task_name;
+    const match_result = try findTasksByPrefix(allocator, task_name, &config.tasks);
+    defer allocator.free(match_result.prefix_matches);
 
-        // Find similar task names using Levenshtein distance
-        const suggestions = try levenshtein.findClosestMatches(
-            allocator,
-            task_name,
-            task_names_list.items,
-            3, // max distance
-            3, // max suggestions
-        );
-        defer allocator.free(suggestions);
-
-        try color.printError(err_writer, use_color,
-            "run: Task '{s}' not found\n",
-            .{task_name},
-        );
-
-        // If task_name looks like a flag, provide a different hint
-        if (std.mem.startsWith(u8, task_name, "-")) {
-            try err_writer.print("\n  Hint: Unknown flag '{s}'. Run 'zr --help' to see available options\n", .{task_name});
-        } else if (suggestions.len > 0) {
-            try err_writer.print("\n  Did you mean?\n", .{});
-            for (suggestions) |suggestion| {
-                try err_writer.print("    {s}\n", .{suggestion.name});
+    if (match_result.exact == null) {
+        // No exact match - check prefix matches
+        if (match_result.prefix_matches.len == 0) {
+            // No prefix matches either - try fuzzy matching
+            var task_names_list = std.ArrayList([]const u8){};
+            defer task_names_list.deinit(allocator);
+            var task_iter = config.tasks.iterator();
+            while (task_iter.next()) |entry| {
+                try task_names_list.append(allocator, entry.key_ptr.*);
             }
-            try err_writer.print("\n", .{});
+
+            const suggestions = try levenshtein.findClosestMatches(
+                allocator,
+                task_name,
+                task_names_list.items,
+                3, // max distance
+                3, // max suggestions
+            );
+            defer allocator.free(suggestions);
+
+            try color.printError(err_writer, use_color,
+                "run: Task '{s}' not found\n",
+                .{task_name},
+            );
+
+            if (std.mem.startsWith(u8, task_name, "-")) {
+                try err_writer.print("\n  Hint: Unknown flag '{s}'. Run 'zr --help' to see available options\n", .{task_name});
+            } else if (suggestions.len > 0) {
+                try err_writer.print("\n  Did you mean?\n", .{});
+                for (suggestions) |suggestion| {
+                    try err_writer.print("    {s}\n", .{suggestion.name});
+                }
+                try err_writer.print("\n", .{});
+            } else {
+                try err_writer.print("\n  Hint: Run 'zr list' to see available tasks\n", .{});
+            }
+            return 1;
+        } else if (match_result.prefix_matches.len == 1) {
+            // Unique prefix match - use it
+            resolved_task_name = match_result.prefix_matches[0];
+            try color.printDim(err_writer, use_color, "Resolved '{s}' → '{s}'\n", .{ task_name, resolved_task_name });
         } else {
-            try err_writer.print("\n  Hint: Run 'zr list' to see available tasks\n", .{});
+            // Ambiguous prefix - show all matches
+            try color.printError(err_writer, use_color,
+                "run: Ambiguous task prefix '{s}'\n",
+                .{task_name},
+            );
+            try err_writer.print("\n  Matching tasks:\n", .{});
+            for (match_result.prefix_matches) |match| {
+                try err_writer.print("    {s}\n", .{match});
+            }
+            try err_writer.print("\n  Hint: Use a more specific prefix or full task name\n", .{});
+            return 1;
         }
-        return 1;
     }
 
-    const task_names = [_][]const u8{task_name};
+    const task_names = [_][]const u8{resolved_task_name};
 
     // Dry-run: show the execution plan without running tasks.
     if (dry_run) {
@@ -874,6 +896,100 @@ pub fn printDryRunPlan(allocator: std.mem.Allocator, w: *std.Io.Writer, use_colo
     }
 
     try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
+}
+
+/// Result of prefix matching
+pub const PrefixMatchResult = struct {
+    /// Exact match found
+    exact: ?[]const u8,
+    /// Prefix matches (when no exact match)
+    prefix_matches: [][]const u8,
+};
+
+/// Find tasks matching a given prefix.
+/// Returns exact match if found, otherwise all tasks with matching prefix.
+pub fn findTasksByPrefix(
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    tasks: *const std.StringHashMap(@import("../config/types.zig").Task),
+) !PrefixMatchResult {
+    // Check for exact match first
+    if (tasks.get(task_name)) |_| {
+        const empty_slice = try allocator.alloc([]const u8, 0);
+        return PrefixMatchResult{
+            .exact = task_name,
+            .prefix_matches = empty_slice,
+        };
+    }
+
+    // Find prefix matches
+    var matches = std.ArrayList([]const u8){};
+    errdefer matches.deinit(allocator);
+
+    var iter = tasks.iterator();
+    while (iter.next()) |entry| {
+        if (std.mem.startsWith(u8, entry.key_ptr.*, task_name)) {
+            try matches.append(allocator, entry.key_ptr.*);
+        }
+    }
+
+    return PrefixMatchResult{
+        .exact = null,
+        .prefix_matches = try matches.toOwnedSlice(allocator),
+    };
+}
+
+/// Calculate the minimum unique prefix for each task name.
+/// Returns a map from task name to its shortest unique prefix.
+pub fn calculateUniquePrefix(
+    allocator: std.mem.Allocator,
+    tasks: *const std.StringHashMap(@import("../config/types.zig").Task),
+) !std.StringHashMap([]const u8) {
+    var result = std.StringHashMap([]const u8).init(allocator);
+    errdefer result.deinit();
+
+    var task_names_list = std.ArrayList([]const u8){};
+    defer task_names_list.deinit(allocator);
+
+    // Collect all task names
+    var iter = tasks.iterator();
+    while (iter.next()) |entry| {
+        try task_names_list.append(allocator, entry.key_ptr.*);
+    }
+
+    const task_names = task_names_list.items;
+
+    // For each task, find its minimum unique prefix
+    for (task_names) |task_name| {
+        var prefix_len: usize = 1;
+        while (prefix_len <= task_name.len) : (prefix_len += 1) {
+            const prefix = task_name[0..prefix_len];
+
+            // Count how many tasks match this prefix
+            var match_count: usize = 0;
+            for (task_names) |other_name| {
+                if (std.mem.startsWith(u8, other_name, prefix)) {
+                    match_count += 1;
+                }
+            }
+
+            // If only one match, this is the unique prefix
+            if (match_count == 1) {
+                const owned_prefix = try allocator.dupe(u8, prefix);
+                try result.put(task_name, owned_prefix);
+                break;
+            }
+        }
+
+        // If we didn't find a unique prefix (all prefixes match multiple tasks),
+        // use the full name
+        if (result.get(task_name) == null) {
+            const full_name = try allocator.dupe(u8, task_name);
+            try result.put(task_name, full_name);
+        }
+    }
+
+    return result;
 }
 
 test "printRunResultJson emits valid JSON structure" {
