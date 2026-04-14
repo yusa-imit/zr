@@ -136,8 +136,8 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
     try stdout_writer.interface.print("  Updated: {s}\n", .{pkg_path});
 }
 
-fn printHelp(writer: *std.Io.Writer) !void {
-    try writer.print(
+fn printHelp(writer: anytype) !void {
+    const help_text =
         \\Usage: zr version [options]
         \\
         \\Manage package versions in a workspace.
@@ -154,9 +154,8 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  zr version --bump=major       # Bump major version (1.2.3 → 2.0.0)
         \\  zr version -p pkg/package.json -b patch  # Bump specific package
         \\
-    ,
-        .{},
-    );
+    ;
+    try writer.print("{s}", .{help_text});
 }
 
 test "cmdVersion help does not error" {
@@ -170,4 +169,26 @@ test "cmdVersion help does not error" {
     // Note: Cannot easily test error paths like "--bump missing_value" or invalid bump types
     // because cmdVersion calls std.process.exit() directly, which terminates the test process.
     // Those error paths are tested via integration tests in tests/version_test.zig
+}
+
+test "printHelp writes expected output" {
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    const writer = stream.writer();
+
+    try printHelp(writer);
+    const output = stream.getWritten();
+
+    // Verify help output contains key sections and information
+    try std.testing.expect(output.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "zr version") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "--bump") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "--package") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Examples:") != null);
+
+    // Verify examples show version bump semantics
+    try std.testing.expect(std.mem.indexOf(u8, output, "--bump=patch") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "--bump=minor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "--bump=major") != null);
 }
