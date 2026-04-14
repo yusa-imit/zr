@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.69.0] - 2026-04-14
+
+### ✨ Task Name Abbreviation & Fuzzy Matching
+
+This release reduces typing friction with intelligent task name abbreviation, unique prefix resolution, and enhanced fuzzy matching. Run tasks with minimal keystrokes.
+
+### Added
+
+**Core Feature: Prefix Matching**
+- `zr run b` matches `build` if it's the only task starting with "b"
+- Automatic resolution when prefix is unambiguous (single match)
+- Shows "Resolved 'b' → 'build'" confirmation message
+- Works with any prefix length (single letter to full name)
+- Exact task names always take precedence over prefix matches
+
+**Core Feature: Ambiguity Detection**
+- `zr run te` fails with clear error if multiple matches exist (e.g., test, teardown)
+- Lists all matching tasks with hint: "Use a more specific prefix or full task name"
+- Prevents accidental execution of wrong tasks
+
+**Core Feature: Fuzzy Fallback**
+- No prefix match → falls back to existing Levenshtein-based fuzzy matching
+- `zr run tset` suggests "test" via edit distance (already in v1.0)
+- Seamless integration with existing "Did you mean?" suggestions
+
+**Core Feature: Unique Prefix Hints**
+- `zr list` now displays minimum unique prefix for each task
+- Example: `[b] → build`, `[tea] → teardown`, `[tes] → test`
+- Only shown when prefix differs from full name (no hints for already-short names)
+- Helps users learn optimal abbreviations for their workflow
+
+**Implementation Details**
+- `findTasksByPrefix()`: Returns exact match or all prefix matches with ownership tracking
+- `calculateUniquePrefix()`: Computes minimal disambiguation prefix for each task
+- Fixed use-after-free bug in empty slice allocation (exact match path)
+- Zero breaking changes - feature is purely additive
+
+### Changed
+- `src/cli/run.zig`: Added prefix matching logic before fuzzy fallback (~100 LOC)
+- `src/cli/list.zig`: Display unique prefix hints in task listing (~50 LOC)
+- `tests/integration.zig`: Imported task_abbreviation_test.zig
+- `build.zig.zon`: Version 1.68.1 → 1.69.0
+
+### Fixed
+- Empty slice stack allocation bug in `findTasksByPrefix()` (heap allocation for exact matches)
+
+### Tests
+- 8 new integration tests in `tests/task_abbreviation_test.zig`:
+  - Unique prefix match (zr run b → build)
+  - Ambiguous prefix error (zr run te → test/teardown)
+  - Exact match precedence (task "b" over prefix "build")
+  - Fuzzy fallback (zr run tset → suggests "test")
+  - Single-letter prefixes with many tasks
+  - List output with unique prefix hints
+  - Prefix matching with task dependencies
+
+### Documentation
+- Implementation notes in milestone docs/milestones.md
+- Examples in commit message and test file comments
+
+### Performance
+- Minimal overhead: O(N) prefix scan on task name lookup (N = number of tasks)
+- Unique prefix calculation: O(N²) worst case, done once per `zr list` invocation
+- No performance impact on exact task name matches
+
+### Migration Notes
+- No migration required - feature works automatically
+- Users can start using abbreviations immediately
+- Backward compatible: full task names continue to work
+
 ## [1.68.1] - 2026-04-11
 
 ### 🔧 Dependency Updates
