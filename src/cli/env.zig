@@ -3,6 +3,7 @@ const color = @import("../output/color.zig");
 const platform = @import("../util/platform.zig");
 const loader = @import("../config/loader.zig");
 const types = @import("../config/types.zig");
+const shell_hook = @import("shell_hook.zig");
 
 /// Display environment variables from the system
 pub fn cmdEnv(
@@ -17,6 +18,9 @@ pub fn cmdEnv(
     var resolve_var: ?[]const u8 = null;
     var task_name: ?[]const u8 = null;
     var show_layers: bool = false;
+    var export_mode: bool = false;
+    var functions_mode: bool = false;
+    var shell_type: ?shell_hook.ShellType = null;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -38,6 +42,28 @@ pub fn cmdEnv(
             }
         } else if (std.mem.eql(u8, arg, "--layers")) {
             show_layers = true;
+        } else if (std.mem.eql(u8, arg, "--export")) {
+            export_mode = true;
+            // Optional shell type argument
+            if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "--")) {
+                shell_type = shell_hook.parseShellType(args[i + 1]);
+                if (shell_type == null) {
+                    try color.printError(ew, use_color, "env: unknown shell type '{s}'\n\n  Hint: supported shells are bash, zsh, fish\n", .{args[i + 1]});
+                    return 1;
+                }
+                i += 1;
+            }
+        } else if (std.mem.eql(u8, arg, "--functions")) {
+            functions_mode = true;
+            // Optional shell type argument
+            if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "--")) {
+                shell_type = shell_hook.parseShellType(args[i + 1]);
+                if (shell_type == null) {
+                    try color.printError(ew, use_color, "env: unknown shell type '{s}'\n\n  Hint: supported shells are bash, zsh, fish\n", .{args[i + 1]});
+                    return 1;
+                }
+                i += 1;
+            }
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printHelp(w, use_color);
             return 0;
@@ -45,6 +71,22 @@ pub fn cmdEnv(
             try color.printError(ew, use_color, "env: unknown argument '{s}'\n\n  Hint: zr env --help\n", .{arg});
             return 1;
         }
+    }
+
+    // Handle --functions flag (generate shell functions)
+    if (functions_mode) {
+        // Auto-detect shell if not specified
+        const detected_shell = shell_type orelse try detectShell(allocator);
+
+        return try generateShellFunctions(allocator, config_path, detected_shell, w, ew, use_color);
+    }
+
+    // Handle --export flag (export for shell sourcing)
+    if (export_mode) {
+        // Auto-detect shell if not specified
+        const detected_shell = shell_type orelse try detectShell(allocator);
+
+        return try exportEnv(allocator, config_path, task_name, detected_shell, w, ew, use_color);
     }
 
     // Get system environment
@@ -244,6 +286,187 @@ fn displayTaskEnv(
     return 0;
 }
 
+/// Generate shell functions for all tasks
+fn generateShellFunctions(
+    allocator: std.mem.Allocator,
+    config_path: []const u8,
+    shell_type: shell_hook.ShellType,
+    w: anytype,
+    ew: anytype,
+    use_color: bool,
+) !u8 {
+    // Load configuration
+    var config = loader.loadFromFile(allocator, config_path) catch |err| {
+        try color.printError(ew, use_color, "env: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
+        return 1;
+    };
+    defer config.deinit();
+
+    // Generate function for each task
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        try generateTaskFunction(shell_type, task_name, w);
+    }
+
+    return 0;
+}
+
+/// Generate a shell function for a specific task
+fn generateTaskFunction(
+    shell_type: shell_hook.ShellType,
+    task_name: []const u8,
+    w: anytype,
+) !void {
+    switch (shell_type) {
+        .bash, .zsh => {
+            // Bash/Zsh function: zr_build() { zr run build "$@"; }
+            try w.writeAll("zr_");
+            try w.writeAll(task_name);
+            try w.writeAll("() { zr run ");
+            try w.writeAll(task_name);
+            try w.writeAll(" \"$@\"; }\n");
+        },
+        .fish => {
+            // Fish function: function zr_build; zr run build $argv; end
+            try w.writeAll("function zr_");
+            try w.writeAll(task_name);
+            try w.writeAll("; zr run ");
+            try w.writeAll(task_name);
+            try w.writeAll(" $argv; end\n");
+        },
+    }
+}
+
+/// Detect the current shell from SHELL environment variable
+fn detectShell(allocator: std.mem.Allocator) !shell_hook.ShellType {
+    var env_map = try std.process.getEnvMap(allocator);
+    defer env_map.deinit();
+
+    if (env_map.get("SHELL")) |shell_path| {
+        // Extract shell name from path (e.g., /bin/bash -> bash)
+        if (std.mem.lastIndexOf(u8, shell_path, "/")) |last_slash| {
+            const shell_name = shell_path[last_slash + 1 ..];
+            if (std.mem.eql(u8, shell_name, "bash")) return .bash;
+            if (std.mem.eql(u8, shell_name, "zsh")) return .zsh;
+            if (std.mem.eql(u8, shell_name, "fish")) return .fish;
+        }
+    }
+
+    // Default to bash if detection fails
+    return .bash;
+}
+
+/// Export environment variables in shell-specific format
+fn exportEnv(
+    allocator: std.mem.Allocator,
+    config_path: []const u8,
+    task_name: ?[]const u8,
+    shell_type: shell_hook.ShellType,
+    w: anytype,
+    ew: anytype,
+    use_color: bool,
+) !u8 {
+    // Load configuration if task name specified
+    const task_env = if (task_name) |task| blk: {
+        var config = loader.loadFromFile(allocator, config_path) catch |err| {
+            try color.printError(ew, use_color, "env: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
+            return 1;
+        };
+        defer config.deinit();
+
+        const found_task = config.tasks.get(task) orelse {
+            try color.printError(ew, use_color, "env: task '{s}' not found\n\n  Hint: use 'zr list' to see available tasks\n", .{task});
+            return 1;
+        };
+
+        // Copy task environment variables
+        var env_list = std.ArrayList([2][]const u8){};
+        errdefer {
+            for (env_list.items) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            env_list.deinit(allocator);
+        }
+
+        for (found_task.env) |pair| {
+            const key_copy = try allocator.dupe(u8, pair[0]);
+            errdefer allocator.free(key_copy);
+            const val_copy = try allocator.dupe(u8, pair[1]);
+            errdefer allocator.free(val_copy);
+            try env_list.append(allocator, .{ key_copy, val_copy });
+        }
+        break :blk try env_list.toOwnedSlice(allocator);
+    } else null;
+
+    defer if (task_env) |env| {
+        for (env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(env);
+    };
+
+    // Export variables based on shell type
+    if (task_env) |env| {
+        for (env) |pair| {
+            try formatExport(shell_type, pair[0], pair[1], w);
+        }
+    }
+
+    return 0;
+}
+
+/// Format environment variable export for specific shell
+fn formatExport(
+    shell_type: shell_hook.ShellType,
+    key: []const u8,
+    value: []const u8,
+    w: anytype,
+) !void {
+    switch (shell_type) {
+        .bash, .zsh => {
+            // Bash/Zsh: export KEY="value"
+            try w.writeAll("export ");
+            try w.writeAll(key);
+            try w.writeAll("=\"");
+            try writeEscaped(value, w, .bash);
+            try w.writeAll("\"\n");
+        },
+        .fish => {
+            // Fish: set -x KEY "value"
+            try w.writeAll("set -x ");
+            try w.writeAll(key);
+            try w.writeAll(" \"");
+            try writeEscaped(value, w, .fish);
+            try w.writeAll("\"\n");
+        },
+    }
+}
+
+/// Write value with shell-specific escaping
+fn writeEscaped(value: []const u8, w: anytype, shell_type: shell_hook.ShellType) !void {
+    for (value) |c| {
+        switch (shell_type) {
+            .bash, .zsh => {
+                // Escape double quotes, backslashes, and dollar signs
+                if (c == '"' or c == '\\' or c == '$') {
+                    try w.writeByte('\\');
+                }
+                try w.writeByte(c);
+            },
+            .fish => {
+                // Escape double quotes and backslashes
+                if (c == '"' or c == '\\') {
+                    try w.writeByte('\\');
+                }
+                try w.writeByte(c);
+            },
+        }
+    }
+}
+
 fn printHelp(w: anytype, use_color: bool) !void {
     try color.printBold(w, use_color, "zr env - Display environment variables\n\n", .{});
     try w.writeAll(
@@ -251,21 +474,29 @@ fn printHelp(w: anytype, use_color: bool) !void {
         \\  zr env [options]
         \\
         \\Options:
-        \\  --task <NAME>      Show environment for a specific task
-        \\  --layers           Show environment layering (system → task)
-        \\  --resolve <VAR>    Show value of a specific variable
-        \\  --help, -h         Show this help message
+        \\  --task <NAME>              Show environment for a specific task
+        \\  --layers                   Show environment layering (system → task)
+        \\  --resolve <VAR>            Show value of a specific variable
+        \\  --export [bash|zsh|fish]   Export env vars for shell sourcing (auto-detects shell)
+        \\  --functions [bash|zsh|fish] Generate shell functions for all tasks (auto-detects shell)
+        \\  --help, -h                 Show this help message
         \\
         \\Description:
         \\  Shows environment variables with support for task-specific layering.
         \\  Tasks can override system environment variables via [tasks.NAME].env.
+        \\  The --export flag generates shell-specific commands for sourcing.
+        \\  The --functions flag generates shell functions (zr_<task>) for quick task access.
         \\
         \\Examples:
-        \\  zr env                      # Show all system environment variables
-        \\  zr env --task build         # Show merged env for 'build' task
-        \\  zr env --task build --layers # Show layered env (system + task)
-        \\  zr env --resolve PATH       # Show value of PATH variable
+        \\  zr env                        # Show all system environment variables
+        \\  zr env --task build           # Show merged env for 'build' task
+        \\  zr env --task build --layers  # Show layered env (system + task)
+        \\  zr env --resolve PATH         # Show value of PATH variable
         \\  zr env --task test --resolve NODE_ENV # Show NODE_ENV for 'test' task
+        \\  eval $(zr env --task build --export)  # Load build task env into shell
+        \\  eval $(zr env --task prod --export bash) # Explicitly use bash format
+        \\  eval $(zr env --functions)    # Generate zr_build(), zr_test() functions
+        \\  zr_build --verbose            # Run build task via generated function
         \\
     );
 }
