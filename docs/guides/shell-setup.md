@@ -218,23 +218,147 @@ zr cd --list
 
 ## Environment Loading
 
-Load task environment variables into your current shell:
+Load task environment variables and generate shell functions for seamless integration.
+
+### Environment Variable Export
+
+Export task environment variables into your current shell session:
 
 ```toml
-[task.dev]
-env = { NODE_ENV = "development", PORT = "3000" }
+[tasks.dev]
+cmd = "npm run dev"
+env = [["NODE_ENV", "development"], ["PORT", "3000"], ["DEBUG", "app:*"]]
+
+[tasks.prod]
+cmd = "npm start"
+env = [["NODE_ENV", "production"], ["PORT", "8080"]]
+```
+
+**Basic usage:**
+
+```bash
+# Export specific task's environment
+eval $(zr env --task dev --export)
+echo $NODE_ENV  # development
+echo $PORT      # 3000
+
+# Auto-detect shell (bash/zsh/fish)
+eval $(zr env --task dev --export)
+
+# Explicit shell type
+eval $(zr env --task prod --export bash)
+eval $(zr env --task prod --export fish)
+```
+
+**Shell-specific output:**
+
+```bash
+# Bash/Zsh (export statements)
+$ zr env --task dev --export bash
+export NODE_ENV="development"
+export PORT="3000"
+export DEBUG="app:*"
+
+# Fish (set -x statements)
+$ zr env --task dev --export fish
+set -x NODE_ENV "development"
+set -x PORT "3000"
+set -x DEBUG "app:*"
+```
+
+**Special character handling:**
+
+```toml
+[tasks.special]
+env = [["PATH", "/bin:$HOME/custom"], ["MSG", "hello \"world\""]]
 ```
 
 ```bash
-# Export task env to current shell
-eval $(zr env --export dev)
-
-# Check loaded variables
-echo $NODE_ENV  # development
-echo $PORT      # 3000
+# Automatically escapes $, ", and other special characters
+eval $(zr env --task special --export)
 ```
 
-**Note:** `zr env --export` is useful for quick debugging but does not replace direnv for complex environment management.
+### Shell Function Generation
+
+Generate convenience functions for all tasks in your config:
+
+```bash
+# Generate functions for current shell
+eval $(zr env --functions)
+
+# Now you can call tasks directly:
+zr_dev              # Runs 'zr run dev'
+zr_test --watch     # Runs 'zr run test --watch'
+zr_build --release  # Runs 'zr run build --release'
+```
+
+**Shell-specific function syntax:**
+
+```bash
+# Bash/Zsh functions
+$ zr env --functions bash
+zr_dev() { zr run dev "$@"; }
+zr_test() { zr run test "$@"; }
+zr_build() { zr run build "$@"; }
+
+# Fish functions
+$ zr env --functions fish
+function zr_dev; zr run dev $argv; end
+function zr_test; zr run test $argv; end
+function zr_build; zr run build $argv; end
+```
+
+**Usage patterns:**
+
+```bash
+# Add to your shell startup file
+# ~/.bashrc or ~/.zshrc
+eval $(zr env --functions)
+
+# ~/.config/fish/config.fish
+zr env --functions fish | source
+
+# Now use generated functions anywhere:
+zr_build           # Runs build task
+zr_test            # Runs test task
+zr_dev --hot       # Runs dev task with --hot flag
+```
+
+**Benefits:**
+
+- **Tab completion**: Shell functions get completion for free (task names become commands)
+- **Shorter typing**: `zr_build` instead of `zr run build`
+- **Flag forwarding**: All arguments pass through (`"$@"` / `$argv`)
+- **Context-aware**: Functions use current directory's `zr.toml`
+
+**Combined workflow:**
+
+```bash
+# Load environment + generate functions
+eval $(zr env --task dev --export)
+eval $(zr env --functions)
+
+# Now you have both env vars and convenience functions
+echo $NODE_ENV    # development
+zr_test           # Runs test task in dev environment
+```
+
+**Profile support:**
+
+```bash
+# Environment export respects profiles
+eval $(zr env --task build --export --profile production)
+
+# Functions always use base config (apply profile when calling)
+zr_build --profile production
+```
+
+**Notes:**
+
+- `zr env --export` is useful for quick debugging and CI environments
+- For complex environment management, consider tools like direnv or dotenv
+- Generated functions are ephemeral (shell session only) - add to shell RC for persistence
+- Function names follow `zr_<taskname>` convention (hyphenated task names use underscores: `deploy-prod` → `zr_deploy_prod`)
 
 ---
 
