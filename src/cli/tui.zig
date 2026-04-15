@@ -541,6 +541,7 @@ fn cmdInteractiveInner(
                     ew,
                     use_color,
                     null,
+                    .{}, // filter_options
                 ) catch {};
 
                 _ = enterRawMode() catch {};

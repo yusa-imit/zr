@@ -9,6 +9,7 @@ const progress = @import("../output/progress.zig");
 const tui_runner = @import("tui_runner.zig");
 const levenshtein = @import("../util/levenshtein.zig");
 const matrix = @import("../exec/matrix.zig");
+const filter_mod = @import("../output/filter.zig");
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,
@@ -23,7 +24,10 @@ pub fn cmdRun(
     err_writer: *std.Io.Writer,
     use_color: bool,
     task_control: ?*@import("../exec/control.zig").TaskControl,
+    filter_options: filter_mod.FilterOptions,
 ) !u8 {
+    // TODO: Implement actual filtering in task output capture
+    _ = filter_options; // Suppress unused warning
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -1041,6 +1045,7 @@ test "cmdRun: missing config returns error" {
         &err_w.interface,
         false,
         null,
+        .{}, // filter_options
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1080,6 +1085,7 @@ test "cmdRun: unknown task returns error" {
         &err_w.interface,
         false,
         null,
+        .{}, // filter_options
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1119,6 +1125,7 @@ test "cmdRun: dry run shows plan without executing" {
         &err_w.interface,
         false,
         null,
+        .{}, // filter_options
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1158,6 +1165,7 @@ test "cmdRun: successful task returns 0" {
         &err_w.interface,
         false,
         null,
+        .{}, // filter_options
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1197,6 +1205,7 @@ test "cmdRun: failing task returns 1" {
         &err_w.interface,
         false,
         null,
+        .{}, // filter_options
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

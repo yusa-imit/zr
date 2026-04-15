@@ -295,6 +295,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         &stderr_writer.interface,
         false, // use_color
         null,  // task_control
+        .{},   // filter_options
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}

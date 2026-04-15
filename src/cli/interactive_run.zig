@@ -162,6 +162,7 @@ pub fn cmdInteractiveRun(
             ew,
             use_color,
             null, // task_control
+            .{}, // filter_options
         );
     }
 
@@ -181,6 +182,7 @@ pub fn cmdInteractiveRun(
             ew,
             use_color,
             null,
+            .{}, // filter_options
         );
     }
 
@@ -204,6 +206,7 @@ pub fn cmdInteractiveRun(
             ew,
             use_color,
             null,
+            .{}, // filter_options
         );
     };
     defer leaveRawMode(original_termios);
@@ -234,6 +237,7 @@ pub fn cmdInteractiveRun(
         ew,
         use_color,
         ctrl,
+        .{}, // filter_options
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

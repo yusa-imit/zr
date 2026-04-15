@@ -20,6 +20,7 @@ const retry_strategy = @import("exec/retry_strategy.zig");
 const color = @import("output/color.zig");
 const progress = @import("output/progress.zig");
 const monitor = @import("output/monitor.zig");
+const filter_mod = @import("output/filter.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const cache_store = @import("cache/store.zig");
@@ -365,6 +366,10 @@ const global_flags = [_]sailor.arg.FlagDef{
     .{ .name = "config", .type = .string, .help = "Config file path" },
     .{ .name = "monitor", .short = 'm', .type = .bool, .help = "Display live resource usage during execution" },
     .{ .name = "affected", .type = .string, .help = "Run only affected workspace members" },
+    .{ .name = "grep", .type = .string, .help = "Filter output lines matching regex pattern" },
+    .{ .name = "grep-v", .type = .string, .help = "Filter output lines NOT matching regex pattern (inverted match)" },
+    .{ .name = "highlight", .type = .string, .help = "Highlight matches in output (shows all lines with pattern highlighted)" },
+    .{ .name = "context", .short = 'C', .type = .int, .help = "Show N lines before/after grep matches (like grep -C)" },
 };
 
 const GlobalFlagParser = sailor.arg.Parser(&global_flags);
@@ -405,6 +410,10 @@ fn globalFlagHint(long_name: []const u8) []const u8 {
     if (std.mem.eql(u8, long_name, "--jobs")) return "--jobs: missing value\n\n  Hint: zr --jobs <N> run <task>";
     if (std.mem.eql(u8, long_name, "--config")) return "--config: missing path\n\n  Hint: zr --config <path> run <task>";
     if (std.mem.eql(u8, long_name, "--affected")) return "--affected: missing base reference\n\n  Hint: zr --affected origin/main workspace run <task>";
+    if (std.mem.eql(u8, long_name, "--grep")) return "--grep: missing regex pattern\n\n  Hint: zr --grep 'error|warning' run <task>";
+    if (std.mem.eql(u8, long_name, "--grep-v")) return "--grep-v: missing regex pattern\n\n  Hint: zr --grep-v 'verbose' run <task>";
+    if (std.mem.eql(u8, long_name, "--highlight")) return "--highlight: missing regex pattern\n\n  Hint: zr --highlight 'TODO|FIXME' run <task>";
+    if (std.mem.eql(u8, long_name, "--context")) return "--context: missing line count\n\n  Hint: zr --grep 'ERROR' --context 3 run <task>";
     return "missing flag value";
 }
 
@@ -442,7 +451,7 @@ fn run(
         // Check for 'default' task
         if (config.tasks.get("default")) |_| {
             // Run default task
-            return run_cmd.cmdRun(allocator, "default", null, false, 0, config_path, false, false, w, ew, use_color, null);
+            return run_cmd.cmdRun(allocator, "default", null, false, 0, config_path, false, false, w, ew, use_color, null, .{});
         }
 
         // Count tasks
@@ -455,7 +464,7 @@ fn run(
             // Single task → auto-run it
             var task_it = config.tasks.iterator();
             const single_task = task_it.next().?;
-            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, 0, config_path, false, false, w, ew, use_color, null);
+            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, 0, config_path, false, false, w, ew, use_color, null, .{});
         } else {
             // Multiple tasks → interactive picker
             if (!std.fs.File.stdout().isTty()) {
@@ -484,7 +493,7 @@ fn run(
             }
 
             if (picker_result.kind == .task) {
-                return run_cmd.cmdRun(allocator, picker_result.name, null, false, 0, config_path, false, false, w, ew, use_color, null);
+                return run_cmd.cmdRun(allocator, picker_result.name, null, false, 0, config_path, false, false, w, ew, use_color, null, .{});
             } else {
                 return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color);
             }
@@ -564,6 +573,22 @@ fn run(
         }
     };
     const affected_base: ?[]const u8 = if (flag_parser.get("affected")) |v| (v.asString() catch null) else null;
+
+    // Output filtering flags
+    const filter_options = filter_mod.FilterOptions{
+        .grep_pattern = if (flag_parser.get("grep")) |v| (v.asString() catch null) else null,
+        .grep_v_pattern = if (flag_parser.get("grep-v")) |v| (v.asString() catch null) else null,
+        .highlight_pattern = if (flag_parser.get("highlight")) |v| (v.asString() catch null) else null,
+        .context_lines = if (flag_parser.get("context")) |v| blk: {
+            const ctx_val = v.asInt() catch 0;
+            if (ctx_val < 0 or ctx_val > 100) {
+                try color.printError(ew, use_color,
+                    "--context: value must be between 0 and 100\n\n  Hint: zr --grep 'ERROR' --context 3 run <task>\n", .{});
+                return 1;
+            }
+            break :blk @intCast(ctx_val);
+        } else 0,
+    };
 
     // --format: custom validation (only "json" or "text")
     const format_str = flag_parser.getString("format", "text");
@@ -813,7 +838,7 @@ fn run(
         try color.printInfo(effective_w, effective_color, "Re-running: {s}\n", .{task_name});
 
         // Re-run the task (use 'run' command with the task name)
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options);
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
@@ -852,7 +877,7 @@ fn run(
             if (picker_result.kind == .task) {
                 // Reload config (picker consumed it)
                 config.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null);
+                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options);
             } else {
                 // Workflow selected — delegate to workflow command
                 config.deinit();
@@ -860,7 +885,7 @@ fn run(
             }
         }
         const task_name = effective_args[2];
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});

@@ -102,6 +102,7 @@ pub fn cmdSetup(
             ew,
             use_color,
             null, // task_control
+            .{}, // filter_options
         );
 
         if (exit_code != 0) {
