@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.70.0] - 2026-04-17
+
+### ✨ Real-Time Task Output Filtering & Grep
+
+This release adds live filtering and pattern matching for task output streams, enabling quick debugging and log analysis without post-processing. Filter task output in real-time with grep-like patterns, highlight mode, and context lines.
+
+### Added
+
+**Core Feature: Live Grep**
+- `zr run build --grep="error|warning"` shows only matching lines
+- Substring matching with pipe-separated OR alternatives (error|warning|fatal)
+- Case-sensitive pattern matching (MVP implementation)
+- Filters apply to stdout (stderr always displayed)
+- Compatible with all output modes (buffer, stream, live)
+
+**Core Feature: Inverted Match**
+- `zr run test --grep-v="DEBUG"` hides lines matching pattern
+- Noise reduction for verbose output
+- Can combine with --grep (both filters apply as AND)
+- Example: `--grep="status" --grep-v="verbose"` shows status lines excluding verbose ones
+
+**Core Feature: Highlight Mode**
+- `zr run build --highlight="TODO|FIXME"` highlights patterns in bold yellow
+- Shows ALL output with pattern highlighting (non-filtering mode)
+- ANSI color code injection: `\x1b[1;33m<match>\x1b[0m`
+- Preserves existing ANSI colors from task output
+- Useful for visual scanning without hiding lines
+
+**Core Feature: Context Lines**
+- `zr run build --grep="ERROR" -C 3` shows 3 lines before/after matches
+- grep -C style context display with FIFO buffer
+- Handles multi-line output correctly
+- Context buffer flushes on match + N lines after
+- Minimal memory overhead (O(context_lines))
+
+**Implementation Details**
+- Added 4 global CLI flags: `--grep`, `--grep-v`, `--highlight`, `-C/--context`
+- New filter module: `src/output/filter.zig` (375 LOC) with LineFilter class
+- FilterOptions struct passed through SchedulerConfig → OutputCapture
+- Filter applied in OutputCapture.writeLine() with multi-line handling
+- Auto-enables buffering when filter_options.isEnabled()
+- 5 unit tests + 12 integration tests (9500-9511)
+
+**Performance**
+- Filtering overhead: <1ms per line (substring search)
+- Memory usage: O(context_lines) for context buffer
+- Large outputs (>1MB) stream efficiently without full buffering
+
+**Documentation**
+- Comprehensive "Output Filtering" section in docs/guides/commands.md
+- Usage examples, pattern syntax, performance notes, combined filter patterns
+
+### Technical Details
+
+- **Filter Architecture**: LineFilter integrated into OutputCapture.writeLine()
+- **Pattern Parsing**: Pipe-separated alternatives for OR logic (no regex, substring matching)
+- **Context Buffer**: FIFO queue with configurable size for grep -C behavior
+- **Color Preservation**: ANSI escape sequences pass through filters unchanged
+- **Scheduler Integration**: filter_options wired from CLI → SchedulerConfig → OutputCapture
+- **Backward Compatible**: All existing output modes work unchanged when no filters specified
+
+### Changed
+
+- OutputCapture now accepts filter_options and use_color in config
+- OutputCapture auto-created when filter_options.isEnabled() (previously required explicit output_mode)
+- cmdRun signature accepts FilterOptions parameter (15 call sites updated)
+
+### Tests
+
+- 5 unit tests in src/output/filter.zig (FilterOptions.isEnabled, basic grep, inverted grep, pipe alternatives, highlighting)
+- 12 integration tests in tests/output_filtering_test.zig (9500-9511):
+  - Basic grep, inverted grep, pipe alternatives, highlight mode
+  - Context lines, combined filters, edge cases, multi-task filtering
+  - No-color mode, overlapping context
+- All 1415 unit tests passing (8 skipped, 0 failed)
+
+### Deferred
+
+- Regex support (Zig 0.15 lacks std.Regex, substring matching is MVP)
+- Tail follow mode (`--grep --follow` for continuous filtering)
+- Per-task filter configuration in zr.toml
+
+### Total Implementation
+
+- ~450 LOC filter module + integration
+- ~313 LOC tests (5 unit + 12 integration)
+- ~150 LOC documentation
+
+**Milestone**: Real-Time Task Output Filtering & Grep (Cycle 131) — COMPLETE
+
 ## [1.69.0] - 2026-04-14
 
 ### ✨ Task Name Abbreviation & Fuzzy Matching

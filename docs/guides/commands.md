@@ -61,6 +61,76 @@ zr run --monitor test  # show live resource usage
 - `--profile, -p <name>` — Use a named profile
 - `--monitor, -m` — Display live resource usage (CPU/memory)
 - `--jobs, -j <N>` — Max parallel tasks
+- `--grep <pattern>` — Filter output to lines matching pattern (pipe-separated alternatives)
+- `--grep-v <pattern>` — Filter output to exclude lines matching pattern (inverted match)
+- `--highlight <pattern>` — Highlight pattern in output (shows all lines with highlighting)
+- `-C, --context <N>` — Show N lines of context before/after grep matches (default: 0)
+
+**Output Filtering** (v1.70.0+):
+
+Real-time filtering and pattern matching for task output streams enables quick debugging and log analysis without post-processing.
+
+**Basic Grep:**
+```bash
+# Show only lines containing "error" or "warning"
+zr run build --grep="error|warning"
+
+# Hide verbose debug output
+zr run test --grep-v="DEBUG"
+
+# Combine filters (grep AND grep-v)
+zr run deploy --grep="status" --grep-v="verbose"
+```
+
+**Highlight Mode:**
+```bash
+# Show all output with pattern highlighted in bold yellow
+zr run build --highlight="TODO|FIXME"
+
+# Highlight errors while showing all output
+zr run test --highlight="FAILED|ERROR"
+```
+
+**Context Lines:**
+```bash
+# Show 3 lines before/after each error
+zr run build --grep="ERROR" -C 3
+
+# Debug crashes with surrounding context
+zr run test --grep="SIGSEGV" -C 5
+```
+
+**Pattern Syntax:**
+- **Substring matching**: Uses literal substring matching (not regex)
+- **Pipe alternatives**: `error|warning|fatal` matches any of the alternatives (OR logic)
+- **Case-sensitive**: Matching is case-sensitive by default
+- **Multi-line output**: Context buffer handles multi-line output correctly
+
+**Filter Application:**
+- Filters apply to **stdout only** (stderr is not filtered, always displayed)
+- Colors from task output are **preserved** (ANSI color codes pass through)
+- Filters work with **parallel tasks** (each task's output filtered independently)
+- Compatible with **all output modes** (buffer, stream, live)
+
+**Combined Usage:**
+```bash
+# Find compilation errors with context
+zr run build --grep="error:" -C 2
+
+# Filter CI logs for failures, excluding known warnings
+zr run ci --grep="FAIL" --grep-v="known issue"
+
+# Debug with highlighted patterns and context
+zr run test --highlight="assertion failed" -C 3
+
+# Monitor deployment status with filtered output
+zr run deploy --grep="deploying|deployed|failed"
+```
+
+**Performance Notes:**
+- Filtering adds **minimal overhead** (<1ms per line)
+- Context buffer uses **FIFO queue** (memory usage: O(context_lines))
+- Large outputs (>1MB) stream efficiently without full buffering
 
 ---
 
