@@ -531,6 +531,7 @@ fn handleRunWorkflow(allocator: std.mem.Allocator, params_json: []const u8) !Too
         &stdout_writer.interface,
         &stderr_writer.interface,
         false, // use_color
+        .{},   // filter_options
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}

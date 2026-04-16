@@ -20,6 +20,7 @@ const checkpoint = @import("checkpoint.zig");
 const output_capture = @import("output_capture.zig");
 const remote = @import("remote.zig");
 const retry_strategy = @import("retry_strategy.zig");
+const filter_mod = @import("../output/filter.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -55,6 +56,9 @@ pub const SchedulerConfig = struct {
     /// Optional extra environment variables to inject into all tasks.
     /// Used for workflow matrix variables (e.g., MATRIX_OS=linux, MATRIX_VERSION=1.0).
     extra_env: ?[][2][]const u8 = null,
+    /// Optional output filtering (grep, grep-v, highlight, context lines).
+    /// Applied to task output streams in real-time.
+    filter_options: filter_mod.FilterOptions = .{},
 };
 
 /// Circuit breaker state for a task (v1.30.0).
@@ -434,6 +438,8 @@ const WorkerCtx = struct {
     remote_cwd: ?[]const u8,
     /// Remote environment variables (v1.46.0).
     remote_env: ?[][2][]const u8,
+    /// Output filtering options (grep, highlight, context).
+    filter_options: filter_mod.FilterOptions,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -600,15 +606,19 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
-    // Initialize OutputCapture if configured (v1.37.0)
+    // Initialize OutputCapture if configured (v1.37.0) or if filtering is enabled
     var output_cap: ?output_capture.OutputCapture = null;
     defer if (output_cap) |*oc| oc.deinit();
 
-    if (ctx.output_mode) |mode| {
+    // Enable OutputCapture if: (1) output_mode is set, or (2) filtering is enabled
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled();
+    if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
-            .mode = mode,
+            .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering
             .output_file = ctx.output_file,
             .max_buffer_size = 1024 * 1024, // 1MB default
+            .filter_options = ctx.filter_options,
+            .use_color = ctx.use_color,
         };
         output_cap = output_capture.OutputCapture.init(task_allocator, capture_config) catch null;
     }
@@ -1898,6 +1908,7 @@ pub fn run(
                 .remote_target = task.remote,
                 .remote_cwd = task.remote_cwd,
                 .remote_env = task.remote_env,
+                .filter_options = sched_config.filter_options,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

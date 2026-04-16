@@ -26,8 +26,6 @@ pub fn cmdRun(
     task_control: ?*@import("../exec/control.zig").TaskControl,
     filter_options: filter_mod.FilterOptions,
 ) !u8 {
-    // TODO: Implement actual filtering in task output capture
-    _ = filter_options; // Suppress unused warning
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -119,6 +117,7 @@ pub fn cmdRun(
         .monitor = monitor,
         .use_color = use_color,
         .task_control = task_control,
+        .filter_options = filter_options,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -206,6 +205,7 @@ pub fn cmdWatch(
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
+    filter_options: filter_mod.FilterOptions,
 ) !u8 {
     // Verify task exists and extract WatchConfig before starting the watch loop (v1.17.0).
     var watch_options = watcher.WatcherOptions{};
@@ -322,6 +322,7 @@ pub fn cmdWatch(
         const task_names = [_][]const u8{task_name};
         var sched_result = scheduler.run(allocator, &config, &task_names, .{
             .max_jobs = max_jobs,
+            .filter_options = filter_options,
         }) catch |err| {
             switch (err) {
                 error.CycleDetected => try color.printError(err_writer, use_color,
@@ -374,6 +375,7 @@ pub fn cmdWorkflow(
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
+    filter_options: filter_mod.FilterOptions,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -569,6 +571,7 @@ pub fn cmdWorkflow(
                 .max_jobs = max_jobs,
                 .retry_budget = wf.retry_budget,
                 .extra_env = extra_env_slice,
+                .filter_options = filter_options,
             }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
@@ -630,6 +633,7 @@ pub fn cmdWorkflow(
                     .inherit_stdio = true,
                     .max_jobs = max_jobs,
                     .extra_env = extra_env_slice,
+                    .filter_options = filter_options,
                 }) catch |err| {
                     try color.printError(err_writer, use_color,
                         "workflow: on_failure task '{s}' failed: {s}\n",
