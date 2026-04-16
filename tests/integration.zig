@@ -54,6 +54,7 @@ comptime {
     _ = @import("misc_test.zig");
     _ = @import("mixin_test.zig");
     _ = @import("monitor_test.zig");
+    _ = @import("output_filtering_test.zig");
     _ = @import("plugin_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
