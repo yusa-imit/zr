@@ -1,5 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const filter_mod = @import("../output/filter.zig");
+const FilterOptions = filter_mod.FilterOptions;
+const LineFilter = filter_mod.LineFilter;
 
 /// Output capture mode for task execution.
 pub const OutputMode = enum {
@@ -22,6 +25,10 @@ pub const OutputCaptureConfig = struct {
     /// Enable gzip compression for stream mode (reduces storage by 5-10x).
     /// When true, output_file will have .gz appended automatically.
     compress: bool = false,
+    /// Optional output filtering (grep, grep-v, highlight, context lines).
+    filter_options: FilterOptions = .{},
+    /// Whether to use color in output (for highlighting).
+    use_color: bool = true,
 };
 
 /// OutputCapture manages task output with configurable modes.
@@ -38,6 +45,8 @@ pub const OutputCapture = struct {
     buffer_size_bytes: usize = 0,
     /// Mutex for thread-safe writes.
     mutex: std.Thread.Mutex = .{},
+    /// Optional line filter for grep/highlight functionality.
+    filter: ?LineFilter = null,
 
     /// Initialize OutputCapture with the given configuration.
     pub fn init(allocator: std.mem.Allocator, config: OutputCaptureConfig) !OutputCapture {
@@ -46,6 +55,11 @@ pub const OutputCapture = struct {
             .config = config,
             .buffer = std.ArrayList([]const u8){},
         };
+
+        // Initialize line filter if filtering is enabled
+        if (config.filter_options.isEnabled()) {
+            self.filter = try LineFilter.init(allocator, config.filter_options, config.use_color);
+        }
 
         // For stream mode, open the output file
         if (config.mode == .stream) {
@@ -71,6 +85,11 @@ pub const OutputCapture = struct {
     pub fn deinit(self: *OutputCapture) void {
         self.mutex.lock();
         defer self.mutex.unlock();
+
+        // Clean up filter if present
+        if (self.filter) |*f| {
+            f.deinit();
+        }
 
         // Close file if open
         if (self.file) |file| {
@@ -131,16 +150,49 @@ pub const OutputCapture = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        switch (self.config.mode) {
-            .stream => {
-                try self.writeToFile(line, is_stderr);
-            },
-            .buffer => {
-                try self.writeToBuffer(line);
-            },
-            .discard => {
-                // No-op
-            },
+        // Apply line filter if present
+        if (self.filter) |*f| {
+            // Use a temporary buffer to capture filtered output
+            var buf = std.ArrayList(u8){};
+            defer buf.deinit(self.allocator);
+
+            const should_show = try f.filterLine(line, buf.writer(self.allocator));
+            if (!should_show) {
+                // Line was filtered out
+                return;
+            }
+
+            // Filter may have written multiple lines (context buffer flush + current line)
+            // Process the filtered output
+            var it = std.mem.splitScalar(u8, buf.items, '\n');
+            while (it.next()) |filtered_line| {
+                if (filtered_line.len == 0) continue; // Skip empty lines from split
+
+                switch (self.config.mode) {
+                    .stream => {
+                        try self.writeToFileRaw(filtered_line);
+                    },
+                    .buffer => {
+                        try self.writeToBuffer(filtered_line);
+                    },
+                    .discard => {
+                        // No-op
+                    },
+                }
+            }
+        } else {
+            // No filter - write directly
+            switch (self.config.mode) {
+                .stream => {
+                    try self.writeToFile(line, is_stderr);
+                },
+                .buffer => {
+                    try self.writeToBuffer(line);
+                },
+                .discard => {
+                    // No-op
+                },
+            }
         }
     }
 
@@ -187,6 +239,14 @@ pub const OutputCapture = struct {
             try file.writeAll(line);
             try file.writeAll("\n");
             // Flush to disk immediately to ensure data is persisted (v1.37.0 bugfix)
+            try file.sync();
+        }
+    }
+
+    /// Write raw line to file (assumes newline already included)
+    fn writeToFileRaw(self: *OutputCapture, line: []const u8) !void {
+        if (self.file) |file| {
+            try file.writeAll(line);
             try file.sync();
         }
     }
