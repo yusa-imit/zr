@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Latest**: v1.69.0 (Task Name Abbreviation & Fuzzy Matching)
-- **Active milestones**: 0 READY + 2 BLOCKED
-- **READY milestones**: 0 (all implemented)
+- **Latest**: v1.70.0 (Real-Time Task Output Filtering & Grep)
+- **Active milestones**: 3 READY + 2 BLOCKED
+- **READY milestones**: 3 (Performance Benchmarking & Competitive Analysis, Migration Tool Enhancement, Documentation Site & Onboarding Experience)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
 - **DONE**: Real-Time Task Output Filtering & Grep (Cycle 131), Task Name Abbreviation & Fuzzy Matching (Cycle 124), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -105,6 +105,48 @@ Add live filtering and pattern matching for task output streams, enabling quick 
 - ✅ **Integration tests**: 12 comprehensive tests (9500-9511) covering all filter combinations, edge cases, multi-task scenarios
 - ✅ **Documentation**: Comprehensive "Output Filtering" section in docs/guides/commands.md with usage examples, pattern syntax, performance notes
 **Status: DONE** — Completed 2026-04-17 (Cycle 131). Full implementation across 4 cycles (128-131): CLI flags, filter module with 5 unit tests, OutputCapture integration, scheduler wiring, 12 integration tests, comprehensive documentation. Total implementation: ~450 LOC filter module + integration, 313 LOC tests, ~150 LOC docs. Substring matching MVP (not regex) with pipe-separated alternatives. All features backward compatible. Release v1.70.0.
+
+### Performance Benchmarking & Competitive Analysis
+
+Establish quantitative performance baseline and competitive positioning through comprehensive benchmarking. Currently zr lacks formal performance comparison against make/just/task/npm-scripts. This milestone creates reproducible benchmarks, identifies bottlenecks, and validates performance claims. Includes:
+- **Benchmark suite**: 6 representative scenarios (cold start, hot run, parallel graph, cache hit, large config, watch mode)
+- **Competitor comparison**: Head-to-head timing vs make 4.4+, just 1.25+, task 3.35+, npm scripts, bun run
+- **Real-world projects**: Test on actual open-source projects (Linux kernel Makefile, Turborepo demo, nx workspace)
+- **Metrics dashboard**: HTML report with charts (startup latency, throughput, memory usage, cache effectiveness)
+- **Performance regression tests**: CI integration to detect slowdowns (fail if >10% slower than baseline)
+- **Optimization opportunities**: Profile zr itself (flamegraph, allocation tracing) to identify hot paths
+- **Documentation**: Add benchmarks/ section to docs with methodology, results, and competitive positioning
+**Status: READY** — Benchmark scripts framework exists in scripts/bench.sh but lacks comprehensive scenarios. Competitive data needed for marketing/positioning. Deliverables: ~300 LOC benchmark scenarios, ~200 LOC result aggregation, ~150 LOC docs, HTML dashboard template.
+
+### Migration Tool Enhancement
+
+Expand `zr init` to auto-convert configurations from popular task runners and build tools. Currently `zr init --detect` handles basic project detection but doesn't import existing task definitions. This milestone adds migration from package.json scripts, Makefiles, Justfiles, and Taskfiles with semantic analysis. Includes:
+- **package.json migration**: `zr init --from npm` parses scripts section, converts run-s/run-p patterns to zr deps
+- **Makefile migration**: `zr init --from make` extracts targets, dependencies (.PHONY), variables, pattern rules
+- **Justfile migration**: `zr init --from just` converts recipes, dependencies, variables (1:1 mapping)
+- **Taskfile migration**: `zr init --from task` converts tasks.yml to zr.toml with deps/cmds/vars
+- **Semantic analysis**: Detect parallel patterns (&&, run-p), watch patterns, common env vars, infer task tags
+- **Interactive review**: Show proposed zr.toml, allow user edits before writing
+- **Dry-run mode**: `--dry-run` flag to preview conversion without creating files
+- **Migration reports**: Summary of converted tasks, warnings for unsupported features, manual steps required
+- **Integration tests**: Test conversion accuracy on real-world configs from popular GitHub repos
+- **Documentation**: Add "Migrating from X" guides to docs/guides/ with before/after examples
+**Status: READY** — Basic LanguageProvider detection exists. Migration logic needs implementation. Deliverables: ~400 LOC parsers (npm/make/just/task), ~200 LOC semantic analysis, ~150 LOC interactive UI, ~250 LOC tests, ~200 LOC docs.
+
+### Documentation Site & Onboarding Experience
+
+Polish documentation and create comprehensive getting-started experience for new users. Currently docs are scattered across README, docs/guides/, and PRD. This milestone creates a cohesive documentation site with interactive examples and smooth onboarding flow. Includes:
+- **Documentation site structure**: docs/README.md as landing page, organized sections (Installation, Quick Start, Configuration, Commands, Advanced)
+- **Interactive quick start**: Step-by-step tutorial with code examples (zr.toml snippets, CLI commands, expected output)
+- **Command reference**: Auto-generated from CLI help text with examples, common patterns, troubleshooting
+- **Configuration reference**: Complete zr.toml schema documentation with all fields, types, defaults, examples
+- **Migration guides**: Detailed guides for migrating from make/just/task/npm-scripts (depends on Migration Tool Enhancement)
+- **Best practices**: Recommended patterns for large projects, monorepos, CI/CD integration, caching strategies
+- **Video walkthrough**: 5-minute screen recording showing zr setup → first task → parallel execution → caching
+- **Example projects**: Real zr.toml files from diverse projects (web app, CLI tool, monorepo, polyglot)
+- **Troubleshooting FAQ**: Common errors and solutions (permission denied, command not found, slow performance)
+- **Site generation**: Simple static site generator (or mdBook) for offline browsing and versioning
+**Status: READY** — Docs exist but fragmented. Needs reorganization and polish. Deliverables: ~500 LOC docs reorganization, ~300 LOC command/config reference, ~200 LOC examples, ~150 LOC FAQ, site generator setup.
 
 ### Sailor v1.37.0 Migration
 
