@@ -1032,6 +1032,8 @@ fn run(
         for (effective_args[2..]) |arg| {
             if (std.mem.eql(u8, arg, "--detect")) {
                 detect_mode = true;
+            } else if (std.mem.eql(u8, arg, "--from-npm")) {
+                migrate_mode = .npm;
             } else if (std.mem.eql(u8, arg, "--from-make")) {
                 migrate_mode = .makefile;
             } else if (std.mem.eql(u8, arg, "--from-just")) {
@@ -1527,6 +1529,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  interactive-run, irun  Run task with cancel/retry controls\n", .{});
     try w.print("  init                   Scaffold a new zr.toml in the current directory\n", .{});
     try w.print("    --detect             Auto-detect project languages and generate tasks\n", .{});
+    try w.print("    --from-npm           Migrate from package.json scripts\n", .{});
     try w.print("    --from-make          Migrate from Makefile\n", .{});
     try w.print("    --from-just          Migrate from justfile\n", .{});
     try w.print("    --from-task          Migrate from Taskfile.yml\n", .{});

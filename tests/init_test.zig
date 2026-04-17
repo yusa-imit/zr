@@ -407,3 +407,152 @@ test "746: init --from-task without Taskfile.yml shows error" {
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Taskfile.yml") != null);
 }
+
+test "10100: init --from-npm converts package.json scripts to zr.toml" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a package.json with scripts
+    const package_json_content =
+        \\{
+        \\  "name": "test-app",
+        \\  "scripts": {
+        \\    "build": "tsc",
+        \\    "test": "jest",
+        \\    "dev": "vite"
+        \\  }
+        \\}
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "package.json", .data = package_json_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-npm" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify zr.toml was created
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    // Check for migrated tasks
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.build]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.test]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.dev]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "cmd = \"tsc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "cmd = \"jest\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "migrated from package.json") != null);
+}
+
+test "10101: init --from-npm handles pre/post hooks as dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create package.json with pre/post hooks
+    const package_json_content =
+        \\{
+        \\  "scripts": {
+        \\    "prebuild": "npm run clean",
+        \\    "build": "tsc",
+        \\    "postbuild": "npm run copy-assets"
+        \\  }
+        \\}
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "package.json", .data = package_json_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-npm" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify dependencies
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    // Build should depend on prebuild
+    try std.testing.expect(std.mem.indexOf(u8, content, "deps = [\"prebuild\"]") != null);
+    // Postbuild should depend on build
+    try std.testing.expect(std.mem.indexOf(u8, content, "[tasks.postbuild]") != null);
+}
+
+test "10102: init --from-npm detects npm run dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create package.json with npm run patterns
+    const package_json_content =
+        \\{
+        \\  "scripts": {
+        \\    "clean": "rm -rf dist",
+        \\    "compile": "tsc",
+        \\    "build": "npm run clean && npm run compile"
+        \\  }
+        \\}
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "package.json", .data = package_json_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-npm" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify dependency detection
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    // Build should have detected clean and compile as dependencies
+    try std.testing.expect(std.mem.indexOf(u8, content, "clean") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "compile") != null);
+}
+
+test "10103: init --from-npm without package.json shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "init", "--from-npm" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail with helpful error
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "package.json") != null);
+}
+
+test "10104: init --from-npm with empty package.json creates minimal config" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create empty package.json (no scripts)
+    const package_json_content =
+        \\{
+        \\  "name": "my-app"
+        \\}
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "package.json", .data = package_json_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-npm" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should create minimal config
+    const content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 16 * 1024);
+    defer allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "# zr.toml") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "migrated from package.json") != null);
+}

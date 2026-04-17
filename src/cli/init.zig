@@ -7,6 +7,7 @@ const LanguageProvider = provider.LanguageProvider;
 const makefile_migrate = @import("../migrate/makefile.zig");
 const justfile_migrate = @import("../migrate/justfile.zig");
 const taskfile_migrate = @import("../migrate/taskfile.zig");
+const npm_migrate = @import("../migrate/npm.zig");
 
 /// Generate zr.toml content from detected languages
 fn generateConfigFromDetected(
@@ -107,6 +108,7 @@ pub const INIT_TEMPLATE =
 
 pub const MigrateMode = enum {
     none,
+    npm,
     makefile,
     justfile,
     taskfile,
@@ -144,6 +146,7 @@ pub fn cmdInit(
         // Migration mode
         const source_file = switch (migrate_mode) {
             .none => unreachable,
+            .npm => "package.json",
             .makefile => "Makefile",
             .justfile => "justfile",
             .taskfile => "Taskfile.yml",
@@ -162,6 +165,7 @@ pub fn cmdInit(
 
         const migrated = switch (migrate_mode) {
             .none => unreachable,
+            .npm => try npm_migrate.parseToZrToml(allocator, source_path),
             .makefile => try makefile_migrate.parseToZrToml(allocator, source_path),
             .justfile => try justfile_migrate.parseToZrToml(allocator, source_path),
             .taskfile => try taskfile_migrate.parseToZrToml(allocator, source_path),
