@@ -398,6 +398,55 @@ test "generateContext basic" {
     var ctx = ProjectContext.init(allocator);
     defer ctx.deinit();
 
-    // Just test that init/deinit works
+    // Verify initialization state
     try std.testing.expect(ctx.task_catalog.items.len == 0);
+    try std.testing.expect(ctx.project_graph.packages.items.len == 0);
+    try std.testing.expect(ctx.toolchains.items.len == 0);
+    try std.testing.expect(ctx.recent_changes.files_changed == 0);
+}
+
+test "getCurrentProjectName from git repository" {
+    const allocator = std.testing.allocator;
+
+    // This test runs in a git repo (zr itself), so it should extract the name
+    const name = try getCurrentProjectName(allocator);
+    defer allocator.free(name);
+
+    // Should not be "unknown" since we're in a git repo
+    try std.testing.expect(name.len > 0);
+    try std.testing.expect(!std.mem.eql(u8, name, "unknown"));
+
+    // For zr repo, should get "zr"
+    // (This is fragile if run outside zr repo, but acceptable for unit test)
+    if (std.mem.eql(u8, name, "zr")) {
+        try std.testing.expect(true); // Expected case
+    } else {
+        // Could be running in a different git repo or directory
+        try std.testing.expect(name.len > 0); // At least got a name
+    }
+}
+
+test "ProjectContext deinit cleans up all fields" {
+    const allocator = std.testing.allocator;
+
+    var ctx = ProjectContext.init(allocator);
+
+    // Manually populate some data to ensure deinit handles it
+    const node = try PackageNode.init(allocator, "test-pkg", "packages/test");
+    try ctx.project_graph.packages.append(allocator, node);
+
+    var pkg_task_info = try PackageTaskInfo.init(allocator, "test-pkg");
+    const task_info = try TaskInfo.init(allocator, "test-task", "echo test", "A test task");
+    try pkg_task_info.tasks.append(allocator, task_info);
+    try ctx.task_catalog.append(allocator, pkg_task_info);
+
+    // Verify data was added
+    try std.testing.expect(ctx.project_graph.packages.items.len == 1);
+    try std.testing.expect(ctx.task_catalog.items.len == 1);
+    try std.testing.expectEqualStrings("test-pkg", ctx.task_catalog.items[0].package_name);
+    try std.testing.expect(ctx.task_catalog.items[0].tasks.items.len == 1);
+    try std.testing.expectEqualStrings("test-task", ctx.task_catalog.items[0].tasks.items[0].name);
+
+    // deinit should clean everything without leaks
+    ctx.deinit();
 }
