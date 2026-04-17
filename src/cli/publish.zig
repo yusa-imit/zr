@@ -239,15 +239,38 @@ fn printPublishHelp() !void {
 test "cmdPublish help does not error" {
     const args = [_][]const u8{"--help"};
     // Verify --help flag is parsed and returns without error
-    // This tests that the help path doesn't crash and exits cleanly
     try cmdPublish(std.testing.allocator, &args);
+}
 
-    // Test invalid option returns error
+test "cmdPublish handles invalid options gracefully" {
+    // Test invalid option (prints error and returns, doesn't crash)
     const invalid_args = [_][]const u8{"--invalid-option"};
-    // cmdPublish with invalid option prints error and returns (doesn't crash)
     try cmdPublish(std.testing.allocator, &invalid_args);
+}
 
-    // Test missing bump value
+test "cmdPublish handles missing option values" {
+    // Test missing bump value (prints error and returns)
     const missing_bump = [_][]const u8{"--bump"};
     try cmdPublish(std.testing.allocator, &missing_bump);
+
+    // Test missing package value
+    const missing_package = [_][]const u8{"--package"};
+    try cmdPublish(std.testing.allocator, &missing_package);
+
+    // Test missing config value
+    const missing_config = [_][]const u8{"--config"};
+    try cmdPublish(std.testing.allocator, &missing_config);
+
+    // Test missing changelog value
+    const missing_changelog = [_][]const u8{"--changelog"};
+    try cmdPublish(std.testing.allocator, &missing_changelog);
+
+    // Test missing since value
+    const missing_since = [_][]const u8{"--since"};
+    try cmdPublish(std.testing.allocator, &missing_since);
+}
+
+test "printPublishHelp does not crash" {
+    // Verify help function can be called without error
+    try printPublishHelp();
 }
