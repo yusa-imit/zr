@@ -7,6 +7,9 @@ This guide helps you migrate from Make, Just, or Task (go-task) to zr with autom
 zr provides automatic migration from popular task runners:
 
 ```bash
+# From package.json (npm scripts)
+zr init --from-npm
+
 # From Makefile
 zr init --from-make
 
@@ -18,6 +21,266 @@ zr init --from-task
 ```
 
 These commands parse your existing configuration and generate a `zr.toml` file with equivalent task definitions.
+
+---
+
+## Migrating from npm (package.json)
+
+### Prerequisites
+
+- You have a `package.json` with a `scripts` section in your project directory
+- Run `zr init --from-npm` from the same directory
+
+### What Gets Converted
+
+The migration tool extracts:
+
+| package.json Feature | zr Equivalent | Notes |
+|---------------------|---------------|-------|
+| Script definitions | `[tasks.*]` | Each script becomes a task |
+| `npm run` dependencies | `deps = [...]` | Auto-detected from command patterns |
+| Pre/post hooks | `deps = [...]` | `prebuild` → dependency, `postbuild` → separate task |
+| `run-s` / `run-p` | `deps = [...]` | Sequential patterns converted to deps |
+| Environment variables | Manual conversion | Add `env = {...}` as needed |
+
+### Example
+
+**Before (package.json):**
+
+```json
+{
+  "name": "my-app",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "compile": "tsc",
+    "prebuild": "npm run clean",
+    "build": "npm run compile",
+    "postbuild": "npm run copy-assets",
+    "test": "jest",
+    "dev": "vite"
+  }
+}
+```
+
+**After (zr.toml):**
+
+```toml
+# zr.toml — migrated from package.json by `zr init --from-npm`
+
+[global]
+shell = "bash"
+
+[tasks.clean]
+cmd = "rm -rf dist"
+
+[tasks.compile]
+cmd = "tsc"
+
+[tasks.prebuild]
+cmd = "npm run clean"
+
+[tasks.build]
+deps = ["prebuild"]
+cmd = "npm run compile"
+
+[tasks.postbuild]
+deps = ["build"]
+cmd = "npm run copy-assets"
+
+[tasks.test]
+cmd = "jest"
+
+[tasks.dev]
+cmd = "vite"
+```
+
+### Dependency Detection
+
+The migration tool automatically detects task dependencies from command patterns:
+
+**Pattern 1: `npm run` commands**
+
+```json
+{
+  "scripts": {
+    "build": "npm run clean && npm run compile"
+  }
+}
+```
+
+Converts to:
+
+```toml
+[tasks.build]
+deps = ["clean", "compile"]
+cmd = "npm run clean && npm run compile"
+```
+
+**Pattern 2: `npm-run-all` sequential**
+
+```json
+{
+  "scripts": {
+    "build": "run-s clean compile test"
+  }
+}
+```
+
+Converts to:
+
+```toml
+[tasks.build]
+deps = ["clean", "compile", "test"]
+cmd = "run-s clean compile test"
+```
+
+**Pattern 3: Pre/post hooks**
+
+```json
+{
+  "scripts": {
+    "prebuild": "npm run lint",
+    "build": "tsc",
+    "postbuild": "npm run minify"
+  }
+}
+```
+
+Converts to:
+
+```toml
+[tasks.prebuild]
+cmd = "npm run lint"
+
+[tasks.build]
+deps = ["prebuild"]
+cmd = "tsc"
+
+[tasks.postbuild]
+deps = ["build"]
+cmd = "npm run minify"
+```
+
+### Manual Adjustments
+
+After migration, you may want to:
+
+1. **Add descriptions** for better documentation:
+   ```toml
+   [tasks.build]
+   description = "Build the TypeScript project"
+   deps = ["prebuild"]
+   cmd = "tsc"
+   ```
+
+2. **Replace `npm run` with direct commands** for better performance:
+   ```toml
+   # Before (keeps npm run wrapper)
+   [tasks.test]
+   deps = ["build"]
+   cmd = "npm run test"
+
+   # After (direct command)
+   [tasks.test]
+   deps = ["build"]
+   cmd = "jest"
+   ```
+
+3. **Convert parallel patterns to zr's native parallelism**:
+   ```json
+   // package.json (npm-run-all parallel)
+   {
+     "scripts": {
+       "watch": "run-p watch:*"
+     }
+   }
+   ```
+
+   Becomes:
+   ```toml
+   # zr.toml (zr runs deps in parallel by default)
+   [tasks.watch]
+   deps = ["watch-ts", "watch-css", "watch-js"]
+   cmd = "echo 'All watchers started'"
+
+   [tasks.watch-ts]
+   cmd = "tsc --watch"
+
+   [tasks.watch-css]
+   cmd = "sass --watch src:dist"
+
+   [tasks.watch-js]
+   cmd = "rollup --watch"
+   ```
+
+4. **Add environment variables**:
+   ```toml
+   [tasks.build]
+   env = { NODE_ENV = "production", INLINE_RUNTIME_CHUNK = "false" }
+   cmd = "react-scripts build"
+   ```
+
+5. **Enable features not available in npm scripts**:
+   ```toml
+   [tasks.build]
+   description = "Build for production"
+   cache = { inputs = ["src/**/*.ts", "package.json"], outputs = ["dist/"] }
+   cmd = "tsc"
+
+   [tasks.dev]
+   description = "Development server with hot reload"
+   watch = ["src/**/*.ts", "!**/*.test.ts"]
+   cmd = "vite"
+   ```
+
+### Known Limitations
+
+- **Complex npm-run-all patterns**: Wildcards like `run-p watch:*` require manual expansion
+- **Custom npm lifecycle hooks**: Hooks like `prepare`, `preinstall` are not migrated (use zr's hooks system)
+- **npm variables**: `$npm_package_version` etc. must be converted to expressions or env vars
+- **Conditional scripts**: Scripts with `&&` / `||` logic may need review for proper dependency ordering
+
+### Migration from Monorepo Tools
+
+If you're using npm workspaces with **Turborepo** or **Lerna**, consider these approaches:
+
+**Turborepo pipeline.json:**
+
+```json
+{
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+**zr workspace equivalent:**
+
+```toml
+# root zr.toml
+[workspace]
+members = ["packages/*"]
+
+[workspace.shared_tasks.build]
+description = "Build package"
+cmd = "tsc"
+cache = { outputs = ["dist/"] }
+```
+
+**Lerna scripts:**
+
+Convert lerna commands to zr workspace commands:
+
+```bash
+# Before
+lerna run build --stream
+
+# After
+zr workspace run build
+```
 
 ---
 
