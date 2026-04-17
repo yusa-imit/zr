@@ -1042,7 +1042,7 @@ fn run(
                 migrate_mode = .taskfile;
             }
         }
-        return init.cmdInit(allocator, std.fs.cwd(), detect_mode, migrate_mode, effective_w, ew, effective_color);
+        return init.cmdInit(allocator, std.fs.cwd(), detect_mode, migrate_mode, dry_run, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "validate")) {
         // Parse validate options
         var strict = false;
@@ -1533,6 +1533,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("    --from-make          Migrate from Makefile\n", .{});
     try w.print("    --from-just          Migrate from justfile\n", .{});
     try w.print("    --from-task          Migrate from Taskfile.yml\n", .{});
+    try w.print("    --dry-run            Preview migration without creating files\n", .{});
     try w.print("  add <type> [name]      Interactively add a task, workflow, or profile\n", .{});
     try w.print("  edit <type>            TUI editor for creating tasks, workflows, or profiles\n", .{});
     try w.print("  setup                  Set up project (install tools, run setup tasks)\n", .{});

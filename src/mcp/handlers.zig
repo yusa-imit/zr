@@ -727,6 +727,7 @@ fn handleGenerateConfig(allocator: std.mem.Allocator, params_json: []const u8) !
         std.fs.cwd(),
         true, // detect_mode
         .none, // migrate_mode
+        false, // dry_run
         &stdout_writer.interface,
         &stderr_writer.interface,
         false, // use_color

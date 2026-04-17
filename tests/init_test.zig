@@ -556,3 +556,112 @@ test "10104: init --from-npm with empty package.json creates minimal config" {
     try std.testing.expect(std.mem.indexOf(u8, content, "# zr.toml") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "migrated from package.json") != null);
 }
+
+test "10105: init --from-npm --dry-run previews without creating file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create test package.json
+    const package_json_content =
+        \\{
+        \\  "name": "my-app",
+        \\  "scripts": {
+        \\    "build": "tsc",
+        \\    "test": "jest"
+        \\  }
+        \\}
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "package.json", .data = package_json_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-npm", "--dry-run" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should print preview
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Dry-run mode") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[tasks.build]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[tasks.test]") != null);
+
+    // Should NOT create zr.toml
+    tmp.dir.access("zr.toml", .{}) catch |err| {
+        try std.testing.expectEqual(error.FileNotFound, err);
+        return;
+    };
+    try std.testing.expect(false); // Should not reach here
+}
+
+test "10106: init --from-make displays migration report" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create test Makefile
+    const makefile_content =
+        \\.PHONY: build test clean
+        \\
+        \\build:
+        \\	go build -o app .
+        \\
+        \\test: build
+        \\	go test ./...
+        \\
+        \\clean:
+        \\	rm -rf app
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "Makefile", .data = makefile_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-make" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should display migration report
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Migration Summary") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Source:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Makefile") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tasks converted:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Manual Steps Required") != null);
+}
+
+test "10107: init --from-just --dry-run shows preview with report" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create test justfile
+    const justfile_content =
+        \\build:
+        \\    cargo build
+        \\
+        \\test: build
+        \\    cargo test
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "justfile", .data = justfile_content });
+
+    var result = try runZr(allocator, &.{ "init", "--from-just", "--dry-run" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should print dry-run preview
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Dry-run mode") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[tasks.build]") != null);
+
+    // Should NOT create zr.toml
+    tmp.dir.access("zr.toml", .{}) catch |err| {
+        try std.testing.expectEqual(error.FileNotFound, err);
+        return;
+    };
+    try std.testing.expect(false);
+}

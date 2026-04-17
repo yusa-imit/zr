@@ -8,6 +8,60 @@ const makefile_migrate = @import("../migrate/makefile.zig");
 const justfile_migrate = @import("../migrate/justfile.zig");
 const taskfile_migrate = @import("../migrate/taskfile.zig");
 const npm_migrate = @import("../migrate/npm.zig");
+const migrate_report = @import("../migrate/report.zig");
+
+/// Generate a migration report based on source file and converted tasks
+fn generateMigrationReport(
+    allocator: std.mem.Allocator,
+    source_file: []const u8,
+    migrate_mode: MigrateMode,
+    toml_content: []const u8,
+) !migrate_report.MigrationReport {
+    var report = try migrate_report.MigrationReport.init(allocator, source_file);
+
+    // Count tasks in the TOML
+    var task_count: usize = 0;
+    var lines = std.mem.splitScalar(u8, toml_content, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, std.mem.trim(u8, line, " \t"), "[tasks.")) {
+            task_count += 1;
+        }
+    }
+    report.tasks_converted = task_count;
+
+    // Add migration-specific warnings and manual steps
+    switch (migrate_mode) {
+        .npm => {
+            try report.addManualStep(allocator, "Review task descriptions and add meaningful descriptions");
+            try report.addManualStep(allocator, "Check if environment variables from .env files need to be added to [tasks.*.env]");
+            if (std.mem.indexOf(u8, toml_content, "npm run") != null) {
+                try report.addWarning(allocator, "Some tasks still call 'npm run' - consider converting these to direct commands");
+            }
+        },
+        .makefile => {
+            try report.addManualStep(allocator, "Review generated task commands - make variables may need conversion");
+            try report.addManualStep(allocator, "Verify dependencies are correct - make's implicit rules are not preserved");
+            if (std.mem.indexOf(u8, toml_content, "%.") != null) {
+                try report.addUnsupportedFeature(allocator, "Pattern rules (%.o: %.c) - converted to literal tasks");
+            }
+        },
+        .justfile => {
+            try report.addManualStep(allocator, "Check task parameters - justfile recipe parameters need manual conversion");
+            if (std.mem.indexOf(u8, toml_content, "{{") != null or std.mem.indexOf(u8, toml_content, "}}") != null) {
+                try report.addWarning(allocator, "Just template variables detected - these need manual review");
+            }
+        },
+        .taskfile => {
+            try report.addManualStep(allocator, "Review task variables and ensure they're properly converted to zr format");
+            if (std.mem.indexOf(u8, toml_content, "for:") != null) {
+                try report.addUnsupportedFeature(allocator, "Taskfile 'for' loops - converted to static tasks");
+            }
+        },
+        .none => {},
+    }
+
+    return report;
+}
 
 /// Generate zr.toml content from detected languages
 fn generateConfigFromDetected(
@@ -119,6 +173,7 @@ pub fn cmdInit(
     dir: std.fs.Dir,
     detect_mode: bool,
     migrate_mode: MigrateMode,
+    dry_run: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -171,7 +226,16 @@ pub fn cmdInit(
             .taskfile => try taskfile_migrate.parseToZrToml(allocator, source_path),
         };
 
+        // Generate and display migration report
+        var report = try generateMigrationReport(allocator, source_file, migrate_mode, migrated);
+        defer report.deinit(allocator);
+
+        const report_text = try report.format(allocator, use_color);
+        defer allocator.free(report_text);
+
         try color.printSuccess(w, use_color, "Migration complete!\n\n", .{});
+        try w.writeAll(report_text);
+
         break :blk migrated;
     } else if (detect_mode) blk: {
         try color.printInfo(w, use_color, "Detecting project languages...\n", .{});
@@ -216,6 +280,15 @@ pub fn cmdInit(
 
     defer if (detect_mode or migrate_mode != .none) allocator.free(template);
 
+    // In dry-run mode, just print the template and exit
+    if (dry_run) {
+        try color.printInfo(w, use_color, "Dry-run mode: preview of {s}\n\n", .{common.CONFIG_FILE});
+        try color.printDim(w, use_color, "{s}", .{template});
+        try w.print("\n", .{});
+        try color.printDim(w, use_color, "\nTo create this file, run without --dry-run\n", .{});
+        return 0;
+    }
+
     // Create the config file exclusively (won't overwrite).
     const file = dir.createFile(common.CONFIG_FILE, .{ .exclusive = true }) catch |cerr| {
         try color.printError(err_writer, use_color,
@@ -252,7 +325,7 @@ test "cmdInit creates zr.toml in empty directory" {
     var err_w = stderr_file.writer(&err_buf);
 
     // First call: should create the file (no detect mode, no migrate mode).
-    const code1 = try cmdInit(std.testing.allocator, tmp.dir, false, .none, &out_w.interface, &err_w.interface, false);
+    const code1 = try cmdInit(std.testing.allocator, tmp.dir, false, .none, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code1);
 
     // Verify file exists and contains expected content.
@@ -262,6 +335,6 @@ test "cmdInit creates zr.toml in empty directory" {
     try std.testing.expect(std.mem.indexOf(u8, content, "hello") != null);
 
     // Second call: should refuse to overwrite.
-    const code2 = try cmdInit(std.testing.allocator, tmp.dir, false, .none, &out_w.interface, &err_w.interface, false);
+    const code2 = try cmdInit(std.testing.allocator, tmp.dir, false, .none, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code2);
 }

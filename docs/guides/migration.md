@@ -18,9 +18,54 @@ zr init --from-just
 
 # From Taskfile.yml
 zr init --from-task
+
+# Preview migration without creating files (dry-run)
+zr init --from-npm --dry-run
 ```
 
 These commands parse your existing configuration and generate a `zr.toml` file with equivalent task definitions.
+
+### Migration Reports
+
+After migration, zr automatically displays a detailed report including:
+
+- **Tasks converted**: Number of tasks successfully migrated
+- **Warnings**: Potential issues that may need attention (e.g., npm run commands, template variables)
+- **Unsupported features**: Features that couldn't be automatically converted (e.g., pattern rules, loops)
+- **Manual steps**: Recommended post-migration actions (e.g., review dependencies, add descriptions)
+
+Example output:
+
+```
+✓ Migration Summary
+
+Source:  package.json
+Tasks converted: 5
+
+⚠ Warnings
+  • Some tasks still call 'npm run' - consider converting these to direct commands
+
+ℹ Manual Steps Required
+  1. Review task descriptions and add meaningful descriptions
+  2. Check if environment variables from .env files need to be added to [tasks.*.env]
+```
+
+### Dry-Run Mode
+
+Use `--dry-run` to preview the migration output without creating `zr.toml`:
+
+```bash
+# Preview what would be generated
+zr init --from-npm --dry-run
+
+# Review the output, then run without --dry-run to create the file
+zr init --from-npm
+```
+
+This is useful for:
+- Understanding what the migration will produce
+- Checking if manual adjustments will be needed
+- Testing migration on different configurations
 
 ---
 
