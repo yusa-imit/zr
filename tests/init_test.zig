@@ -608,13 +608,16 @@ test "10106: init --from-make displays migration report" {
         \\.PHONY: build test clean
         \\
         \\build:
-        \\	go build -o app .
+        ++ "\t" ++
+        \\go build -o app .
         \\
         \\test: build
-        \\	go test ./...
+        ++ "\t" ++
+        \\go test ./...
         \\
         \\clean:
-        \\	rm -rf app
+        ++ "\t" ++
+        \\rm -rf app
     ;
     try tmp.dir.writeFile(.{ .sub_path = "Makefile", .data = makefile_content });
 
