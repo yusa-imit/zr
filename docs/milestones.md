@@ -3,10 +3,10 @@
 ## Current Status
 
 - **Latest**: v1.71.0 (Migration Tool Enhancement)
-- **Active milestones**: 2 READY + 2 BLOCKED
-- **READY milestones**: 2 (Performance Benchmarking & Competitive Analysis, Documentation Site & Onboarding Experience)
+- **Active milestones**: 1 READY + 2 BLOCKED
+- **READY milestones**: 1 (Documentation Site & Onboarding Experience)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
-- **DONE**: Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131), Task Name Abbreviation & Fuzzy Matching (Cycle 124), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -109,14 +109,14 @@ Add live filtering and pattern matching for task output streams, enabling quick 
 ### Performance Benchmarking & Competitive Analysis
 
 Establish quantitative performance baseline and competitive positioning through comprehensive benchmarking. Currently zr lacks formal performance comparison against make/just/task/npm-scripts. This milestone creates reproducible benchmarks, identifies bottlenecks, and validates performance claims. Includes:
-- **Benchmark suite**: 6 representative scenarios (cold start, hot run, parallel graph, cache hit, large config, watch mode)
-- **Competitor comparison**: Head-to-head timing vs make 4.4+, just 1.25+, task 3.35+, npm scripts, bun run
-- **Real-world projects**: Test on actual open-source projects (Linux kernel Makefile, Turborepo demo, nx workspace)
-- **Metrics dashboard**: HTML report with charts (startup latency, throughput, memory usage, cache effectiveness)
-- **Performance regression tests**: CI integration to detect slowdowns (fail if >10% slower than baseline)
-- **Optimization opportunities**: Profile zr itself (flamegraph, allocation tracing) to identify hot paths
-- **Documentation**: Add benchmarks/ section to docs with methodology, results, and competitive positioning
-**Status: READY** — Benchmark scripts framework exists in scripts/bench.sh but lacks comprehensive scenarios. Competitive data needed for marketing/positioning. Deliverables: ~300 LOC benchmark scenarios, ~200 LOC result aggregation, ~150 LOC docs, HTML dashboard template.
+- ✅ **Benchmark suite**: 6 representative scenarios (cold start, hot run, parallel graph, cache hit, large config, watch mode)
+- ✅ **Competitor comparison**: Head-to-head timing vs make 4.4+, just 1.25+, task 3.35+, npm scripts, bun run
+- ⏸️ **Real-world projects**: Test on actual open-source projects (Linux kernel Makefile, Turborepo demo, nx workspace) — deferred to future milestone
+- ⏸️ **Metrics dashboard**: HTML report with charts (startup latency, throughput, memory usage, cache effectiveness) — deferred to future milestone
+- ⏸️ **Performance regression tests**: CI integration to detect slowdowns (fail if >10% slower than baseline) — deferred to future milestone
+- ⏸️ **Optimization opportunities**: Profile zr itself (flamegraph, allocation tracing) to identify hot paths — deferred to future milestone
+- ✅ **Documentation**: Add benchmarks/ section to docs with methodology, results, and competitive positioning
+**Status: DONE** — Completed 2026-04-19 (Cycle 139). Implemented 6 comprehensive benchmark scenarios: (01) cold start, (02) parallel graph, (03) hot run (10x repeated execution), (04) cache hit (content-based caching), (05) large config (500 tasks), (06) watch mode (file change latency). All scenarios compare zr vs make/just/task/npm with CSV output. Updated benchmarks/README.md with detailed scenario descriptions, methodology, and interpretation guide. Updated RESULTS.md with 6-scenario suite overview. Real-world projects, HTML dashboard, CI regression tests, and profiling deferred to future milestone (core scenarios complete). Total implementation: ~600 LOC benchmark scripts, ~300 LOC documentation.
 
 ### Migration Tool Enhancement
 
