@@ -219,6 +219,8 @@ fn printHelp() !void {
 }
 
 test "cmdAnalytics help" {
+    // Verifies that --help flag returns exit code 0
+    // Help content is verified by integration tests
     const result = try cmdAnalytics(std.testing.allocator, &.{"--help"}, false);
     try std.testing.expectEqual(@as(u8, 0), result);
 }
