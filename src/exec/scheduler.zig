@@ -440,6 +440,8 @@ const WorkerCtx = struct {
     remote_env: ?[][2][]const u8,
     /// Output filtering options (grep, highlight, context).
     filter_options: filter_mod.FilterOptions,
+    /// Silent mode: suppress output unless task fails (v1.73.0).
+    silent: bool = false,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -606,15 +608,15 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
-    // Initialize OutputCapture if configured (v1.37.0) or if filtering is enabled
+    // Initialize OutputCapture if configured (v1.37.0), filtering is enabled, or silent mode
     var output_cap: ?output_capture.OutputCapture = null;
     defer if (output_cap) |*oc| oc.deinit();
 
-    // Enable OutputCapture if: (1) output_mode is set, or (2) filtering is enabled
-    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled();
+    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, or (3) silent mode
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent;
     if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
-            .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering
+            .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent
             .output_file = ctx.output_file,
             .max_buffer_size = 1024 * 1024, // 1MB default
             .filter_options = ctx.filter_options,
@@ -1036,6 +1038,18 @@ fn workerFn(ctx: WorkerCtx) void {
         _ = executeHooks(task_allocator, ctx.task_hooks, .success, after_ctx);
     } else {
         _ = executeHooks(task_allocator, ctx.task_hooks, .failure, after_ctx);
+    }
+
+    // Handle silent mode: if task failed, dump buffered output to stderr (v1.73.0)
+    if (ctx.silent and !proc_result.success) {
+        if (output_cap) |*oc| {
+            if (oc.config.mode == .buffer) {
+                const buffered_output = oc.getBuffer() catch &[_]u8{};
+                if (buffered_output.len > 0) {
+                    std.debug.print("{s}", .{buffered_output});
+                }
+            }
+        }
     }
 
     // Allocate an owned copy of the name for TaskResult
@@ -1909,6 +1923,7 @@ pub fn run(
                 .remote_cwd = task.remote_cwd,
                 .remote_env = task.remote_env,
                 .filter_options = sched_config.filter_options,
+                .silent = task.silent,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
