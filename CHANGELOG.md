@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.72.0] - 2026-04-19
+
+### 📚 Documentation Site & Onboarding Experience (Complete)
+
+This release delivers a comprehensive documentation overhaul with cohesive organization, clear navigation, and production-ready reference materials. New users can quickly get started, and experienced users have detailed references at their fingertips.
+
+### Added
+
+**Core Feature: Documentation Hub** (Cycle 141)
+- `docs/README.md` — Documentation landing page with organized sections (Getting Started, Configuration, Commands, Advanced, Reference)
+- Clear navigation structure with quick links for first-time users, migration paths, and common tasks
+- Cross-referenced guide structure for easy discovery
+
+**Core Feature: Command Reference** (Cycle 141)
+- `docs/guides/command-reference.md` — Complete reference for all 50+ zr CLI commands
+- Usage examples, options, shortcuts, and best practices for each command
+- Global options reference, exit codes, and alias system documentation
+- ~1744 LOC comprehensive command documentation
+
+**Core Feature: Configuration Reference** (Cycle 141)
+- `docs/guides/config-reference.md` — Field-by-field schema documentation for all zr.toml sections
+- Quick lookup tables for Tasks, Workflows, Profiles, Workspace, Cache, Resource Limits, Concurrency Groups, Toolchains, Plugins, Aliases, Mixins, Templates
+- Expression syntax reference with variables, operators, and functions
+- Complete example configuration demonstrating all features
+- ~1450 LOC schema reference documentation
+
+**Core Feature: Best Practices Guide** (Cycle 141)
+- `docs/guides/best-practices.md` — Production-tested patterns for task organization, performance, monorepos, CI/CD
+- Task Organization: Descriptive naming, tags, mixins, workspace shared tasks
+- Performance Optimization: Parallelism, caching, concurrency groups, resource limits, NUMA affinity
+- Monorepo Patterns: Affected detection, multi-stage workflows, task inheritance
+- CI/CD Integration: GitHub Actions, GitLab CI examples, remote cache setup
+- Caching Strategies: Content-based, layered, remote cache for teams
+- Error Handling: Retry, circuit breaker, failure hooks, allow_failure
+- Security: Secrets management, remote execution, input validation
+- Team Collaboration: Documentation, aliases, profiles, version control
+- Anti-patterns checklist
+- ~1800 LOC best practices documentation
+
+**Core Feature: Troubleshooting Guide** (Cycle 141)
+- `docs/guides/troubleshooting.md` — Comprehensive debugging reference with FAQ
+- Installation Issues: PATH configuration, permissions, SSL certificates, build errors
+- Configuration Errors: TOML syntax, dependency cycles, task not found, invalid expressions
+- Task Execution Problems: Silent failures, command not found, timeouts, file descriptor limits, retry debugging
+- Performance Issues: Slow builds, high memory usage, cache misses
+- Cache Problems: Permissions, remote cache, cache size
+- Workspace Issues: Members not found, inheritance, affected detection
+- Toolchain Problems: Install failures, version conflicts
+- CI/CD Issues: zr installation, remote cache, parallel jobs
+- Frequently Asked Questions: Migration, Docker integration, remote execution, debugging, environment variables, secrets, contributions
+- Diagnostic commands reference
+- ~2300 LOC troubleshooting documentation
+
+### Changed
+
+**Documentation Improvements**
+- Existing guides (getting-started.md, migration.md, shell-setup.md, configuration.md) already provided core content
+- Added clear cross-references between all documentation files
+- Improved discoverability with structured Table of Contents in each guide
+
+### Notes
+
+**Deferred to Future Milestone**:
+- Video walkthrough (5-minute screen recording) — Core documentation complete, video is supplementary
+- Example projects (real zr.toml files) — examples/ directory exists, additional examples can be added incrementally
+- Static site generation (mdBook or similar) — Markdown files are complete and navigable, site generator is optional enhancement
+
+**Implementation Summary**:
+- Total documentation: ~7447 LOC across 6 files
+- 153 LOC landing page (docs/README.md)
+- 1744 LOC command reference
+- 1450 LOC config reference
+- 1800 LOC best practices
+- 2300 LOC troubleshooting
+- Zero code changes (documentation-only release)
+
 ## [1.71.0] - 2026-04-18
 
 ### ✨ Migration Tool Enhancement (Complete)
