@@ -921,7 +921,7 @@ pub fn findTasksByPrefix(
     task_name: []const u8,
     tasks: *const std.StringHashMap(@import("../config/types.zig").Task),
 ) !PrefixMatchResult {
-    // Check for exact match first
+    // Check for exact match in task names first
     if (tasks.get(task_name)) |_| {
         const empty_slice = try allocator.alloc([]const u8, 0);
         return PrefixMatchResult{
@@ -930,14 +930,38 @@ pub fn findTasksByPrefix(
         };
     }
 
-    // Find prefix matches
+    // Check for exact match in task aliases
+    var iter = tasks.iterator();
+    while (iter.next()) |entry| {
+        for (entry.value_ptr.aliases) |alias| {
+            if (std.mem.eql(u8, alias, task_name)) {
+                // Alias exact match found - return task name
+                const empty_slice = try allocator.alloc([]const u8, 0);
+                return PrefixMatchResult{
+                    .exact = entry.key_ptr.*,
+                    .prefix_matches = empty_slice,
+                };
+            }
+        }
+    }
+
+    // Find prefix matches in task names and aliases
     var matches = std.ArrayList([]const u8){};
     errdefer matches.deinit(allocator);
 
-    var iter = tasks.iterator();
-    while (iter.next()) |entry| {
+    var iter2 = tasks.iterator();
+    while (iter2.next()) |entry| {
+        // Check task name prefix
         if (std.mem.startsWith(u8, entry.key_ptr.*, task_name)) {
             try matches.append(allocator, entry.key_ptr.*);
+        } else {
+            // Check alias prefixes
+            for (entry.value_ptr.aliases) |alias| {
+                if (std.mem.startsWith(u8, alias, task_name)) {
+                    try matches.append(allocator, entry.key_ptr.*);
+                    break; // Only add each task once
+                }
+            }
         }
     }
 
