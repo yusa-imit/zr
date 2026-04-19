@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Latest**: v1.71.0 (Migration Tool Enhancement)
-- **Active milestones**: 0 READY + 2 BLOCKED
-- **READY milestones**: 0
+- **Latest**: v1.72.0 (Documentation Site & Onboarding Experience)
+- **Active milestones**: 3 READY + 2 BLOCKED
+- **READY milestones**: 3 (Task Up-to-Date Detection & Incremental Builds, Task Parameters & Dynamic Task Generation, Task Aliases & Silent Mode)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
 - **DONE**: Documentation Site & Onboarding Experience (Cycle 141, pending release), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -17,6 +17,53 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Task Up-to-Date Detection & Incremental Builds
+
+Enable smart task execution by skipping tasks whose outputs are already up-to-date, similar to make's file timestamp checking and task's sources/generates pattern. Currently zr always re-runs tasks regardless of whether inputs have changed or outputs exist. This milestone adds incremental build support to dramatically speed up repeated task executions. Includes:
+- **Sources pattern**: `sources = ["src/**/*.ts", "package.json"]` — files that affect task output
+- **Generates pattern**: `generates = ["dist/**/*.js", "dist/bundle.min.js"]` — files created by task
+- **Up-to-date logic**: Skip task if all generates exist and are newer than all sources (mtime comparison)
+- **Manual invalidation**: `zr run <task> --force` always runs, ignoring up-to-date check
+- **Cache integration**: Up-to-date detection works with content-based caching (hash vs mtime)
+- **Watch mode optimization**: File watcher uses sources pattern to filter relevant changes
+- **Status display**: `zr list --status` shows task states (up-to-date, stale, never-run)
+- **Dry-run preview**: `zr run --dry-run` shows which tasks would run vs skip
+- **Dependencies**: Tasks with up-to-date dependencies skip if all deps are up-to-date and outputs exist
+- **Glob expansion**: Support globs with `**`, `*`, `?` for flexible source/generate patterns
+**Status: READY** — Estimated: ~400 LOC (up-to-date checker in src/exec/, status display in list.zig, --force flag in run.zig), ~300 LOC tests (15-20 integration tests for mtime comparison, glob matching, watch mode filtering, cache interaction), ~250 LOC docs (incremental builds guide in docs/guides/configuration.md with make/task migration examples).
+
+### Task Parameters & Dynamic Task Generation
+
+Add parameterized tasks with default values to enable flexible, reusable task definitions similar to just's recipe parameters. Currently tasks are static — to deploy to multiple environments you must copy-paste the task definition. This milestone enables tasks that accept arguments at runtime, reducing duplication and improving maintainability. Includes:
+- **Task parameters**: `params = [{ name = "env", default = "dev", description = "Target environment" }]` in task definition
+- **Parameter interpolation**: Use `{{env}}` in cmd/env fields, resolved at runtime
+- **CLI invocation**: `zr run deploy env=prod` or `zr run deploy --param env=prod` (both syntaxes supported)
+- **Validation**: Type checking (string, bool, number), required params without defaults fail if not provided
+- **Multiple params**: `params = [{ name = "env" }, { name = "region", default = "us-east-1" }]` — positional or named args
+- **Help integration**: `zr run deploy --help` shows available params, defaults, descriptions
+- **List display**: `zr list` shows tasks with params as `deploy(env="dev", region="us-east-1")`
+- **History tracking**: Execution history records actual param values used
+- **Workflow integration**: Workflows can pass params to tasks: `tasks = [{ name = "deploy", params = { env = "staging" } }]`
+- **Interactive mode**: `zr irun` prompts for required params if not provided
+- **Task dependencies**: Dependent tasks inherit params from parent or use own defaults
+**Status: READY** — Estimated: ~450 LOC (param parser in config/loader.zig, interpolation in exec/scheduler.zig, CLI parsing in main.zig), ~350 LOC tests (18-22 integration tests for param parsing, interpolation, validation, defaults, help display), ~300 LOC docs (parameterized tasks guide with just migration examples, use cases for multi-env deploys).
+
+### Task Aliases & Silent Mode
+
+Add multiple names for tasks (aliases) and output suppression (silent mode) to improve CLI ergonomics and reduce noise from well-behaving tasks. Currently each task has one name, and all output is always shown. Aliases enable intuitive shortcuts (e.g., `b` for `build`, `t` for `test`), while silent mode lets you focus on errors by hiding successful task output. Includes:
+- **Task aliases**: `aliases = ["b", "compile"]` field in task definition — all names work identically
+- **Alias display**: `zr list` shows aliases in parentheses: `build (b, compile)`
+- **Alias conflicts**: Error if alias collides with existing task name or other aliases
+- **Silent mode**: `silent = true` in task — suppress stdout/stderr unless task fails (exit code != 0)
+- **Global silent flag**: `zr run --silent <task>` or `zr run -s <task>` overrides task config
+- **Error passthrough**: Silent tasks show full output on failure for debugging
+- **Interactive tasks**: Silent mode disabled automatically for tasks with `interactive = true`
+- **Log level integration**: Silent tasks respect `--verbose` (force show) and `--quiet` (already silent)
+- **History display**: `zr history` shows task name (not alias), but accepts alias for filtering
+- **Completion**: Shell completion includes aliases in task name suggestions
+- **Help text**: `zr run <task> --help` shows aliases if defined
+**Status: READY** — Estimated: ~300 LOC (aliases in config/schema.zig, conflict detection in loader.zig, silent mode in output/capture.zig), ~250 LOC tests (12-15 integration tests for alias resolution, conflict detection, silent mode with success/failure, verbose override), ~200 LOC docs (task aliases guide with use cases, silent mode best practices).
 
 ### Enhanced Task Retry & Error Recovery
 
