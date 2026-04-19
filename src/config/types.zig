@@ -1109,6 +1109,14 @@ pub const Task = struct {
     /// Each mixin is a reference to a [mixins.NAME] section.
     /// Fields are merged left-to-right, with task fields overriding mixin fields.
     mixins: [][]const u8 = &.{},
+    /// Alternative names for this task (v1.73.0).
+    /// All aliases resolve to the same task. Aliases must be unique across all tasks and aliases.
+    /// Example: aliases = ["b", "compile"] allows `zr run b` or `zr run compile` to invoke this task.
+    aliases: [][]const u8 = &.{},
+    /// If true, suppress stdout/stderr unless task fails (exit code != 0) (v1.73.0).
+    /// Silent tasks show full output on failure for debugging.
+    /// Automatically disabled for interactive tasks.
+    silent: bool = false,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1174,6 +1182,9 @@ pub const Task = struct {
         // v1.67.0 mixins
         for (self.mixins) |mixin_name| allocator.free(mixin_name);
         if (self.mixins.len > 0) allocator.free(self.mixins);
+        // v1.73.0 aliases
+        for (self.aliases) |alias| allocator.free(alias);
+        if (self.aliases.len > 0) allocator.free(self.aliases);
     }
 };
 
