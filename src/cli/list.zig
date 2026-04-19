@@ -239,6 +239,13 @@ pub fn cmdList(
                 } else {
                     try obj.addNull("description");
                 }
+                // Add aliases array
+                try obj.writer.writeAll(",\"aliases\":[");
+                for (task.aliases, 0..) |alias, i| {
+                    if (i > 0) try obj.writer.writeAll(",");
+                    try obj.writer.print("\"{s}\"", .{alias});
+                }
+                try obj.writer.writeAll("]");
                 try obj.addNumber("deps_count", task.deps.len);
 
                 // Add duration estimate if available
@@ -454,6 +461,8 @@ pub fn cmdList(
                 if (task.description) |desc| {
                     try color.printDim(w, use_color, " {s}", .{desc});
                 }
+                // Show aliases if present
+                try printAliases(w, task.aliases, use_color);
                 // Mark inherited tasks (v1.63.0)
                 if (task.inherited) {
                     try color.printDim(w, use_color, " (inherited)", .{});
@@ -491,6 +500,8 @@ pub fn cmdList(
                 if (task.description) |desc| {
                     try color.printDim(w, use_color, " {s}", .{desc});
                 }
+                // Show aliases if present
+                try printAliases(w, task.aliases, use_color);
                 // Mark inherited tasks (v1.63.0)
                 if (task.inherited) {
                     try color.printDim(w, use_color, " (inherited)", .{});
@@ -538,6 +549,8 @@ pub fn cmdList(
             if (task.description) |desc| {
                 try color.printDim(w, use_color, " {s}", .{desc});
             }
+            // Show aliases if present
+            try printAliases(w, task.aliases, use_color);
             // Mark inherited tasks (v1.63.0)
             if (task.inherited) {
                 try color.printDim(w, use_color, " (inherited)", .{});
@@ -901,6 +914,22 @@ pub fn cmdCache(
             "cache: unknown subcommand '{s}'\n\n  Hint: zr cache clear | zr cache status\n", .{sub});
         return 1;
     }
+}
+
+/// Print task aliases in dimmed color if present
+fn printAliases(
+    w: *std.Io.Writer,
+    aliases: []const []const u8,
+    use_color: bool,
+) !void {
+    if (aliases.len == 0) return;
+
+    try color.printDim(w, use_color, " [aliases: ", .{});
+    for (aliases, 0..) |alias, i| {
+        if (i > 0) try color.printDim(w, use_color, ", ", .{});
+        try color.printDim(w, use_color, "{s}", .{alias});
+    }
+    try color.printDim(w, use_color, "]", .{});
 }
 
 fn formatBytes(bytes: u64) [64]u8 {
