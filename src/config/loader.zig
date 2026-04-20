@@ -101,6 +101,9 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
     // Resolve task mixins (v1.67.0) — apply mixin fields to tasks
     try resolveMixins(allocator, &config);
 
+    // Validate task aliases (v1.72.0) — detect conflicts
+    try validateTaskAliases(allocator, &config);
+
     return config;
 }
 
@@ -794,6 +797,123 @@ test "task defaults: condition is null by default" {
     try config.addTask("no-cond", "echo hi", null, null, &[_][]const u8{});
     const task = config.tasks.get("no-cond").?;
     try std.testing.expect(task.condition == null);
+}
+
+/// Validate task aliases for conflicts (v1.72.0).
+/// Checks that no alias conflicts with:
+/// - An existing task name
+/// - Another alias in the same task
+/// - An alias in a different task
+fn validateTaskAliases(allocator: std.mem.Allocator, config: *Config) !void {
+    // Build a map of all task names and aliases
+    var name_map = std.StringHashMap([]const u8).init(allocator);
+    defer name_map.deinit();
+
+    // First pass: register all task names
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        try name_map.put(task_name, task_name);
+    }
+
+    // Second pass: check aliases for conflicts
+    task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        const task = entry.value_ptr;
+
+        if (task.aliases.len == 0) continue;
+
+        // Check each alias
+        for (task.aliases) |alias| {
+            // Check if alias conflicts with a task name
+            if (name_map.get(alias)) |conflicting_task| {
+                std.debug.print("error: Alias '{s}' in task '{s}' conflicts with existing task '{s}'\n", .{ alias, task_name, conflicting_task });
+                return error.AliasConflict;
+            }
+
+            // Check if alias already used by this validation pass (duplicate within task or across tasks)
+            if (name_map.contains(alias)) {
+                const existing_owner = name_map.get(alias).?;
+                std.debug.print("error: Alias '{s}' in task '{s}' conflicts with alias in task '{s}'\n", .{ alias, task_name, existing_owner });
+                return error.AliasConflict;
+            }
+
+            // Register this alias
+            try name_map.put(alias, task_name);
+        }
+    }
+}
+
+test "validateTaskAliases: no conflicts with valid aliases" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Task with aliases that don't conflict
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+    var build_task = config.tasks.getPtr("build").?;
+    var build_aliases = std.ArrayList([]const u8){};
+    defer build_aliases.deinit(allocator);
+    try build_aliases.append(allocator, try allocator.dupe(u8, "b"));
+    try build_aliases.append(allocator, try allocator.dupe(u8, "compile"));
+    build_task.aliases = try build_aliases.toOwnedSlice(allocator);
+
+    try config.addTask("test", "zig build test", null, null, &[_][]const u8{});
+    var test_task = config.tasks.getPtr("test").?;
+    var test_aliases = std.ArrayList([]const u8){};
+    defer test_aliases.deinit(allocator);
+    try test_aliases.append(allocator, try allocator.dupe(u8, "t"));
+    try test_aliases.append(allocator, try allocator.dupe(u8, "check"));
+    test_task.aliases = try test_aliases.toOwnedSlice(allocator);
+
+    // Should not error
+    try validateTaskAliases(allocator, &config);
+}
+
+test "validateTaskAliases: alias conflicts with task name" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+    try config.addTask("test", "zig build test", null, null, &[_][]const u8{});
+
+    // Alias "test" conflicts with task name "test"
+    var build_task = config.tasks.getPtr("build").?;
+    var aliases = std.ArrayList([]const u8){};
+    defer aliases.deinit(allocator);
+    try aliases.append(allocator, try allocator.dupe(u8, "test"));
+    build_task.aliases = try aliases.toOwnedSlice(allocator);
+
+    const result = validateTaskAliases(allocator, &config);
+    try std.testing.expectError(error.AliasConflict, result);
+}
+
+test "validateTaskAliases: duplicate alias across tasks" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+    var build_task = config.tasks.getPtr("build").?;
+    var build_aliases = std.ArrayList([]const u8){};
+    defer build_aliases.deinit(allocator);
+    try build_aliases.append(allocator, try allocator.dupe(u8, "b"));
+    build_task.aliases = try build_aliases.toOwnedSlice(allocator);
+
+    try config.addTask("benchmark", "zig build benchmark", null, null, &[_][]const u8{});
+    var bench_task = config.tasks.getPtr("benchmark").?;
+    var bench_aliases = std.ArrayList([]const u8){};
+    defer bench_aliases.deinit(allocator);
+    try bench_aliases.append(allocator, try allocator.dupe(u8, "b")); // duplicate!
+    bench_task.aliases = try bench_aliases.toOwnedSlice(allocator);
+
+    const result = validateTaskAliases(allocator, &config);
+    try std.testing.expectError(error.AliasConflict, result);
 }
 
 test "addWorkflow: programmatic workflow construction" {
