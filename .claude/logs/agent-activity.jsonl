@@ -37,3 +37,6 @@
 {"timestamp":"2026-03-28T09:30:00Z","action":"subagent","agent_type":"test-writer","task":"Write section syntax retry tests (19 integration tests for TOML parser enhancement)","project":"zr"}
 {"timestamp":"2026-03-28T18:09:51Z","action":"subagent","agent_type":"test-writer","task":"Write estimation stats tests for Task Estimation & Time Tracking milestone","project":"zr"}
 {"timestamp":"2026-03-28T18:16:08Z","action":"subagent","agent_type":"general-purpose","task":"Refactor estimate command to use shared stats module","project":"zr"}
+{"timestamp":"2026-04-21T06:26:00Z","action":"subagent","agent_type":"test-writer","task":"Write comprehensive integration tests for Task Up-to-Date Detection & Incremental Builds","project":"zr"}
+{"timestamp":"2026-04-21T06:35:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement Phases 1-2 of Task Up-to-Date Detection (schema + uptodate.zig)","project":"zr"}
+{"timestamp":"2026-04-21T07:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Complete Phases 3-5 of Task Up-to-Date Detection (scheduler + CLI flags)","project":"zr"}
