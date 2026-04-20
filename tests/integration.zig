@@ -75,6 +75,7 @@ comptime {
     _ = @import("tools_test.zig");
     _ = @import("tui_test.zig");
     _ = @import("upgrade_test.zig");
+    _ = @import("uptodate_test.zig");
     _ = @import("validate_test.zig");
     _ = @import("version_test.zig");
     _ = @import("watch_test.zig");
