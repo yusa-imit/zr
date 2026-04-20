@@ -47,6 +47,8 @@ cmd = "npm run build"
 |-------|------|----------|---------|-------------|
 | `cmd` | string | ✅ | — | Shell command to execute |
 | `description` | string | ❌ | null | Human-readable description |
+| `aliases` | array | ❌ | [] | Alternative names for task (v1.73.0, see [Task Aliases](#task-aliases-v1730)) |
+| `silent` | boolean | ❌ | false | Suppress output unless task fails (v1.73.0, see [Silent Mode](#silent-mode-v1730)) |
 | `deps` | array | ❌ | [] | Parallel dependencies (run before this task) |
 | `deps_serial` | array | ❌ | [] | Sequential dependencies (run one at a time) |
 | `deps_if` | array | ❌ | [] | Conditional dependencies (run if condition is true) |
@@ -133,6 +135,325 @@ env = { PORT = "3000", NODE_ENV = "production" }
 cmd = "npm run build"
 dir = "./packages/frontend"  # or cwd = "..."
 ```
+
+### Task Aliases (v1.73.0)
+
+Task aliases provide alternative names for tasks, enabling intuitive shortcuts and improving CLI ergonomics. Each task can have multiple aliases that work identically to the primary task name.
+
+#### Basic Usage
+
+```toml
+[tasks.build]
+cmd = "zig build"
+description = "Build the project"
+aliases = ["b", "compile"]
+
+[tasks.test]
+cmd = "zig build test"
+aliases = ["t", "check"]
+```
+
+You can now run tasks using any of their aliases:
+
+```bash
+zr run b           # runs build task
+zr run compile     # also runs build task
+zr run t           # runs test task
+```
+
+#### Alias Resolution Priority
+
+When you run a task, zr resolves the name with the following priority:
+
+1. **Exact task name match** (highest priority)
+2. **Exact alias match** (second priority)
+3. **Prefix matching** on task names
+4. **Prefix matching** on aliases
+
+Example:
+
+```bash
+zr run build      # exact task name → build
+zr run b          # exact alias → build
+zr run bu         # prefix on task name → build
+zr run com        # prefix on alias "compile" → build
+```
+
+#### Alias Display
+
+The `zr list` command shows aliases alongside tasks:
+
+```bash
+$ zr list
+build    [aliases: b, compile]    Build the project
+test     [aliases: t, check]      Run tests
+```
+
+JSON output includes the `aliases` field:
+
+```json
+{
+  "name": "build",
+  "aliases": ["b", "compile"],
+  "description": "Build the project"
+}
+```
+
+#### Conflict Detection
+
+zr validates aliases at config load time and reports conflicts:
+
+**Conflict with task name:**
+```toml
+[tasks.build]
+aliases = ["test"]  # ERROR: conflicts with task "test"
+
+[tasks.test]
+cmd = "..."
+```
+
+**Duplicate alias across tasks:**
+```toml
+[tasks.build]
+aliases = ["b"]
+
+[tasks.benchmark]
+aliases = ["b"]  # ERROR: duplicate alias "b"
+```
+
+Error output:
+```
+error: Alias 'b' in task 'benchmark' conflicts with alias in task 'build'
+```
+
+#### Use Cases
+
+**Common shortcuts:**
+```toml
+[tasks.build]
+aliases = ["b"]
+
+[tasks.test]
+aliases = ["t"]
+
+[tasks.deploy]
+aliases = ["d"]
+
+[tasks.format]
+aliases = ["f", "fmt"]
+
+[tasks.lint]
+aliases = ["l"]
+```
+
+**Multi-language projects:**
+```toml
+[tasks.build-frontend]
+aliases = ["bf", "frontend"]
+
+[tasks.build-backend]
+aliases = ["bb", "backend"]
+
+[tasks.build-all]
+aliases = ["b", "build"]
+```
+
+**Semantic aliases:**
+```toml
+[tasks.docker-build]
+aliases = ["build", "compile"]
+
+[tasks.docker-push]
+aliases = ["push", "deploy"]
+
+[tasks.docker-run]
+aliases = ["run", "start"]
+```
+
+#### Best Practices
+
+1. **Short and memorable**: Use 1-2 character aliases for frequently-run tasks (`b`, `t`, `d`)
+2. **Semantic names**: Include descriptive aliases that clarify task purpose (`compile`, `check`, `fmt`)
+3. **Consistent patterns**: Use similar prefixes for related tasks (`bf`/`bb` for frontend/backend)
+4. **Avoid ambiguity**: Don't create aliases that are prefixes of task names (confusing resolution)
+5. **Document aliases**: Use `description` field to explain what the task does, not just list aliases
+
+#### History and Completion
+
+- **Task history** (`zr history`) shows the actual task name, not the alias used
+- **Shell completion** includes all aliases in task name suggestions
+- **Task filtering** works with both task names and aliases
+
+### Silent Mode (v1.73.0)
+
+Silent mode suppresses task output unless the task fails, reducing noise from well-behaving tasks and allowing you to focus on errors. This is particularly useful for tasks that produce verbose output but rarely fail.
+
+#### Task-Level Silent Mode
+
+Set `silent = true` in a task definition:
+
+```toml
+[tasks.format]
+cmd = "zig fmt src/"
+silent = true  # no output unless formatting fails
+
+[tasks.lint]
+cmd = "eslint src/"
+silent = true  # only show output if linting fails
+
+[tasks.test]
+cmd = "npm test"
+# silent = false (default) — always show test output
+```
+
+**Behavior:**
+- ✅ **Success**: Output is suppressed (quiet execution)
+- ❌ **Failure** (exit code != 0): Full buffered output is shown on stderr
+- 📊 **Exit code**: Always preserved regardless of silent mode
+
+#### Global --silent Flag
+
+Override task-level settings with the `--silent` (or `-s`) flag:
+
+```bash
+# Suppress output for any task, even if silent=false in config
+zr run --silent test
+zr run -s test
+
+# Works with workflows
+zr workflow --silent ci-pipeline
+
+# Short form
+zr run -s build
+```
+
+**Override semantics:**
+- Global `--silent` **overrides** task-level `silent=false`
+- Both global `--silent` + task `silent=true` → **silent** (OR logic)
+- Use case: Temporarily quiet a verbose task without editing config
+
+#### Example: Quiet Build Pipeline
+
+```toml
+[tasks.install-deps]
+cmd = "npm install"
+silent = true  # installation noise suppressed on success
+
+[tasks.generate-types]
+cmd = "npm run codegen"
+silent = true  # codegen spam suppressed on success
+
+[tasks.build]
+cmd = "npm run build"
+# silent = false — always show build progress
+
+[tasks.test]
+cmd = "npm test"
+# silent = false — always show test results
+
+[workflows.ci]
+stages = [
+  { name = "setup", tasks = ["install-deps", "generate-types"] },
+  { name = "build", tasks = ["build"] },
+  { name = "verify", tasks = ["test"] }
+]
+```
+
+Running this workflow:
+```bash
+$ zr workflow ci
+# install-deps: (no output, silent success)
+# generate-types: (no output, silent success)
+# build: (shows build output)
+# test: (shows test results)
+```
+
+If `generate-types` fails:
+```bash
+$ zr workflow ci
+# install-deps: (no output, silent success)
+# generate-types: ERROR!
+  Generating types...
+  Error: Unknown type 'Foo'
+  at codegen.js:42:10
+# workflow stops here (fail-fast)
+```
+
+#### Silent Mode with Retries
+
+Silent mode buffers output during retries and only shows it if **all retries** fail:
+
+```toml
+[tasks.flaky-api-test]
+cmd = "curl https://api.example.com/health"
+silent = true
+retry_max = 3
+retry_delay_ms = 1000
+```
+
+- Attempt 1 fails → retry silently
+- Attempt 2 fails → retry silently
+- Attempt 3 fails → **show all buffered output** from final attempt
+
+#### Interactive Tasks
+
+Silent mode is **automatically disabled** for interactive tasks:
+
+```toml
+[tasks.repl]
+cmd = "node"
+interactive = true
+silent = true  # ignored — interactive tasks always show output
+```
+
+#### Integration with Other Features
+
+**Log levels:**
+```bash
+# Silent mode respects --verbose (force show all output)
+zr run --silent --verbose build
+
+# Silent mode respects --quiet (suppress even task names)
+zr run --silent --quiet build
+```
+
+**Workflows:**
+```bash
+# Apply silent mode to all tasks in workflow
+zr workflow --silent deploy-production
+```
+
+**Watch mode:**
+```bash
+# Silent mode works in watch mode (only show failures)
+zr watch --silent test
+```
+
+#### Use Cases
+
+1. **Setup tasks**: `npm install`, `docker pull` — only care about failures
+2. **Code generation**: `protoc`, `swagger-codegen` — verbose on success
+3. **Formatting/linting**: `prettier`, `eslint --fix` — silent if no issues
+4. **Health checks**: `curl`, `ping` — only show errors
+5. **Cleanup tasks**: `rm -rf`, `docker system prune` — quiet unless error
+
+#### Best Practices
+
+1. **Silent for deterministic tasks**: Use `silent=true` for tasks that either work perfectly or fail (install, generate, format)
+2. **Verbose for diagnostic tasks**: Keep `silent=false` for tests, builds, and tasks whose output aids debugging
+3. **Global flag for ad-hoc**: Use `--silent` when you want temporary quiet mode without editing config
+4. **Fail-fast workflows**: Combine silent mode with `fail_fast=true` to stop immediately on errors
+5. **Logging context**: Silent tasks still log to history with full output — use `zr history <task>` to review
+
+#### Silent Mode Semantics
+
+| Task Config | Global Flag | Result |
+|-------------|-------------|--------|
+| `silent=false` (default) | (none) | **Verbose** — show all output |
+| `silent=true` | (none) | **Silent** — suppress on success |
+| `silent=false` | `--silent` | **Silent** — global overrides |
+| `silent=true` | `--silent` | **Silent** — both true |
+| (any) | `--verbose` | **Verbose** — verbose overrides all |
 
 ### Timeouts and Retries
 
