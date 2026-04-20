@@ -56,13 +56,12 @@ fn expandGlobs(allocator: std.mem.Allocator, patterns: []const []const u8, cwd: 
     }
 
     const base_dir_path = cwd orelse ".";
-    const base_dir = try std.fs.cwd().openDir(base_dir_path, .{ .iterate = true });
-    var base_dir_opened = true;
-    defer if (base_dir_opened) base_dir.close();
+    var base_dir = try std.fs.cwd().openDir(base_dir_path, .{ .iterate = true });
+    defer base_dir.close();
 
     for (patterns) |pattern| {
         // Use glob.find to expand pattern
-        var matches = glob_mod.find(allocator, base_dir, pattern) catch |err| {
+        const matches = glob_mod.find(allocator, base_dir, pattern) catch |err| {
             // If glob fails (e.g., directory doesn't exist), treat pattern as literal
             if (err == error.FileNotFound) {
                 try result.append(allocator, try allocator.dupe(u8, pattern));
@@ -129,10 +128,11 @@ test "uptodate: all generates exist and newer than sources" {
     defer allocator.free(orig_cwd);
     try std.fs.cwd().setAsCwd();
     defer {
-        std.fs.cwd().access(orig_cwd, .{}) catch return;
-        var orig_dir = std.fs.openDirAbsolute(orig_cwd, .{}) catch return;
-        defer orig_dir.close();
-        orig_dir.setAsCwd() catch {};
+        // Best-effort restoration of original cwd
+        if (std.fs.openDirAbsolute(orig_cwd, .{})) |*orig_dir| {
+            defer orig_dir.close();
+            orig_dir.setAsCwd() catch {};
+        } else |_| {}
     }
     try tmp.dir.setAsCwd();
 
@@ -160,10 +160,11 @@ test "uptodate: source newer than generate" {
     defer allocator.free(orig_cwd);
     try tmp.dir.setAsCwd();
     defer {
-        std.fs.cwd().access(orig_cwd, .{}) catch return;
-        var orig_dir = std.fs.openDirAbsolute(orig_cwd, .{}) catch return;
-        defer orig_dir.close();
-        orig_dir.setAsCwd() catch {};
+        // Best-effort restoration of original cwd
+        if (std.fs.openDirAbsolute(orig_cwd, .{})) |*orig_dir| {
+            defer orig_dir.close();
+            orig_dir.setAsCwd() catch {};
+        } else |_| {}
     }
 
     const up_to_date = try isUpToDate(allocator, &sources, &generates, null);
@@ -187,10 +188,11 @@ test "uptodate: missing generate" {
     defer allocator.free(orig_cwd);
     try tmp.dir.setAsCwd();
     defer {
-        std.fs.cwd().access(orig_cwd, .{}) catch return;
-        var orig_dir = std.fs.openDirAbsolute(orig_cwd, .{}) catch return;
-        defer orig_dir.close();
-        orig_dir.setAsCwd() catch {};
+        // Best-effort restoration of original cwd
+        if (std.fs.openDirAbsolute(orig_cwd, .{})) |*orig_dir| {
+            defer orig_dir.close();
+            orig_dir.setAsCwd() catch {};
+        } else |_| {}
     }
 
     const up_to_date = try isUpToDate(allocator, &sources, &generates, null);

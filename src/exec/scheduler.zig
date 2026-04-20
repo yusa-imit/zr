@@ -21,6 +21,7 @@ const output_capture = @import("output_capture.zig");
 const remote = @import("remote.zig");
 const retry_strategy = @import("retry_strategy.zig");
 const filter_mod = @import("../output/filter.zig");
+const uptodate = @import("uptodate.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -62,6 +63,9 @@ pub const SchedulerConfig = struct {
     /// Optional global silent mode override.
     /// When true, all tasks suppress output unless they fail (overrides task-level silent setting).
     silent_override: bool = false,
+    /// If true, ignore up-to-date checks and always run tasks (v1.74.0).
+    /// Controlled by --force CLI flag.
+    force_run: bool = false,
 };
 
 /// Circuit breaker state for a task (v1.30.0).
@@ -445,6 +449,12 @@ const WorkerCtx = struct {
     filter_options: filter_mod.FilterOptions,
     /// Silent mode: suppress output unless task fails (v1.73.0).
     silent: bool = false,
+    /// Source file patterns for up-to-date detection (v1.74.0).
+    sources: []const []const u8,
+    /// Generated file patterns for up-to-date detection (v1.74.0).
+    generates: []const []const u8,
+    /// Force run flag: if true, skip up-to-date check (v1.74.0).
+    force_run: bool = false,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -626,6 +636,37 @@ fn workerFn(ctx: WorkerCtx) void {
             .use_color = ctx.use_color,
         };
         output_cap = output_capture.OutputCapture.init(task_allocator, capture_config) catch null;
+    }
+
+    // Check if task is up-to-date (v1.74.0) — skip if generates are newer than sources
+    if (!ctx.force_run and ctx.generates.len > 0) {
+        const is_up_to_date = uptodate.isUpToDate(
+            task_allocator,
+            ctx.sources,
+            ctx.generates,
+            ctx.cwd,
+        ) catch false; // On error, assume not up-to-date and run the task
+
+        if (is_up_to_date) {
+            // Task is up-to-date: record a skipped success result
+            const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
+            ctx.results_mutex.lock();
+            defer ctx.results_mutex.unlock();
+            ctx.results.append(task_allocator, .{
+                .task_name = owned_name,
+                .success = true,
+                .exit_code = 0,
+                .duration_ms = 0,
+                .skipped = true,
+            }) catch task_allocator.free(owned_name);
+
+            // Record event for timeline
+            if (ctx.timeline_tracker) |tt| {
+                tt.recordEvent(.skipped, ctx.task_name, null) catch {};
+            }
+
+            return;
+        }
     }
 
     // Check cache hit — skip execution if already succeeded with same cmd+env
@@ -1927,6 +1968,9 @@ pub fn run(
                 .remote_env = task.remote_env,
                 .filter_options = sched_config.filter_options,
                 .silent = sched_config.silent_override or task.silent,
+                .sources = task.sources,
+                .generates = task.generates,
+                .force_run = sched_config.force_run,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

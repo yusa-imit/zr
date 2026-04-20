@@ -16,6 +16,7 @@ pub fn cmdRun(
     task_name: []const u8,
     profile_name: ?[]const u8,
     dry_run: bool,
+    force_run: bool,
     max_jobs: u32,
     config_path: []const u8,
     json_output: bool,
@@ -120,6 +121,7 @@ pub fn cmdRun(
         .task_control = task_control,
         .filter_options = filter_options,
         .silent_override = silent_override,
+        .force_run = force_run,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {

@@ -533,6 +533,7 @@ fn cmdInteractiveInner(
                     sel_item.name,
                     null,
                     false,
+                    false, // force_run
                     0,
                     config_path,
                     false,

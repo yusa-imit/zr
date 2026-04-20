@@ -154,6 +154,7 @@ pub fn cmdInteractiveRun(
             task_name,
             null,
             false,
+            false, // force_run
             0,
             config_path,
             false,
@@ -163,6 +164,7 @@ pub fn cmdInteractiveRun(
             use_color,
             null, // task_control
             .{}, // filter_options
+            false, // silent_override
         );
     }
 
@@ -174,6 +176,7 @@ pub fn cmdInteractiveRun(
             task_name,
             null,
             false,
+            false, // force_run
             0,
             config_path,
             false,
@@ -199,6 +202,7 @@ pub fn cmdInteractiveRun(
             task_name,
             null,
             false,
+            false, // force_run
             0,
             config_path,
             false,
@@ -231,6 +235,7 @@ pub fn cmdInteractiveRun(
         task_name,
         null,
         false,
+        false, // force_run
         0,
         config_path,
         false,

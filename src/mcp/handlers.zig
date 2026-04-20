@@ -287,6 +287,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         task_name,
         null,  // profile_name
         false, // dry_run
+        false, // force_run
         0,     // max_jobs (0 = use all cores)
         config_path,
         false, // json_output

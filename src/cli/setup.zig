@@ -94,6 +94,7 @@ pub fn cmdSetup(
             task_name,
             null, // profile_name
             false, // dry_run
+            false, // force_run
             1, // max_jobs
             "zr.toml", // config_path
             false, // json_output
