@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.73.0] - 2026-04-21
+
+### ⚡ Task Aliases & Silent Mode (Complete)
+
+This release adds task aliases for intuitive CLI shortcuts and silent mode for reduced noise from well-behaving tasks. You can now run `zr run b` instead of `zr run build`, and suppress output from setup/formatting tasks that only matter when they fail.
+
+### Added
+
+**Core Feature: Task Aliases** (Cycles 144, 147)
+- `aliases = ["b", "compile"]` field in task definition — provide multiple names for any task
+- Alias resolution with priority: exact task name > exact alias > prefix on task name > prefix on alias
+- `zr list` displays aliases: `build [aliases: b, compile]`
+- `zr list --json` includes `"aliases": ["b", "compile"]` field
+- Conflict detection: error if alias conflicts with existing task name or duplicate across tasks
+- Integration with prefix matching, task history, and shell completion
+- ~95 LOC implementation (parser.zig, types.zig, run.zig, list.zig, loader.zig)
+
+**Core Feature: Silent Mode** (Cycles 144, 146)
+- `silent = true` task field — suppress stdout/stderr unless task fails (exit code != 0)
+- Buffered output on success (discarded), full output shown on failure for debugging
+- Global `--silent` / `-s` flag overrides task-level `silent=false` (OR logic semantics)
+- Works with workflows: `zr workflow --silent ci-pipeline` suppresses all tasks
+- Integration with retries (buffer until final failure), log levels (`--verbose` overrides)
+- ~60 LOC implementation (scheduler.zig, main.zig, interactive_run.zig, tui.zig, mcp/handlers.zig)
+
+**Testing** (Cycles 145, 147)
+- 12 integration tests in `tests/task_aliases_test.zig`:
+  - Alias resolution (exact, prefix), list/JSON display, conflict detection
+  - Global --silent flag (success, failure, short form -s, override, workflow)
+- 3 unit tests in `src/config/loader.zig`: alias validation (valid, task name conflict, duplicate)
+- 8 integration tests in `tests/silent_mode_test.zig` (from Cycle 145)
+- All 1430 unit tests passing (8 skipped)
+
+**Documentation** (Cycle 147)
+- New section: **Task Aliases (v1.73.0)** in `docs/guides/configuration.md` (~200 LOC)
+  - Basic usage, alias resolution priority, display format, conflict detection
+  - Use cases: common shortcuts, multi-language projects, semantic aliases
+  - Best practices: short & memorable, semantic names, consistent patterns
+- New section: **Silent Mode (v1.73.0)** in `docs/guides/configuration.md` (~150 LOC)
+  - Task-level silent mode, global --silent/-s flag, override semantics
+  - Example: quiet build pipeline with selective output
+  - Integration with retries, interactive tasks, workflows, log levels
+  - Use cases (setup, codegen, formatting, health checks), best practices, semantics table
+- Updated Task Fields table with `aliases` and `silent` fields
+
+### Implementation Summary
+- **Total**: ~450 LOC implementation, ~310 LOC tests, ~350 LOC docs
+- **Commits**: 51d9265 (alias conflict detection), a8913ef (integration tests), abccd88 (docs)
+- **Backward Compatible**: All existing configs work without changes
+- **Ready for**: v1.73.0 release
+
 ## [1.72.0] - 2026-04-19
 
 ### 📚 Documentation Site & Onboarding Experience (Complete)
