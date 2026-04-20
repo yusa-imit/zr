@@ -103,6 +103,7 @@ pub fn cmdSetup(
             use_color,
             null, // task_control
             .{}, // filter_options
+            false, // silent_override
         );
 
         if (exit_code != 0) {

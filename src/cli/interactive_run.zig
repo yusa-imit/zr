@@ -183,6 +183,7 @@ pub fn cmdInteractiveRun(
             use_color,
             null,
             .{}, // filter_options
+            false, // silent_override
         );
     }
 
@@ -207,6 +208,7 @@ pub fn cmdInteractiveRun(
             use_color,
             null,
             .{}, // filter_options
+            false, // silent_override
         );
     };
     defer leaveRawMode(original_termios);
@@ -238,6 +240,7 @@ pub fn cmdInteractiveRun(
         use_color,
         ctrl,
         .{}, // filter_options
+        false, // silent_override
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

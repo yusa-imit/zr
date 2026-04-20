@@ -59,6 +59,9 @@ pub const SchedulerConfig = struct {
     /// Optional output filtering (grep, grep-v, highlight, context lines).
     /// Applied to task output streams in real-time.
     filter_options: filter_mod.FilterOptions = .{},
+    /// Optional global silent mode override.
+    /// When true, all tasks suppress output unless they fail (overrides task-level silent setting).
+    silent_override: bool = false,
 };
 
 /// Circuit breaker state for a task (v1.30.0).
@@ -1923,7 +1926,7 @@ pub fn run(
                 .remote_cwd = task.remote_cwd,
                 .remote_env = task.remote_env,
                 .filter_options = sched_config.filter_options,
-                .silent = task.silent,
+                .silent = sched_config.silent_override or task.silent,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

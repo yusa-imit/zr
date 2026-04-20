@@ -361,6 +361,7 @@ const global_flags = [_]sailor.arg.FlagDef{
     .{ .name = "no-color", .type = .bool, .help = "Disable color output" },
     .{ .name = "quiet", .short = 'q', .type = .bool, .help = "Suppress non-error output" },
     .{ .name = "verbose", .short = 'v', .type = .bool, .help = "Verbose output" },
+    .{ .name = "silent", .short = 's', .type = .bool, .help = "Suppress task output unless task fails (overrides task-level silent)" },
     .{ .name = "format", .short = 'f', .type = .string, .default = "text", .help = "Output format: text or json" },
     .{ .name = "jobs", .short = 'j', .type = .int, .help = "Max parallel tasks (default: CPU count)" },
     .{ .name = "config", .type = .string, .help = "Config file path" },
@@ -451,7 +452,7 @@ fn run(
         // Check for 'default' task
         if (config.tasks.get("default")) |_| {
             // Run default task
-            return run_cmd.cmdRun(allocator, "default", null, false, 0, config_path, false, false, w, ew, use_color, null, .{});
+            return run_cmd.cmdRun(allocator, "default", null, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false);
         }
 
         // Count tasks
@@ -464,7 +465,7 @@ fn run(
             // Single task → auto-run it
             var task_it = config.tasks.iterator();
             const single_task = task_it.next().?;
-            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, 0, config_path, false, false, w, ew, use_color, null, .{});
+            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false);
         } else {
             // Multiple tasks → interactive picker
             if (!std.fs.File.stdout().isTty()) {
@@ -493,9 +494,9 @@ fn run(
             }
 
             if (picker_result.kind == .task) {
-                return run_cmd.cmdRun(allocator, picker_result.name, null, false, 0, config_path, false, false, w, ew, use_color, null, .{});
+                return run_cmd.cmdRun(allocator, picker_result.name, null, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false);
             } else {
-                return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color, .{});
+                return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color, .{}, false);
             }
         }
     }
@@ -555,6 +556,7 @@ fn run(
     const no_color = flag_parser.getBool("no-color", false);
     const quiet = flag_parser.getBool("quiet", false);
     const verbose = flag_parser.getBool("verbose", false);
+    const silent = flag_parser.getBool("silent", false);
     const enable_monitor = flag_parser.getBool("monitor", false);
     // Resolve config path: explicit --config flag, or search parent directories for zr.toml
     var config_path_owned: ?[]const u8 = null;
@@ -778,7 +780,7 @@ fn run(
             try color.printError(ew, effective_color, "w/: missing workflow name\n\n  Hint: zr w/<workflow-name>\n", .{});
             return 1;
         }
-        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options);
+        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent);
     }
 
     // History-based shortcuts: !! (last task), !-N (Nth-to-last task)
@@ -838,7 +840,7 @@ fn run(
         try color.printInfo(effective_w, effective_color, "Re-running: {s}\n", .{task_name});
 
         // Re-run the task (use 'run' command with the task name)
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent);
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
@@ -877,15 +879,15 @@ fn run(
             if (picker_result.kind == .task) {
                 // Reload config (picker consumed it)
                 config.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options);
+                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent);
             } else {
                 // Workflow selected — delegate to workflow command
                 config.deinit();
-                return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options);
+                return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent);
             }
         }
         const task_name = effective_args[2];
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
@@ -893,7 +895,7 @@ fn run(
         }
         const task_name = effective_args[2];
         const watch_paths: []const []const u8 = if (effective_args.len > 3) effective_args[3..] else &[_][]const u8{"."};
-        return run_cmd.cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color, filter_options);
+        return run_cmd.cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color, filter_options, silent);
     } else if (std.mem.eql(u8, cmd, "workflow")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
@@ -910,7 +912,7 @@ fn run(
             }
         }
 
-        return run_cmd.cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, matrix_show, effective_w, ew, effective_color, filter_options);
+        return run_cmd.cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, matrix_show, effective_w, ew, effective_color, filter_options, silent);
     } else if (std.mem.eql(u8, cmd, "list")) {
         // Parse list options
         var tree_mode = false;

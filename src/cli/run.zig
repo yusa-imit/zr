@@ -25,6 +25,7 @@ pub fn cmdRun(
     use_color: bool,
     task_control: ?*@import("../exec/control.zig").TaskControl,
     filter_options: filter_mod.FilterOptions,
+    silent_override: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -118,6 +119,7 @@ pub fn cmdRun(
         .use_color = use_color,
         .task_control = task_control,
         .filter_options = filter_options,
+        .silent_override = silent_override,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -206,6 +208,7 @@ pub fn cmdWatch(
     err_writer: *std.Io.Writer,
     use_color: bool,
     filter_options: filter_mod.FilterOptions,
+    silent_override: bool,
 ) !u8 {
     // Verify task exists and extract WatchConfig before starting the watch loop (v1.17.0).
     var watch_options = watcher.WatcherOptions{};
@@ -323,6 +326,7 @@ pub fn cmdWatch(
         var sched_result = scheduler.run(allocator, &config, &task_names, .{
             .max_jobs = max_jobs,
             .filter_options = filter_options,
+            .silent_override = silent_override,
         }) catch |err| {
             switch (err) {
                 error.CycleDetected => try color.printError(err_writer, use_color,
@@ -376,6 +380,7 @@ pub fn cmdWorkflow(
     err_writer: *std.Io.Writer,
     use_color: bool,
     filter_options: filter_mod.FilterOptions,
+    silent_override: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -572,6 +577,7 @@ pub fn cmdWorkflow(
                 .retry_budget = wf.retry_budget,
                 .extra_env = extra_env_slice,
                 .filter_options = filter_options,
+                .silent_override = silent_override,
             }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
@@ -634,6 +640,7 @@ pub fn cmdWorkflow(
                     .max_jobs = max_jobs,
                     .extra_env = extra_env_slice,
                     .filter_options = filter_options,
+                    .silent_override = silent_override,
                 }) catch |err| {
                     try color.printError(err_writer, use_color,
                         "workflow: on_failure task '{s}' failed: {s}\n",
@@ -1074,6 +1081,7 @@ test "cmdRun: missing config returns error" {
         false,
         null,
         .{}, // filter_options
+        false, // silent_override
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1114,6 +1122,7 @@ test "cmdRun: unknown task returns error" {
         false,
         null,
         .{}, // filter_options
+        false, // silent_override
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1154,6 +1163,7 @@ test "cmdRun: dry run shows plan without executing" {
         false,
         null,
         .{}, // filter_options
+        false, // silent_override
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1194,6 +1204,7 @@ test "cmdRun: successful task returns 0" {
         false,
         null,
         .{}, // filter_options
+        false, // silent_override
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1234,6 +1245,7 @@ test "cmdRun: failing task returns 1" {
         false,
         null,
         .{}, // filter_options
+        false, // silent_override
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
