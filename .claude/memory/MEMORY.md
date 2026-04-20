@@ -1,6 +1,24 @@
 # zr Project Memory
 
-## Latest Session (2026-04-18, Stabilization Mode Cycle 135)
+## Latest Session (2026-04-21, Feature Mode Cycle 148)
+
+### FEATURE CYCLE — Task Up-to-Date Detection & Incremental Builds (75% COMPLETE)
+- **Mode**: FEATURE (counter 148, counter % 5 != 0)
+- **CI Status**: GREEN (no failures on main)
+- **Open Issues**: 7 open (5 zuda migrations, 1 sailor v2.1.0, 1 zuda DAG), **0 bug reports**
+- **Target Milestone**: Task Up-to-Date Detection & Incremental Builds (IN PROGRESS 0% → 75%)
+- **Actions Taken**:
+  - ✅ **Phase 1: Schema Changes** — Added sources/generates fields to Task struct, updated parser, fixed 15+ call sites
+  - ✅ **Phase 2: Up-to-Date Checker** — Created src/exec/uptodate.zig with mtime comparison, glob expansion, 4 unit tests
+  - ✅ **Phase 3: Scheduler Integration** — Integrated up-to-date check in workerFn, tasks skip when up-to-date
+  - ✅ **Phase 4: CLI Flags (Partial)** — Added --force flag, updated cmdRun signature across 10+ files
+  - ✅ **Integration Tests** — Created tests/uptodate_test.zig with 12 comprehensive tests
+  - ⏳ **Remaining (25%)**: --dry-run enhancement, --status flag, dependency propagation, documentation
+- **Commits**: 249180f (Phase 1-2), 6eeb24b (Phase 3-4), f622b68 (session summary)
+- **Test Status**: 1430/1438 unit tests passing (8 skipped, 0 failed)
+- **Next**: Complete Phase 4-5 or proceed to Task Parameters & Dynamic Task Generation
+
+## Previous Session (2026-04-18, Stabilization Mode Cycle 135)
 
 ### STABILIZATION CYCLE — Test Quality Enhancement ✅
 - **Mode**: STABILIZATION (counter 135, counter % 5 == 0)
