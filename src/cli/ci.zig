@@ -215,10 +215,9 @@ test "detectPlatform with no CI files" {
     if (platform) |p| {
         const is_valid = p == .github_actions or p == .gitlab_ci or p == .circleci;
         try testing.expect(is_valid);
-    } else {
-        // null is valid when no CI files detected
-        try testing.expect(true);
     }
+    // If platform is null, that's the expected behavior when no CI files exist
+    // (no assertion needed - both null and valid Platform are acceptable outcomes)
 }
 
 test "printHelp executes without error" {
