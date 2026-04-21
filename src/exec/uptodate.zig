@@ -117,7 +117,7 @@ test "uptodate: all generates exist and newer than sources" {
 
     // Create source and output
     try tmp.dir.writeFile(.{ .sub_path = "input.txt", .data = "v1" });
-    std.time.sleep(10_000_000); // 10ms to ensure mtime difference
+    std.Thread.sleep(10_000_000); // 10ms to ensure mtime difference
     try tmp.dir.writeFile(.{ .sub_path = "output.txt", .data = "result" });
 
     const sources = [_][]const u8{"input.txt"};
@@ -129,9 +129,10 @@ test "uptodate: all generates exist and newer than sources" {
     try std.fs.cwd().setAsCwd();
     defer {
         // Best-effort restoration of original cwd
-        if (std.fs.openDirAbsolute(orig_cwd, .{})) |*orig_dir| {
-            defer orig_dir.close();
-            orig_dir.setAsCwd() catch {};
+        if (std.fs.openDirAbsolute(orig_cwd, .{})) |orig_dir| {
+            var dir = orig_dir;
+            defer dir.close();
+            dir.setAsCwd() catch {};
         } else |_| {}
     }
     try tmp.dir.setAsCwd();
@@ -150,7 +151,7 @@ test "uptodate: source newer than generate" {
 
     // Create output first, then source (source newer)
     try tmp.dir.writeFile(.{ .sub_path = "output.txt", .data = "old" });
-    std.time.sleep(10_000_000); // 10ms
+    std.Thread.sleep(10_000_000); // 10ms
     try tmp.dir.writeFile(.{ .sub_path = "input.txt", .data = "v2" });
 
     const sources = [_][]const u8{"input.txt"};
@@ -161,9 +162,10 @@ test "uptodate: source newer than generate" {
     try tmp.dir.setAsCwd();
     defer {
         // Best-effort restoration of original cwd
-        if (std.fs.openDirAbsolute(orig_cwd, .{})) |*orig_dir| {
-            defer orig_dir.close();
-            orig_dir.setAsCwd() catch {};
+        if (std.fs.openDirAbsolute(orig_cwd, .{})) |orig_dir| {
+            var dir = orig_dir;
+            defer dir.close();
+            dir.setAsCwd() catch {};
         } else |_| {}
     }
 
@@ -189,9 +191,10 @@ test "uptodate: missing generate" {
     try tmp.dir.setAsCwd();
     defer {
         // Best-effort restoration of original cwd
-        if (std.fs.openDirAbsolute(orig_cwd, .{})) |*orig_dir| {
-            defer orig_dir.close();
-            orig_dir.setAsCwd() catch {};
+        if (std.fs.openDirAbsolute(orig_cwd, .{})) |orig_dir| {
+            var dir = orig_dir;
+            defer dir.close();
+            dir.setAsCwd() catch {};
         } else |_| {}
     }
 

@@ -1074,6 +1074,7 @@ test "cmdRun: missing config returns error" {
         "build",
         null,
         false,
+        false, // force_run
         1,
         "/tmp/zr_test_nonexistent/zr.toml",
         false,
@@ -1115,6 +1116,7 @@ test "cmdRun: unknown task returns error" {
         "nonexistent",
         null,
         false,
+        false, // force_run
         1,
         config_path,
         false,
@@ -1156,6 +1158,7 @@ test "cmdRun: dry run shows plan without executing" {
         "hello",
         null,
         true,
+        false, // force_run
         1,
         config_path,
         false,
@@ -1197,6 +1200,7 @@ test "cmdRun: successful task returns 0" {
         "hello",
         null,
         false,
+        false, // force_run
         1,
         config_path,
         false,
@@ -1238,6 +1242,7 @@ test "cmdRun: failing task returns 1" {
         "fail",
         null,
         false,
+        false, // force_run
         1,
         config_path,
         false,
