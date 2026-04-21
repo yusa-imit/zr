@@ -929,6 +929,7 @@ fn run(
         var frequent_count: ?usize = null;
         var slow_threshold_ms: ?u64 = null;
         var search_description: ?[]const u8 = null;
+        var show_status = false;
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
@@ -942,6 +943,8 @@ fn run(
                 fuzzy_search = true;
             } else if (std.mem.eql(u8, arg, "--group-by-tags")) {
                 group_by_tags = true;
+            } else if (std.mem.eql(u8, arg, "--status")) {
+                show_status = true;
             } else if (std.mem.startsWith(u8, arg, "--recent=")) {
                 const count_str = arg["--recent=".len..];
                 recent_count = std.fmt.parseInt(usize, count_str, 10) catch {
@@ -995,7 +998,7 @@ fn run(
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Check if using new graph command flags (--type, --format, --interactive, etc.)
         // If so, delegate to the full graph_cmd handler

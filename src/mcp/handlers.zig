@@ -133,6 +133,7 @@ fn handleListTasks(allocator: std.mem.Allocator, params_json: []const u8) !ToolR
         null, // frequent_count = null
         null, // slow_threshold_ms = null
         null, // search_description = null
+        false, // show_status = false (not relevant for MCP JSON output)
         &stdout_writer.interface,
         &stderr_writer.interface,
         false, // use_color = false

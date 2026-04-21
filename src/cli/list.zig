@@ -11,6 +11,17 @@ const workspace_cmd = @import("workspace.zig");
 const history_store = @import("../history/store.zig");
 const history_stats = @import("../history/stats.zig");
 const levenshtein = @import("../util/levenshtein.zig");
+const uptodate = @import("../exec/uptodate.zig");
+const types = @import("../config/types.zig");
+
+/// Get task status: up-to-date (✓), stale (✗), or unknown (?)
+fn getTaskStatus(allocator: std.mem.Allocator, task: types.Task, cwd: ?[]const u8) ![]const u8 {
+    if (task.generates.len == 0) {
+        return "?"; // Unknown - no generates specified
+    }
+    const is_uptodate = try uptodate.isUpToDate(allocator, task.sources, task.generates, cwd);
+    return if (is_uptodate) "✓" else "✗";
+}
 
 pub fn cmdList(
     allocator: std.mem.Allocator,
@@ -28,6 +39,7 @@ pub fn cmdList(
     frequent_count: ?usize,
     slow_threshold_ms: ?u64,
     search_description: ?[]const u8,
+    show_status: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -457,6 +469,19 @@ pub fn cmdList(
                 if (!has_tag) continue;
 
                 try w.print("    ", .{});
+
+                // Show status if --status flag is enabled
+                if (show_status) {
+                    const status = try getTaskStatus(allocator, task, null);
+                    if (std.mem.eql(u8, status, "✓")) {
+                        try color.printSuccess(w, use_color, "[{s}] ", .{status});
+                    } else if (std.mem.eql(u8, status, "✗")) {
+                        try color.printError(w, use_color, "[{s}] ", .{status});
+                    } else {
+                        try color.printDim(w, use_color, "[{s}] ", .{status});
+                    }
+                }
+
                 try color.printInfo(w, use_color, "{s:<18}", .{name});
                 if (task.description) |desc| {
                     try color.printDim(w, use_color, " {s}", .{desc});
@@ -496,6 +521,19 @@ pub fn cmdList(
             for (untagged.items) |name| {
                 const task = config.tasks.get(name).?;
                 try w.print("    ", .{});
+
+                // Show status if --status flag is enabled
+                if (show_status) {
+                    const status = try getTaskStatus(allocator, task, null);
+                    if (std.mem.eql(u8, status, "✓")) {
+                        try color.printSuccess(w, use_color, "[{s}] ", .{status});
+                    } else if (std.mem.eql(u8, status, "✗")) {
+                        try color.printError(w, use_color, "[{s}] ", .{status});
+                    } else {
+                        try color.printDim(w, use_color, "[{s}] ", .{status});
+                    }
+                }
+
                 try color.printInfo(w, use_color, "{s:<18}", .{name});
                 if (task.description) |desc| {
                     try color.printDim(w, use_color, " {s}", .{desc});
@@ -537,6 +575,18 @@ pub fn cmdList(
         for (names.items) |name| {
             const task = config.tasks.get(name).?;
             try w.print("  ", .{});
+
+            // Show status if --status flag is enabled
+            if (show_status) {
+                const status = try getTaskStatus(allocator, task, null);
+                if (std.mem.eql(u8, status, "✓")) {
+                    try color.printSuccess(w, use_color, "[{s}] ", .{status});
+                } else if (std.mem.eql(u8, status, "✗")) {
+                    try color.printError(w, use_color, "[{s}] ", .{status});
+                } else {
+                    try color.printDim(w, use_color, "[{s}] ", .{status});
+                }
+            }
 
             // Show unique prefix hint if different from full name
             if (unique_prefixes.get(name)) |prefix| {
@@ -1019,7 +1069,7 @@ test "cmdList: text output lists tasks alphabetically" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, false, false, false, false, null, null, null, null, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, false, false, false, false, null, null, null, null, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -1043,7 +1093,7 @@ test "cmdList: json output contains tasks array" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, null, null, null, false, false, false, false, null, null, null, null, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, null, null, null, false, false, false, false, null, null, null, null, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1060,7 +1110,7 @@ test "cmdList: missing config file returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, "/nonexistent/path/zr.toml", false, false, null, null, null, false, false, false, false, null, null, null, null, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, "/nonexistent/path/zr.toml", false, false, null, null, null, false, false, false, false, null, null, null, null, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
 }
 
@@ -1195,7 +1245,7 @@ test "cmdList: tree mode renders dependency graph" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -1221,7 +1271,7 @@ test "cmdList: tree mode with no tasks shows empty message" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, false, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -1254,7 +1304,7 @@ test "cmdList: filter pattern matches subset of tasks" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, "test", null, null, false, false, false, false, null, null, null, null, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, "test", null, null, false, false, false, false, null, null, null, null, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1290,7 +1340,7 @@ test "cmdList: filter pattern with no matches returns empty list" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, "nonexistent", null, null, false, false, false, false, null, null, null, null, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, "nonexistent", null, null, false, false, false, false, null, null, null, null, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1326,7 +1376,7 @@ test "cmdList: --profiles flag lists profile names" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1357,7 +1407,7 @@ test "cmdList: --profiles flag with no profiles returns empty" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];

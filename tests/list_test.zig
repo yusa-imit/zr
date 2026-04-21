@@ -1101,3 +1101,40 @@ test "710: list with missing closing bracket is lenient" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "9999: list --status shows task up-to-date indicators" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const status_toml =
+        \\[tasks.build]
+        \\cmd = "echo built"
+        \\sources = ["src/main.zig"]
+        \\generates = ["output.txt"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, status_toml);
+    defer allocator.free(config);
+
+    // Create source file
+    const src_dir = try tmp.dir.makeOpenPath("src", .{});
+    try src_dir.writeFile(.{ .sub_path = "main.zig", .data = "// source" });
+
+    // Run list --status
+    var result = try runZr(allocator, &.{ "--config", config, "list", "--status" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show status indicators ([✓], [✗], or [?])
+    const has_status_indicator = std.mem.indexOf(u8, result.stdout, "[✓]") != null or
+        std.mem.indexOf(u8, result.stdout, "[✗]") != null or
+        std.mem.indexOf(u8, result.stdout, "[?]") != null;
+    try std.testing.expect(has_status_indicator);
+}
