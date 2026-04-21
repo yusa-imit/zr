@@ -2,6 +2,7 @@ const std = @import("std");
 const sailor = @import("sailor");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
+const loader = @import("../config/loader.zig");
 const scheduler = @import("../exec/scheduler.zig");
 const history = @import("../history/store.zig");
 const watcher = @import("../watch/watcher.zig");
@@ -10,6 +11,7 @@ const tui_runner = @import("tui_runner.zig");
 const levenshtein = @import("../util/levenshtein.zig");
 const matrix = @import("../exec/matrix.zig");
 const filter_mod = @import("../output/filter.zig");
+const uptodate = @import("../exec/uptodate.zig");
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,
@@ -108,7 +110,7 @@ pub fn cmdRun(
             return 1;
         };
         defer plan.deinit();
-        try printDryRunPlan(allocator, w, use_color, plan);
+        try printDryRunPlan(allocator, w, use_color, plan, &config);
         return 0;
     }
 
@@ -488,7 +490,7 @@ pub fn cmdWorkflow(
                 return 1;
             };
             defer plan.deinit();
-            try printDryRunPlan(allocator, w, use_color, plan);
+            try printDryRunPlan(allocator, w, use_color, plan, &config);
         }
         try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
         return 0;
@@ -807,8 +809,19 @@ pub fn printRunResultJson(
     try w.writeAll("}\n");
 }
 
-/// Print a formatted dry-run plan showing execution levels and task names.
-pub fn printDryRunPlan(allocator: std.mem.Allocator, w: *std.Io.Writer, use_color: bool, plan: scheduler.DryRunPlan) !void {
+/// Get up-to-date status symbol for a task.
+/// Returns: "✓" (up-to-date), "✗" (stale), or "?" (never-run/no generates).
+fn getTaskStatus(allocator: std.mem.Allocator, task: loader.Task) ![]const u8 {
+    if (task.generates.len == 0) {
+        return "?"; // No generates = can't determine
+    }
+
+    const is_up_to_date = uptodate.isUpToDate(allocator, task.sources, task.generates, null) catch false;
+    return if (is_up_to_date) "✓" else "✗";
+}
+
+/// Print a formatted dry-run plan showing execution levels, task names, and up-to-date status.
+pub fn printDryRunPlan(allocator: std.mem.Allocator, w: *std.Io.Writer, use_color: bool, plan: scheduler.DryRunPlan, config: *const loader.Config) !void {
     // Load history for duration estimates
     const history_path = try history.defaultHistoryPath(allocator);
     defer allocator.free(history_path);
@@ -859,6 +872,14 @@ pub fn printDryRunPlan(allocator: std.mem.Allocator, w: *std.Io.Writer, use_colo
         if (level.tasks.len == 0) continue;
         if (level.tasks.len == 1) {
             try color.printDim(w, use_color, "  Level {d}  ", .{i});
+
+            // Show up-to-date status
+            const task = config.tasks.get(level.tasks[0]);
+            if (task) |t| {
+                const status = try getTaskStatus(allocator, t);
+                try w.print("[{s}] ", .{status});
+            }
+
             try color.printInfo(w, use_color, "{s}", .{level.tasks[0]});
 
             // Show duration estimate
@@ -876,6 +897,14 @@ pub fn printDryRunPlan(allocator: std.mem.Allocator, w: *std.Io.Writer, use_colo
             try color.printDim(w, use_color, "[parallel]\n", .{});
             for (level.tasks) |t| {
                 try w.print("    ", .{});
+
+                // Show up-to-date status
+                const task = config.tasks.get(t);
+                if (task) |task_ptr| {
+                    const status = try getTaskStatus(allocator, task_ptr);
+                    try w.print("[{s}] ", .{status});
+                }
+
                 try color.printInfo(w, use_color, "{s}", .{t});
 
                 // Show duration estimate
@@ -1270,8 +1299,11 @@ test "printDryRunPlan: empty plan" {
         .allocator = std.testing.allocator,
     };
 
+    // Create a minimal dummy config (empty task map)
+    const config = loader.Config.init(allocator);
+
     // printDryRunPlan should return without error on empty plan
-    try printDryRunPlan(allocator, &out_w.interface, false, plan);
+    try printDryRunPlan(allocator, &out_w.interface, false, plan, &config);
 }
 
 test "cmdHistory: empty history returns 0" {
