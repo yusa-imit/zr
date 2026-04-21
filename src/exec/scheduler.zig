@@ -455,6 +455,12 @@ const WorkerCtx = struct {
     generates: []const []const u8,
     /// Force run flag: if true, skip up-to-date check (v1.74.0).
     force_run: bool = false,
+    /// Task dependencies for dependency propagation (v1.74.0).
+    /// Includes all deps, deps_serial, deps_if (conditional), deps_optional.
+    task_deps: []const []const u8,
+    /// Shared map tracking which tasks actually executed (not skipped).
+    /// Protected by results_mutex. Used for dependency propagation.
+    executed_tasks: *std.StringHashMap(void),
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -639,15 +645,30 @@ fn workerFn(ctx: WorkerCtx) void {
     }
 
     // Check if task is up-to-date (v1.74.0) — skip if generates are newer than sources
+    // AND no dependencies were executed (dependency propagation)
     if (!ctx.force_run and ctx.generates.len > 0) {
-        const is_up_to_date = uptodate.isUpToDate(
-            task_allocator,
-            ctx.sources,
-            ctx.generates,
-            ctx.cwd,
-        ) catch false; // On error, assume not up-to-date and run the task
+        // First check if any dependencies actually executed (not skipped)
+        // If a dependency ran, we must run too (dependency propagation)
+        var any_dep_executed = false;
+        ctx.results_mutex.lock();
+        for (ctx.task_deps) |dep_name| {
+            if (ctx.executed_tasks.contains(dep_name)) {
+                any_dep_executed = true;
+                break;
+            }
+        }
+        ctx.results_mutex.unlock();
 
-        if (is_up_to_date) {
+        // Only check up-to-date status if no dependencies executed
+        if (!any_dep_executed) {
+            const is_up_to_date = uptodate.isUpToDate(
+                task_allocator,
+                ctx.sources,
+                ctx.generates,
+                ctx.cwd,
+            ) catch false; // On error, assume not up-to-date and run the task
+
+            if (is_up_to_date) {
             // Task is up-to-date: record a skipped success result
             const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
             ctx.results_mutex.lock();
@@ -665,7 +686,8 @@ fn workerFn(ctx: WorkerCtx) void {
                 tt.recordEvent(.skipped, ctx.task_name, null) catch {};
             }
 
-            return;
+                return;
+            }
         }
     }
 
@@ -1118,6 +1140,10 @@ fn workerFn(ctx: WorkerCtx) void {
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
         return;
     };
+
+    // Mark this task as executed for dependency propagation (v1.74.0)
+    // This ensures dependent tasks with up-to-date outputs will still run
+    ctx.executed_tasks.put(ctx.task_name, {}) catch {};
 
     // Record completion event (v1.14.0)
     if (ctx.timeline_tracker) |tt| {
@@ -1718,6 +1744,11 @@ pub fn run(
     var completed = std.StringHashMap(bool).init(allocator);
     defer completed.deinit();
 
+    // Tracks tasks that actually executed (not skipped due to up-to-date or cache).
+    // Used for dependency propagation: if a dependency ran, dependent tasks must run too.
+    var executed_tasks = std.StringHashMap(void).init(allocator);
+    defer executed_tasks.deinit();
+
     // Initialize circuit breaker states for tasks that have circuit_breaker config (v1.30.0)
     var circuit_breakers = std.StringHashMap(CircuitBreakerState).init(allocator);
     defer circuit_breakers.deinit();
@@ -1922,6 +1953,17 @@ pub fn run(
                 }
             }
 
+            // Collect all dependencies for dependency propagation (v1.74.0)
+            // Includes deps, deps_serial, deps_if (conditional), deps_optional
+            var all_deps = std.ArrayList([]const u8){};
+            defer all_deps.deinit(allocator);
+            try all_deps.appendSlice(allocator, task.deps);
+            try all_deps.appendSlice(allocator, task.deps_serial);
+            for (task.deps_if) |cond_dep| {
+                try all_deps.append(allocator, cond_dep.task);
+            }
+            try all_deps.appendSlice(allocator, task.deps_optional);
+
             const ctx = WorkerCtx{
                 .allocator = allocator,
                 .task_name = owned_task_name,
@@ -1971,6 +2013,8 @@ pub fn run(
                 .sources = task.sources,
                 .generates = task.generates,
                 .force_run = sched_config.force_run,
+                .task_deps = all_deps.items,
+                .executed_tasks = &executed_tasks,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
