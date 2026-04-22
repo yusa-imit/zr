@@ -1329,6 +1329,7 @@ test "cmdRun: successful task returns 0" {
         null,
         .{}, // filter_options
         false, // silent_override
+        empty_params,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1373,6 +1374,7 @@ test "cmdRun: failing task returns 1" {
         null,
         .{}, // filter_options
         false, // silent_override
+        empty_params,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
