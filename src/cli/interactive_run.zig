@@ -147,6 +147,9 @@ pub fn cmdInteractiveRun(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
+
     if (comptime !IS_POSIX) {
         // Fall back to normal run on Windows
         return run_cmd.cmdRun(
@@ -165,6 +168,7 @@ pub fn cmdInteractiveRun(
             null, // task_control
             .{}, // filter_options
             false, // silent_override
+            empty_params,
         );
     }
 
@@ -187,6 +191,7 @@ pub fn cmdInteractiveRun(
             null,
             .{}, // filter_options
             false, // silent_override
+            empty_params,
         );
     }
 
@@ -213,6 +218,7 @@ pub fn cmdInteractiveRun(
             null,
             .{}, // filter_options
             false, // silent_override
+            empty_params,
         );
     };
     defer leaveRawMode(original_termios);
@@ -246,6 +252,7 @@ pub fn cmdInteractiveRun(
         ctrl,
         .{}, // filter_options
         false, // silent_override
+        empty_params,
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

@@ -283,6 +283,8 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
     var stderr_writer = stderr_file.writer(&stderr_buf);
 
     // Call run command
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
     const exit_code = run.cmdRun(
         allocator,
         task_name,
@@ -299,6 +301,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         null,  // task_control
         .{},   // filter_options
         false, // silent_override
+        empty_params,
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}

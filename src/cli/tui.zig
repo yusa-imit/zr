@@ -528,6 +528,8 @@ fn cmdInteractiveInner(
 
                 leaveRawMode(original_termios);
 
+                var empty_params = std.StringHashMap([]const u8).init(allocator);
+                defer empty_params.deinit();
                 _ = run_cmd.cmdRun(
                     allocator,
                     sel_item.name,
@@ -544,6 +546,7 @@ fn cmdInteractiveInner(
                     null,
                     .{}, // filter_options
                     false, // silent_override
+                    empty_params,
                 ) catch {};
 
                 _ = enterRawMode() catch {};

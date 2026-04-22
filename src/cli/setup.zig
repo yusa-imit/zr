@@ -89,6 +89,8 @@ pub fn cmdSetup(
         std.debug.print("\n   Hint: Executing `zr run {s}`\n\n", .{task_name});
 
         // Execute the task directly via cmdRun
+        var empty_params = std.StringHashMap([]const u8).init(allocator);
+        defer empty_params.deinit();
         const exit_code = try run.cmdRun(
             allocator,
             task_name,
@@ -105,6 +107,7 @@ pub fn cmdSetup(
             null, // task_control
             .{}, // filter_options
             false, // silent_override
+            empty_params,
         );
 
         if (exit_code != 0) {

@@ -29,7 +29,16 @@ pub fn cmdRun(
     task_control: ?*@import("../exec/control.zig").TaskControl,
     filter_options: filter_mod.FilterOptions,
     silent_override: bool,
+    runtime_params: std.StringHashMap([]const u8),
 ) !u8 {
+    defer {
+        // Cleanup runtime params
+        var it = runtime_params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+    }
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -96,6 +105,74 @@ pub fn cmdRun(
 
     const task_names = [_][]const u8{resolved_task_name};
 
+    // Resolve and validate runtime params (v1.75.0)
+    var resolved_params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = resolved_params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        resolved_params.deinit();
+    }
+
+    const task = config.tasks.get(resolved_task_name) orelse {
+        try color.printError(err_writer, use_color, "run: Task '{s}' not found\n", .{resolved_task_name});
+        return 1;
+    };
+
+    // Resolve positional params to named params based on task.task_params order
+    _ = &runtime_params; // params are used below in the loops
+
+    // Map positional args to param names in declaration order
+    var pos_idx: usize = 0;
+    for (task.task_params) |param| {
+        const pos_key = try std.fmt.allocPrint(allocator, "__positional_{d}", .{pos_idx});
+        defer allocator.free(pos_key);
+
+        if (runtime_params.get(pos_key)) |value| {
+            // Positional param provided
+            try resolved_params.put(try allocator.dupe(u8, param.name), try allocator.dupe(u8, value));
+            pos_idx += 1;
+        } else if (runtime_params.get(param.name)) |value| {
+            // Named param provided
+            try resolved_params.put(try allocator.dupe(u8, param.name), try allocator.dupe(u8, value));
+        } else if (param.default) |default_val| {
+            // Use default value
+            try resolved_params.put(try allocator.dupe(u8, param.name), try allocator.dupe(u8, default_val));
+        } else {
+            // Required param missing
+            try color.printError(err_writer, use_color,
+                "run: Required parameter '{s}' not provided\n\n  Hint: {s}\n",
+                .{ param.name, if (param.description) |desc| desc else "Provide value via CLI" },
+            );
+            return 1;
+        }
+    }
+
+    // Check for unknown params
+    var params_it = runtime_params.iterator();
+    while (params_it.next()) |entry| {
+        const key = entry.key_ptr.*;
+        if (std.mem.startsWith(u8, key, "__positional_")) continue; // skip internal markers
+
+        // Check if this param exists in task definition
+        var found = false;
+        for (task.task_params) |param| {
+            if (std.mem.eql(u8, key, param.name)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            try color.printError(err_writer, use_color,
+                "run: Unknown parameter '{s}' for task '{s}'\n",
+                .{ key, resolved_task_name },
+            );
+            return 1;
+        }
+    }
+
     // Dry-run: show the execution plan without running tasks.
     if (dry_run) {
         var plan = scheduler.planDryRun(allocator, &config, &task_names) catch |err| {
@@ -124,6 +201,7 @@ pub fn cmdRun(
         .filter_options = filter_options,
         .silent_override = silent_override,
         .force_run = force_run,
+        .runtime_params = &resolved_params,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -1098,6 +1176,8 @@ test "cmdRun: missing config returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
     const result = try cmdRun(
         allocator,
         "build",
@@ -1114,6 +1194,7 @@ test "cmdRun: missing config returns error" {
         null,
         .{}, // filter_options
         false, // silent_override
+        empty_params,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1140,6 +1221,8 @@ test "cmdRun: unknown task returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
     const result = try cmdRun(
         allocator,
         "nonexistent",
@@ -1156,6 +1239,7 @@ test "cmdRun: unknown task returns error" {
         null,
         .{}, // filter_options
         false, // silent_override
+        empty_params,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1182,6 +1266,8 @@ test "cmdRun: dry run shows plan without executing" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
     const result = try cmdRun(
         allocator,
         "hello",
@@ -1198,6 +1284,7 @@ test "cmdRun: dry run shows plan without executing" {
         null,
         .{}, // filter_options
         false, // silent_override
+        empty_params,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1224,6 +1311,8 @@ test "cmdRun: successful task returns 0" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
     const result = try cmdRun(
         allocator,
         "hello",
@@ -1266,6 +1355,8 @@ test "cmdRun: failing task returns 1" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
+    var empty_params = std.StringHashMap([]const u8).init(allocator);
+    defer empty_params.deinit();
     const result = try cmdRun(
         allocator,
         "fail",

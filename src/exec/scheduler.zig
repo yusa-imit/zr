@@ -66,7 +66,63 @@ pub const SchedulerConfig = struct {
     /// If true, ignore up-to-date checks and always run tasks (v1.74.0).
     /// Controlled by --force CLI flag.
     force_run: bool = false,
+    /// Runtime task parameters (v1.75.0).
+    /// Key-value map of parameter names to values passed from CLI.
+    /// Used for {{param}} interpolation in task commands and env vars.
+    runtime_params: ?*const std.StringHashMap([]const u8) = null,
 };
+
+/// Interpolate runtime parameters in a string (v1.75.0).
+/// Replaces {{param_name}} with the corresponding value from runtime_params.
+/// Returns an allocated string that the caller must free.
+fn interpolateParams(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    runtime_params: ?*const std.StringHashMap([]const u8),
+) ![]const u8 {
+    if (runtime_params == null or input.len == 0) {
+        return try allocator.dupe(u8, input);
+    }
+
+    var result = std.ArrayList(u8){};
+    defer result.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < input.len) {
+        if (i + 1 < input.len and input[i] == '{' and input[i + 1] == '{') {
+            // Find closing }}
+            const start = i + 2;
+            var end: ?usize = null;
+            var j = start;
+            while (j + 1 < input.len) : (j += 1) {
+                if (input[j] == '}' and input[j + 1] == '}') {
+                    end = j;
+                    break;
+                }
+            }
+
+            if (end) |e| {
+                const param_name = input[start..e];
+                if (runtime_params.?.get(param_name)) |value| {
+                    try result.appendSlice(allocator, value);
+                } else {
+                    // Param not found - leave placeholder as-is
+                    try result.appendSlice(allocator, input[i..e + 2]);
+                }
+                i = e + 2;
+            } else {
+                // No closing }} - just append {{
+                try result.append(allocator, input[i]);
+                i += 1;
+            }
+        } else {
+            try result.append(allocator, input[i]);
+            i += 1;
+        }
+    }
+
+    return try result.toOwnedSlice(allocator);
+}
 
 /// Circuit breaker state for a task (v1.30.0).
 /// Tracks failure rate and determines when to stop retrying.
@@ -1432,6 +1488,7 @@ fn runTaskSync(
     inherit_stdio: bool,
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
+    runtime_params: ?*const std.StringHashMap([]const u8),
 ) !bool {
     // Auto-install any missing toolchains specified in task.toolchain
     try ensureToolchainsInstalled(allocator, task);
@@ -1480,9 +1537,13 @@ fn runTaskSync(
 
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
 
+    // Interpolate runtime parameters in command (v1.75.0)
+    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params);
+    defer allocator.free(interpolated_cmd);
+
     const task_start = std.time.milliTimestamp();
     var proc_result = process.run(allocator, .{
-        .cmd = task.cmd,
+        .cmd = interpolated_cmd,
         .cwd = task.cwd,
         .env = proc_env,
         .inherit_stdio = inherit_stdio,
@@ -1580,6 +1641,7 @@ fn runSerialChain(
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
     completed: *std.StringHashMap(bool),
+    runtime_params: ?*const std.StringHashMap([]const u8),
 ) !bool {
     for (serial_deps) |dep_name| {
         if (completed.contains(dep_name)) {
@@ -1598,13 +1660,13 @@ fn runSerialChain(
         if (dep_task.deps_serial.len > 0) {
             const chain_ok = try runSerialChain(
                 allocator, config, dep_task.deps_serial, extra_env, toolchains,
-                inherit_stdio, results, results_mutex, completed,
+                inherit_stdio, results, results_mutex, completed, runtime_params,
             );
             if (!chain_ok) return false;
         }
 
         const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
-        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex);
+        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
@@ -1868,7 +1930,7 @@ pub fn run(
             if (task.deps_serial.len > 0) {
                 const serial_ok = try runSerialChain(
                     allocator, config, task.deps_serial, sched_config.extra_env, config.toolchains.tools,
-                    sched_config.inherit_stdio, &results, &results_mutex, &completed,
+                    sched_config.inherit_stdio, &results, &results_mutex, &completed, sched_config.runtime_params,
                 );
                 if (!serial_ok) {
                     if (!task.allow_failure) failed.store(true, .release);
