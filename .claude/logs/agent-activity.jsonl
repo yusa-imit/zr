@@ -48,3 +48,4 @@
 {"timestamp":"2026-04-22T13:15:00Z","action":"subagent","agent_type":"test-writer","task":"Write comprehensive integration tests for Task Parameters & Dynamic Task Generation milestone (22 tests, 776 LOC)","project":"zr"}
 {"timestamp":"2026-04-22T13:40:00Z","action":"subagent","agent_type":"orchestrator","task":"Implemented Task Parameters schema (Phase 1): TaskParam struct, task_params field, TOML parser, 10 call site updates","project":"zr"}
 {"timestamp":"2026-04-23T07:50:00Z","action":"autonomous","mode":"FEATURE","task":"Implement runtime task parameters (CLI parsing, interpolation, validation)","result":"Core implementation 85% complete","commits":["16d01eb","05a1c7c"],"project":"zr"}
+{"timestamp":"2026-04-23T00:00:00Z","action":"ci_fix","task":"Fix missing runtime_params in cmdRun test calls","project":"zr","commit":"ec00eb7"}
