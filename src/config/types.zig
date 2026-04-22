@@ -895,6 +895,26 @@ pub const ConditionalDep = struct {
     }
 };
 
+/// Task parameter definition for runtime parameterized tasks.
+/// v1.75.0 feature for task parameters & dynamic task generation.
+pub const TaskParam = struct {
+    /// Parameter name (e.g., "env", "region", "port").
+    name: []const u8,
+    /// Parameter type: "string" (default), "bool", "number".
+    type: []const u8 = "string",
+    /// Default value (null = required parameter).
+    default: ?[]const u8 = null,
+    /// Human-readable description shown in --help output.
+    description: ?[]const u8 = null,
+
+    pub fn deinit(self: *TaskParam, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.type);
+        if (self.default) |d| allocator.free(d);
+        if (self.description) |desc| allocator.free(desc);
+    }
+};
+
 /// Watch mode configuration for a task ([tasks.*.watch] section).
 /// v1.17.0 feature for advanced watch mode.
 /// Circuit breaker configuration for task retries.
@@ -1127,6 +1147,10 @@ pub const Task = struct {
     /// Generated file patterns for up-to-date detection (v1.74.0).
     /// Supports glob patterns. Task is up-to-date if all generates exist and are newer than all sources.
     generates: [][]const u8 = &.{},
+    /// Runtime task parameters (v1.75.0).
+    /// Defines parameters that can be passed at CLI invocation (e.g., `zr run deploy env=prod`).
+    /// Use {{param_name}} syntax in cmd/env fields for interpolation.
+    task_params: []TaskParam = &.{},
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1200,6 +1224,9 @@ pub const Task = struct {
         if (self.sources.len > 0) allocator.free(self.sources);
         for (self.generates) |gen| allocator.free(gen);
         if (self.generates.len > 0) allocator.free(self.generates);
+        // v1.75.0 task_params
+        for (self.task_params) |*param| param.deinit(allocator);
+        if (self.task_params.len > 0) allocator.free(self.task_params);
     }
 };
 
@@ -1729,6 +1756,7 @@ pub fn addTaskImpl(
     silent: bool,
     sources: []const []const u8,
     generates: []const []const u8,
+    task_params: []const TaskParam,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -1933,19 +1961,19 @@ pub fn addTaskImpl(
     errdefer if (task_template) |t| allocator.free(t);
 
     // Dupe params (v1.29.0)
-    const task_params = try allocator.alloc([2][]const u8, params.len);
+    const task_template_params = try allocator.alloc([2][]const u8, params.len);
     var params_duped: usize = 0;
     errdefer {
-        for (task_params[0..params_duped]) |pair| {
+        for (task_template_params[0..params_duped]) |pair| {
             allocator.free(pair[0]);
             allocator.free(pair[1]);
         }
-        if (task_params.len > 0) allocator.free(task_params);
+        if (task_template_params.len > 0) allocator.free(task_template_params);
     }
     for (params, 0..) |pair, i| {
-        task_params[i][0] = try allocator.dupe(u8, pair[0]);
-        errdefer allocator.free(task_params[i][0]);
-        task_params[i][1] = try allocator.dupe(u8, pair[1]);
+        task_template_params[i][0] = try allocator.dupe(u8, pair[0]);
+        errdefer allocator.free(task_template_params[i][0]);
+        task_template_params[i][1] = try allocator.dupe(u8, pair[1]);
         params_duped += 1;
     }
 
@@ -2038,6 +2066,23 @@ pub fn addTaskImpl(
         generates_duped += 1;
     }
 
+    // Dupe task parameters (v1.75.0)
+    const task_task_params = try allocator.alloc(TaskParam, task_params.len);
+    var task_params_duped: usize = 0;
+    errdefer {
+        for (task_task_params[0..task_params_duped]) |*p| p.deinit(allocator);
+        if (task_task_params.len > 0) allocator.free(task_task_params);
+    }
+    for (task_params, 0..) |param, i| {
+        task_task_params[i] = TaskParam{
+            .name = try allocator.dupe(u8, param.name),
+            .type = try allocator.dupe(u8, param.type),
+            .default = if (param.default) |d| try allocator.dupe(u8, d) else null,
+            .description = if (param.description) |desc| try allocator.dupe(u8, desc) else null,
+        };
+        task_params_duped += 1;
+    }
+
     var task = Task{
         .name = task_name,
         .cmd = task_cmd,
@@ -2067,7 +2112,7 @@ pub fn addTaskImpl(
         .watch = task_watch,
         .hooks = task_hooks,
         .template = task_template,
-        .params = task_params,
+        .params = task_template_params,
         .output_file = task_output_file,
         .output_mode = task_output_mode,
         .remote = task_remote,
@@ -2078,11 +2123,12 @@ pub fn addTaskImpl(
         .silent = silent,
         .sources = task_sources,
         .generates = task_generates,
+        .task_params = task_task_params,
     };
 
     // Apply template if specified
     if (task_template) |tmpl_name| {
-        try applyTemplateToTask(config, allocator, &task, tmpl_name, task_params);
+        try applyTemplateToTask(config, allocator, &task, tmpl_name, task_template_params);
     }
 
     // Check for duplicate task definition and reject it
