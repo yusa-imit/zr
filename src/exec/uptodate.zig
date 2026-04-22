@@ -21,7 +21,7 @@ pub fn isUpToDate(
 
     // If any generate missing, not up-to-date
     for (expanded_generates) |gen_path| {
-        const exists = try fileExists(gen_path);
+        const exists = try fileExists(gen_path, cwd);
         if (!exists) return false;
     }
 
@@ -31,7 +31,7 @@ pub fn isUpToDate(
     // Find newest source mtime
     var newest_source_mtime: i128 = 0;
     for (expanded_sources) |src_path| {
-        const mtime = try getFileMtime(src_path);
+        const mtime = try getFileMtime(src_path, cwd);
         if (mtime > newest_source_mtime) {
             newest_source_mtime = mtime;
         }
@@ -39,7 +39,7 @@ pub fn isUpToDate(
 
     // All generates must be newer than newest source
     for (expanded_generates) |gen_path| {
-        const gen_mtime = try getFileMtime(gen_path);
+        const gen_mtime = try getFileMtime(gen_path, cwd);
         if (gen_mtime < newest_source_mtime) {
             return false; // Generate is older than source
         }
@@ -93,16 +93,27 @@ fn freeExpandedPaths(allocator: std.mem.Allocator, paths: [][]const u8) void {
     allocator.free(paths);
 }
 
-fn fileExists(path: []const u8) !bool {
-    std.fs.cwd().access(path, .{}) catch |err| {
+fn fileExists(path: []const u8, cwd: ?[]const u8) !bool {
+    const base_dir_path = cwd orelse ".";
+    var base_dir = std.fs.cwd().openDir(base_dir_path, .{}) catch |err| {
+        if (err == error.FileNotFound) return false;
+        return err;
+    };
+    defer base_dir.close();
+
+    base_dir.access(path, .{}) catch |err| {
         if (err == error.FileNotFound) return false;
         return err;
     };
     return true;
 }
 
-fn getFileMtime(path: []const u8) !i128 {
-    const stat = try std.fs.cwd().statFile(path);
+fn getFileMtime(path: []const u8, cwd: ?[]const u8) !i128 {
+    const base_dir_path = cwd orelse ".";
+    var base_dir = try std.fs.cwd().openDir(base_dir_path, .{});
+    defer base_dir.close();
+
+    const stat = try base_dir.statFile(path);
     return stat.mtime;
 }
 
