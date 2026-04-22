@@ -40,8 +40,8 @@ pub fn isUpToDate(
     // All generates must be newer than newest source
     for (expanded_generates) |gen_path| {
         const gen_mtime = try getFileMtime(gen_path, cwd);
-        if (gen_mtime < newest_source_mtime) {
-            return false; // Generate is older than source
+        if (gen_mtime <= newest_source_mtime) {
+            return false; // Generate is same age or older than source
         }
     }
 
