@@ -73,7 +73,7 @@ fn renderDashboard(allocator: std.mem.Allocator, report: *types.AnalyticsReport)
     var buf = try stui.Buffer.init(allocator, screen_width, screen_height);
     defer buf.deinit();
 
-    const full_area = stui.Rect.new(0, 0, screen_width, screen_height);
+    const full_area = stui.Rect{ .x = 0, .y = 0, .width = screen_width, .height = screen_height };
 
     // Use FlexBox for layout (3 rows: header, charts, footer)
     const flex = stui.flexbox.FlexBox.init(.vertical)

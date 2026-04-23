@@ -200,7 +200,7 @@ pub const TuiRunner = struct {
         }
 
         // Layout: header (2), task list block, log block
-        const full_area = stui.Rect.new(0, 0, screen_width, screen_height);
+        const full_area = stui.Rect{ .x = 0, .y = 0, .width = screen_width, .height = screen_height };
         const task_list_height: u16 = @intCast(@min(self.tasks.items.len + 2, 12));
         const chunks = try stui.layout.split(
             self.allocator,

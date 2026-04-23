@@ -240,7 +240,7 @@ fn drawScreen(
 
     // Leave room for header (3 lines) and footer (1 line)
     const list_height = if (screen_height > 4) screen_height - 4 else 1;
-    const list_area = stui.Rect.new(0, 3, screen_width, list_height);
+    const list_area = stui.Rect{ .x = 0, .y = 3, .width = screen_width, .height = list_height };
 
     if (profiler) |p| {
         try p.beginScope("List.render");

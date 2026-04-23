@@ -151,7 +151,7 @@ fn renderPicker(
     // Item list (left side or full width)
     const list_width = if (show_preview and screen_width > 60) screen_width / 2 else screen_width;
     const list_height = if (screen_height > 4) screen_height - 4 else 1;
-    const list_area = stui.Rect.new(0, 3, list_width, list_height);
+    const list_area = stui.Rect{ .x = 0, .y = 3, .width = list_width, .height = list_height };
 
     if (items.len > 0) {
         const labels = try buildItemLabels(allocator, items);
