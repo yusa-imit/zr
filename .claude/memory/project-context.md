@@ -17,9 +17,9 @@
 - **CI**: IN_PROGRESS (last check 2026-04-23)
 - **GitHub Issues**: 7 open (5 zuda migrations, 1 sailor v2.1.0, 1 zuda DAG), **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
-- **Sailor version**: v1.38.0 (all migrations complete through v1.38.0)
+- **Sailor version**: v2.1.0 (migrated 2026-04-24, Cycle 159)
 - **Source**: ~71,000+ lines, 95+ modules, 10 language providers
-- **Latest work (2026-04-24, FEATURE Cycle 159)**: Milestone Establishment Process executed. Created 3 new READY milestones: (1) Sailor v2.1.0 Migration (drop-in upgrade, issue #54, 1 cycle), (2) Task Conditional Dependencies Enhancement (robust expr eval, 2-3 cycles), (3) Enhanced Task Filtering & Selection Patterns (glob/tag-based selection, 2-3 cycles). Updated docs/milestones.md with detailed scope, implementation plan, testing strategy. Next: Begin Sailor v2.1.0 migration.
+- **Latest work (2026-04-24, FEATURE Cycle 159)**: Milestone Establishment + Sailor v2.1.0 Migration. (1) Established 3 new READY milestones (commit 320fc43). (2) Completed Sailor v2.1.0 migration (commit a485dee): updated build.zig.zon, fixed 4 Rect.new() call sites, all unit tests passing (1434/1442), closed issue #54. Performance: +38% buffer diff, +34% fill, +33% set. 2 READY milestones remaining.
 
 ## PRD Phase Status
 
@@ -35,13 +35,12 @@
 
 ## Next Action
 
-✅ Milestone Establishment: 3 new READY milestones created (Cycle 159)
-Next priority: **Sailor v2.1.0 Migration** (highest priority, 1 cycle estimate)
-- Drop-in dependency upgrade (issue #54)
-- Zero code changes required (backward compatible)
-- +38% buffer diff, +34% buffer fill, +33% buffer set performance
-- Steps: zig fetch, run tests, close issue, commit
+✅ Sailor v2.1.0 Migration: COMPLETE (Cycle 159, commit a485dee)
+Next priority: **Task Conditional Dependencies Enhancement** (2-3 cycle estimate)
+- Enhance expression engine for robust conditional operator support
+- Add env var, param, platform, tag-based condition functions
+- Integrate with watch mode and dry-run
+- Comprehensive integration tests + documentation
 
-**Other READY milestones** (2-3 cycle estimates each):
-- Task Conditional Dependencies Enhancement
-- Enhanced Task Filtering & Selection Patterns
+**Other READY milestone**:
+- Enhanced Task Filtering & Selection Patterns (2-3 cycles)
