@@ -43,6 +43,8 @@ const ExprContext = struct {
     task_env: ?[]const [2][]const u8,
     runtime_state: ?*const RuntimeState,
     diag: ?*DiagContext,
+    task_params: ?*std.StringHashMap([]const u8),
+    task_tags: ?[]const []const u8,
 };
 
 /// Evaluate a condition expression string.
@@ -82,6 +84,8 @@ pub fn evalConditionWithDiag(
         .task_env = task_env,
         .runtime_state = runtime_state,
         .diag = diag,
+        .task_params = null,
+        .task_tags = null,
     };
     return evalOr(&ctx, expr) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -135,6 +139,19 @@ fn evalAnd(ctx: *const ExprContext, expr: []const u8) !bool {
 fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
     const trimmed = std.mem.trim(u8, expr, " \t\r\n");
 
+    // Negation operator: !(expr)
+    if (trimmed.len > 0 and trimmed[0] == '!') {
+        const rest = std.mem.trim(u8, trimmed[1..], " \t");
+        // Handle parentheses: !(expr) should strip outer parens
+        if (rest.len >= 2 and rest[0] == '(' and rest[rest.len - 1] == ')') {
+            const negated = try evalPrimary(ctx, rest[1 .. rest.len - 1]);
+            return !negated;
+        } else {
+            const negated = try evalPrimary(ctx, rest);
+            return !negated;
+        }
+    }
+
     // Literal booleans
     if (std.mem.eql(u8, trimmed, "true")) return true;
     if (std.mem.eql(u8, trimmed, "false")) return false;
@@ -187,6 +204,16 @@ fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
     // Environment variable check
     if (std.mem.startsWith(u8, trimmed, "env.")) {
         return evalEnvCheck(ctx, trimmed);
+    }
+
+    // Parameter check: params.param_name [operator "value"]
+    if (std.mem.startsWith(u8, trimmed, "params.")) {
+        return evalParamCheck(ctx, trimmed);
+    }
+
+    // Tag-based condition: has_tag('tag-name')
+    if (std.mem.startsWith(u8, trimmed, "has_tag(")) {
+        return evalHasTag(ctx, trimmed);
     }
 
     // Runtime state references: stages['name'].success
@@ -351,6 +378,82 @@ fn evalEnvCheck(ctx: *const ExprContext, expr: []const u8) !bool {
     }
 
     return error.InvalidExpression;
+}
+
+/// Evaluate params.param_name [operator "value"]
+fn evalParamCheck(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "params" });
+        defer diag.pop();
+    }
+
+    // Extract parameter name: chars up to space, '=', '!', or end of string
+    const after_prefix = expr["params.".len..];
+    const param_name_end = blk: {
+        for (after_prefix, 0..) |c, i| {
+            if (c == ' ' or c == '\t' or c == '=' or c == '!') break :blk i;
+        }
+        break :blk after_prefix.len;
+    };
+
+    if (param_name_end == 0) {
+        return error.InvalidExpression;
+    }
+
+    const param_name = after_prefix[0..param_name_end];
+    const rest = std.mem.trim(u8, after_prefix[param_name_end..], " \t");
+
+    // Look up the parameter value
+    const param_value = if (ctx.task_params) |params| params.get(param_name) else null;
+    const value_str = if (param_value) |v| v else "";
+
+    if (rest.len == 0) {
+        // Truthy check: non-empty value
+        return value_str.len > 0;
+    }
+
+    // Parse operator: "==" or "!="
+    if (std.mem.startsWith(u8, rest, "==")) {
+        const rhs_raw = std.mem.trim(u8, rest["==".len..], " \t");
+        const rhs = stripQuotes(rhs_raw);
+        return std.mem.eql(u8, value_str, rhs);
+    }
+
+    if (std.mem.startsWith(u8, rest, "!=")) {
+        const rhs_raw = std.mem.trim(u8, rest["!=".len..], " \t");
+        const rhs = stripQuotes(rhs_raw);
+        return !std.mem.eql(u8, value_str, rhs);
+    }
+
+    return error.InvalidExpression;
+}
+
+/// Evaluate has_tag('tag-name') or has_tag("tag-name")
+fn evalHasTag(ctx: *const ExprContext, expr: []const u8) !bool {
+    if (ctx.diag) |diag| {
+        try diag.push(.{ .expr = expr, .expr_type = "has_tag" });
+        defer diag.pop();
+    }
+
+    const start_paren = std.mem.indexOf(u8, expr, "(") orelse return error.InvalidExpression;
+    const end_paren = std.mem.lastIndexOf(u8, expr, ")") orelse return error.InvalidExpression;
+
+    const tag_raw = expr[start_paren + 1 .. end_paren];
+    const tag_name = stripQuotes(std.mem.trim(u8, tag_raw, " \t"));
+
+    // If no tags are available, return false
+    if (ctx.task_tags == null) {
+        return false;
+    }
+
+    // Search for the tag in the tags array
+    for (ctx.task_tags.?) |tag| {
+        if (std.mem.eql(u8, tag, tag_name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Evaluate file.newer("target", "source")
@@ -1474,4 +1577,575 @@ test "evalConditionWithState: combined with logical operators" {
         null,
         &state,
     ));
+}
+
+// ============================================================================
+// FEATURE 1: Parameter condition expressions (params.param_name)
+// ============================================================================
+
+test "evalCondition: params.param_name equality check" {
+    const allocator = std.testing.allocator;
+
+    // Create task parameters with their runtime values
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "env"), try allocator.dupe(u8, "production"));
+    try params.put(try allocator.dupe(u8, "region"), try allocator.dupe(u8, "us-east-1"));
+    try params.put(try allocator.dupe(u8, "skip_tests"), try allocator.dupe(u8, "false"));
+
+    // Test: params.env == "production" should be true
+    const result1 = try evalConditionWithParams(
+        allocator,
+        "params.env == \"production\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(result1);
+
+    // Test: params.env == "staging" should be false
+    const result2 = try evalConditionWithParams(
+        allocator,
+        "params.env == \"staging\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(!result2);
+
+    // Test: params.region == "us-east-1" should be true
+    const result3 = try evalConditionWithParams(
+        allocator,
+        "params.region == \"us-east-1\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(result3);
+}
+
+test "evalCondition: params.param_name inequality check" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "skip_tests"), try allocator.dupe(u8, "true"));
+
+    // Test: params.skip_tests != "false" should be true
+    const result1 = try evalConditionWithParams(
+        allocator,
+        "params.skip_tests != \"false\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(result1);
+
+    // Test: params.skip_tests != "true" should be false
+    const result2 = try evalConditionWithParams(
+        allocator,
+        "params.skip_tests != \"true\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(!result2);
+}
+
+test "evalCondition: params.param_name truthy check" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "port"), try allocator.dupe(u8, "8080"));
+    try params.put(try allocator.dupe(u8, "empty_param"), try allocator.dupe(u8, ""));
+
+    // Test: params.port should be truthy (non-empty)
+    const result1 = try evalConditionWithParams(
+        allocator,
+        "params.port",
+        null,
+        &params,
+    );
+    try std.testing.expect(result1);
+
+    // Test: params.empty_param should be falsy (empty string)
+    const result2 = try evalConditionWithParams(
+        allocator,
+        "params.empty_param",
+        null,
+        &params,
+    );
+    try std.testing.expect(!result2);
+}
+
+test "evalCondition: params.missing_param should be falsy" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "existing"), try allocator.dupe(u8, "value"));
+
+    // Test: params.missing_param should be falsy when param doesn't exist
+    const result = try evalConditionWithParams(
+        allocator,
+        "params.missing_param",
+        null,
+        &params,
+    );
+    try std.testing.expect(!result);
+}
+
+test "evalCondition: params with logical operators" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "env"), try allocator.dupe(u8, "production"));
+    try params.put(try allocator.dupe(u8, "debug"), try allocator.dupe(u8, "false"));
+
+    // Test: params.env == "production" && params.debug != "true"
+    const result1 = try evalConditionWithParams(
+        allocator,
+        "params.env == \"production\" && params.debug != \"true\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(result1);
+
+    // Test: params.env == "staging" || params.debug == "false"
+    const result2 = try evalConditionWithParams(
+        allocator,
+        "params.env == \"staging\" || params.debug == \"false\"",
+        null,
+        &params,
+    );
+    try std.testing.expect(result2);
+}
+
+// ============================================================================
+// FEATURE 2: has_tag('tag-name') function for tag-based conditions
+// ============================================================================
+
+test "evalCondition: has_tag() returns true for existing tag" {
+    const allocator = std.testing.allocator;
+
+    const tags = [_][]const u8{ "docker", "linux", "ci-ready" };
+
+    // Test: has_tag('docker') should be true
+    const result = try evalConditionWithTags(
+        allocator,
+        "has_tag('docker')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(result);
+}
+
+test "evalCondition: has_tag() returns false for missing tag" {
+    const allocator = std.testing.allocator;
+
+    const tags = [_][]const u8{ "docker", "linux" };
+
+    // Test: has_tag('slow') should be false
+    const result = try evalConditionWithTags(
+        allocator,
+        "has_tag('slow')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(!result);
+}
+
+test "evalCondition: has_tag() with multiple tag checks" {
+    const allocator = std.testing.allocator;
+
+    const tags = [_][]const u8{ "docker", "linux", "parallel" };
+
+    // Test: has_tag('docker') && has_tag('linux') should be true
+    const result1 = try evalConditionWithTags(
+        allocator,
+        "has_tag('docker') && has_tag('linux')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(result1);
+
+    // Test: has_tag('docker') && has_tag('windows') should be false
+    const result2 = try evalConditionWithTags(
+        allocator,
+        "has_tag('docker') && has_tag('windows')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(!result2);
+
+    // Test: has_tag('slow') || has_tag('parallel') should be true
+    const result3 = try evalConditionWithTags(
+        allocator,
+        "has_tag('slow') || has_tag('parallel')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(result3);
+}
+
+test "evalCondition: has_tag() with no tags" {
+    const allocator = std.testing.allocator;
+
+    const tags: [0][]const u8 = .{};
+
+    // Test: has_tag('any_tag') should be false with empty tags
+    const result = try evalConditionWithTags(
+        allocator,
+        "has_tag('any_tag')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(!result);
+}
+
+test "evalCondition: has_tag() case sensitivity" {
+    const allocator = std.testing.allocator;
+
+    const tags = [_][]const u8{ "Docker", "Linux" };
+
+    // Test: has_tag('docker') should be false (different case)
+    const result1 = try evalConditionWithTags(
+        allocator,
+        "has_tag('docker')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(!result1);
+
+    // Test: has_tag('Docker') should be true
+    const result2 = try evalConditionWithTags(
+        allocator,
+        "has_tag('Docker')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(result2);
+}
+
+// ============================================================================
+// FEATURE 3: Negation operator (!)
+// ============================================================================
+
+test "evalCondition: negation operator with boolean literals" {
+    const allocator = std.testing.allocator;
+
+    // Test: !false should be true
+    const result1 = try evalCondition(allocator, "!false", null);
+    try std.testing.expect(result1);
+
+    // Test: !true should be false
+    const result2 = try evalCondition(allocator, "!true", null);
+    try std.testing.expect(!result2);
+}
+
+test "evalCondition: negation operator with environment checks" {
+    const allocator = std.testing.allocator;
+
+    const env = [_][2][]const u8{.{ "CI", "true" }};
+
+    // Test: !(env.CI == "false") should be true
+    const result1 = try evalCondition(
+        allocator,
+        "!(env.CI == \"false\")",
+        &env,
+    );
+    try std.testing.expect(result1);
+
+    // Test: !(env.CI == "true") should be false
+    const result2 = try evalCondition(
+        allocator,
+        "!(env.CI == \"true\")",
+        &env,
+    );
+    try std.testing.expect(!result2);
+}
+
+test "evalCondition: negation with parameter checks" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "skip_tests"), try allocator.dupe(u8, "true"));
+
+    // Test: !params.skip_tests should be false (param exists and non-empty)
+    const result1 = try evalConditionWithParams(
+        allocator,
+        "!params.skip_tests",
+        null,
+        &params,
+    );
+    try std.testing.expect(!result1);
+
+    // Test: !params.missing_param should be true (param doesn't exist)
+    const result2 = try evalConditionWithParams(
+        allocator,
+        "!params.missing_param",
+        null,
+        &params,
+    );
+    try std.testing.expect(result2);
+}
+
+test "evalCondition: negation with has_tag()" {
+    const allocator = std.testing.allocator;
+
+    const tags = [_][]const u8{ "docker", "ci-ready" };
+
+    // Test: !has_tag('slow') should be true
+    const result1 = try evalConditionWithTags(
+        allocator,
+        "!has_tag('slow')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(result1);
+
+    // Test: !has_tag('docker') should be false
+    const result2 = try evalConditionWithTags(
+        allocator,
+        "!has_tag('docker')",
+        null,
+        &tags,
+    );
+    try std.testing.expect(!result2);
+}
+
+test "evalCondition: complex negation with logical operators" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "build_type"), try allocator.dupe(u8, "release"));
+
+    // Test: !(params.build_type == "debug") && env.BUILD == "release"
+    const env = [_][2][]const u8{.{ "BUILD", "release" }};
+
+    const result = try evalConditionWithParamsAndEnv(
+        allocator,
+        "!(params.build_type == \"debug\") && env.BUILD == \"release\"",
+        &env,
+        &params,
+    );
+    try std.testing.expect(result);
+}
+
+test "evalCondition: negation with platform checks" {
+    const allocator = std.testing.allocator;
+
+    const current_os = switch (builtin.os.tag) {
+        .linux => "linux",
+        .macos => "darwin",
+        .windows => "windows",
+        else => "unknown",
+    };
+
+    // Test: !(platform == "windows") should be true on non-Windows
+    if (!std.mem.eql(u8, current_os, "windows")) {
+        const result = try evalCondition(allocator, "!(platform == \"windows\")", null);
+        try std.testing.expect(result);
+    }
+}
+
+// ============================================================================
+// INTEGRATION TESTS: All three features combined
+// ============================================================================
+
+test "evalCondition: params + has_tag() + negation combined" {
+    const allocator = std.testing.allocator;
+
+    var params = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = params.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
+    }
+
+    try params.put(try allocator.dupe(u8, "env"), try allocator.dupe(u8, "production"));
+
+    const tags = [_][]const u8{ "docker", "critical" };
+
+    // Complex expression: (params.env == "production" && has_tag('docker')) || !has_tag('slow')
+    const result = try evalConditionWithParamsAndTags(
+        allocator,
+        "(params.env == \"production\" && has_tag('docker')) || !has_tag('slow')",
+        null,
+        &params,
+        &tags,
+    );
+    try std.testing.expect(result);
+}
+
+test "evalCondition: error handling for malformed has_tag()" {
+    const allocator = std.testing.allocator;
+
+    const tags = [_][]const u8{ "docker" };
+
+    // Malformed: missing closing quote in tag name
+    const result1 = try evalConditionWithTags(
+        allocator,
+        "has_tag('docker",
+        null,
+        &tags,
+    );
+    // Should fail-open and return true
+    try std.testing.expect(result1);
+
+    // Malformed: missing closing paren
+    const result2 = try evalConditionWithTags(
+        allocator,
+        "has_tag('docker'",
+        null,
+        &tags,
+    );
+    try std.testing.expect(result2);
+}
+
+// ============================================================================
+// HELPER FUNCTIONS FOR TESTS (to be implemented by zig-developer)
+// ============================================================================
+
+/// Helper: Evaluate condition with task parameters
+fn evalConditionWithParams(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    task_params: ?*std.StringHashMap([]const u8),
+) !bool {
+    const ctx = ExprContext{
+        .allocator = allocator,
+        .task_env = task_env,
+        .runtime_state = null,
+        .diag = null,
+        .task_params = task_params,
+        .task_tags = null,
+    };
+    return evalOr(&ctx, expr) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidExpression => return true, // fail-open
+    };
+}
+
+/// Helper: Evaluate condition with task tags
+fn evalConditionWithTags(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    task_tags: ?[]const []const u8,
+) !bool {
+    const ctx = ExprContext{
+        .allocator = allocator,
+        .task_env = task_env,
+        .runtime_state = null,
+        .diag = null,
+        .task_params = null,
+        .task_tags = task_tags,
+    };
+    return evalOr(&ctx, expr) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidExpression => return true, // fail-open
+    };
+}
+
+/// Helper: Evaluate condition with both params and tags
+fn evalConditionWithParamsAndTags(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    task_params: ?*std.StringHashMap([]const u8),
+    task_tags: ?[]const []const u8,
+) !bool {
+    const ctx = ExprContext{
+        .allocator = allocator,
+        .task_env = task_env,
+        .runtime_state = null,
+        .diag = null,
+        .task_params = task_params,
+        .task_tags = task_tags,
+    };
+    return evalOr(&ctx, expr) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidExpression => return true, // fail-open
+    };
+}
+
+/// Helper: Evaluate condition with params and env
+fn evalConditionWithParamsAndEnv(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    task_params: ?*std.StringHashMap([]const u8),
+) !bool {
+    const ctx = ExprContext{
+        .allocator = allocator,
+        .task_env = task_env,
+        .runtime_state = null,
+        .diag = null,
+        .task_params = task_params,
+        .task_tags = null,
+    };
+    return evalOr(&ctx, expr) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidExpression => return true, // fail-open
+    };
 }
