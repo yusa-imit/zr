@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.75.0 (Task Parameters & Dynamic Task Generation)
-- **Active milestones**: 0 READY + 2 BLOCKED
-- **READY milestones**: 0
+- **Active milestones**: 3 READY + 2 BLOCKED
+- **READY milestones**: 3 (Sailor v2.1.0 Migration, Task Conditional Dependencies Enhancement, Enhanced Task Filtering & Selection Patterns)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
 - **DONE**: Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -470,6 +470,62 @@ Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src
 
 Migrate from custom `src/util/levenshtein.zig` (214 LOC) to `zuda.algorithms.dynamic_programming.edit_distance` (issue #21). Add zuda dependency via zig fetch, migrate levenshtein.zig to wrapper, update all call sites (`main.zig` "Did you mean?" suggestions, `cli/validate.zig`), verify unit tests pass, remove custom implementation. **Status: DONE** — Completed 2026-03-21. Migrated to zuda.algorithms.dynamic_programming.editDistance, all tests passing.
 
+### Sailor v2.1.0 Migration
+
+Migrate to sailor v2.1.0 (issue #54) which provides drop-in performance optimizations and API ergonomics improvements. This is a backward-compatible upgrade requiring only dependency update with no code changes. Includes:
+- **Performance improvements** (automatic, no code changes):
+  - Buffer diff: +38% faster
+  - Buffer fill: +34% faster
+  - Buffer set: +33% faster
+- **New ergonomic APIs** (optional adoption):
+  - `Rect.fromSize(w, h)` — Create rects without x/y coordinates
+  - Constraint constructors: `.length()`, `.percentage()`, `.min()`, `.max()`, `.ratio()`, `.fill()`
+  - Color constructors: `.rgb()`, `.indexed()`, `.basic()`
+  - Semantic constants: `Style.bold`, `Color.red`, etc.
+- **Migration steps**:
+  - Update build.zig.zon: `zig fetch --save https://github.com/yusa-imit/sailor/archive/refs/tags/v2.1.0.tar.gz`
+  - Run `zig build test && zig build integration-test` to verify compatibility
+  - No code changes required for basic migration (all improvements backward compatible)
+  - Optional: Adopt new ergonomic APIs in TUI components (graph_tui.zig, tui.zig, task_picker.zig)
+- **Zero breaking changes**: All v2.0.0 APIs remain unchanged
+- **Testing**: Existing TUI integration tests (tests/tui_test.zig) verify compatibility
+- **Issue closure**: Close GitHub issue #54
+**Status: READY** — sailor v2.1.0 released 2026-04-18. Drop-in upgrade, no blockers. Estimated: 1 cycle (dependency update + test verification).
+
+### Task Conditional Dependencies Enhancement
+
+Complete and polish the partially-implemented `deps_if` conditional dependency system to enable powerful conditional execution patterns. Currently `deps_if` is parsed but not fully integrated with all task execution features. This milestone completes the implementation and adds missing features. Includes:
+- **Expression evaluation robustness**: Enhance expression engine to support all conditional operators (`==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`)
+- **Environment variable conditions**: `deps_if = "env.NODE_ENV == 'production'"` — conditional deps based on env vars
+- **Parameter conditions**: `deps_if = "params.skip_tests != 'true'"` — conditional deps based on runtime task parameters
+- **Platform conditions**: `deps_if = "platform == 'linux'"` — OS-specific conditional dependencies
+- **Tag-based conditions**: `deps_if = "has_tag('requires-docker')"` — conditional deps based on task tags
+- **Negation and complex logic**: Support `!`, `&&`, `||` for complex condition expressions
+- **Watch mode integration**: File watcher respects conditional dependencies (skip watching if condition false)
+- **Dry-run preview**: `zr run --dry-run` shows which conditional deps would be included/excluded
+- **List display**: `zr list --verbose` shows conditional dependency expressions
+- **Error messages**: Clear error messages for malformed conditional expressions
+- **Integration tests**: 15+ tests covering all condition types, complex logic, error cases
+- **Documentation**: Comprehensive guide in docs/guides/conditional-dependencies.md with real-world examples
+**Status: READY** — Foundation exists (parser + basic scheduler support). Need: robust expression evaluation, parameter/platform/tag functions, watch mode integration, comprehensive tests, docs. Estimated: 2-3 cycles.
+
+### Enhanced Task Filtering & Selection Patterns
+
+Add powerful task selection patterns for large monorepos and complex workflows, inspired by Bazel's target patterns and Nx's affected detection. Currently `zr run` requires exact task names or workflows. This milestone adds glob patterns, tag-based selection, and directory-scoped execution. Includes:
+- **Glob patterns**: `zr run test:**` runs all tasks matching glob pattern (namespace support)
+- **Tag-based selection**: `zr run --tag=integration` runs all tasks with specified tag(s)
+- **Multiple tag selection**: `zr run --tag=critical --tag=backend` (AND logic) or `--tags-any=critical,backend` (OR logic)
+- **Tag exclusion**: `zr run --exclude-tag=slow` skips tasks with specified tags
+- **Directory scoping**: `zr run --dir=packages/api` runs tasks from specific directory/package
+- **Combination filters**: `zr run --tag=test --dir=backend --exclude-tag=slow` combines multiple filters
+- **Affected detection integration**: `zr run --affected` detects changed files and runs related tasks (requires git)
+- **Dry-run preview**: `zr run --dry-run --tag=critical` shows selected tasks without running
+- **List filtering**: `zr list --tag=integration --dir=backend` shows filtered task list
+- **Pattern validation**: Error messages for invalid glob patterns or nonexistent tags
+- **Performance optimization**: Efficient tag indexing for O(1) tag lookups in large task sets
+- **Integration tests**: 20+ tests covering all selection patterns, combinations, edge cases
+- **Documentation**: Comprehensive guide in docs/guides/task-selection.md with monorepo examples
+**Status: READY** — Builds on existing tag infrastructure (config/types.zig). Need: glob pattern matcher, tag indexing, affected detection, CLI flags, tests, docs. Estimated: 2-3 cycles.
 ### zuda WorkStealingDeque Migration
 
 Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.queues.WorkStealingDeque` (issue #22). zuda v2.0.0 resolves memory safety bug (issue #13 CLOSED). Includes:

@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v1.38.0 (all migrations complete through v1.38.0)
 - **Source**: ~71,000+ lines, 95+ modules, 10 language providers
-- **Latest work (2026-04-23, FEATURE Cycle 158)**: Dual release v1.74.0 + v1.75.0. Completed Task Parameters documentation (f554cb6, 620 LOC). Released v1.74.0 (Up-to-Date Detection) and v1.75.0 (Task Parameters) — total ~3400 LOC across 8 commits, cycles 148-158. Both releases published to GitHub with comprehensive release notes. 0 READY milestones remaining (only 2 BLOCKED).
+- **Latest work (2026-04-24, FEATURE Cycle 159)**: Milestone Establishment Process executed. Created 3 new READY milestones: (1) Sailor v2.1.0 Migration (drop-in upgrade, issue #54, 1 cycle), (2) Task Conditional Dependencies Enhancement (robust expr eval, 2-3 cycles), (3) Enhanced Task Filtering & Selection Patterns (glob/tag-based selection, 2-3 cycles). Updated docs/milestones.md with detailed scope, implementation plan, testing strategy. Next: Begin Sailor v2.1.0 migration.
 
 ## PRD Phase Status
 
@@ -35,9 +35,13 @@
 
 ## Next Action
 
-✅ Releases complete: v1.74.0 + v1.75.0 (2026-04-23)
-Next priority: **Milestone Establishment Process** — 0 READY milestones remaining
-- Review BLOCKED milestones (zuda Graph, zuda WorkStealingDeque)
-- Identify new feature/enhancement opportunities
-- Create 2-3 new READY milestones for next cycles
-- Update docs/milestones.md with proposals
+✅ Milestone Establishment: 3 new READY milestones created (Cycle 159)
+Next priority: **Sailor v2.1.0 Migration** (highest priority, 1 cycle estimate)
+- Drop-in dependency upgrade (issue #54)
+- Zero code changes required (backward compatible)
+- +38% buffer diff, +34% buffer fill, +33% buffer set performance
+- Steps: zig fetch, run tests, close issue, commit
+
+**Other READY milestones** (2-3 cycle estimates each):
+- Task Conditional Dependencies Enhancement
+- Enhanced Task Filtering & Selection Patterns
