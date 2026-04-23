@@ -11,7 +11,7 @@
 
 ## Current Status
 
-- **Build version**: v1.73.0 (current in build.zig.zon) | Latest Release: v1.73.0 (2026-04-21)
+- **Build version**: v1.75.0 (current in build.zig.zon) | Latest Release: v1.75.0 (2026-04-23)
 - **Unit tests**: 1434/1442 passing (8 skipped), 0 failed, 0 memory leaks
 - **Integration tests**: Passing
 - **CI**: IN_PROGRESS (last check 2026-04-23)
@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v1.38.0 (all migrations complete through v1.38.0)
 - **Source**: ~71,000+ lines, 95+ modules, 10 language providers
-- **Latest work (2026-04-23, FEATURE Cycle 158)**: Task Parameters & Dynamic Task Generation milestone (COMPLETE 100%). All 5 phases done: (1) Schema (ca49ef2, 134 LOC), (2-3) Implementation+CLI (16d01eb, 234 LOC), (4) Tests (d3f0148, 776 LOC), (5) Documentation (f554cb6, 620 LOC). Milestone marked DONE (7f70db3). Total: ~1764 LOC across 4 commits. Ready for v1.75.0 release.
+- **Latest work (2026-04-23, FEATURE Cycle 158)**: Dual release v1.74.0 + v1.75.0. Completed Task Parameters documentation (f554cb6, 620 LOC). Released v1.74.0 (Up-to-Date Detection) and v1.75.0 (Task Parameters) — total ~3400 LOC across 8 commits, cycles 148-158. Both releases published to GitHub with comprehensive release notes. 0 READY milestones remaining (only 2 BLOCKED).
 
 ## PRD Phase Status
 
@@ -35,8 +35,9 @@
 
 ## Next Action
 
-Task Parameters milestone complete (v1.75.0). Ready for release:
-1. Verify integration tests pass (22 task_params tests)
-2. Check release conditions (0 bugs ✅, tests pass, milestone DONE ✅)
-3. Execute v1.75.0 release (MINOR - milestone complete)
-4. After release: Milestone Establishment Process (need new READY milestones)
+✅ Releases complete: v1.74.0 + v1.75.0 (2026-04-23)
+Next priority: **Milestone Establishment Process** — 0 READY milestones remaining
+- Review BLOCKED milestones (zuda Graph, zuda WorkStealingDeque)
+- Identify new feature/enhancement opportunities
+- Create 2-3 new READY milestones for next cycles
+- Update docs/milestones.md with proposals
