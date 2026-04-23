@@ -93,6 +93,41 @@ pub fn evalConditionWithDiag(
     };
 }
 
+/// Evaluate a conditional dependency expression with full context.
+/// This is the primary entry point for evaluating deps_if conditions in the scheduler.
+/// Supports params.param_name, has_tag('tag'), and all other expression features.
+pub fn evalConditionalDep(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    task_env: ?[]const [2][]const u8,
+    task_params: ?[]const [2][]const u8,
+    task_tags: ?[]const []const u8,
+) EvalError!bool {
+    // Convert params array to HashMap for faster lookup
+    var params_map: ?std.StringHashMap([]const u8) = null;
+    if (task_params) |params_arr| {
+        var map = std.StringHashMap([]const u8).init(allocator);
+        for (params_arr) |kv| {
+            try map.put(kv[0], kv[1]);
+        }
+        params_map = map;
+    }
+    defer if (params_map) |*map| map.deinit();
+
+    const ctx = ExprContext{
+        .allocator = allocator,
+        .task_env = task_env,
+        .runtime_state = null,
+        .diag = null,
+        .task_params = if (params_map) |*map| map else null,
+        .task_tags = task_tags,
+    };
+    return evalOr(&ctx, expr) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidExpression => return true, // fail-open
+    };
+}
+
 /// Parse OR expression (lowest precedence)
 fn evalOr(ctx: *const ExprContext, expr: []const u8) !bool {
     const trimmed = std.mem.trim(u8, expr, " \t\r\n");

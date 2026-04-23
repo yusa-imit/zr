@@ -1303,7 +1303,13 @@ fn collectDeps(
 
         // Traverse conditional dependencies (only if condition is true)
         for (task.deps_if) |dep_if| {
-            const condition_met = expr.evalCondition(allocator, dep_if.condition, task.env) catch false;
+            const condition_met = expr.evalConditionalDep(
+                allocator,
+                dep_if.condition,
+                task.env,
+                task.params,
+                task.tags,
+            ) catch false;
             if (condition_met and !needed.contains(dep_if.task)) {
                 try stack.append(allocator, dep_if.task);
             }
@@ -1349,7 +1355,13 @@ fn buildSubgraph(
 
         // Add conditional dependencies (only if condition evaluates to true)
         for (task.deps_if) |dep_if| {
-            const condition_met = expr.evalCondition(allocator, dep_if.condition, task.env) catch false;
+            const condition_met = expr.evalConditionalDep(
+                allocator,
+                dep_if.condition,
+                task.env,
+                task.params,
+                task.tags,
+            ) catch false;
             if (condition_met and needed.contains(dep_if.task)) {
                 try subdag.addEdge(name, dep_if.task);
             }
