@@ -934,11 +934,11 @@ fn run(
                     try color.printError(ew, effective_color, "run: --tag requires tag name argument\n", .{});
                     return 1;
                 }
-                try include_tags.append(allocator, try allocator.dupe(u8, effective_args[i]));
+                try include_tags.append(try allocator.dupe(u8, effective_args[i]));
             } else if (std.mem.startsWith(u8, arg, "--tag=")) {
                 // --tag=tagname syntax (repeatable)
                 const tag = arg["--tag=".len..];
-                try include_tags.append(allocator, try allocator.dupe(u8, tag));
+                try include_tags.append(try allocator.dupe(u8, tag));
             } else if (std.mem.eql(u8, arg, "--exclude-tag")) {
                 // --exclude-tag <tagname> syntax (repeatable)
                 i += 1;
@@ -946,11 +946,11 @@ fn run(
                     try color.printError(ew, effective_color, "run: --exclude-tag requires tag name argument\n", .{});
                     return 1;
                 }
-                try exclude_tags_list.append(allocator, try allocator.dupe(u8, effective_args[i]));
+                try exclude_tags_list.append(try allocator.dupe(u8, effective_args[i]));
             } else if (std.mem.startsWith(u8, arg, "--exclude-tag=")) {
                 // --exclude-tag=tagname syntax (repeatable)
                 const tag = arg["--exclude-tag=".len..];
-                try exclude_tags_list.append(allocator, try allocator.dupe(u8, tag));
+                try exclude_tags_list.append(try allocator.dupe(u8, tag));
             } else if (std.mem.eql(u8, arg, "--param")) {
                 // --param key=value syntax
                 i += 1;

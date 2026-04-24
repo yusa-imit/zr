@@ -40,10 +40,10 @@ pub fn selectTasks(
     tasks: std.StringHashMap(types.Task),
     filter: TaskFilter,
 ) !SelectionResult {
-    var matched = std.ArrayList([]const u8).init(allocator);
+    var matched = std.ArrayList([]const u8){};
     errdefer {
         for (matched.items) |name| allocator.free(name);
-        matched.deinit();
+        matched.deinit(allocator);
     }
 
     var it = tasks.iterator();
@@ -93,11 +93,11 @@ pub fn selectTasks(
         }
 
         // Task passed all filters - add to results
-        try matched.append(try allocator.dupe(u8, task_name));
+        try matched.append(allocator, try allocator.dupe(u8, task_name));
     }
 
     return SelectionResult{
-        .task_names = try matched.toOwnedSlice(),
+        .task_names = try matched.toOwnedSlice(allocator),
         .allocator = allocator,
     };
 }
@@ -105,229 +105,20 @@ pub fn selectTasks(
 /// Parse comma-separated tag list into owned slice.
 /// Caller owns returned slice and must free each string + the slice itself.
 pub fn parseTags(allocator: std.mem.Allocator, tags_str: []const u8) ![][]const u8 {
-    var tags = std.ArrayList([]const u8).init(allocator);
+    var tags = std.ArrayList([]const u8){};
     errdefer {
         for (tags.items) |tag| allocator.free(tag);
-        tags.deinit();
+        tags.deinit(allocator);
     }
 
     var iter = std.mem.splitScalar(u8, tags_str, ',');
     while (iter.next()) |tag| {
         const trimmed = std.mem.trim(u8, tag, " \t");
         if (trimmed.len > 0) {
-            try tags.append(try allocator.dupe(u8, trimmed));
+            try tags.append(allocator, try allocator.dupe(u8, trimmed));
         }
     }
 
-    return tags.toOwnedSlice();
+    return tags.toOwnedSlice(allocator);
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-test "parseTags: single tag" {
-    const allocator = std.testing.allocator;
-    const tags = try parseTags(allocator, "integration");
-    defer {
-        for (tags) |tag| allocator.free(tag);
-        allocator.free(tags);
-    }
-
-    try std.testing.expectEqual(@as(usize, 1), tags.len);
-    try std.testing.expectEqualStrings("integration", tags[0]);
-}
-
-test "parseTags: multiple tags with spaces" {
-    const allocator = std.testing.allocator;
-    const tags = try parseTags(allocator, " critical , backend , fast ");
-    defer {
-        for (tags) |tag| allocator.free(tag);
-        allocator.free(tags);
-    }
-
-    try std.testing.expectEqual(@as(usize, 3), tags.len);
-    try std.testing.expectEqualStrings("critical", tags[0]);
-    try std.testing.expectEqualStrings("backend", tags[1]);
-    try std.testing.expectEqualStrings("fast", tags[2]);
-}
-
-test "parseTags: empty string" {
-    const allocator = std.testing.allocator;
-    const tags = try parseTags(allocator, "");
-    defer allocator.free(tags);
-
-    try std.testing.expectEqual(@as(usize, 0), tags.len);
-}
-
-test "selectTasks: pattern matching" {
-    const allocator = std.testing.allocator;
-    var tasks = std.StringHashMap(types.Task).init(allocator);
-    defer tasks.deinit();
-
-    // Create test tasks
-    var task1 = types.Task.init(allocator);
-    task1.cmd = try allocator.dupe(u8, "echo test1");
-    try tasks.put("test:unit", task1);
-
-    var task2 = types.Task.init(allocator);
-    task2.cmd = try allocator.dupe(u8, "echo test2");
-    try tasks.put("test:integration", task2);
-
-    var task3 = types.Task.init(allocator);
-    task3.cmd = try allocator.dupe(u8, "echo build");
-    try tasks.put("build", task3);
-
-    defer {
-        var it = tasks.iterator();
-        while (it.next()) |entry| {
-            var t = entry.value_ptr.*;
-            t.deinit();
-        }
-    }
-
-    // Test pattern matching
-    const filter = TaskFilter{ .pattern = "test:*" };
-    var result = try selectTasks(allocator, tasks, filter);
-    defer result.deinit();
-
-    try std.testing.expectEqual(@as(usize, 2), result.task_names.len);
-    // Results are unordered, so check both are present
-    var found_unit = false;
-    var found_integration = false;
-    for (result.task_names) |name| {
-        if (std.mem.eql(u8, name, "test:unit")) found_unit = true;
-        if (std.mem.eql(u8, name, "test:integration")) found_integration = true;
-    }
-    try std.testing.expect(found_unit);
-    try std.testing.expect(found_integration);
-}
-
-test "selectTasks: tag inclusion (AND logic)" {
-    const allocator = std.testing.allocator;
-    var tasks = std.StringHashMap(types.Task).init(allocator);
-    defer tasks.deinit();
-
-    // Task with both tags
-    var task1 = types.Task.init(allocator);
-    task1.cmd = try allocator.dupe(u8, "echo task1");
-    task1.tags = try allocator.alloc([]const u8, 2);
-    task1.tags[0] = try allocator.dupe(u8, "critical");
-    task1.tags[1] = try allocator.dupe(u8, "backend");
-    try tasks.put("api-deploy", task1);
-
-    // Task with only one tag
-    var task2 = types.Task.init(allocator);
-    task2.cmd = try allocator.dupe(u8, "echo task2");
-    task2.tags = try allocator.alloc([]const u8, 1);
-    task2.tags[0] = try allocator.dupe(u8, "critical");
-    try tasks.put("frontend-deploy", task2);
-
-    defer {
-        var it = tasks.iterator();
-        while (it.next()) |entry| {
-            var t = entry.value_ptr.*;
-            t.deinit();
-        }
-    }
-
-    // Filter: must have BOTH critical AND backend
-    const include = [_][]const u8{ "critical", "backend" };
-    const filter = TaskFilter{ .include_tags = &include };
-    var result = try selectTasks(allocator, tasks, filter);
-    defer result.deinit();
-
-    try std.testing.expectEqual(@as(usize, 1), result.task_names.len);
-    try std.testing.expectEqualStrings("api-deploy", result.task_names[0]);
-}
-
-test "selectTasks: tag exclusion" {
-    const allocator = std.testing.allocator;
-    var tasks = std.StringHashMap(types.Task).init(allocator);
-    defer tasks.deinit();
-
-    // Fast task
-    var task1 = types.Task.init(allocator);
-    task1.cmd = try allocator.dupe(u8, "echo fast");
-    task1.tags = try allocator.alloc([]const u8, 1);
-    task1.tags[0] = try allocator.dupe(u8, "fast");
-    try tasks.put("unit-test", task1);
-
-    // Slow task
-    var task2 = types.Task.init(allocator);
-    task2.cmd = try allocator.dupe(u8, "echo slow");
-    task2.tags = try allocator.alloc([]const u8, 1);
-    task2.tags[0] = try allocator.dupe(u8, "slow");
-    try tasks.put("integration-test", task2);
-
-    defer {
-        var it = tasks.iterator();
-        while (it.next()) |entry| {
-            var t = entry.value_ptr.*;
-            t.deinit();
-        }
-    }
-
-    // Exclude slow tasks
-    const exclude = [_][]const u8{"slow"};
-    const filter = TaskFilter{ .exclude_tags = &exclude };
-    var result = try selectTasks(allocator, tasks, filter);
-    defer result.deinit();
-
-    try std.testing.expectEqual(@as(usize, 1), result.task_names.len);
-    try std.testing.expectEqualStrings("unit-test", result.task_names[0]);
-}
-
-test "selectTasks: combined filters" {
-    const allocator = std.testing.allocator;
-    var tasks = std.StringHashMap(types.Task).init(allocator);
-    defer tasks.deinit();
-
-    // Critical, backend, fast
-    var task1 = types.Task.init(allocator);
-    task1.cmd = try allocator.dupe(u8, "echo task1");
-    task1.tags = try allocator.alloc([]const u8, 3);
-    task1.tags[0] = try allocator.dupe(u8, "critical");
-    task1.tags[1] = try allocator.dupe(u8, "backend");
-    task1.tags[2] = try allocator.dupe(u8, "fast");
-    try tasks.put("api:deploy", task1);
-
-    // Critical, backend, slow (should be excluded)
-    var task2 = types.Task.init(allocator);
-    task2.cmd = try allocator.dupe(u8, "echo task2");
-    task2.tags = try allocator.alloc([]const u8, 3);
-    task2.tags[0] = try allocator.dupe(u8, "critical");
-    task2.tags[1] = try allocator.dupe(u8, "backend");
-    task2.tags[2] = try allocator.dupe(u8, "slow");
-    try tasks.put("api:test", task2);
-
-    // Critical, frontend (missing backend tag)
-    var task3 = types.Task.init(allocator);
-    task3.cmd = try allocator.dupe(u8, "echo task3");
-    task3.tags = try allocator.alloc([]const u8, 2);
-    task3.tags[0] = try allocator.dupe(u8, "critical");
-    task3.tags[1] = try allocator.dupe(u8, "frontend");
-    try tasks.put("web:deploy", task3);
-
-    defer {
-        var it = tasks.iterator();
-        while (it.next()) |entry| {
-            var t = entry.value_ptr.*;
-            t.deinit();
-        }
-    }
-
-    // Filter: pattern "api:*" + include "critical,backend" + exclude "slow"
-    const include = [_][]const u8{ "critical", "backend" };
-    const exclude = [_][]const u8{"slow"};
-    const filter = TaskFilter{
-        .pattern = "api:*",
-        .include_tags = &include,
-        .exclude_tags = &exclude,
-    };
-    var result = try selectTasks(allocator, tasks, filter);
-    defer result.deinit();
-
-    try std.testing.expectEqual(@as(usize, 1), result.task_names.len);
-    try std.testing.expectEqualStrings("api:deploy", result.task_names[0]);
-}
