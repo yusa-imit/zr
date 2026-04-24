@@ -11,7 +11,7 @@
 
 ## Current Status
 
-- **Build version**: v1.75.0 (current in build.zig.zon) | Latest Release: v1.75.0 (2026-04-23)
+- **Build version**: v1.76.0 (current in build.zig.zon) | Latest Release: v1.76.0 (2026-04-24)
 - **Unit tests**: 1452/1460 passing (8 skipped), 0 failed, 0 memory leaks
 - **Integration tests**: 1420 tests (some failures in add_interactive_test, not related to current work)
 - **CI**: IN_PROGRESS (last check 2026-04-24)
@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.1.0 (migrated 2026-04-24, Cycle 159)
 - **Source**: ~72,500+ lines, 95+ modules, 10 language providers
-- **Latest work (2026-04-24, FEATURE Cycle 160)**: Task Conditional Dependencies Enhancement (Phase 1-2 COMPLETE). (1) Expression engine enhancements (commit 57ba56b): Added params.param_name, has_tag('tag'), ! negation operator. Total: ~674 LOC (234 impl + 440 tests). (2) Scheduler integration (commit 58f80af): Added evalConditionalDep() API, updated scheduler deps_if evaluation (+49 LOC). (3) Integration tests (commit 7c43d45): 15 comprehensive tests for env-based, tag-based, combined, and edge case conditions (~511 LOC). All 1452 unit tests passing.
+- **Latest work (2026-04-24, FEATURE Cycle 162)**: v1.76.0 Release (Task Conditional Dependencies Enhancement). Completed all 6 phases: (1) Expression engine enhancements (params.X, has_tag(), negation) ~234 LOC impl + 440 LOC tests. (2) Scheduler integration ~49 LOC impl. (3) 15 integration tests for runtime behavior ~511 LOC. (4) 18 integration tests for dry-run preview ~577 LOC. (5) Watch mode integration (already complete). (6) Comprehensive documentation guide ~680 LOC. Total deliverable: ~2051 LOC (283 impl + 1088 tests + 680 docs). Released v1.76.0 with GitHub release notes. All 1452 unit tests passing.
 
 ## PRD Phase Status
 
@@ -35,15 +35,13 @@
 
 ## Next Action
 
-🚧 **Task Conditional Dependencies Enhancement** (IN PROGRESS - Cycle 160)
-- ✅ Phase 1: Expression engine enhancements (params, has_tag, negation) — COMPLETE
-- ✅ Phase 2: Scheduler integration — COMPLETE
-- ✅ Phase 3: Integration tests (15 tests) — COMPLETE
-- ⏳ Phase 4: Dry-run preview for conditional deps — PENDING
-- ⏳ Phase 5: Watch mode integration — PENDING
-- ⏳ Phase 6: Comprehensive documentation guide — PENDING
+✅ **Task Conditional Dependencies Enhancement** — COMPLETE (v1.76.0 released 2026-04-24)
 
-Estimated completion: 1-2 more cycles for remaining phases
+🚧 **Enhanced Task Filtering & Selection Patterns** (READY - Next priority)
+- Advanced glob patterns for task selection
+- Multi-criteria filtering (tags, aliases, execution state)
+- Inverse selection patterns
+- Estimated: 2-3 cycles
 
-**Other READY milestone**:
-- Enhanced Task Filtering & Selection Patterns (2-3 cycles)
+**READY milestones**: 1 remaining (Enhanced Task Filtering & Selection Patterns)
+**BLOCKED milestones**: 2 (zuda Graph Migration, zuda WorkStealingDeque)
