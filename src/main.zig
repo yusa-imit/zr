@@ -45,6 +45,7 @@ const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
 const tui = @import("cli/tui.zig");
 const task_picker = @import("cli/task_picker.zig");
+const task_selector = @import("cli/task_selector.zig");
 const live_cmd = @import("cli/live.zig");
 const interactive_run = @import("cli/interactive_run.zig");
 const validate_cmd = @import("cli/validate.zig");
