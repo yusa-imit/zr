@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.76.0] - 2026-04-24
+
+### ⚡ Task Conditional Dependencies Enhancement (Complete)
+
+This release completes the conditional dependency system with full expression evaluation, enabling sophisticated task execution patterns based on environment variables, runtime parameters, and task tags. Build pipelines can now adapt behavior dynamically without duplicating task definitions.
+
+### Added
+
+**Core Feature: Conditional Dependencies** (Cycles 160-161)
+- `deps_if = [{ task = "setup", condition = "env.NODE_ENV == 'production'" }]` — conditional task dependencies
+- Expression engine with full operator support: `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`, `()`
+- `params.param_name` access for parameter-based conditions (e.g., `params.skip_tests != 'true'`)
+- `has_tag('tag-name')` function for tag-based conditional dependencies
+- `env.VAR_NAME` access for environment variable conditions
+- Dry-run preview: `zr run --dry-run` shows which conditional deps are included/excluded
+- Watch mode integration: file watcher automatically evaluates conditional dependencies
+- ~283 LOC implementation (expression.zig enhancements, scheduler.zig integration)
+
+**Testing** (Cycles 160-161)
+- 33 integration tests covering all condition types and edge cases:
+  - 15 tests for runtime behavior (env-based, param-based, tag-based, combined, negation)
+  - 18 tests for dry-run preview (all condition types, complex expressions, error cases)
+- All 1452 unit tests passing (8 skipped, 0 failed)
+- Total: ~1088 LOC of integration tests
+
+**Documentation** (Cycle 161)
+- Comprehensive guide at `docs/guides/conditional-dependencies.md` (~680 LOC)
+- Real-world examples: multi-environment deploys, optional features, platform-specific tasks
+- Expression syntax reference, condition patterns, best practices, troubleshooting
+- Migration examples from static dependencies
+
+**Stats**:
+- **Total deliverable**: ~2051 LOC (283 impl + 1088 tests + 680 docs)
+- **Commits**: 6 phases across Cycles 160-161
+- **Breaking changes**: None — fully backward compatible
+
+**Examples**:
+```toml
+# Skip tests via runtime parameter
+[tasks.deploy]
+cmd = "deploy.sh"
+params = [{ name = "skip_tests", default = "false" }]
+deps_if = [
+  { task = "tests", condition = "params.skip_tests != 'true'" }
+]
+
+# Production-only database migration
+[tasks.app]
+cmd = "app.sh"
+deps_if = [
+  { task = "db-migrate", condition = "env.NODE_ENV == 'production'" }
+]
+
+# Docker build only when tagged
+[tasks.deploy]
+cmd = "deploy.sh"
+tags = ["docker"]
+deps_if = [
+  { task = "docker-build", condition = "has_tag('docker')" }
+]
+
+# Complex conditions with negation and logic
+[tasks.integration-test]
+cmd = "test.sh"
+deps_if = [
+  { task = "docker-setup", condition = "!env.CI && has_tag('docker')" },
+  { task = "mock-services", condition = "env.CI || params.use_mocks == 'true'" }
+]
+```
+
 ## [1.73.0] - 2026-04-21
 
 ### ⚡ Task Aliases & Silent Mode (Complete)
