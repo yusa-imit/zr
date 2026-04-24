@@ -28,7 +28,7 @@ test "conditional_deps: env.TARGET == 'production' when condition met" {
     defer allocator.free(config);
 
     // Create environment with TARGET set to 'production'
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("TARGET", "production");
 
@@ -61,7 +61,7 @@ test "conditional_deps: env.TARGET == 'production' when condition not met" {
     defer allocator.free(config);
 
     // Create environment with TARGET set to 'dev' (not 'production')
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("TARGET", "dev");
 
@@ -94,7 +94,7 @@ test "conditional_deps: env.SKIP_TESTS != 'true'" {
     defer allocator.free(config);
 
     // Condition is true when SKIP_TESTS is NOT 'true' (e.g., 'false' or missing)
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("SKIP_TESTS", "false");
 
@@ -127,7 +127,7 @@ test "conditional_deps: env.USE_CACHE truthy check" {
     defer allocator.free(config);
 
     // USE_CACHE is set to a truthy value
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("USE_CACHE", "yes");
 
@@ -164,7 +164,7 @@ test "conditional_deps: env in nested dependencies A->B->C" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("ENV_MODE", "production");
 
@@ -325,7 +325,7 @@ test "conditional_deps: env && tags combined" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("DEPLOY_MODE", "production");
 
@@ -357,7 +357,7 @@ test "conditional_deps: multiple env vars combined" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("BUILD_TARGET", "linux");
     try env_map.put("ENABLE_LINUX", "true");
@@ -391,7 +391,7 @@ test "conditional_deps: complex condition with grouping" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("ENV_TYPE", "prod");
 
@@ -428,7 +428,7 @@ test "conditional_deps: missing env var evaluates as falsy" {
     defer allocator.free(config);
 
     // Don't set OPTIONAL_VAR — it will be empty/falsy
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
 
     var result = try runZrEnv(allocator, &.{ "--config", config, "run", "build" }, null, &env_map);
@@ -495,7 +495,7 @@ test "conditional_deps: multiple deps_if conditions on same task" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    var env_map = try std.process.EnvMap.init(allocator);
+    var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
     try env_map.put("SKIP_LINT", "true");
     try env_map.put("SKIP_TEST", "false");
