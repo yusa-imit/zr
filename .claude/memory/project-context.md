@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.1.0 (migrated 2026-04-24, Cycle 159)
 - **Source**: ~73,350+ lines, 96 modules, 10 language providers
-- **Latest work (2026-04-25, FEATURE Cycle 168)**: Runtime .env file loading implemented in scheduler.zig. Added loadAndMergeEnvFiles() function (~100 LOC) that loads multiple .env files with override semantics (later files override earlier), merges with priority order (task env > env_file > base_env), integrated into workerFn before buildEnvWithToolchains. Added env_file and task_cwd fields to WorkerCtx. Fixed env_loader.zig Zig 0.15.2 API compatibility (writeFile, fetchPut). Commit ece498a. All 1457 unit tests passing. Part of Enhanced Environment Variable Management milestone (v1.78.0, ~30% complete). Next: verify integration tests pass, implement CLI --show-env flag for list/run commands.
+- **Latest work (2026-04-26, FEATURE Cycle 169)**: Implemented --show-env CLI flag for list/run commands. Made printTaskEnvironment() public in run.zig for reuse. Added show_env parameter to cmdList() signature. Integrated flag in main.zig. Shows system env + .env files + task env + runtime params (ZR_PARAM_xxx). Works for single task in list, with hint for multiple tasks. Updated all test call sites and MCP handler. Commit 78ba2cd. All 1457 unit tests passing. Part of Enhanced Environment Variable Management milestone (v1.78.0, ~50% complete). Next: variable interpolation in env values (${VAR} expansion), then documentation.
 
 ## PRD Phase Status
 
@@ -43,17 +43,17 @@
 - 0 bug issues open
 
 🎯 **Next Priority** — Enhanced Environment Variable Management (v1.78.0)
-- Status: READY, ~30% complete (schema + loader + runtime integration done, CLI flags + docs pending)
+- Status: READY, ~50% complete (schema + loader + runtime + CLI flags done, interpolation + docs pending)
 - Completed:
   - env_file schema (types.zig), .env file loader module (env_loader.zig), parser integration
   - Runtime .env loading in scheduler.zig (loadAndMergeEnvFiles, workerFn integration, WorkerCtx fields)
   - 13 integration tests in tests/env_file_test.zig (ready to verify)
+  - CLI --show-env flag for list/run commands (Cycle 169, commit 78ba2cd)
 - Next:
   - Verify integration tests pass (zig build integration-test)
-  - Implement CLI --show-env flag for list/run commands (show resolved env vars)
   - Variable interpolation in env values: ${VAR} expansion
   - Documentation: docs/guides/environment-management.md (~500 LOC)
-- Estimate: 1-2 more cycles to complete (CLI flags + interpolation + docs)
+- Estimate: 1-2 more cycles to complete (interpolation + docs)
 
 **READY milestones**: 0 (need new milestone establishment)
 **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+, zuda WorkStealingDeque depends on Graph)
