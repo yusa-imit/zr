@@ -22,6 +22,7 @@ const remote = @import("remote.zig");
 const retry_strategy = @import("retry_strategy.zig");
 const filter_mod = @import("../output/filter.zig");
 const uptodate = @import("uptodate.zig");
+const env_loader = @import("../config/env_loader.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -517,6 +518,10 @@ const WorkerCtx = struct {
     /// Shared map tracking which tasks actually executed (not skipped).
     /// Protected by results_mutex. Used for dependency propagation.
     executed_tasks: *std.StringHashMap(void),
+    /// .env file paths for this task (v1.78.0).
+    env_file: []const []const u8,
+    /// Working directory for resolving relative .env paths (v1.78.0).
+    task_cwd: ?[]const u8,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -609,6 +614,107 @@ fn buildEnvWithToolchains(
     return merged_env;
 }
 
+/// Load environment variables from .env files and merge with task env.
+/// Priority order: task_env > env_file > base_env
+/// Returns owned array (caller must free with toolchain_path.freeToolchainEnv if non-null).
+fn loadAndMergeEnvFiles(
+    allocator: std.mem.Allocator,
+    env_file_paths: []const []const u8,
+    task_env: ?[]const [2][]const u8,
+    base_env: ?[]const [2][]const u8,
+    _cwd: ?[]const u8,
+) ?[][2][]u8 {
+    _ = _cwd; // Reserved for future use: relative path resolution
+
+    // If no env files, return null (caller will use original env)
+    if (env_file_paths.len == 0) {
+        return null;
+    }
+
+    // Load all .env files and merge with override semantics (later files override earlier)
+    var file_env_map = env_loader.loadEnvFiles(allocator, env_file_paths) catch {
+        // If loading fails, fall back to null
+        return null;
+    };
+    defer {
+        var it = file_env_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        file_env_map.deinit();
+    }
+
+    // Start with base_env (system env or other defaults)
+    const start_env = base_env orelse &[_][2][]u8{};
+
+    // Build map of env vars for merging (file_env is base, then task_env overrides)
+    var merged_map = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = merged_map.iterator();
+        while (it.next()) |entry| {
+            // Don't free keys/values here — they'll be duped when building array
+            _ = entry;
+        }
+        merged_map.deinit();
+    }
+
+    // First add base_env vars
+    for (start_env) |pair| {
+        _ = merged_map.put(pair[0], pair[1]) catch {};
+    }
+
+    // Then add .env file vars (override base)
+    var it = file_env_map.iterator();
+    while (it.next()) |entry| {
+        _ = merged_map.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+    }
+
+    // Finally add task_env vars (highest priority, override both)
+    if (task_env) |te| {
+        for (te) |pair| {
+            _ = merged_map.put(pair[0], pair[1]) catch {};
+        }
+    }
+
+    // If no vars at all, return null
+    if (merged_map.count() == 0) {
+        return null;
+    }
+
+    // Allocate final env array
+    const final_env = allocator.alloc([2][]u8, merged_map.count()) catch {
+        return null;
+    };
+
+    // Populate array with duped strings (ownership transfers to final_env)
+    var i: usize = 0;
+    var iter = merged_map.iterator();
+    while (iter.next()) |entry| : (i += 1) {
+        final_env[i][0] = allocator.dupe(u8, entry.key_ptr.*) catch {
+            // On error, free what we've allocated so far
+            for (final_env[0..i]) |p| {
+                allocator.free(p[0]);
+                allocator.free(p[1]);
+            }
+            allocator.free(final_env);
+            return null;
+        };
+        final_env[i][1] = allocator.dupe(u8, entry.value_ptr.*) catch {
+            // On error, free what we've allocated
+            allocator.free(final_env[i][0]);
+            for (final_env[0..i]) |p| {
+                allocator.free(p[0]);
+                allocator.free(p[1]);
+            }
+            allocator.free(final_env);
+            return null;
+        };
+    }
+
+    return final_env;
+}
+
 fn workerFn(ctx: WorkerCtx) void {
     // Record task started event (v1.14.0)
     if (ctx.timeline_tracker) |tt| {
@@ -665,8 +771,13 @@ fn workerFn(ctx: WorkerCtx) void {
         return;
     }
 
+    // Load .env files and merge with task env (v1.78.0)
+    const env_with_files = loadAndMergeEnvFiles(task_allocator, ctx.env_file, ctx.env, null, ctx.task_cwd);
+    defer if (env_with_files) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
+
     // Build environment with toolchain PATH injection and extra_env
-    const merged_env = buildEnvWithToolchains(task_allocator, ctx.env, ctx.toolchains, ctx.extra_env);
+    // Use env_with_files (which includes .env vars) instead of ctx.env
+    const merged_env = buildEnvWithToolchains(task_allocator, env_with_files, ctx.toolchains, ctx.extra_env);
     defer if (merged_env) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
 
     // Load checkpoint if enabled (v1.31.0)
@@ -2089,6 +2200,8 @@ pub fn run(
                 .force_run = sched_config.force_run,
                 .task_deps = all_deps.items,
                 .executed_tasks = &executed_tasks,
+                .env_file = task.env_file orelse &[_][]const u8{},
+                .task_cwd = task.cwd,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

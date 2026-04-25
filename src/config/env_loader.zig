@@ -14,12 +14,22 @@ pub fn loadEnvFile(allocator: std.mem.Allocator, file_path: []const u8) !std.Str
         env_map.deinit();
     }
 
-    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-        // Missing .env file is not an error — return empty map
-        if (err == error.FileNotFound) {
-            return env_map;
-        }
-        return err;
+    // Handle both absolute and relative paths
+    const file: std.fs.File = blk: {
+        // Check if path is absolute (starts with / on Unix, or has drive letter on Windows)
+        const is_abs = std.fs.path.isAbsolute(file_path);
+        const result = if (is_abs)
+            std.fs.openFileAbsolute(file_path, .{})
+        else
+            std.fs.cwd().openFile(file_path, .{});
+
+        break :blk result catch |err| {
+            // Missing .env file is not an error — return empty map
+            if (err == error.FileNotFound) {
+                return env_map;
+            }
+            return err;
+        };
     };
     defer file.close();
 
@@ -56,13 +66,9 @@ pub fn loadEnvFile(allocator: std.mem.Allocator, file_path: []const u8) !std.Str
             errdefer allocator.free(value_owned);
 
             // If key already exists, free old value and replace
-            if (env_map.fetchPut(key_owned, value_owned)) |old_entry| {
+            if (try env_map.fetchPut(key_owned, value_owned)) |old_entry| {
                 allocator.free(old_entry.key);
                 allocator.free(old_entry.value);
-            } else |err| {
-                allocator.free(key_owned);
-                allocator.free(value_owned);
-                return err;
             }
         }
         // Lines without '=' are ignored (invalid format)
@@ -98,18 +104,24 @@ pub fn loadEnvFiles(allocator: std.mem.Allocator, file_paths: []const []const u8
         // Merge into result (later values override earlier)
         var it = file_map.iterator();
         while (it.next()) |entry| {
-            const key_owned = try allocator.dupe(u8, entry.key_ptr.*);
-            errdefer allocator.free(key_owned);
-            const value_owned = try allocator.dupe(u8, entry.value_ptr.*);
-            errdefer allocator.free(value_owned);
+            const key = entry.key_ptr.*;
+            const value = entry.value_ptr.*;
 
-            if (merged.fetchPut(key_owned, value_owned)) |old_entry| {
-                allocator.free(old_entry.key);
-                allocator.free(old_entry.value);
-            } else |err| {
-                allocator.free(key_owned);
-                allocator.free(value_owned);
-                return err;
+            // Check if key already exists before we dupe
+            if (merged.get(key)) |_| {
+                // Key exists, so we'll override it
+                // First, get and free the old value (but keep the key pointer for now)
+                if (merged.getPtr(key)) |old_entry_ptr| {
+                    allocator.free(old_entry_ptr.*);
+                    old_entry_ptr.* = try allocator.dupe(u8, value);
+                }
+            } else {
+                // Key doesn't exist, insert it
+                const key_owned = try allocator.dupe(u8, key);
+                errdefer allocator.free(key_owned);
+                const value_owned = try allocator.dupe(u8, value);
+                errdefer allocator.free(value_owned);
+                try merged.put(key_owned, value_owned);
             }
         }
     }
@@ -124,7 +136,7 @@ test "loadEnvFile: basic KEY=value" {
 
     // Create .env file
     const env_content = "KEY1=value1\nKEY2=value2\n";
-    try tmp.dir.writeFile(".env", env_content);
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
 
     const allocator = testing.allocator;
     const path = try tmp.dir.realpathAlloc(allocator, ".env");
@@ -151,7 +163,7 @@ test "loadEnvFile: quoted values" {
     defer tmp.cleanup();
 
     const env_content = "KEY1=\"value with spaces\"\nKEY2='single quoted'\n";
-    try tmp.dir.writeFile(".env", env_content);
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
 
     const allocator = testing.allocator;
     const path = try tmp.dir.realpathAlloc(allocator, ".env");
@@ -177,7 +189,7 @@ test "loadEnvFile: comments and empty lines" {
     defer tmp.cleanup();
 
     const env_content = "# Comment line\nKEY1=value1\n\nKEY2=value2\n# Another comment\n";
-    try tmp.dir.writeFile(".env", env_content);
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
 
     const allocator = testing.allocator;
     const path = try tmp.dir.realpathAlloc(allocator, ".env");
@@ -211,8 +223,8 @@ test "loadEnvFiles: multiple files with override" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(".env", "KEY1=base\nKEY2=base2\n");
-    try tmp.dir.writeFile(".env.local", "KEY1=override\n");
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = "KEY1=base\nKEY2=base2\n" });
+    try tmp.dir.writeFile(.{ .sub_path = ".env.local", .data = "KEY1=override\n" });
 
     const allocator = testing.allocator;
     const path1 = try tmp.dir.realpathAlloc(allocator, ".env");
