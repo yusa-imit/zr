@@ -16,7 +16,7 @@ const env_loader = @import("../config/env_loader.zig");
 const types = @import("../config/types.zig");
 
 /// Display the resolved environment variables for a task
-fn printTaskEnvironment(
+pub fn printTaskEnvironment(
     allocator: std.mem.Allocator,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,

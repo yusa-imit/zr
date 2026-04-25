@@ -1179,7 +1179,7 @@ fn run(
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_env, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Check if using new graph command flags (--type, --format, --interactive, etc.)
         // If so, delegate to the full graph_cmd handler
