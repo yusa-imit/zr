@@ -1022,6 +1022,11 @@ pub const Task = struct {
     deps_optional: [][]const u8 = &.{},
     /// Environment variable overrides. Each entry is [key, value] (owned, duped).
     env: [][2][]const u8,
+    /// .env file(s) to load environment variables from (v1.78.0).
+    /// Can be a single file path or array of paths. Later files override earlier ones.
+    /// Examples: env_file = ".env" or env_file = [".env", ".env.local"]
+    /// Supports relative paths (resolved from task cwd or config directory).
+    env_file: ?[][]const u8 = null,
     /// Timeout in milliseconds. null means no timeout.
     timeout_ms: ?u64 = null,
     /// If true, a non-zero exit code is treated as success for dependency purposes.
@@ -1179,6 +1184,11 @@ pub const Task = struct {
             allocator.free(pair[1]);
         }
         allocator.free(self.env);
+        // v1.78.0 env_file
+        if (self.env_file) |files| {
+            for (files) |file_path| allocator.free(file_path);
+            allocator.free(files);
+        }
         if (self.condition) |c| allocator.free(c);
         if (self.skip_if) |s| allocator.free(s);
         if (self.output_if) |o| allocator.free(o);
