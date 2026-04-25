@@ -19,7 +19,7 @@
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.1.0 (migrated 2026-04-24, Cycle 159)
 - **Source**: ~73,200+ lines, 96 modules, 10 language providers
-- **Latest work (2026-04-25, STABILIZATION Cycle 165)**: v1.77.0 RELEASED. Enhanced Task Filtering & Selection Patterns milestone complete. GitHub release published with comprehensive notes. Features: glob patterns (*, **, ?), tag filtering (--tag, --exclude-tag), combined filters, dry-run preview, multiple task execution with dependency ordering. Total: ~1233 LOC (219 impl + 379 tests + 635 docs) across 3 commits (83566b4, 5d4a47a, c29df67). Release commits: 64885d3 (version bump), df13a16 (milestone update). All tests passing.
+- **Latest work (2026-04-25, FEATURE Cycle 167)**: env_file parser integration complete. Added env_file parameter to addTaskImpl signature (46th param), updated 13 call sites across parser.zig/types.zig/matrix.zig, parser supports both single string and array syntax for env_file field. Commit 50da7cf completes schema integration after env_loader.zig module (commit 5a126dd). All 1452 unit tests passing. Part of Enhanced Environment Variable Management milestone (v1.78.0, ~10% complete). Next: runtime loading of .env files in scheduler.zig.
 
 ## PRD Phase Status
 
@@ -42,11 +42,11 @@
 - All unit tests passing (1452/1460)
 - 0 bug issues open
 
-🎯 **Next Priority** — Milestone Establishment
-- Current status: 0 READY milestones, 2 BLOCKED (zuda migrations)
-- Action: Establish 2-3 new READY milestones for upcoming work
-- Candidates: Performance profiling, error message enhancements, advanced caching strategies
-- Timeline: Cycle 166+
+🎯 **Next Priority** — Enhanced Environment Variable Management (v1.78.0)
+- Status: READY, ~10% complete (schema + loader done, runtime integration pending)
+- Completed: env_file schema (types.zig), .env file loader module (env_loader.zig), parser integration
+- Next: Runtime .env loading in scheduler.zig (load files before task execution, merge with task env)
+- Estimate: 2-3 more cycles to complete (runtime integration + CLI flags + tests + docs)
 
 **READY milestones**: 0 (need new milestone establishment)
 **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+, zuda WorkStealingDeque depends on Graph)
