@@ -301,6 +301,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         null,  // task_control
         .{},   // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,

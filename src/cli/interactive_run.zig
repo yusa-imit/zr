@@ -168,6 +168,7 @@ pub fn cmdInteractiveRun(
             null, // task_control
             .{}, // filter_options
             false, // silent_override
+            false, // show_env
             empty_params,
         );
     }
@@ -191,6 +192,7 @@ pub fn cmdInteractiveRun(
             null,
             .{}, // filter_options
             false, // silent_override
+            false, // show_env
             empty_params,
         );
     }
@@ -218,6 +220,7 @@ pub fn cmdInteractiveRun(
             null,
             .{}, // filter_options
             false, // silent_override
+            false, // show_env
             empty_params,
         );
     };
@@ -252,6 +255,7 @@ pub fn cmdInteractiveRun(
         ctrl,
         .{}, // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     ) catch |err| {
         running.store(false, .release);

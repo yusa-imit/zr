@@ -12,6 +12,142 @@ const levenshtein = @import("../util/levenshtein.zig");
 const matrix = @import("../exec/matrix.zig");
 const filter_mod = @import("../output/filter.zig");
 const uptodate = @import("../exec/uptodate.zig");
+const env_loader = @import("../config/env_loader.zig");
+const types = @import("../config/types.zig");
+
+/// Display the resolved environment variables for a task
+fn printTaskEnvironment(
+    allocator: std.mem.Allocator,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+    config: *types.Config,
+    task: *const types.Task,
+    task_name: []const u8,
+    runtime_params: *const std.StringHashMap([]const u8),
+) !void {
+    _ = err_writer;
+    _ = config;
+
+    // Build the effective environment for this task
+    var env_map = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = env_map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        env_map.deinit();
+    }
+
+    // 1. Start with system environment
+    var system_env = try std.process.getEnvMap(allocator);
+    defer system_env.deinit();
+    var system_it = system_env.iterator();
+    while (system_it.next()) |entry| {
+        try env_map.put(
+            try allocator.dupe(u8, entry.key_ptr.*),
+            try allocator.dupe(u8, entry.value_ptr.*),
+        );
+    }
+
+    // 2. Load .env files if specified (from config.base_env or task.env_file)
+    var env_file_list = std.ArrayList([]const u8){};
+    defer env_file_list.deinit(allocator);
+
+    if (task.env_file) |files| {
+        for (files) |file| {
+            try env_file_list.append(allocator, file);
+        }
+    }
+
+    if (env_file_list.items.len > 0) {
+        const cwd_path = task.cwd orelse ".";
+        for (env_file_list.items) |env_file| {
+            // Build full path: cwd/env_file
+            const full_path = if (std.fs.path.isAbsolute(env_file))
+                try allocator.dupe(u8, env_file)
+            else
+                try std.fs.path.join(allocator, &[_][]const u8{ cwd_path, env_file });
+            defer allocator.free(full_path);
+
+            var file_env = try env_loader.loadEnvFile(allocator, full_path);
+            defer {
+                var it = file_env.iterator();
+                while (it.next()) |entry| {
+                    allocator.free(entry.key_ptr.*);
+                    allocator.free(entry.value_ptr.*);
+                }
+                file_env.deinit();
+            }
+
+            // Merge into env_map (file env overrides)
+            var file_it = file_env.iterator();
+            while (file_it.next()) |entry| {
+                if (env_map.fetchRemove(entry.key_ptr.*)) |old| {
+                    allocator.free(old.key);
+                    allocator.free(old.value);
+                }
+                try env_map.put(
+                    try allocator.dupe(u8, entry.key_ptr.*),
+                    try allocator.dupe(u8, entry.value_ptr.*),
+                );
+            }
+        }
+    }
+
+    // 3. Apply task-level env
+    for (task.env) |kv| {
+        const key = kv[0];
+        const value = kv[1];
+        if (env_map.fetchRemove(key)) |old| {
+            allocator.free(old.key);
+            allocator.free(old.value);
+        }
+        try env_map.put(
+            try allocator.dupe(u8, key),
+            try allocator.dupe(u8, value),
+        );
+    }
+
+    // 4. Interpolate runtime params into environment (as ZR_PARAM_xxx)
+    var param_it = runtime_params.iterator();
+    while (param_it.next()) |entry| {
+        const env_key = try std.fmt.allocPrint(allocator, "ZR_PARAM_{s}", .{entry.key_ptr.*});
+        defer allocator.free(env_key);
+
+        if (env_map.fetchRemove(env_key)) |old| {
+            allocator.free(old.key);
+            allocator.free(old.value);
+        }
+        try env_map.put(
+            try allocator.dupe(u8, env_key),
+            try allocator.dupe(u8, entry.value_ptr.*),
+        );
+    }
+
+    // Print the environment
+    try color.printBold(w, use_color, "Environment for task '{s}':\n", .{task_name});
+
+    // Sort keys for consistent output
+    var keys = std.ArrayList([]const u8){};
+    defer keys.deinit(allocator);
+    var key_it = env_map.keyIterator();
+    while (key_it.next()) |key_ptr| {
+        try keys.append(allocator, key_ptr.*);
+    }
+    std.mem.sort([]const u8, keys.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+
+    for (keys.items) |key| {
+        const value = env_map.get(key).?;
+        try color.printDim(w, use_color, "  {s}", .{key});
+        try w.print("={s}\n", .{value});
+    }
+}
 
 pub fn cmdRun(
     allocator: std.mem.Allocator,
@@ -29,6 +165,7 @@ pub fn cmdRun(
     task_control: ?*@import("../exec/control.zig").TaskControl,
     filter_options: filter_mod.FilterOptions,
     silent_override: bool,
+    show_env: bool,
     runtime_params: std.StringHashMap([]const u8),
 ) !u8 {
     defer {
@@ -170,6 +307,14 @@ pub fn cmdRun(
                 .{ key, resolved_task_name },
             );
             return 1;
+        }
+    }
+
+    // Show environment variables if --show-env flag is set
+    if (show_env) {
+        try printTaskEnvironment(allocator, w, err_writer, use_color, &config, &task, resolved_task_name, &resolved_params);
+        if (!dry_run) {
+            try w.print("\n", .{});
         }
     }
 
@@ -1194,6 +1339,7 @@ test "cmdRun: missing config returns error" {
         null,
         .{}, // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
@@ -1239,6 +1385,7 @@ test "cmdRun: unknown task returns error" {
         null,
         .{}, // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
@@ -1284,6 +1431,7 @@ test "cmdRun: dry run shows plan without executing" {
         null,
         .{}, // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
@@ -1329,6 +1477,7 @@ test "cmdRun: successful task returns 0" {
         null,
         .{}, // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
@@ -1374,6 +1523,7 @@ test "cmdRun: failing task returns 1" {
         null,
         .{}, // filter_options
         false, // silent_override
+        false, // show_env
         empty_params,
     );
     try std.testing.expectEqual(@as(u8, 1), result);

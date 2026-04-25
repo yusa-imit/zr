@@ -546,6 +546,7 @@ fn cmdInteractiveInner(
                     null,
                     .{}, // filter_options
                     false, // silent_override
+                    false, // show_env
                     empty_params,
                 ) catch {};
 

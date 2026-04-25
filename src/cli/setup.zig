@@ -107,6 +107,7 @@ pub fn cmdSetup(
             null, // task_control
             .{}, // filter_options
             false, // silent_override
+            false, // show_env
             empty_params,
         );
 
