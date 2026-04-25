@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.77.0] - 2026-04-25
+
+### ⚡ Enhanced Task Filtering & Selection Patterns (Complete)
+
+This release introduces powerful task filtering capabilities with glob patterns and tag-based selection, enabling developers to run multiple tasks efficiently without writing complex shell scripts. Monorepos, CI/CD pipelines, and large projects can now execute task subsets declaratively.
+
+### Added
+
+**Core Feature: Task Filtering** (Cycles 163-164)
+- `zr run 'test:*'` — glob pattern matching with `*` (single-level wildcard)
+- `zr run 'backend:**'` — multi-level glob matching with `**` (recursive)
+- `zr run 'build*'` — prefix matching with `*` and `?` wildcards
+- `--tag=name` CLI flag for tag-based filtering (repeatable for AND logic)
+- `--exclude-tag=name` CLI flag for tag exclusion
+- Combined filters: `zr run 'backend:**' --tag=api --exclude-tag=deprecated`
+- Multiple task execution with dependency-aware ordering
+- Dry-run preview shows selected tasks before execution
+- Helpful error messages when no tasks match filters
+- ~219 LOC implementation (task_selector.zig module + CLI integration)
+
+**Testing** (Cycle 163)
+- 16 integration tests covering all filter combinations:
+  - 6 tests for glob patterns (single-level `*`, multi-level `**`, prefix/suffix)
+  - 4 tests for tag filtering (single tag, multiple tags AND, exclusion)
+  - 6 tests for combined filters (glob + tags, complex scenarios, edge cases)
+- All 1452 unit tests passing (8 skipped, 0 failed)
+- Total: ~379 LOC of integration tests
+
+**Documentation** (Cycle 164)
+- Comprehensive guide at `docs/guides/task-selection.md` (~635 LOC)
+- Real-world examples: monorepos, CI/CD pipelines, environment-specific builds, test suites
+- Comparison with competitors: Bazel, Nx, Task, Just
+- Best practices: namespace organization, tagging taxonomy, dry-run workflows
+- Troubleshooting: no matches, pattern syntax, tag spelling, execution order
+
+**Stats**:
+- **Total deliverable**: ~1233 LOC (219 impl + 379 tests + 635 docs)
+- **Commits**: 3 phases across Cycles 163-164
+- **Breaking changes**: None — fully backward compatible
+
+**Examples**:
+```toml
+# Run all backend tests
+zr run 'backend:test:*'
+
+# Run critical integration tests only
+zr run 'test:**' --tag=critical --exclude-tag=slow
+
+# Build all services except deprecated ones
+zr run 'services:*:build' --exclude-tag=deprecated
+```
+
+**Use Cases**:
+- **Monorepos**: `zr run 'apps/frontend:**' --tag=build` — build all frontend apps
+- **CI/CD**: `zr run 'test:**' --tag=smoke --exclude-tag=flaky` — run smoke tests only
+- **Environment-specific**: `zr run 'deploy:*' --tag=production` — deploy prod services
+- **Test suites**: `zr run 'test:**' --exclude-tag=slow --exclude-tag=integration` — fast unit tests
+
+### Changed
+- `zr run` now accepts glob patterns in task names (backward compatible)
+- Multiple tasks can be executed in a single command with dependency resolution
+
+### Improved
+- Error messages now suggest similar task names when no matches found
+- Task execution order respects dependencies even with glob patterns
+
 ## [1.76.0] - 2026-04-24
 
 ### ⚡ Task Conditional Dependencies Enhancement (Complete)
