@@ -3,8 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.77.0 (Enhanced Task Filtering & Selection Patterns) — RELEASED 2026-04-25
-- **Active milestones**: 0 READY + 2 BLOCKED
-- **READY milestones**: 0 (all milestones complete or blocked)
+- **Active milestones**: 3 READY + 2 BLOCKED
+- **READY milestones**: 3 (Enhanced Environment Variable Management, Task Documentation & Rich Help System, Task Output Artifacts & Persistence)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
 - **DONE**: Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0 RELEASED), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -17,6 +17,54 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Enhanced Environment Variable Management
+
+Improve environment variable handling with .env file support, variable interpolation, and flexible merging strategies. Currently tasks can only specify env vars in TOML, requiring duplication for shared environments. This milestone adds .env file loading, variable expansion, and inheritance patterns similar to docker-compose and direnv. Includes:
+- **.env file loading**: `env_file = ".env"` or `env_file = [".env.local", ".env"]` — load env vars from files
+- **Variable interpolation**: `env = { PATH = "$PATH:/custom/bin", API_URL = "${BASE_URL}/api" }` — expand existing vars
+- **Priority order**: CLI args > task env > workspace env > env_file > system env (clear precedence)
+- **Multiple env files**: Load multiple files with override semantics (later files override earlier)
+- **Conditional env vars**: `env_if = { "CI" = { CACHE_DIR = "/ci-cache" } }` — env vars based on conditions
+- **Env var validation**: Required vars with `required_env = ["DATABASE_URL", "API_KEY"]` fail if missing
+- **List integration**: `zr list --show-env` displays effective environment for each task
+- **Dry-run preview**: `zr run --dry-run --show-env` shows resolved env vars before execution
+- **Workspace inheritance**: Child tasks inherit parent workspace env_file and merge env vars
+- **Documentation**: Comprehensive guide at docs/guides/environment-management.md with .env patterns, merging rules, security best practices
+**Status: READY** — Estimated 2-3 cycles. Implementation: ~300 LOC (env_file parsing in parser.zig, .env file loader in config/env_loader.zig, variable expansion in scheduler.zig, validation in types.zig, CLI --show-env flag in main.zig/run.zig/list.zig). Testing: ~400 LOC (15+ integration tests covering .env loading, interpolation, priority order, validation, inheritance). Documentation: ~500 LOC guide with docker-compose/direnv comparison, security best practices, migration examples.
+
+### Task Documentation & Rich Help System
+
+Add comprehensive task documentation capabilities with rich help formatting, examples, and metadata. Currently tasks have minimal description field, making complex tasks hard to understand. This milestone adds structured documentation with examples, parameters, outputs, and formatted help similar to CLI tools like docker and git. Includes:
+- **Rich descriptions**: `description = { short = "Build project", long = """Builds the project...""" }` — short + detailed text
+- **Task examples**: `examples = ["zr run build", "zr run build --release"]` — usage examples in help
+- **Parameter docs**: Enhanced param descriptions with types, constraints, default values in help output
+- **Output documentation**: `outputs = { "dist/" = "Compiled binaries", "logs/" = "Build logs" }` — what task produces
+- **Related tasks**: `see_also = ["test", "deploy"]` — cross-reference related tasks
+- **Help command**: `zr help <task>` shows formatted help with all metadata (description, params, examples, deps, outputs)
+- **Man page generation**: `zr man <task>` generates man page format for task documentation
+- **Markdown export**: `zr docs --markdown` exports all task docs to markdown for project wikis
+- **List enhancements**: `zr list --verbose` shows short descriptions, `zr list --format detailed` shows full metadata
+- **Interactive help**: `zr irun` shows task help when selecting tasks in picker
+- **Documentation validation**: Warn on missing descriptions for public tasks, suggest improvements
+**Status: READY** — Estimated 2-3 cycles. Implementation: ~350 LOC (schema changes in types.zig for rich description/examples/outputs, parser.zig for parsing, help command in cli/help.zig, man page generator in output/man.zig, markdown exporter in cli/docs.zig, list.zig enhancements). Testing: ~450 LOC (18+ integration tests covering help display, man generation, markdown export, validation, backward compatibility). Documentation: ~400 LOC guide with documentation best practices, examples, comparison with CLI documentation standards.
+
+### Task Output Artifacts & Persistence
+
+Add artifact management to save, retrieve, and share task outputs across runs and environments. Currently task outputs are ephemeral (only visible in history), making it hard to preserve build artifacts, logs, or test reports. This milestone adds artifact storage, retrieval, and metadata tracking similar to GitHub Actions artifacts and CI systems. Includes:
+- **Artifact declaration**: `artifacts = ["dist/*.wasm", "coverage/*.html", "logs/*.log"]` — files to preserve
+- **Automatic collection**: After task success, collect matching artifacts and store with metadata
+- **Artifact storage**: Local `.zr/artifacts/<task>/<timestamp>/` directory structure with manifest
+- **Artifact retrieval**: `zr artifacts get <task>` lists artifacts, `zr artifacts get <task> --latest` downloads most recent
+- **Artifact metadata**: Store timestamp, task params, git commit, exit code, duration in manifest.json
+- **Expiration policy**: `artifact_retention = "7d"` or `artifact_retention = { count = 10 }` — auto-cleanup old artifacts
+- **List integration**: `zr list --show-artifacts` displays tasks with preserved artifacts and counts
+- **Artifact cleanup**: `zr artifacts clean --older-than 30d` or `zr artifacts clean --task build` manual cleanup
+- **Compression**: Automatically compress artifacts with gzip for space efficiency (configurable)
+- **Remote sync**: `artifact_remote = "s3://bucket/artifacts"` optional remote storage integration (future: cloud backends)
+- **CI/CD integration**: Artifacts automatically tagged with CI environment metadata (GitHub Actions, GitLab CI, etc.)
+- **Documentation**: Comprehensive guide at docs/guides/artifact-management.md with CI patterns, retention strategies, storage formats
+**Status: READY** — Estimated 3-4 cycles. Implementation: ~400 LOC (schema changes in types.zig for artifacts field, artifact collector in exec/artifacts.zig, storage manager with compression/manifest in util/artifact_store.zig, CLI commands in cli/artifacts.zig, list.zig integration). Testing: ~500 LOC (20+ integration tests covering collection, storage, retrieval, cleanup, retention policies, compression, metadata tracking). Documentation: ~450 LOC guide with CI artifact patterns, storage optimization, backup strategies, comparison with GitHub Actions/GitLab artifacts.
 
 ### Task Up-to-Date Detection & Incremental Builds
 
