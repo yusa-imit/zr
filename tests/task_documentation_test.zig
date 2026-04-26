@@ -650,12 +650,12 @@ test "documentation: very long description handled gracefully" {
     var config_str = std.ArrayList(u8){};
     defer config_str.deinit(allocator);
 
-    try config_str.appendSlice(config_toml);
-    try config_str.appendSlice("\n[tasks.verbose.description]\n");
-    try config_str.appendSlice("short = \"Verbose task\"\n");
-    try config_str.appendSlice("long = \"\"\"");
-    try config_str.appendSlice(long_desc);
-    try config_str.appendSlice("\"\"\"\n");
+    try config_str.appendSlice(allocator, config_toml);
+    try config_str.appendSlice(allocator, "\n[tasks.verbose.description]\n");
+    try config_str.appendSlice(allocator, "short = \"Verbose task\"\n");
+    try config_str.appendSlice(allocator, "long = \"\"\"");
+    try config_str.appendSlice(allocator, long_desc);
+    try config_str.appendSlice(allocator, "\"\"\"\n");
 
     const config = try writeTmpConfig(allocator, tmp.dir, config_str.items);
     defer allocator.free(config);

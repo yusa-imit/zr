@@ -75,6 +75,8 @@ comptime {
     _ = @import("show_test.zig");
     _ = @import("silent_mode_test.zig");
     _ = @import("task_filtering_test.zig");
+    _ = @import("task_documentation_test.zig");
+    _ = @import("task_documentation_parser_test.zig");
     _ = @import("template_test.zig");
     _ = @import("tools_test.zig");
     _ = @import("tui_test.zig");
