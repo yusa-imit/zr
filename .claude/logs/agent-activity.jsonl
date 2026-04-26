@@ -53,3 +53,5 @@
 {"timestamp":"2026-04-26T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write comprehensive unit tests for variable interpolation (interpolateEnvValue function)","project":"zr"}
 {"timestamp":"2026-04-26T12:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write 14 integration tests for env variable interpolation","project":"zr"}
 {"timestamp":"2026-04-26T12:30:00Z","action":"subagent","agent_type":"general-purpose","task":"Write comprehensive environment management documentation guide","project":"zr"}
+{"timestamp":"2026-04-26T15:01:46Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for rich description parser support","project":"zr"}
+{"timestamp":"2026-04-26T15:14:43Z","action":"subagent","agent_type":"zig-developer","task":"Implement parser.zig support for rich descriptions, examples, outputs, see_also","project":"zr"}
