@@ -269,7 +269,7 @@ fn addTaskNameCompletions(allocator: std.mem.Allocator, text: []const u8, items:
         try items.append(allocator, .{
             .label = task_name,
             .kind = .Value,
-            .detail = task.description,
+            .detail = if (task.description) |d| d.getShort() else null,
             .documentation = task.cmd,
         });
     }

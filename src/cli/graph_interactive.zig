@@ -122,7 +122,7 @@ pub fn renderInteractive(
         try nodes.append(allocator, .{
             .name = try allocator.dupe(u8, task.name),
             .cmd = try allocator.dupe(u8, task.cmd),
-            .description = if (task.description) |desc| try allocator.dupe(u8, desc) else null,
+            .description = if (task.description) |desc| try allocator.dupe(u8, desc.getShort()) else null,
             .deps = deps,
             .env = env,
             .tags = tags,

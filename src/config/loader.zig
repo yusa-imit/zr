@@ -384,7 +384,9 @@ fn applyMixinToTask(allocator: std.mem.Allocator, task: *Task, mixin: *const typ
         task.cwd = try allocator.dupe(u8, mixin.cwd.?);
     }
     if (mixin.description != null and task.description == null) {
-        task.description = try allocator.dupe(u8, mixin.description.?);
+        const duped = try allocator.dupe(u8, mixin.description.?);
+        errdefer allocator.free(duped);
+        task.description = types.TaskDescription{ .string = duped };
     }
     if (mixin.timeout_ms != null and task.timeout_ms == null) {
         task.timeout_ms = mixin.timeout_ms;
@@ -485,7 +487,25 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
     result.name = try allocator.dupe(u8, task.name);
     result.cmd = try allocator.dupe(u8, task.cmd);
     result.cwd = if (task.cwd) |c| try allocator.dupe(u8, c) else null;
-    result.description = if (task.description) |d| try allocator.dupe(u8, d) else null;
+    result.description = if (task.description) |d| desc_copy: {
+        switch (d) {
+            .string => |s| {
+                const duped = try allocator.dupe(u8, s);
+                break :desc_copy types.TaskDescription{ .string = duped };
+            },
+            .rich => |r| {
+                const short_duped = try allocator.dupe(u8, r.short);
+                errdefer allocator.free(short_duped);
+                const long_duped = if (r.long) |l| try allocator.dupe(u8, l) else null;
+                break :desc_copy types.TaskDescription{
+                    .rich = .{
+                        .short = short_duped,
+                        .long = long_duped,
+                    },
+                };
+            },
+        }
+    } else null;
 
     // Copy dependency arrays
     result.deps = try allocator.alloc([]const u8, task.deps.len);

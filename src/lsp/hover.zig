@@ -207,7 +207,11 @@ fn getTaskDocumentation(allocator: std.mem.Allocator, text: []const u8, task_nam
         try doc.appendSlice(allocator, "**\n\n");
 
         if (task.description) |desc| {
-            try doc.appendSlice(allocator, desc);
+            try doc.appendSlice(allocator, desc.getShort());
+            if (desc.getLong()) |long| {
+                try doc.appendSlice(allocator, "\n\n");
+                try doc.appendSlice(allocator, long);
+            }
             try doc.appendSlice(allocator, "\n\n");
         }
 

@@ -624,7 +624,11 @@ pub fn cmdShow(
 
     // Description
     if (task.description) |desc| {
-        try color.printDim(w, use_color, "  {s}\n\n", .{desc});
+        try color.printDim(w, use_color, "  {s}\n", .{desc.getShort()});
+        if (desc.getLong()) |long| {
+            try color.printDim(w, use_color, "\n  {s}\n", .{long});
+        }
+        try w.print("\n", .{});
     }
 
     // Command

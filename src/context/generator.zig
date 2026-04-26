@@ -144,7 +144,7 @@ fn collectTaskCatalog(
                         allocator,
                         task_name,
                         task_def.cmd,
-                        task_def.description,
+                        if (task_def.description) |d| d.getShort() else null,
                     );
                     errdefer task_info.deinit();
 
@@ -177,7 +177,7 @@ fn collectTaskCatalog(
                 allocator,
                 task_name,
                 task_def.cmd,
-                task_def.description,
+                if (task_def.description) |d| d.getShort() else null,
             );
             errdefer task_info.deinit();
 

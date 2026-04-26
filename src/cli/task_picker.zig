@@ -250,7 +250,8 @@ fn renderPreviewPane(
             line += 1;
             if (line >= max_line) return;
 
-            const desc_display = if (desc.len > width - 2) desc[0..@min(desc.len, width - 5)] else desc;
+            const desc_str = desc.getShort();
+            const desc_display = if (desc_str.len > width - 2) desc_str[0..@min(desc_str.len, width - 5)] else desc_str;
             buf.setString(x + 2, line, desc_display, stui.Style{ .fg = .bright_black });
             line += 1;
             if (line >= max_line) return;

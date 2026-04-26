@@ -405,7 +405,7 @@ fn renderTasksAscii(
 
         // Print description if available
         if (task.description) |desc| {
-            try color.printDim(w, use_color, " — {s}", .{desc});
+            try color.printDim(w, use_color, " — {s}", .{desc.getShort()});
         }
         try w.writeAll("\n");
 
@@ -481,10 +481,11 @@ fn renderTasksDot(
         // Add description as subtitle if available
         if (task.description) |desc| {
             // Escape quotes in description
+            const desc_str = desc.getShort();
             var escaped = std.ArrayList(u8){};
             defer escaped.deinit(std.heap.page_allocator);
 
-            for (desc) |c| {
+            for (desc_str) |c| {
                 if (c == '"') {
                     try escaped.append(std.heap.page_allocator, '\\');
                 }
@@ -559,7 +560,7 @@ fn renderTasksJson(
         try obj.addString("cmd", task.cmd);
 
         if (task.description) |desc| {
-            try obj.addString("description", desc);
+            try obj.addString("description", desc.getShort());
         }
 
         if (task.cwd) |cwd| {

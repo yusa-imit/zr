@@ -39,7 +39,11 @@ pub fn cmdWhich(
 
     if (task.description) |desc| {
         try color.printBold(w, use_color, "Description:\n", .{});
-        try w.print("  {s}\n\n", .{desc});
+        try w.print("  {s}\n", .{desc.getShort()});
+        if (desc.getLong()) |long| {
+            try w.print("\n  {s}\n", .{long});
+        }
+        try w.print("\n", .{});
     }
 
     if (task.deps.len > 0) {

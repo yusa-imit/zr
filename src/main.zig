@@ -43,6 +43,7 @@ const workspace = @import("cli/workspace.zig");
 const plugin_cli = @import("cli/plugin.zig");
 const run_cmd = @import("cli/run.zig");
 const list_cmd = @import("cli/list.zig");
+const help_cmd = @import("cli/help.zig");
 const tui = @import("cli/tui.zig");
 const task_picker = @import("cli/task_picker.zig");
 const task_selector = @import("cli/task_selector.zig");
@@ -1180,6 +1181,16 @@ fn run(
             }
         }
         return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_env, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "help")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "help: missing task name\n\n  Usage: zr help <task-name>\n", .{});
+            return 1;
+        }
+        const task_name = effective_args[2];
+        var config = (try common.loadConfig(allocator, config_path, profile_name, ew, effective_color)) orelse return 1;
+        defer config.deinit();
+        try help_cmd.cmdHelp(&config, task_name, effective_color, effective_w, ew);
+        return 0;
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Check if using new graph command flags (--type, --format, --interactive, etc.)
         // If so, delegate to the full graph_cmd handler

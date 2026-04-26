@@ -248,7 +248,7 @@ pub fn cmdList(
                 try obj.addString("name", name);
                 try obj.addString("cmd", task.cmd);
                 if (task.description) |desc| {
-                    try obj.addString("description", desc);
+                    try obj.addString("description", desc.getShort());
                 } else {
                     try obj.addNull("description");
                 }
@@ -417,7 +417,7 @@ pub fn cmdList(
             if (std.mem.indexOf(u8, name, search_pattern) != null) {
                 try matched_names.append(allocator, name);
             } else if (task.description) |desc| {
-                if (std.mem.indexOf(u8, desc, search_pattern) != null) {
+                if (std.mem.indexOf(u8, desc.getShort(), search_pattern) != null) {
                     try matched_names.append(allocator, name);
                 }
             } else if (std.mem.indexOf(u8, task.cmd, search_pattern) != null) {
@@ -485,7 +485,7 @@ pub fn cmdList(
 
                 try color.printInfo(w, use_color, "{s:<18}", .{name});
                 if (task.description) |desc| {
-                    try color.printDim(w, use_color, " {s}", .{desc});
+                    try color.printDim(w, use_color, " {s}", .{desc.getShort()});
                 }
                 // Show aliases if present
                 try printAliases(w, task.aliases, use_color);
@@ -537,7 +537,7 @@ pub fn cmdList(
 
                 try color.printInfo(w, use_color, "{s:<18}", .{name});
                 if (task.description) |desc| {
-                    try color.printDim(w, use_color, " {s}", .{desc});
+                    try color.printDim(w, use_color, " {s}", .{desc.getShort()});
                 }
                 // Show aliases if present
                 try printAliases(w, task.aliases, use_color);
@@ -598,7 +598,7 @@ pub fn cmdList(
 
             try color.printInfo(w, use_color, "{s:<20}", .{name});
             if (task.description) |desc| {
-                try color.printDim(w, use_color, " {s}", .{desc});
+                try color.printDim(w, use_color, " {s}", .{desc.getShort()});
             }
             // Show aliases if present
             try printAliases(w, task.aliases, use_color);

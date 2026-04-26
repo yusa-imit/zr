@@ -372,7 +372,10 @@ fn addWorkspaceSharedTask(
         .name = task_name,
         .cmd = try allocator.dupe(u8, cmd),
         .cwd = if (cwd) |c| try allocator.dupe(u8, c) else null,
-        .description = if (description) |d| try allocator.dupe(u8, d) else null,
+        .description = if (description) |d| desc_val: {
+            const duped = try allocator.dupe(u8, d);
+            break :desc_val types.TaskDescription{ .string = duped };
+        } else null,
         .deps = try dupeDeps(allocator, deps),
         .deps_serial = try dupeDeps(allocator, deps_serial),
         .deps_optional = try dupeDeps(allocator, deps_optional),
@@ -4023,7 +4026,7 @@ test "parse simple toml config" {
 
     const build_task = config.tasks.get("build").?;
     try std.testing.expectEqualStrings("zig build", build_task.cmd);
-    try std.testing.expectEqualStrings("Build the project", build_task.description.?);
+    try std.testing.expectEqualStrings("Build the project", build_task.description.?.getShort());
 
     const test_task = config.tasks.get("test").?;
     try std.testing.expectEqualStrings("zig build test", test_task.cmd);
@@ -5129,7 +5132,7 @@ test "parse cmd-less dependency-only task" {
 
     const task = config.tasks.get("all").?;
     try std.testing.expectEqualStrings("all", task.name);
-    try std.testing.expectEqualStrings("Run all checks", task.description.?);
+    try std.testing.expectEqualStrings("Run all checks", task.description.?.getShort());
     try std.testing.expectEqualStrings("", task.cmd); // Empty cmd
     try std.testing.expectEqual(@as(usize, 3), task.deps.len);
     try std.testing.expectEqualStrings("lint", task.deps[0]);
