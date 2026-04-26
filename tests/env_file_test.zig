@@ -529,3 +529,498 @@ test "env_file: multiple overlapping env_files with same variables" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "HOST=dev.example.com") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "DEBUG=true") != null);
 }
+
+// ── Variable Interpolation in .env Files ────────────────────────────────────
+//
+// Tests for variable expansion in .env file values.
+// Supports: ${VAR}, $VAR, $$ escape, recursive expansion, circular detection
+//
+// EXPECTED BEHAVIOR:
+// - ${VAR} syntax: expands VAR reference in braces
+// - $VAR syntax: expands VAR without braces (alphanumeric + underscore only)
+// - $$ escape: expands to literal $ character
+// - Recursive: VAR1=${VAR2}, VAR2=value => VAR1 expands to value
+// - Circular detection: VAR1=${VAR2}, VAR2=${VAR1} => error or warning
+// - Undefined: ${UNDEFINED} => preserved as-is (not expanded)
+// - Mixed: PATH=/usr/bin:${OLD_PATH} => interpolates OLD_PATH only
+//
+
+test "interpolation: basic ${VAR} expansion in .env file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with variable reference
+    const env_content =
+        \\NAME=World
+        \\GREETING=Hello ${NAME}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task to use interpolated value
+    const config_toml =
+        \\[tasks.greeting]
+        \\cmd = "echo $GREETING"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "greeting" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Hello World") != null);
+}
+
+test "interpolation: simple $VAR expansion (no braces)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with simple variable reference
+    const env_content =
+        \\HOME=/home/alice
+        \\PATH_VAR=$HOME/bin
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.show-path]
+        \\cmd = "echo $PATH_VAR"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "show-path" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "/home/alice/bin") != null);
+}
+
+test "interpolation: $$ escape to literal dollar sign" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with $$ escape
+    const env_content =
+        \\PRICE=100
+        \\COST=Price is $$${PRICE}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.cost]
+        \\cmd = "echo $COST"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "cost" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Price is $100") != null);
+}
+
+test "interpolation: recursive expansion (VAR1=${VAR2}, VAR2=value)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with nested variable references
+    const env_content =
+        \\BASE_URL=https://api.example.com
+        \\API_URL=${BASE_URL}/v1
+        \\ENDPOINT=${API_URL}/users
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.api-call]
+        \\cmd = "echo $ENDPOINT"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "api-call" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "https://api.example.com/v1/users") != null);
+}
+
+test "interpolation: cross-file expansion (var in .env.local references var in .env)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create base .env
+    const env_base =
+        \\DB_HOST=localhost
+        \\DB_PORT=5432
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_base });
+
+    // Create .env.local that references base vars
+    const env_local =
+        \\DB_URL=postgresql://${DB_HOST}:${DB_PORT}/mydb
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env.local", .data = env_local });
+
+    // Create task with multiple env_files
+    const config_toml =
+        \\[tasks.db-connect]
+        \\cmd = "echo $DB_URL"
+        \\env_file = [".env", ".env.local"]
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "db-connect" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "postgresql://localhost:5432/mydb") != null);
+}
+
+test "interpolation: circular reference detection (VAR1=${VAR2}, VAR2=${VAR1})" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with circular reference
+    const env_content =
+        \\CIRCULAR_A=${CIRCULAR_B}
+        \\CIRCULAR_B=${CIRCULAR_A}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task that uses circular var
+    const config_toml =
+        \\[tasks.circular]
+        \\cmd = "echo $CIRCULAR_A"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "circular" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail due to circular reference
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "interpolation: undefined variable expansion (${UNDEFINED} stays as-is)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with reference to undefined var
+    const env_content =
+        \\DEFINED=value
+        \\WITH_UNDEFINED=Defined: ${DEFINED}, Undefined: ${MISSING}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.show-vars]
+        \\cmd = "echo $WITH_UNDEFINED"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "show-vars" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Defined variable should be expanded, undefined should stay as-is
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Defined: value") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Undefined: ${MISSING}") != null);
+}
+
+test "interpolation: mixed interpolation and literals (PATH=/usr/bin:${OLD_PATH})" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with mixed content
+    const env_content =
+        \\OLD_PATH=/opt/bin:/usr/local/bin
+        \\NEW_PATH=/usr/bin:${OLD_PATH}:/custom/bin
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.path-test]
+        \\cmd = "echo $NEW_PATH"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "path-test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "/usr/bin:/opt/bin:/usr/local/bin:/custom/bin") != null);
+}
+
+test "interpolation: multiple variables in single value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with multiple vars in one value
+    const env_content =
+        \\FIRST=hello
+        \\SECOND=world
+        \\GREETING=${FIRST}-${SECOND}!
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.multi-var]
+        \\cmd = "echo $GREETING"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "multi-var" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello-world!") != null);
+}
+
+test "interpolation: variable with underscores and numbers in name" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with complex variable names
+    const env_content =
+        \\DB_HOST_1=host1.example.com
+        \\DB_PORT_1=5432
+        \\CONN_STRING=db://${DB_HOST_1}:${DB_PORT_1}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.conn]
+        \\cmd = "echo $CONN_STRING"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "conn" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "db://host1.example.com:5432") != null);
+}
+
+test "interpolation: task env overrides interpolated env_file values" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with interpolated vars
+    const env_content =
+        \\BASE=/opt
+        \\FULL_PATH=${BASE}/app
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task that overrides BASE env var (which should change FULL_PATH expansion)
+    const config_toml =
+        \\[tasks.override-test]
+        \\cmd = "echo $FULL_PATH"
+        \\env_file = ".env"
+        \\env = { BASE = "/home/custom" }
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "override-test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Task env should override, so BASE becomes /home/custom
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "/home/custom/app") != null);
+}
+
+test "interpolation: empty variable value in interpolation" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with empty variable
+    const env_content =
+        \\EMPTY=
+        \\MESSAGE=Start${EMPTY}End
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.empty-var]
+        \\cmd = "echo $MESSAGE"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "empty-var" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Empty variable should result in adjacent text: StartEnd
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "StartEnd") != null);
+}
+
+test "interpolation: escape sequence prevents variable expansion" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env where $$ prevents expansion
+    const env_content =
+        \\PRICE=100
+        \\ESCAPED=Cost: $${PRICE}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.escape-test]
+        \\cmd = "echo $ESCAPED"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "escape-test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // $$ becomes single $, so ${PRICE} stays literal (not expanded)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Cost: ${PRICE}") != null);
+}
+
+test "interpolation: three-level recursive expansion" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create .env with three levels of nesting
+    const env_content =
+        \\LEVEL3=final_value
+        \\LEVEL2=${LEVEL3}
+        \\LEVEL1=${LEVEL2}
+        \\MESSAGE=Result: ${LEVEL1}
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = env_content });
+
+    // Create task
+    const config_toml =
+        \\[tasks.three-level]
+        \\cmd = "echo $MESSAGE"
+        \\env_file = ".env"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "three-level" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Result: final_value") != null);
+}
