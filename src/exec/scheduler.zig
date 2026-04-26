@@ -682,14 +682,57 @@ fn loadAndMergeEnvFiles(
         return null;
     }
 
+    // Interpolate variable references in all values (v1.78.0)
+    // Create a new map with interpolated values
+    var interpolated_map = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var interp_it = interpolated_map.iterator();
+        while (interp_it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        interpolated_map.deinit();
+    }
+
+    // Interpolate each value using the merged map as context
+    var merge_iter = merged_map.iterator();
+    while (merge_iter.next()) |entry| {
+        const key = entry.key_ptr.*;
+        const value = entry.value_ptr.*;
+
+        // Try to interpolate the value
+        const interpolated_value = env_loader.interpolateEnvValue(allocator, value, merged_map) catch |err| blk: {
+            // If interpolation fails (e.g., circular reference), use original value
+            if (err == error.CircularReference) {
+                // Skip this var entirely on circular reference
+                continue;
+            }
+            break :blk allocator.dupe(u8, value) catch continue;
+        };
+
+        // Store interpolated value
+        const key_copy = allocator.dupe(u8, key) catch {
+            allocator.free(interpolated_value);
+            continue;
+        };
+        _ = interpolated_map.put(key_copy, interpolated_value) catch {
+            allocator.free(key_copy);
+            allocator.free(interpolated_value);
+            continue;
+        };
+    }
+
+    // If interpolation completely failed, fall back to merged_map
+    const use_map = if (interpolated_map.count() > 0) &interpolated_map else &merged_map;
+
     // Allocate final env array
-    const final_env = allocator.alloc([2][]u8, merged_map.count()) catch {
+    const final_env = allocator.alloc([2][]u8, use_map.count()) catch {
         return null;
     };
 
     // Populate array with duped strings (ownership transfers to final_env)
     var i: usize = 0;
-    var iter = merged_map.iterator();
+    var iter = use_map.iterator();
     while (iter.next()) |entry| : (i += 1) {
         final_env[i][0] = allocator.dupe(u8, entry.key_ptr.*) catch {
             // On error, free what we've allocated so far
