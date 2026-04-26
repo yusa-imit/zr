@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.78.0] - 2026-04-26
+
+### Added
+- **Enhanced Environment Variable Management** — Complete .env file support with variable interpolation
+  - `.env file loading`: `env_file = ".env"` or `env_file = [".env.local", ".env"]` for loading environment variables from files
+  - **Variable interpolation engine**: Support for `${VAR}`, `$VAR`, and `$$` escape sequences in .env values
+  - **Recursive expansion**: Variables can reference other variables (e.g., `VAR1=${VAR2}`, `VAR2=value`)
+  - **Cross-file expansion**: Variables in later .env files can reference variables from earlier files
+  - **Circular reference detection**: Prevents infinite loops when variables reference each other
+  - **Priority system**: Task env > env_file > system env (later files override earlier)
+  - **CLI --show-env flag**: `zr list --show-env` and `zr run --show-env` for debugging effective environment
+  - **Workspace inheritance**: Child tasks inherit parent workspace env_file settings
+  - **Comprehensive .env format support**: Comments (#), blank lines, quoted values, special characters
+  - **Error handling**: Graceful handling of missing files, invalid format, undefined variables
+
+### Documentation
+- Added comprehensive `docs/guides/environment-management.md` (650 LOC)
+  - Complete .env file format specification
+  - Variable interpolation syntax and examples
+  - Priority and merging system documentation
+  - Real-world examples (multi-env deployment, secrets management, Docker integration, monorepo)
+  - Best practices (security, validation, naming conventions)
+  - Troubleshooting guide (7 common issues)
+  - Comparison with other tools (dotenv libraries, docker-compose, make, just/Task)
+  - Migration guides (from inline env, docker-compose, make, shell scripts)
+
+### Tests
+- Added 27 integration tests for environment variable management (~495 LOC)
+  - 13 tests for .env file loading (single/multiple files, priority, inheritance, special chars)
+  - 14 tests for variable interpolation (${VAR}, $VAR, $$, recursive, cross-file, circular refs, undefined vars)
+  - All tests passing with comprehensive coverage of edge cases
+
+### Implementation Details
+- **env_loader.zig**: .env file parser with `parseEnvFile()` and `interpolateEnvValue()` (~140 LOC)
+- **scheduler.zig**: Runtime .env loading with `loadAndMergeEnvFiles()` (~45 LOC)
+- **types.zig**: Schema changes for `env_file` field (single string or array)
+- **parser.zig**: TOML parsing for env_file field
+- **CLI integration**: --show-env flag in main.zig, run.zig, list.zig (~83 LOC)
+- Total implementation: ~268 LOC across 5 commits (Cycles 168-171)
+
+### Stats
+- **Total deliverables**: ~1413 LOC (268 impl + 495 tests + 650 docs)
+- **Unit tests**: 1483/1491 passing (8 skipped, 0 failed)
+- **Integration tests**: 27 new env-related tests
+- **Milestone completion**: 1 development cycle
+
 ## [1.77.0] - 2026-04-25
 
 ### ⚡ Enhanced Task Filtering & Selection Patterns (Complete)
