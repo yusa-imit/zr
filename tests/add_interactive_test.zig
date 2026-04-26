@@ -1,5 +1,20 @@
 const std = @import("std");
 const helpers = @import("helpers.zig");
+const builtin = @import("builtin");
+
+/// Check if stdout is a TTY (for skipping interactive tests in CI)
+fn isTty() bool {
+    const stdout = std.fs.File.stdout();
+    return switch (builtin.os.tag) {
+        .linux, .macos => std.posix.isatty(stdout.handle),
+        .windows => blk: {
+            const windows = std.os.windows;
+            var mode: windows.DWORD = 0;
+            break :blk windows.kernel32.GetConsoleMode(stdout.handle, &mode) != 0;
+        },
+        else => false,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Integration tests for Interactive Task Builder TUI (`zr add task --interactive`)
@@ -112,6 +127,9 @@ test "1002: interactive mode shows graceful fallback in non-TTY" {
 // ---------------------------------------------------------------------------
 
 test "1035: form handles missing zr.toml gracefully" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: If zr.toml doesn't exist, show error and suggest 'zr init'.
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -271,6 +289,9 @@ test "1007: form validates dependency names exist in config" {
 }
 
 test "1008: form generates correct TOML preview for minimal task" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: When user enters task name and command, preview shows [tasks.name] section
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -294,6 +315,9 @@ test "1008: form generates correct TOML preview for minimal task" {
 }
 
 test "1009: form generates correct TOML preview for task with all fields" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Preview includes name, cmd, deps, condition fields
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -317,6 +341,9 @@ test "1009: form generates correct TOML preview for task with all fields" {
 }
 
 test "1010: TOML preview escapes special characters correctly" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Quotes, backslashes, newlines in command are properly escaped
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -340,6 +367,9 @@ test "1010: TOML preview escapes special characters correctly" {
 }
 
 test "1011: TOML preview shows before confirmation prompt" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: User sees generated TOML before being asked to save
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -455,6 +485,9 @@ test "1015: template picker offers common task patterns" {
 }
 
 test "1016: template pre-fills form fields with template values" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Selecting "build" template fills cmd with "zig build", etc.
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -475,6 +508,9 @@ test "1016: template pre-fills form fields with template values" {
 }
 
 test "1017: template uses variable substitution (name, language, etc.)" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Templates support {{name}}, {{language}}, etc. placeholders
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -495,6 +531,9 @@ test "1017: template uses variable substitution (name, language, etc.)" {
 }
 
 test "1018: user can customize template fields after selection" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: After template is applied, all fields remain editable
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -545,6 +584,9 @@ test "1019: save appends task to zr.toml file" {
 }
 
 test "1020: save shows diff preview with additions marked" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Before save confirmation, show "+ [tasks.name]" preview
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -696,6 +738,9 @@ test "1026: help documents field types and requirements" {
 }
 
 test "1027: form accepts multiline input for command field" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Command field can contain pipes, redirects, newlines (in quoted strings)
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -779,6 +824,9 @@ test "1030: form preserves completed fields across validation errors" {
 }
 
 test "1031: form supports multiple dependencies as comma-separated or array syntax" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: deps = ["build", "test"] or deps = build,test both accepted
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -799,6 +847,9 @@ test "1031: form supports multiple dependencies as comma-separated or array synt
 }
 
 test "1032: form allows environment variables as key=value pairs" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: env field accepts KEY=VALUE syntax
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -818,6 +869,9 @@ test "1032: form allows environment variables as key=value pairs" {
 }
 
 test "1033: form allows boolean fields (allow_failure, etc.)" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Boolean options can be set to true/false, yes/no, etc.
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -837,6 +891,9 @@ test "1033: form allows boolean fields (allow_failure, etc.)" {
 }
 
 test "1034: form validates numeric fields (timeout_ms, retry_max)" {
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
+
     // Expected: Numeric-only fields reject non-numeric input
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
