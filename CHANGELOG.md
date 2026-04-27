@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.79.0] - 2026-04-28
+
+### Added
+- **Task Documentation & Rich Help System** — Comprehensive task documentation with structured metadata
+  - **Rich descriptions**: Support for `description.short` and `description.long` with multiline text
+  - **Task examples**: `examples = ["zr run build", "zr run build --release"]` for usage examples in help
+  - **Output documentation**: `outputs` table to document files/artifacts tasks produce
+  - **Related tasks**: `see_also = ["test", "deploy"]` for cross-referencing related tasks
+  - **Help command**: `zr help <task>` displays formatted help with all metadata (descriptions, params, examples, outputs, deps)
+  - **List --verbose flag**: `zr list --verbose` shows descriptions and metadata in task listing
+  - **Backward compatibility**: Simple string descriptions still work (`description = "Build the project"`)
+
+### Documentation
+- Added comprehensive `docs/guides/task-documentation.md` (704 LOC)
+  - Complete guide to task documentation best practices
+  - Real-world examples (build pipelines, test suites, multi-env deployment, data processing)
+  - Documentation patterns and standards
+  - Migration guides from make/just/Task/npm
+  - Comparison with other CLI documentation tools (make, just, Task, npm)
+  - Troubleshooting guide (5 common issues)
+  - Future enhancements roadmap (type annotations, searchable docs, diagrams)
+
+### Implementation Details
+- **types.zig**: TaskDescription union type for rich/simple descriptions (~85 LOC)
+- **parser.zig**: Parse description.short/long, examples array, outputs table, see_also (~146 LOC)
+- **list.zig**: --verbose flag integration (~23 LOC)
+- Total implementation: ~254 LOC across 3 commits (Cycles 172-174, 177)
+
+### Tests
+- Added 63 integration tests for task documentation (~2084 LOC)
+  - 29 tests in task_documentation_test.zig (help command, list verbose, edge cases, feature integration)
+  - 34 tests in task_documentation_parser_test.zig (rich descriptions, examples, outputs, see_also, error cases)
+  - Comprehensive coverage of parsing, display, and backward compatibility
+
+### Stats
+- **Total**: ~3042 LOC across 5 cycles (Cycles 172-174, 177, 179)
+  - Implementation: 254 LOC
+  - Tests: 2084 LOC (63 integration tests)
+  - Documentation: 704 LOC
+- All unit tests passing (1484/1492, 8 skipped, 0 failed)
+
 ## [1.78.0] - 2026-04-26
 
 ### Added
