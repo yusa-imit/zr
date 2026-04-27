@@ -1112,6 +1112,7 @@ fn run(
         var slow_threshold_ms: ?u64 = null;
         var search_description: ?[]const u8 = null;
         var show_status = false;
+        var list_verbose = false;
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
@@ -1127,6 +1128,8 @@ fn run(
                 group_by_tags = true;
             } else if (std.mem.eql(u8, arg, "--status")) {
                 show_status = true;
+            } else if (std.mem.eql(u8, arg, "--verbose")) {
+                list_verbose = true;
             } else if (std.mem.startsWith(u8, arg, "--recent=")) {
                 const count_str = arg["--recent=".len..];
                 recent_count = std.fmt.parseInt(usize, count_str, 10) catch {
@@ -1180,7 +1183,7 @@ fn run(
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_env, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_env, list_verbose, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "help")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "help: missing task name\n\n  Usage: zr help <task-name>\n", .{});
