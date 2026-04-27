@@ -23,6 +23,92 @@ fn getTaskStatus(allocator: std.mem.Allocator, task: types.Task, cwd: ?[]const u
     return if (is_uptodate) "✓" else "✗";
 }
 
+/// Print verbose metadata for a task (examples, params, deps, outputs)
+fn printVerboseMetadata(w: anytype, task: types.Task, use_color: bool) !void {
+    var has_metadata = false;
+
+    // Show parameters if any
+    if (task.task_params.len > 0) {
+        if (!has_metadata) {
+            try w.writeAll("\n");
+            has_metadata = true;
+        }
+        try w.writeAll("      ");
+        try color.printDim(w, use_color, "Params: ", .{});
+        for (task.task_params, 0..) |param, i| {
+            if (i > 0) try w.writeAll(", ");
+            try w.print("{s}", .{param.name});
+            if (param.default) |default| {
+                try w.print("={s}", .{default});
+            }
+        }
+        try w.writeAll("\n");
+    }
+
+    // Show examples if any
+    if (task.examples) |examples| {
+        if (examples.len > 0) {
+            if (!has_metadata) {
+                try w.writeAll("\n");
+                has_metadata = true;
+            }
+            try w.writeAll("      ");
+            try color.printDim(w, use_color, "Examples: ", .{});
+            try w.print("{s}", .{examples[0]});
+            if (examples.len > 1) {
+                try color.printDim(w, use_color, " (+{d} more)", .{examples.len - 1});
+            }
+            try w.writeAll("\n");
+        }
+    }
+
+    // Show dependencies if any
+    const total_deps = task.deps.len + task.deps_serial.len + task.deps_if.len + task.deps_optional.len;
+    if (total_deps > 0) {
+        if (!has_metadata) {
+            try w.writeAll("\n");
+            has_metadata = true;
+        }
+        try w.writeAll("      ");
+        try color.printDim(w, use_color, "Depends on: ", .{});
+        var dep_count: usize = 0;
+        for (task.deps) |dep| {
+            if (dep_count > 0) try w.writeAll(", ");
+            try w.print("{s}", .{dep});
+            dep_count += 1;
+            if (dep_count >= 3) break;
+        }
+        if (total_deps > dep_count) {
+            try color.printDim(w, use_color, " (+{d} more)", .{total_deps - dep_count});
+        }
+        try w.writeAll("\n");
+    }
+
+    // Show outputs if any
+    if (task.outputs) |outputs| {
+        if (outputs.count() > 0) {
+            if (!has_metadata) {
+                try w.writeAll("\n");
+                has_metadata = true;
+            }
+            try w.writeAll("      ");
+            try color.printDim(w, use_color, "Outputs: ", .{});
+            var it = outputs.iterator();
+            var output_count: usize = 0;
+            while (it.next()) |entry| {
+                if (output_count > 0) try w.writeAll(", ");
+                try w.print("{s}", .{entry.key_ptr.*});
+                output_count += 1;
+                if (output_count >= 2) break;
+            }
+            if (outputs.count() > output_count) {
+                try color.printDim(w, use_color, " (+{d} more)", .{outputs.count() - output_count});
+            }
+            try w.writeAll("\n");
+        }
+    }
+}
+
 pub fn cmdList(
     allocator: std.mem.Allocator,
     config_path: []const u8,
@@ -46,10 +132,7 @@ pub fn cmdList(
     err_writer: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    // Note: verbose parameter is accepted for compatibility with tests.
-    // Descriptions are already shown by default in the current implementation.
-    // This flag is reserved for future use (e.g., showing additional metadata).
-    _ = verbose;
+    // verbose flag: shows additional metadata (examples, params, deps) beyond short description
     var config = (try common.loadConfig(allocator, config_path, null, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -509,6 +592,11 @@ pub fn cmdList(
                 }
 
                 try w.print("\n", .{});
+
+                // Show verbose metadata if --verbose flag is set
+                if (verbose) {
+                    try printVerboseMetadata(w, task, use_color);
+                }
             }
         }
 
@@ -561,6 +649,11 @@ pub fn cmdList(
                 }
 
                 try w.print("\n", .{});
+
+                // Show verbose metadata if --verbose flag is set
+                if (verbose) {
+                    try printVerboseMetadata(w, task, use_color);
+                }
             }
         }
     } else {
@@ -622,6 +715,11 @@ pub fn cmdList(
             }
 
             try w.print("\n", .{});
+
+            // Show verbose metadata if --verbose flag is set
+            if (verbose) {
+                try printVerboseMetadata(w, task, use_color);
+            }
         }
     }
 
