@@ -1,1 +1,3 @@
 {"timestamp":"2026-04-27T06:30:00Z","action":"direct","agent_type":"orchestrator","task":"Implement list --verbose flag for Task Documentation milestone","project":"zr"}
+{"timestamp":"2026-04-28T07:05:00Z","action":"direct","task":"Implement --verbose flag for zr list command","project":"zr"}
+{"timestamp":"2026-04-28T07:15:00Z","action":"direct","task":"Create man page generator for tasks (zr man <task>)","project":"zr"}
