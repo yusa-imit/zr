@@ -1,6 +1,7 @@
 const std = @import("std");
 const sailor = @import("sailor");
 const config_types = @import("../config/types.zig");
+const man_gen = @import("../output/man.zig");
 
 const Config = config_types.Config;
 const Task = config_types.Task;
@@ -105,4 +106,21 @@ pub fn cmdHelp(
             try w.writeAll("\n");
         }
     }
+}
+
+pub fn cmdMan(
+    allocator: std.mem.Allocator,
+    config: *const Config,
+    task_name: []const u8,
+    w: anytype,
+    ew: anytype,
+) !void {
+    // Find the task
+    const task = config.tasks.get(task_name) orelse {
+        try ew.print("Error: Task '{s}' not found\n", .{task_name});
+        return error.TaskNotFound;
+    };
+
+    // Generate man page
+    try man_gen.formatManPage(allocator, task, w);
 }

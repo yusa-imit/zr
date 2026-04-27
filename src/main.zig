@@ -1194,6 +1194,16 @@ fn run(
         defer config.deinit();
         try help_cmd.cmdHelp(&config, task_name, effective_color, effective_w, ew);
         return 0;
+    } else if (std.mem.eql(u8, cmd, "man")) {
+        if (effective_args.len < 3) {
+            try color.printError(ew, effective_color, "man: missing task name\n\n  Usage: zr man <task-name>\n", .{});
+            return 1;
+        }
+        const task_name = effective_args[2];
+        var config = (try common.loadConfig(allocator, config_path, profile_name, ew, effective_color)) orelse return 1;
+        defer config.deinit();
+        try help_cmd.cmdMan(allocator, &config, task_name, effective_w, ew);
+        return 0;
     } else if (std.mem.eql(u8, cmd, "graph")) {
         // Check if using new graph command flags (--type, --format, --interactive, etc.)
         // If so, delegate to the full graph_cmd handler
