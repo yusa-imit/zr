@@ -2,9 +2,10 @@
 
 ## Current Status
 
-- **Latest**: v1.78.0 (Enhanced Environment Variable Management) — RELEASED 2026-04-26
-- **Active milestones**: 1 READY + 2 BLOCKED
-- **READY milestones**: 1 (Task Output Artifacts & Persistence)
+- **Latest**: v1.79.0 (Task Documentation & Rich Help System) — RELEASED 2026-04-28
+- **Active milestones**: 4 READY + 1 IN_PROGRESS + 2 BLOCKED
+- **READY milestones**: 4 (Task Result Caching & Memoization, Enhanced Watch Mode & Live Reload, Dependency Resolution & Version Constraints, sailor v2.3.0 Migration)
+- **IN_PROGRESS milestones**: 1 (Task Output Artifacts & Persistence — schema + CLI complete, collection logic pending)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
 - **DONE**: Task Documentation & Rich Help System (Cycles 172-174, 177, 179 — pending v1.79.0 release), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
@@ -64,7 +65,7 @@ Add artifact management to save, retrieve, and share task outputs across runs an
 - **Remote sync**: `artifact_remote = "s3://bucket/artifacts"` optional remote storage integration (future: cloud backends)
 - **CI/CD integration**: Artifacts automatically tagged with CI environment metadata (GitHub Actions, GitLab CI, etc.)
 - **Documentation**: Comprehensive guide at docs/guides/artifact-management.md with CI patterns, retention strategies, storage formats
-**Status: READY** — Estimated 3-4 cycles. Implementation: ~400 LOC (schema changes in types.zig for artifacts field, artifact collector in exec/artifacts.zig, storage manager with compression/manifest in util/artifact_store.zig, CLI commands in cli/artifacts.zig, list.zig integration). Testing: ~500 LOC (20+ integration tests covering collection, storage, retrieval, cleanup, retention policies, compression, metadata tracking). Documentation: ~450 LOC guide with CI artifact patterns, storage optimization, backup strategies, comparison with GitHub Actions/GitLab artifacts.
+**Status: IN_PROGRESS** — Started 2026-04-29 (Cycle 182). Phase 1 complete (~140 LOC): schema changes (artifacts, artifact_retention, compress_artifacts fields in TaskConfig), CLI commands (src/cli/artifacts.zig with get/clean subcommands), parser integration, 33 initial integration tests. **Remaining work** (~350 LOC, 2-3 cycles): Post-execution artifact collection in scheduler (glob matching, file copy to .zr/artifacts/<task>/<timestamp>/), compression module (gzip integration), retention policy enforcement (days/builds/manual cleanup), manifest.json generation (metadata tracking), enhanced CLI (--latest download, --older-than cleanup), additional integration tests (15+ tests for collection flow, compression, retention). Current status: Schema + CLI skeleton complete, collection logic pending.
 
 ### Task Up-to-Date Detection & Incremental Builds
 
@@ -500,6 +501,51 @@ Create a form-based interactive TUI for building tasks without manually editing 
 - Re-parse validation after save to ensure config integrity
 - Extend to workflow builder (`zr add workflow --interactive`)
 **Status: DONE** — Completed 2026-03-28 (Cycle 33). Implemented with text prompts instead of sailor Form widgets due to API compatibility issues with sailor v1.22.0. Full implementation in src/cli/add_interactive.zig with 41 integration tests. Commands: `zr add task --interactive`, `zr add workflow --interactive`.
+
+### Task Result Caching & Memoization
+
+Implement intelligent task output caching based on input fingerprints to avoid redundant computation across runs and machines. Unlike incremental builds (mtime-based), this uses content hashing for cache-key generation similar to Nx/Turborepo. Currently tasks re-run even when inputs haven't changed. This milestone adds persistent caching with local and remote backends. Includes:
+- **Input fingerprinting**: Hash task command + source files + env vars + params for cache key generation
+- **Cache storage**: Local `.zr/cache/<task>/<hash>/` with stdout/stderr/artifacts/metadata
+- **Cache hit detection**: Check cache before execution, restore outputs on hit, skip execution
+- **Cache restore**: Copy cached outputs (files + stdout/stderr) to workspace on cache hit
+- **Cache CLI**: `zr cache clean`, `zr cache status`, `zr cache clear <task>` management commands
+- **Remote cache**: Optional S3/GCS/HTTP backend for team-wide cache sharing (configurable)
+- **Cache invalidation**: Automatic on source changes, manual via `--no-cache` flag
+- **List integration**: `zr list --show-cache` displays cache status (hit rate, last hit timestamp)
+- **Cache statistics**: Track hit rate, size, age for optimization insights
+- **Workspace-wide cache**: Shared cache across all tasks in workspace (collision-safe with namespacing)
+**Status: READY** — Estimated 3-4 cycles. Implementation: ~450 LOC (cache key generator in exec/cache_key.zig with content hashing, cache storage in exec/cache_store.zig with metadata JSON, scheduler integration for pre/post-execution cache check/write, CLI commands in cli/cache.zig). Testing: ~400 LOC (integration tests covering cache hit/miss, invalidation, remote sync, concurrent access). Documentation: ~350 LOC guide with caching strategies, remote backends, optimization tips.
+
+### Enhanced Watch Mode & Live Reload
+
+Improve file watching with smarter change detection, debouncing strategies, and live reload capabilities. Currently `zr watch` triggers on any file change with fixed debounce. This milestone adds pattern-based filtering, adaptive debouncing, and browser live-reload integration for web development workflows. Includes:
+- **Smart filtering**: Use task `sources` patterns to watch only relevant files (ignore unrelated changes)
+- **Adaptive debouncing**: Automatically adjust debounce delay based on change frequency (burst vs sporadic)
+- **Live reload server**: Built-in WebSocket server for browser auto-refresh on task completion
+- **Change batching**: Group rapid file changes into single execution (avoid re-run spam)
+- **Watch profiles**: Named watch configs (e.g., `watch.dev`, `watch.test`) with different debounce/filter settings
+- **CLI enhancements**: `zr watch --debounce=500ms`, `--live-reload`, `--filter='*.ts'` flags
+- **Exclude patterns**: `watch_exclude = ["node_modules/**", "dist/**"]` to ignore output dirs
+- **Multi-task watch**: Watch multiple tasks with different patterns in parallel
+- **Terminal UI**: Show real-time file change feed with timestamps in TUI mode
+- **Integration**: Works with up-to-date detection (skip unchanged tasks) and caching
+**Status: READY** — Estimated 2-3 cycles. Implementation: ~380 LOC (adaptive debounce algorithm in watch/debounce.zig, live-reload WebSocket server in watch/livereload.zig, enhanced watch CLI in cli/watch.zig with pattern filtering, watch profile parser in config/watch.zig). Testing: ~350 LOC (integration tests covering debounce strategies, live-reload protocol, multi-task watch, filter patterns). Documentation: ~300 LOC guide with watch patterns, debounce tuning, live-reload setup for web dev.
+
+### Dependency Resolution & Version Constraints
+
+Add dependency management for external tool requirements with version constraints and automatic installation. Currently tasks can specify toolchain but can't express constraints like "node >= 18" or "python ~3.11". This milestone adds declarative dependency specs with constraint solving similar to package.json engines or cargo. Includes:
+- **Version constraints**: `requires = { node = ">=18.0.0", python = "~3.11" }` in task config
+- **Constraint checking**: Validate installed versions match constraints before task execution
+- **Auto-installation**: Install missing tools or upgrade to satisfy constraints (opt-in via `--install-deps`)
+- **Constraint syntax**: Semver ranges (`^`, `~`, `>=`, `<`, `||`) plus exact pinning (`=1.2.3`)
+- **Conflict resolution**: Detect conflicting constraints across task dependencies (error reporting)
+- **Lock file**: Generate `.zr-lock.toml` with resolved versions for reproducible builds
+- **Version discovery**: Query installed tool versions via `--version` or registry metadata
+- **CLI commands**: `zr deps install`, `zr deps check`, `zr deps outdated` for dependency management
+- **Workspace-level**: Shared constraints in workspace config inherited by all tasks
+- **Documentation**: Comprehensive version constraint syntax, conflict resolution strategies
+**Status: READY** — Estimated 3-4 cycles. Implementation: ~500 LOC (constraint parser in config/constraint.zig with semver range logic, version checker in toolchain/version.zig, lock file generator in config/lock.zig, CLI in cli/deps.zig). Testing: ~450 LOC (integration tests covering constraint parsing, conflict detection, auto-install, lock file generation). Documentation: ~400 LOC guide with constraint syntax, conflict resolution, migration from package.json engines.
 
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
