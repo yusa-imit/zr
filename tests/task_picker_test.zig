@@ -179,8 +179,5 @@ test "task-picker: task with dependencies shows in picker" {
     }
 }
 
-test "task-picker: fuzzyFilter unit test (already in src/cli/task_picker.zig)" {
-    // Unit tests for fuzzyFilter, itemLessThan, etc. are in src/cli/task_picker.zig
-    // This integration test file focuses on end-to-end CLI behavior
-    try std.testing.expect(true); // Placeholder
-}
+// NOTE: Unit tests for fuzzyFilter, itemLessThan, etc. are in src/cli/task_picker.zig
+// This integration test file focuses on end-to-end CLI behavior only

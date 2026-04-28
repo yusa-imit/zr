@@ -666,18 +666,14 @@ test "1023: save creates backup before modifying config" {
     var result = try helpers.runZrWithStdin(allocator, tmp.dir, &.{ "add", "task", "--interactive" }, stdin);
     defer result.deinit();
 
-    // Check if backup was created
-    // (may be optional depending on implementation)
-    const backup_exists = tmp.dir.openFile("zr.toml.bak", .{}) catch blk: {
-        break :blk null;
-    };
-    if (backup_exists) |_| {
-        // Backup feature implemented
-        try std.testing.expect(true);
-    } else {
-        // Backup not implemented (optional feature)
-        try std.testing.expect(true);
-    }
+    // Verify the command succeeded
+    try std.testing.expectEqual(@as(u32, 0), result.exit_code);
+
+    // Verify the task was added to zr.toml
+    const updated_content = try tmp.dir.readFileAlloc(allocator, "zr.toml", 1024 * 1024);
+    defer allocator.free(updated_content);
+    try std.testing.expect(std.mem.indexOf(u8, updated_content, "backup_test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, updated_content, "echo test") != null);
 }
 
 test "1024: form shows help or examples for fields" {
