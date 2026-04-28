@@ -125,7 +125,7 @@ pub fn addMatrixTask(
     // If cmd is empty or no matrix dims parsed, fall back to plain task
     // (cmd-less tasks with matrix are treated as regular cmd-less tasks)
     if (dims.items.len == 0 or cmd.len == 0) {
-        return addTaskImpl(config, allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, deps_serial, &[_]types.ConditionalDep{}, &[_][]const u8{}, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, null, null, max_concurrent, cache, max_cpu, max_memory, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]types.TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]types.TaskParam{}, &[_][]const u8{});
+        return addTaskImpl(config, allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, deps_serial, &[_]types.ConditionalDep{}, &[_][]const u8{}, env, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, null, null, max_concurrent, cache, max_cpu, max_memory, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]types.TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]types.TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, true);
     }
 
     // Build sorted key list for deterministic variant name ordering
@@ -200,7 +200,7 @@ pub fn addMatrixTask(
         }
 
         // Add the variant task (addTaskImpl dupes everything, so our locals can be freed)
-        try addTaskImpl(config, allocator, vname, v_cmd, v_cwd, v_desc, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, deps_serial, &[_]types.ConditionalDep{}, &[_][]const u8{}, v_env_list.items, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, null, null, max_concurrent, cache, max_cpu, max_memory, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]types.TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]types.TaskParam{}, &[_][]const u8{});
+        try addTaskImpl(config, allocator, vname, v_cmd, v_cwd, v_desc, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, deps_serial, &[_]types.ConditionalDep{}, &[_][]const u8{}, v_env_list.items, timeout_ms, allow_failure, retry_max, retry_delay_ms, retry_backoff, condition, null, null, max_concurrent, cache, max_cpu, max_memory, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]types.TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]types.TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, true);
 
         // Free our allocations (addTaskImpl duped them)
         allocator.free(v_cmd);
@@ -231,7 +231,7 @@ pub fn addMatrixTask(
     const meta_cmd = try std.fmt.allocPrint(allocator, "echo \"Matrix task: {s}\"", .{name});
     defer allocator.free(meta_cmd);
 
-    try addTaskImpl(config, allocator, name, meta_cmd, null, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, variant_names.items, &[_][]const u8{}, &[_]types.ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]types.TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]types.TaskParam{}, &[_][]const u8{});
+    try addTaskImpl(config, allocator, name, meta_cmd, null, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, variant_names.items, &[_][]const u8{}, &[_]types.ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]types.TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]types.TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, true);
 }
 
 test "matrix: simple expansion single dimension" {

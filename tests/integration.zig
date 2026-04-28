@@ -9,6 +9,7 @@ comptime {
     _ = @import("affected_test.zig");
     _ = @import("alias_test.zig");
     _ = @import("analytics_test.zig");
+    _ = @import("artifact_management_test.zig");
     _ = @import("bench_test.zig");
     _ = @import("cache_test.zig");
     _ = @import("cd_test.zig");

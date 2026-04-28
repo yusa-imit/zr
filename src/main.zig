@@ -86,6 +86,7 @@ const schedule_cmd = @import("cli/schedule.zig");
 const monitor_dashboard = @import("cli/monitor.zig");
 const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
+const artifacts_cmd = @import("cli/artifacts.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -1695,6 +1696,13 @@ fn run(
         }
         const task_name = effective_args[2];
         return which_cmd.cmdWhich(allocator, task_name, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "artifacts")) {
+        // Handle artifact management: zr artifacts get/clean
+        artifacts_cmd.handle(allocator, effective_args) catch |err| {
+            try color.printError(ew, effective_color, "artifacts error: {}\n", .{err});
+            return 1;
+        };
+        return 0;
     }
 
     // This should never be reached due to alias expansion logic above
