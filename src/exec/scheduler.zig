@@ -23,6 +23,7 @@ const retry_strategy = @import("retry_strategy.zig");
 const filter_mod = @import("../output/filter.zig");
 const uptodate = @import("uptodate.zig");
 const env_loader = @import("../config/env_loader.zig");
+const artifacts = @import("artifacts.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -1770,6 +1771,12 @@ fn runTaskSync(
         _ = executeHooks(allocator, task.hooks, .timeout, after_ctx);
     } else if (proc_result.success) {
         _ = executeHooks(allocator, task.hooks, .success, after_ctx);
+
+        // Collect artifacts after successful task execution (v1.80.0)
+        artifacts.collectArtifacts(allocator, task, proc_result.exit_code, task_duration) catch |err| {
+            // Log error but don't fail the task
+            std.debug.print("Warning: Failed to collect artifacts for task '{s}': {}\n", .{ task.name, err });
+        };
     } else {
         _ = executeHooks(allocator, task.hooks, .failure, after_ctx);
     }
