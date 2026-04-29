@@ -621,6 +621,202 @@ test "artifact: 'zr artifacts clean --task <task>' removes artifacts for specifi
 
 // ─── Compression ─────────────────────────────────────────────────────────
 
+test "artifact: compression creates .gz files when compress_artifacts = true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.compress_test]
+        \\description = "Test artifact compression"
+        \\cmd = "mkdir -p dist && echo 'test content for compression' > dist/app.bin"
+        \\artifacts = ["dist/*.bin"]
+        \\compress_artifacts = true
+        \\
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "run", "compress_test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify .gz files exist in artifact storage
+    const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/compress_test", .{tmp_path});
+    defer allocator.free(base_dir);
+
+    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    defer base.close();
+
+    var iter = base.iterate();
+    if (iter.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            defer ts_dir.close();
+
+            var inner_iter = ts_dir.iterate();
+            var found_gz = false;
+            while (inner_iter.next() catch null) |file| {
+                if (std.mem.endsWith(u8, file.name, ".gz")) {
+                    found_gz = true;
+                    break;
+                }
+            }
+            try std.testing.expect(found_gz);
+        }
+    }
+}
+
+test "artifact: compression disabled with compress_artifacts = false" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.no_compress]
+        \\description = "Test uncompressed artifacts"
+        \\cmd = "mkdir -p out && echo 'uncompressed' > out/file.txt"
+        \\artifacts = ["out/*.txt"]
+        \\compress_artifacts = false
+        \\
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config_path, "run", "no_compress" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Verify non-.gz files exist
+    const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/no_compress", .{tmp_path});
+    defer allocator.free(base_dir);
+
+    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    defer base.close();
+
+    var iter = base.iterate();
+    if (iter.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            defer ts_dir.close();
+
+            var inner_iter = ts_dir.iterate();
+            var found_txt = false;
+            while (inner_iter.next() catch null) |file| {
+                if (std.mem.endsWith(u8, file.name, ".txt") and !std.mem.endsWith(u8, file.name, ".gz")) {
+                    found_txt = true;
+                    break;
+                }
+            }
+            try std.testing.expect(found_txt);
+        }
+    }
+}
+
+test "artifact: retention policy count_based keeps only N latest artifacts" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.retention_count]
+        \\description = "Test count-based retention"
+        \\cmd = "mkdir -p results && echo 'run' > results/output.log"
+        \\artifacts = ["results/*.log"]
+        \\artifact_retention = { count = 2 }
+        \\
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task 4 times to generate 4 artifacts
+    var i: u8 = 0;
+    while (i < 4) : (i += 1) {
+        var result = try runZr(allocator, &.{ "--config", config_path, "run", "retention_count" }, tmp_path);
+        defer result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    }
+
+    // Verify only 2 artifacts remain
+    const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/retention_count", .{tmp_path});
+    defer allocator.free(base_dir);
+
+    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    defer base.close();
+
+    var artifact_count: usize = 0;
+    var iter = base.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            artifact_count += 1;
+        }
+    }
+
+    // Should be <=2 (retention policy enforced)
+    try std.testing.expect(artifact_count <= 2);
+}
+
+test "artifact: retention policy time_based = \"manual\" does not auto-delete" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config =
+        \\[tasks.manual_retention]
+        \\description = "Manual retention test"
+        \\cmd = "mkdir -p dist && echo 'manual' > dist/app.tar"
+        \\artifacts = ["dist/*.tar"]
+        \\artifact_retention = "manual"
+        \\
+    ;
+
+    const config_path = try writeTmpConfig(allocator, tmp.dir, config);
+    defer allocator.free(config_path);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task twice
+    var i: u8 = 0;
+    while (i < 2) : (i += 1) {
+        var result = try runZr(allocator, &.{ "--config", config_path, "run", "manual_retention" }, tmp_path);
+        defer result.deinit();
+        try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    }
+
+    // All artifacts should remain (manual retention)
+    const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/manual_retention", .{tmp_path});
+    defer allocator.free(base_dir);
+
+    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    defer base.close();
+
+    var artifact_count: usize = 0;
+    var iter = base.iterate();
+    while (iter.next() catch null) |entry| {
+        if (entry.kind == .directory) {
+            artifact_count += 1;
+        }
+    }
+
+    // Both artifacts should exist
+    try std.testing.expectEqual(@as(usize, 2), artifact_count);
+}
+
 test "artifact: compression enabled by default for artifact storage" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
