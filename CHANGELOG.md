@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.80.0] - 2026-04-30
+
+### Added
+- **Task Output Artifacts & Persistence** — Complete artifact management system for preserving task outputs
+  - **Artifact declaration**: `artifacts = ["dist/*.wasm", "coverage/*.html", "logs/*.log"]` — glob patterns to preserve files
+  - **Automatic collection**: Post-execution artifact collection with metadata tracking (timestamp, params, git commit, exit code, duration)
+  - **Directory structure**: `.zr/artifacts/<task>/<timestamp>/` with manifest.json for metadata
+  - **Artifact retrieval**: `zr artifacts get <task>` lists artifacts, `zr artifacts get <task> --latest` downloads most recent
+  - **Compression**: Automatic gzip compression of artifacts for space efficiency (configurable via `compress_artifacts = true`)
+  - **Retention policies**: `artifact_retention = "7d"` (time-based) or `artifact_retention = { count = 10 }` (count-based) with automatic cleanup
+  - **Artifact cleanup**: `zr artifacts clean --older-than 30d` or `zr artifacts clean --task build` for manual cleanup
+  - **Graceful error handling**: Artifact collection errors don't fail tasks, logged as warnings
+  - **Dependency awareness**: Artifacts stored with full context for reproducibility
+
+### Implementation Details
+- **Phase 1 (Cycle 182)**: Schema + CLI skeleton (~140 LOC)
+  - artifacts field in TaskConfig (glob patterns array)
+  - artifact_retention policy (time_based/count_based/manual)
+  - compress_artifacts flag (default: true)
+  - CLI skeleton: src/cli/artifacts.zig with get/clean subcommands
+- **Phase 2 (Cycle 184)**: Collection logic (~220 LOC)
+  - collectArtifacts() in src/exec/artifacts.zig
+  - Glob pattern matching via glob_mod.find() with task.cwd support
+  - File copying with nested directory preservation
+  - Manifest generation with JSON format
+  - Scheduler integration (non-blocking collection after success)
+- **Phase 3 (Cycle 186)**: Compression + retention (~200 LOC)
+  - compressFile() using gzip CLI for artifact compression
+  - enforceRetentionPolicy() with time_based/count_based cleanup
+  - Enhanced CLI: --latest download, --older-than cleanup logic
+- Total implementation: ~560 LOC across 3 phases
+
+### Tests
+- Added 37 integration tests for artifact management
+  - 33 baseline tests: artifact collection, glob patterns, manifest generation, CLI commands
+  - 4 compression/retention tests: gzip integration, time/count-based cleanup, policy enforcement
+  - Comprehensive coverage of collection flow, error handling, edge cases
+
+### Stats
+- **Total**: ~560 LOC implementation across 3 cycles (Cycles 182, 184, 186)
+  - Implementation: 560 LOC (schema + collection + compression/retention)
+  - Tests: 37 integration tests
+  - All unit tests passing (1487/1495, 8 skipped, 0 failed)
+
 ## [1.79.0] - 2026-04-28
 
 ### Added
