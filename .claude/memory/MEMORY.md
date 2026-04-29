@@ -1,6 +1,33 @@
 # zr Project Memory
 
-## Latest Session (2026-04-21, Stabilization Mode Cycle 150)
+## Latest Session (2026-04-30, Feature Mode Cycle 187)
+
+### v1.80.0 RELEASE — Task Output Artifacts & Persistence ✅
+- **Mode**: FEATURE (counter 187, counter % 5 != 0)
+- **CI Status**: In progress (triggered by v1.80.0 release)
+- **Open Issues**: 5 open (5 zuda migrations), **0 bug reports**
+- **Milestone**: Task Output Artifacts & Persistence (RELEASED v1.80.0)
+- **Actions Taken**:
+  - ✅ **Milestone Status Update**: Updated docs/milestones.md — Task Output Artifacts IN_PROGRESS → DONE
+  - ✅ **Version Bump**: Updated build.zig.zon v1.79.0 → v1.80.0
+  - ✅ **CHANGELOG Entry**: Created comprehensive v1.80.0 entry (~45 LOC) documenting all 3 phases
+  - ✅ **Git Tag**: Created annotated tag v1.80.0 with release summary
+  - ✅ **GitHub Release**: Published release with comprehensive notes, features, examples, comparison table
+  - ✅ **Memory Updates**: Updated project-context.md with v1.80.0 status
+- **Commits**:
+  - f86f063 (milestone update)
+  - 6a51958 (version bump + changelog)
+  - Tag: v1.80.0
+- **GitHub Release**: https://github.com/yusa-imit/zr/releases/tag/v1.80.0
+- **Test Status**: 1487/1495 unit tests passing (8 skipped, 0 failed) — all green
+- **Milestone Summary** (Cycles 182, 184, 186, 187):
+  - **Phase 1** (Cycle 182): Schema + CLI skeleton (~140 LOC)
+  - **Phase 2** (Cycle 184): Collection logic + manifest (~220 LOC)
+  - **Phase 3** (Cycle 186): Compression + retention (~200 LOC)
+  - **Total**: ~560 LOC implementation + 37 integration tests
+- **Next**: Choose from READY milestones (Task Result Caching, Enhanced Watch Mode, Dependency Resolution, sailor v2.3.0 Migration)
+
+## Previous Session (2026-04-21, Stabilization Mode Cycle 150)
 
 ### STABILIZATION CYCLE — Test Quality Enhancement ✅
 - **Mode**: STABILIZATION (counter 150, counter % 5 == 0)
