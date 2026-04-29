@@ -1777,6 +1777,12 @@ fn runTaskSync(
             // Log error but don't fail the task
             std.debug.print("Warning: Failed to collect artifacts for task '{s}': {}\n", .{ task.name, err });
         };
+
+        // Enforce retention policy after collecting artifacts (v1.80.0)
+        artifacts.enforceRetentionPolicy(allocator, task) catch |err| {
+            // Log error but don't fail the task
+            std.debug.print("Warning: Failed to enforce retention policy for task '{s}': {}\n", .{ task.name, err });
+        };
     } else {
         _ = executeHooks(allocator, task.hooks, .failure, after_ctx);
     }

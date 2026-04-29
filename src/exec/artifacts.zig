@@ -24,6 +24,97 @@ pub const ArtifactManifest = struct {
     }
 };
 
+/// Enforce retention policy for task artifacts
+/// Removes old artifacts based on the retention policy
+pub fn enforceRetentionPolicy(
+    allocator: std.mem.Allocator,
+    task: loader.Task,
+) !void {
+    if (task.artifact_retention == null) {
+        return;
+    }
+
+    const retention = task.artifact_retention.?;
+    const artifacts_base = try std.fmt.allocPrint(allocator, ".zr/artifacts/{s}", .{task.name});
+    defer allocator.free(artifacts_base);
+
+    var dir = std.fs.cwd().openDir(artifacts_base, .{ .iterate = true }) catch |err| {
+        if (err == error.FileNotFound) return; // No artifacts directory
+        return err;
+    };
+    defer dir.close();
+
+    // Collect all artifact directories with their timestamps
+    var artifact_dirs = std.ArrayList(struct {
+        name: []const u8,
+        timestamp: i64,
+    }){};
+    defer {
+        for (artifact_dirs.items) |item| {
+            allocator.free(item.name);
+        }
+        artifact_dirs.deinit(allocator);
+    }
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind == .directory) {
+            const timestamp = std.fmt.parseInt(i64, entry.name, 10) catch continue;
+            const name = try allocator.dupe(u8, entry.name);
+            try artifact_dirs.append(allocator, .{ .name = name, .timestamp = timestamp });
+        }
+    }
+
+    // Sort by timestamp (oldest first)
+    std.mem.sort(@TypeOf(artifact_dirs.items[0]), artifact_dirs.items, {}, struct {
+        fn lessThan(_: void, a: @TypeOf(artifact_dirs.items[0]), b: @TypeOf(artifact_dirs.items[0])) bool {
+            return a.timestamp < b.timestamp;
+        }
+    }.lessThan);
+
+    const now = std.time.milliTimestamp();
+
+    // Apply retention policy
+    switch (retention) {
+        .time_based => |time_str| {
+            // Parse time string (e.g., "7d", "30d", "manual")
+            if (std.mem.eql(u8, time_str, "manual")) {
+                return; // Don't auto-delete
+            }
+
+            // Parse days from string like "7d"
+            const days = blk: {
+                if (time_str.len < 2 or time_str[time_str.len - 1] != 'd') {
+                    return; // Invalid format, skip
+                }
+                const days_str = time_str[0 .. time_str.len - 1];
+                break :blk std.fmt.parseInt(i64, days_str, 10) catch return;
+            };
+
+            // Delete artifacts older than N days
+            const cutoff = now - (days * 24 * 60 * 60 * 1000);
+            for (artifact_dirs.items) |item| {
+                if (item.timestamp < cutoff) {
+                    const dir_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ artifacts_base, item.name });
+                    defer allocator.free(dir_path);
+                    std.fs.cwd().deleteTree(dir_path) catch {}; // Ignore errors
+                }
+            }
+        },
+        .count_based => |policy| {
+            // Keep only the N most recent builds
+            if (artifact_dirs.items.len > policy.count) {
+                const to_delete = artifact_dirs.items.len - policy.count;
+                for (artifact_dirs.items[0..to_delete]) |item| {
+                    const dir_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ artifacts_base, item.name });
+                    defer allocator.free(dir_path);
+                    std.fs.cwd().deleteTree(dir_path) catch {}; // Ignore errors
+                }
+            }
+        },
+    }
+}
+
 /// Collect artifacts for a task after successful execution
 /// Creates .zr/artifacts/<task>/<timestamp>/ directory structure
 /// Copies files matching artifact patterns and generates manifest.json
@@ -107,8 +198,20 @@ pub fn collectArtifacts(
 
             try std.fs.cwd().copyFile(source_full, std.fs.cwd(), dest_path, .{});
 
-            // Track collected file
-            try collected_files.append(allocator, dest_name);
+            // Compress if enabled
+            const final_name = if (task.compress_artifacts) blk: {
+                const compressed = try compressFile(allocator, dest_path);
+                defer allocator.free(compressed);
+
+                // Extract just the filename from the compressed path
+                const compressed_filename = try allocator.dupe(u8, std.fs.path.basename(compressed));
+
+                allocator.free(dest_name);
+                break :blk compressed_filename;
+            } else dest_name;
+
+            // Track collected file (compressed or not)
+            try collected_files.append(allocator, final_name);
         }
     }
 
@@ -141,6 +244,26 @@ pub fn collectArtifacts(
     try writeManifest(allocator, &manifest, manifest_path);
 
     manifest.deinit(allocator);
+}
+
+/// Compress a file using gzip CLI
+/// Returns the path to the compressed file (.gz extension)
+fn compressFile(allocator: std.mem.Allocator, source_path: []const u8) ![]const u8 {
+    // Run: gzip -f -9 <source_path>
+    // This creates <source_path>.gz and deletes the original
+    const argv = [_][]const u8{ "gzip", "-f", "-9", source_path };
+
+    var child = std.process.Child.init(&argv, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+
+    const term = try child.spawnAndWait();
+    if (term != .Exited or term.Exited != 0) {
+        return error.CompressionFailed;
+    }
+
+    // Return the compressed path
+    return try std.fmt.allocPrint(allocator, "{s}.gz", .{source_path});
 }
 
 /// Get current git commit hash if in a repository
