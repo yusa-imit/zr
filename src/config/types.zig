@@ -972,7 +972,7 @@ pub const CheckpointConfig = struct {
 pub const WatchConfig = struct {
     /// Debounce delay in milliseconds before triggering task execution.
     /// Multiple rapid changes within this window are coalesced into one execution.
-    /// Default: 300ms
+    /// Default: 300ms (ignored if adaptive_debounce is true)
     debounce_ms: u64 = 300,
     /// Glob patterns for file inclusion (e.g., ["**/*.zig", "*.toml"]).
     /// Empty list means watch all files in the paths.
@@ -983,6 +983,15 @@ pub const WatchConfig = struct {
     /// Watch mode: "native" (inotify/kqueue/ReadDirectoryChangesW) or "polling"
     /// If null, auto-selects native if available, fallback to polling.
     mode: ?[]const u8 = null,
+    /// Enable adaptive debouncing (automatically adjusts delay based on change frequency).
+    /// Default: false (uses fixed debounce_ms)
+    adaptive_debounce: bool = false,
+    /// Enable live-reload WebSocket server for browser auto-refresh.
+    /// Default: false
+    live_reload: bool = false,
+    /// Live-reload server port (default: 35729, standard LiveReload protocol).
+    /// Only used if live_reload is true.
+    live_reload_port: u16 = 35729,
 
     pub fn deinit(self: *WatchConfig, allocator: std.mem.Allocator) void {
         for (self.patterns) |p| allocator.free(p);
