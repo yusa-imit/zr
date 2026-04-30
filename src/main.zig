@@ -23,6 +23,7 @@ const monitor = @import("output/monitor.zig");
 const filter_mod = @import("output/filter.zig");
 const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
+const debounce = @import("watch/debounce.zig");
 const cache_store = @import("cache/store.zig");
 const cache_remote = @import("cache/remote.zig");
 const plugin_loader = @import("plugin/loader.zig");
@@ -150,6 +151,7 @@ comptime {
     _ = monitor;
     _ = history;
     _ = watcher;
+    _ = debounce;
     _ = cache_store;
     _ = cache_remote;
     _ = plugin_loader;
