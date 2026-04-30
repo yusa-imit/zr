@@ -6,6 +6,8 @@ const loader = @import("../config/loader.zig");
 const scheduler = @import("../exec/scheduler.zig");
 const history = @import("../history/store.zig");
 const watcher = @import("../watch/watcher.zig");
+const debounce = @import("../watch/debounce.zig");
+const livereload = @import("../watch/livereload.zig");
 const progress = @import("../output/progress.zig");
 const tui_runner = @import("tui_runner.zig");
 const levenshtein = @import("../util/levenshtein.zig");
@@ -439,6 +441,9 @@ pub fn cmdWatch(
 ) !u8 {
     // Verify task exists and extract WatchConfig before starting the watch loop (v1.17.0).
     var watch_options = watcher.WatcherOptions{};
+    var use_adaptive_debounce = false;
+    var use_live_reload = false;
+    var live_reload_port: u16 = 35729;
     {
         var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
         defer config.deinit();
@@ -448,6 +453,9 @@ pub fn cmdWatch(
                 watch_options.debounce_ms = watch_cfg.debounce_ms;
                 watch_options.patterns = watch_cfg.patterns;
                 watch_options.exclude_patterns = watch_cfg.exclude_patterns;
+                use_adaptive_debounce = watch_cfg.adaptive_debounce;
+                use_live_reload = watch_cfg.live_reload;
+                live_reload_port = watch_cfg.live_reload_port;
             }
         } else {
             // Build list of available task names for suggestions
@@ -495,13 +503,40 @@ pub fn cmdWatch(
     };
     defer watch.deinit();
 
+    // Initialize adaptive debouncer if enabled
+    var adaptive_debouncer: ?debounce.AdaptiveDebouncer = null;
+    if (use_adaptive_debounce) {
+        const min_delay = watch_options.debounce_ms; // Use configured debounce as min
+        const max_delay = min_delay * 10; // Max is 10x min (e.g., 300ms -> 3000ms)
+        adaptive_debouncer = try debounce.AdaptiveDebouncer.init(
+            allocator,
+            min_delay,
+            max_delay,
+            60, // 60 second window for change frequency tracking
+            100, // Track last 100 changes
+        );
+    }
+    defer if (adaptive_debouncer) |*d| d.deinit(allocator);
+
+    // Initialize live reload server if enabled
+    var live_reload_server: ?livereload.LiveReloadServer = null;
+    if (use_live_reload) {
+        live_reload_server = try livereload.LiveReloadServer.init(allocator, live_reload_port);
+        try live_reload_server.?.start();
+    }
+    defer if (live_reload_server) |*server| server.deinit();
+
     // Log which mode we're using
     const mode_str = switch (watch.mode) {
         .native => "native",
         .polling => "polling",
     };
     try color.printDim(w, use_color, "  (using {s} mode", .{mode_str});
-    if (watch_options.debounce_ms > 0) {
+    if (use_adaptive_debounce) {
+        if (adaptive_debouncer) |d| {
+            try color.printDim(w, use_color, ", adaptive debounce: {d}-{d}ms", .{ d.min_delay_ms, d.max_delay_ms });
+        }
+    } else if (watch_options.debounce_ms > 0) {
         try color.printDim(w, use_color, ", debounce: {d}ms", .{watch_options.debounce_ms});
     }
     if (watch_options.patterns.len > 0) {
@@ -509,6 +544,9 @@ pub fn cmdWatch(
     }
     if (watch_options.exclude_patterns.len > 0) {
         try color.printDim(w, use_color, ", excludes: {d}", .{watch_options.exclude_patterns.len});
+    }
+    if (use_live_reload) {
+        try color.printDim(w, use_color, ", live-reload: {d}", .{live_reload_port});
     }
     try color.printDim(w, use_color, ")\n", .{});
 
@@ -518,6 +556,7 @@ pub fn cmdWatch(
     // Run the task immediately on start, then loop.
     var first_run = true;
     while (true) {
+        var changed_path: ?[]const u8 = null;
         if (!first_run) {
             // Wait for a file change.
             const event = watch.waitForChange() catch |err| switch (err) {
@@ -527,8 +566,20 @@ pub fn cmdWatch(
                     return 1;
                 },
             };
-            try color.printInfo(w, use_color, "\nChange detected", .{});
-            try color.printDim(w, use_color, ": {s}\n", .{event.path});
+            changed_path = event.path;
+
+            // Record change for adaptive debouncer
+            if (adaptive_debouncer) |*d| {
+                d.recordChange();
+                const current_delay = d.getDelay();
+                // Sleep for adaptive delay
+                std.Thread.sleep(current_delay * std.time.ns_per_ms);
+                try color.printInfo(w, use_color, "\nChange detected", .{});
+                try color.printDim(w, use_color, ": {s} (debounce: {d}ms)\n", .{ event.path, current_delay });
+            } else {
+                try color.printInfo(w, use_color, "\nChange detected", .{});
+                try color.printDim(w, use_color, ": {s}\n", .{event.path});
+            }
         }
         first_run = false;
 
@@ -590,6 +641,19 @@ pub fn cmdWatch(
 
         recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
             @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu);
+
+        // Trigger live reload if enabled and task succeeded
+        if (use_live_reload and sched_result.total_success) {
+            if (live_reload_server) |*server| {
+                const reload_path = changed_path orelse "/";
+                server.trigger(reload_path) catch |err| {
+                    try color.printDim(w, use_color, "  (live-reload trigger failed: {s})\n", .{@errorName(err)});
+                };
+                if (server.clientCount() > 0) {
+                    try color.printDim(w, use_color, "  (live-reload: sent to {d} client(s))\n", .{server.clientCount()});
+                }
+            }
+        }
 
         try color.printDim(w, use_color, "Watching for changes (Ctrl+C to stop)...\n", .{});
     }
