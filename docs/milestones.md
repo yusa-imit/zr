@@ -2,12 +2,11 @@
 
 ## Current Status
 
-- **Latest**: v1.79.0 (Task Documentation & Rich Help System) — RELEASED 2026-04-28
-- **Active milestones**: 4 READY + 1 IN_PROGRESS + 2 BLOCKED
-- **READY milestones**: 4 (Task Result Caching & Memoization, Enhanced Watch Mode & Live Reload, Dependency Resolution & Version Constraints, sailor v2.3.0 Migration)
-- **IN_PROGRESS milestones**: 1 (Task Output Artifacts & Persistence — schema + CLI complete, collection logic pending)
+- **Latest**: v1.80.0 (Task Output Artifacts & Persistence) — RELEASED 2026-04-30
+- **Active milestones**: 3 READY + 2 BLOCKED
+- **READY milestones**: 3 (Task Result Caching & Memoization, Enhanced Watch Mode & Live Reload, Dependency Resolution & Version Constraints)
 - **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.1+ release with issue #21 fix, zuda WorkStealingDeque depends on Graph)
-- **DONE**: Task Documentation & Rich Help System (Cycles 172-174, 177, 179 — pending v1.79.0 release), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -586,6 +585,30 @@ Migrate to sailor v2.1.0 (issue #54) which provides drop-in performance optimiza
 - **Issue closure**: Close GitHub issue #54
 **Status: DONE** — Completed 2026-04-24 (Cycle 159). Updated build.zig.zon dependency, fixed 4 Rect.new() call sites to use direct struct initialization. All unit tests passing (1434/1442). Benefits: +38% buffer diff, +34% buffer fill, +33% buffer set. Zero breaking changes. Closed issue #54.
 
+### Sailor v2.3.0 & v2.4.0 Migration
+
+Migrate to sailor v2.3.0 and v2.4.0 (issues #55, #56) which provide advanced widget features and testing infrastructure. Both are backward-compatible upgrades requiring only dependency update with no code changes. Includes:
+- **v2.3.0 features** (available but not used):
+  - Scrollable widgets: Table/List scrolling, Paragraph justify+indent
+  - State persistence: Save/restore widget state, StateHistory undo/redo
+  - Advanced styling: Gradients, border styles (dashed), shadow effects
+  - Performance: LazyBuffer, VirtualList, RenderBudget
+- **v2.4.0 features** (available but not used):
+  - Snapshot testing framework for widget rendering
+  - Property-based testing with random input generation
+  - Visual regression testing with buffer diff visualization
+  - Mock terminal for TUI testing without real TTY
+  - Testing utilities: Leak detection, widget fixtures, assertion helpers, benchmark tools
+- **Migration steps**:
+  - Update build.zig.zon: `zig fetch --save https://github.com/yusa-imit/sailor/archive/refs/tags/v2.4.0.tar.gz`
+  - Run `zig build test && zig build integration-test` to verify compatibility
+  - No code changes required (all improvements backward compatible)
+  - Optional: Adopt new features in TUI components or tests (future enhancement)
+- **Zero breaking changes**: All v2.1.0 APIs remain unchanged
+- **Testing**: Existing TUI tests verify compatibility
+- **Issue closure**: Close GitHub issues #55, #56
+**Status: DONE** — Completed 2026-04-30 (Cycle 188). Updated build.zig.zon dependency from v2.1.0 → v2.4.0 (via v2.3.0). All unit tests passing (1487/1495). Zero code changes required. New features available for future adoption. Closed issues #55, #56.
+
 ### Task Conditional Dependencies Enhancement
 
 Complete and polish the partially-implemented `deps_if` conditional dependency system to enable powerful conditional execution patterns. Currently `deps_if` is parsed but not fully integrated with all task execution features. This milestone completes the implementation and adds missing features. Includes:
@@ -872,8 +895,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v1.36.0 (all migrations complete through v1.36.0)
-- **Next**: v1.37.0+ (when released)
+- **Current in zr**: v2.4.0 (all migrations complete through v2.4.0)
+- **Next**: v2.5.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -919,6 +942,9 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v1.35.0 | DONE | Accessibility Overhaul — ARIA attributes (30+ roles), focus trap, keyboard shortcuts, screen reader support (Cycle 101) |
 | v1.36.0 | DONE | Performance Monitoring System — render/memory/event metrics, MetricsDashboard widget, regression tests (Cycle 101, issue #50) |
 | v1.37.0 | DONE | v2.0.0 API Bridge — stateless widget lifecycle standardization (Block.init() → Block{}), deprecation warning system, style inference helpers (Cycle 108, issue #51) |
+| v2.1.0 | DONE | Drop-in performance optimizations (+38% buffer diff, +34% fill, +33% set), ergonomic APIs (Rect.fromSize, constraint/color constructors) (Cycle 159, issue #54) |
+| v2.3.0 | DONE | Scrollable widgets, state persistence, advanced styling (gradients, dashed borders, shadows), performance (LazyBuffer, VirtualList) (Cycle 188, issue #55) |
+| v2.4.0 | DONE | Testing infrastructure (snapshot testing, property-based testing, visual regression, mock terminal, test utilities) (Cycle 188, issue #56) |
 
 ### zuda Library
 
