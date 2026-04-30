@@ -155,10 +155,14 @@ test "LiveReloadServer start transitions running state" {
 
     try std.testing.expectEqual(false, server.isRunning());
     // Note: start() will fail if port is actually in use, but we're testing state transition
-    // In real implementation, we'd mock the socket binding
-    // For now, this test documents expected behavior
-    server.start() catch {};
-    // If start succeeds, server should be marked running
+    // The implementation currently just sets running = true without binding
+    _ = server.start() catch |err| {
+        // If binding fails (port in use), this is not a test failure
+        // We're testing the state management, not the network layer
+        if (err != error.AlreadyRunning) return;
+    };
+    // Verify running state was set (implementation sets this before attempting bind)
+    try std.testing.expectEqual(true, server.isRunning());
 }
 
 test "LiveReloadServer stop requires running state" {
@@ -183,10 +187,18 @@ test "LiveReloadServer cannot start twice" {
     var server = try LiveReloadServer.init(allocator, 9999);
     defer server.deinit();
 
-    server.start() catch {};
-    if (server.isRunning()) {
-        try std.testing.expectError(error.AlreadyRunning, server.start());
-    }
+    // First start should succeed (sets running flag)
+    _ = server.start() catch |err| {
+        // If port binding fails, we can't test double-start
+        // But state should still be set
+        if (err != error.AlreadyRunning) return;
+    };
+
+    // Verify server is running after first start
+    try std.testing.expectEqual(true, server.isRunning());
+
+    // Second start should fail with AlreadyRunning
+    try std.testing.expectError(error.AlreadyRunning, server.start());
 }
 
 test "LiveReloadServer maintains port across lifecycle" {
@@ -199,16 +211,30 @@ test "LiveReloadServer maintains port across lifecycle" {
     try std.testing.expectEqual(@as(u16, 12345), server.getPort());
 }
 
-test "LiveReloadServer message format validation" {
+test "LiveReloadServer trigger requires running state (verified)" {
     const allocator = std.testing.allocator;
     var server = try LiveReloadServer.init(allocator, 35729);
     defer server.deinit();
 
-    // Test path parameter is preserved in message
-    // Message should be JSON: {"command":"reload","path":"<path>"}
-    server.start() catch {};
+    // Server not started, trigger should fail
+    try std.testing.expectEqual(false, server.isRunning());
+    try std.testing.expectError(error.NotRunning, server.trigger("/index.html"));
+
+    // Start server
+    _ = server.start() catch |err| {
+        if (err != error.AlreadyRunning) return; // Skip if binding fails
+    };
+
+    // After start, trigger should succeed (or fail for different reason, not NotRunning)
     if (server.isRunning()) {
-        server.trigger("/index.html") catch {};
+        // Trigger may fail for other reasons (no clients, etc.) but not NotRunning
+        const result = server.trigger("/index.html");
+        // If it errors, it should NOT be error.NotRunning
+        if (result) |_| {
+            // Success case
+        } else |err| {
+            try std.testing.expect(err != error.NotRunning);
+        }
     }
 }
 
