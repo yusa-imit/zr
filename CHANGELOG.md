@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.81.0] - 2026-05-01
+
+### Added
+- **Enhanced Watch Mode & Live Reload** — Intelligent file watching with adaptive debouncing and browser auto-refresh
+  - **Adaptive debouncing**: Automatically adjusts delay based on change frequency (burst vs sporadic)
+    - Burst detection: >5 changes in 5s increases delay to prevent re-run spam during active editing
+    - Sporadic detection: <2 changes in 60s decreases delay for quick response on isolated changes
+    - Smooth ramping: Gradual adjustment between min (configured debounce_ms) and max (10x min)
+    - Example: 300ms → 3000ms during bursts, back to 300ms when calm
+  - **Live reload server**: Built-in WebSocket server on port 35729 (LiveReload standard)
+    - Automatic browser refresh on task success
+    - Sends `{"command":"reload","path":"..."}` to all connected clients
+    - Client count tracking and error handling
+    - Integration snippet for HTML: `<script>` tag connects to ws://localhost:35729
+  - **WatchConfig enhancements**: New fields in `[tasks.<name>.watch]`
+    - `adaptive_debounce = true` — Enable adaptive delay adjustment
+    - `live_reload = true` — Enable WebSocket live reload server
+    - `live_reload_port = 35729` — Custom port (default: 35729)
+  - **CLI integration**: `zr watch <task>` respects WatchConfig settings
+    - Displays enabled features in startup message
+    - Adaptive debounce shows current delay on each change
+    - Live reload shows client count on trigger
+    - Works with existing patterns/exclude_patterns
+
+### Implementation Details
+- **Phase 1 (Cycle 189)**: Core algorithms + schema (~520 LOC)
+  - src/watch/debounce.zig (284 LOC): AdaptiveDebouncer with burst/sporadic detection
+  - src/watch/livereload.zig (894 LOC skeleton): LiveReloadServer state machine with client tracking
+  - WatchConfig schema updates: adaptive_debounce, live_reload, live_reload_port fields
+- **Phase 2 (Cycle 191)**: CLI integration (~150 LOC)
+  - cmdWatch in run.zig: Initialize adaptive debouncer and live reload server
+  - Debounce logic: recordChange() + getDelay() + adaptive sleep
+  - Live reload triggering: On task success, trigger(changed_path) to all clients
+- **Phase 3 (Cycle 190, 192)**: Tests + documentation (~881 LOC)
+  - 5 integration tests: Config parsing for new WatchConfig fields
+  - 160 LOC unit tests: Debounce burst/sporadic/ramping + LiveReload state machine
+  - Test quality improvements: Strengthened assertions in 3 tests (Cycle 190)
+  - docs/guides/enhanced-watch-mode.md (605 LOC): Comprehensive guide with examples, comparisons, troubleshooting
+- Total implementation: ~1328 LOC across 3 phases
+
+### Documentation
+- **docs/guides/enhanced-watch-mode.md** (~605 LOC)
+  - Basic watch mode usage and configuration
+  - Adaptive debouncing: How it works, behavior examples, use cases
+  - Live reload: Browser integration, WebSocket protocol, server lifecycle
+  - WatchConfig reference: All fields with precedence rules
+  - Pattern filtering: Glob syntax, multiple patterns, exclude patterns
+  - Real-world examples: Web dev (live reload), test runner (smart debounce), backend API, docs site
+  - Best practices: When to use adaptive, exclude patterns, combine with up-to-date detection
+  - Comparison: vs nodemon, watchexec, Vite/webpack-dev-server
+  - Troubleshooting: Connection errors, task spam, file limits (inotify)
+
+### Tests
+- **Integration tests** (5 new tests in tests/watch_test.zig)
+  - Parse adaptive_debounce = true
+  - Parse live_reload = true
+  - Parse live_reload_port = 8080
+  - Combined adaptive_debounce + live_reload
+  - Defaults verification (both false when not specified)
+- **Unit tests** (160 LOC total)
+  - src/watch/debounce.zig: 8 tests covering burst detection, sporadic detection, ramping, edge cases
+  - src/watch/livereload.zig: 11 tests covering state machine, client tracking, error handling
+- **Test quality audit** (Cycle 190): Improved 3 weak tests with verified assertions
+
+### Stats
+- **Total**: ~2209 LOC across 4 cycles (Cycles 189-192, 2-3 estimated)
+  - Implementation: 1328 LOC (debounce + livereload + run.zig integration)
+  - Tests: 276 LOC (integration + unit + quality improvements)
+  - Documentation: 605 LOC (comprehensive guide)
+- **Test results**: 1516/1524 passing (8 skipped, 0 failed)
+
 ## [1.80.0] - 2026-04-30
 
 ### Added
