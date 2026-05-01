@@ -13,3 +13,4 @@
 {"timestamp":"2026-04-30T09:10:36Z","action":"subagent","agent_type":"test-writer","task":"Write unit tests for WebSocket live-reload server","project":"zr"}
 {"timestamp":"2026-04-30T09:14:04Z","action":"subagent","agent_type":"zig-developer","task":"Implement WebSocket live-reload server to pass all tests","project":"zr"}
 {"timestamp":"2026-05-01T09:30:00Z","action":"stabilization","task":"Test quality audit - fixed LiveReloadServer tests with verified assertions","project":"zr","cycle":190}
+{"timestamp":"2026-05-01T09:08:12Z","action":"release","version":"v1.81.0","milestone":"Enhanced Watch Mode & Live Reload","task":"Released v1.81.0 with adaptive debouncing and live reload","project":"zr"}
