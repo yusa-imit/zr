@@ -12,6 +12,7 @@ comptime {
     _ = @import("artifact_management_test.zig");
     _ = @import("bench_test.zig");
     _ = @import("cache_test.zig");
+    _ = @import("cache_storage_test.zig");
     _ = @import("cd_test.zig");
     _ = @import("checkpoint_test.zig");
     _ = @import("ci_templates_test.zig");
