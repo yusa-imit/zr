@@ -232,3 +232,116 @@ test "watch: WatchConfig section must follow task definition" {
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "must follow") != null or
         std.mem.indexOf(u8, result.stderr, "MalformedSectionHeader") != null);
 }
+
+test "watch: parse WatchConfig with adaptive_debounce = true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build.watch]
+        \\adaptive_debounce = true
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with live_reload = true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build.watch]
+        \\live_reload = true
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with live_reload_port = 8080" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build.watch]
+        \\live_reload = true
+        \\live_reload_port = 8080
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: parse WatchConfig with adaptive_debounce + live_reload combined" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build.watch]
+        \\adaptive_debounce = true
+        \\live_reload = true
+        \\live_reload_port = 9090
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "watch: WatchConfig defaults (adaptive_debounce = false, live_reload = false)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_content =
+        \\[tasks.build]
+        \\cmd = "echo test"
+        \\
+        \\[tasks.build.watch]
+        \\debounce_ms = 500
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_content);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
