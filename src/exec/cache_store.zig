@@ -362,13 +362,16 @@ pub const CachedEntry = struct {
 
 // ─── Tests ───
 
-test "CacheStore: init creates store" {
+test "CacheStore: init creates store with correct allocator" {
     const allocator = std.testing.allocator;
     var store = CacheStore.init(allocator);
     defer store.deinit();
+
+    // Verify store is initialized with correct allocator
+    try std.testing.expectEqual(allocator, store.allocator);
 }
 
-test "CacheStore: store creates cache directory" {
+test "CacheStore: store creates cache directory with manifest and output files" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -381,7 +384,9 @@ test "CacheStore: store creates cache directory" {
     defer store.deinit();
 
     const cache_key = "test_cache_key_12345";
-    try store.store(cache_key, "test_task", 0, 100, "stdout data", "stderr data");
+    const expected_stdout = "stdout data";
+    const expected_stderr = "stderr data";
+    try store.store(cache_key, "test_task", 0, 100, expected_stdout, expected_stderr);
 
     // Verify cache directory was created
     const cache_dir = try std.fmt.allocPrint(allocator, ".zr/cache/{s}", .{cache_key});
@@ -389,6 +394,24 @@ test "CacheStore: store creates cache directory" {
 
     var dir = try std.fs.cwd().openDir(cache_dir, .{});
     defer dir.close();
+
+    // Verify manifest.json exists and contains expected metadata
+    const manifest_content = try dir.readFileAlloc(allocator, "manifest.json", 1024);
+    defer allocator.free(manifest_content);
+    try std.testing.expect(std.mem.indexOf(u8, manifest_content, "test_task") != null);
+    try std.testing.expect(std.mem.indexOf(u8, manifest_content, cache_key) != null);
+    try std.testing.expect(std.mem.indexOf(u8, manifest_content, "\"exit_code\":0") != null or
+                           std.mem.indexOf(u8, manifest_content, "\"exit_code\": 0") != null);
+
+    // Verify stdout file contains expected output
+    const stdout_content = try dir.readFileAlloc(allocator, "stdout", 1024);
+    defer allocator.free(stdout_content);
+    try std.testing.expectEqualStrings(expected_stdout, stdout_content);
+
+    // Verify stderr file contains expected output
+    const stderr_content = try dir.readFileAlloc(allocator, "stderr", 1024);
+    defer allocator.free(stderr_content);
+    try std.testing.expectEqualStrings(expected_stderr, stderr_content);
 
     // Cleanup
     try store.invalidate(cache_key);

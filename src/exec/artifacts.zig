@@ -327,7 +327,7 @@ fn writeManifest(
     });
 }
 
-test "ArtifactManifest: deinit cleans up fields" {
+test "ArtifactManifest: fields initialized correctly and cleaned up by deinit" {
     const allocator = std.testing.allocator;
 
     var manifest = ArtifactManifest{
@@ -342,11 +342,22 @@ test "ArtifactManifest: deinit cleans up fields" {
     manifest.files[0] = try allocator.dupe(u8, "dist/app.js");
     manifest.files[1] = try allocator.dupe(u8, "dist/app.css");
 
-    // Should not leak
+    // Verify fields are set correctly before cleanup
+    try std.testing.expectEqual(@as(i64, 1234567890), manifest.timestamp);
+    try std.testing.expectEqualStrings("build", manifest.task_name);
+    try std.testing.expectEqual(@as(u8, 0), manifest.exit_code);
+    try std.testing.expectEqual(@as(u64, 1000), manifest.duration_ms);
+    try std.testing.expectEqual(@as(usize, 2), manifest.files.len);
+    try std.testing.expectEqualStrings("dist/app.js", manifest.files[0]);
+    try std.testing.expectEqualStrings("dist/app.css", manifest.files[1]);
+    try std.testing.expect(manifest.git_commit != null);
+    try std.testing.expectEqualStrings("abc123", manifest.git_commit.?);
+
+    // deinit should free all allocated memory (leak check via testing allocator)
     manifest.deinit(allocator);
 }
 
-test "collectArtifacts: skip when no artifacts configured" {
+test "collectArtifacts: early return when no artifacts configured" {
     const allocator = std.testing.allocator;
 
     const task = loader.Task{
@@ -365,11 +376,23 @@ test "collectArtifacts: skip when no artifacts configured" {
         .retry_delay_ms = 0,
         .retry_backoff = false,
         .hooks = &[_]types.TaskHook{},
-        .artifacts = null, // No artifacts
+        .artifacts = null, // No artifacts configured
         .artifact_retention = null,
         .compress_artifacts = false,
     };
 
-    // Should complete without error
+    // Should complete without error and without creating any directories
     try collectArtifacts(allocator, task, 0, 100);
+
+    // Verify .zr/artifacts directory was NOT created (early return in collectArtifacts)
+    var cwd = std.fs.cwd();
+    var artifact_dir = cwd.openDir(".zr/artifacts", .{}) catch |err| {
+        // Expected: directory should not exist since no artifacts were collected
+        try std.testing.expectEqual(error.FileNotFound, err);
+        return;
+    };
+    defer artifact_dir.close();
+
+    // If we reach here, the directory exists - this is unexpected
+    return error.TestUnexpectedBehavior;
 }
