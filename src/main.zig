@@ -25,6 +25,7 @@ const history = @import("history/store.zig");
 const watcher = @import("watch/watcher.zig");
 const debounce = @import("watch/debounce.zig");
 const livereload = @import("watch/livereload.zig");
+const cache_key = @import("exec/cache_key.zig");
 const cache_store = @import("cache/store.zig");
 const cache_remote = @import("cache/remote.zig");
 const plugin_loader = @import("plugin/loader.zig");
@@ -2078,5 +2079,6 @@ test "workspace command: run missing task name returns error" {
 comptime {
     _ = remote.RemoteExecutor;
     _ = tui_profiler.TuiProfiler;
+    _ = cache_key.CacheKeyGenerator;
 }
 
