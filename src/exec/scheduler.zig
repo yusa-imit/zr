@@ -24,6 +24,7 @@ const filter_mod = @import("../output/filter.zig");
 const uptodate = @import("uptodate.zig");
 const env_loader = @import("../config/env_loader.zig");
 const artifacts = @import("artifacts.zig");
+const cache_storage = @import("cache_store.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -1772,6 +1773,20 @@ fn runTaskSync(
     } else if (proc_result.success) {
         _ = executeHooks(allocator, task.hooks, .success, after_ctx);
 
+        // Store execution result in cache (Phase 2 - Cache Key Generation)
+        const task_env_slice: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
+        const cache_key = cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch null;
+        if (cache_key) |key| {
+            defer allocator.free(key);
+            var store = cache_storage.CacheStore.init(allocator);
+            defer store.deinit();
+            // Store with empty stdout/stderr for now (Phase 2) — will capture actual output in Phase 3
+            store.store(key, task.name, proc_result.exit_code, proc_result.duration_ms, "", "") catch |err| {
+                // Log error but don't fail the task
+                std.debug.print("Warning: Failed to store cache for task '{s}': {}\n", .{ task.name, err });
+            };
+        }
+
         // Collect artifacts after successful task execution (v1.80.0)
         artifacts.collectArtifacts(allocator, task, proc_result.exit_code, task_duration) catch |err| {
             // Log error but don't fail the task
@@ -2175,12 +2190,9 @@ pub fn run(
             // Dupe task_name so the worker owns it (freed in workerFn defer)
             const owned_task_name = try allocator.dupe(u8, task_name);
 
-            // Compute cache key if caching is enabled for this task
+            // Compute cache key for all tasks (Phase 2 - Cache Key Generation stores all executions)
             const task_env_slice: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
-            const cache_key: ?[]u8 = if (task.cache)
-                cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch null
-            else
-                null;
+            const cache_key: ?[]u8 = cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch null;
 
             // Initialize circuit breaker for this task if configured (v1.30.0)
             var circuit_breaker_ptr: ?*CircuitBreakerState = null;
