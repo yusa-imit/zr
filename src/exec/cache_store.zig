@@ -122,18 +122,18 @@ pub const CacheStore = struct {
 
         // Try to read stdout
         const stdout = dir.readFileAlloc(self.allocator, "stdout", 1024 * 1024) catch |err| {
-            if (manifest.task_name) |name| self.allocator.free(name);
-            if (manifest.cache_key) |key| self.allocator.free(key);
-            if (manifest.timestamp) |ts| self.allocator.free(ts);
+            self.allocator.free(manifest.task_name);
+            self.allocator.free(manifest.cache_key);
+            self.allocator.free(manifest.timestamp);
             return err;
         };
 
         // Try to read stderr
         const stderr = dir.readFileAlloc(self.allocator, "stderr", 1024 * 1024) catch |err| {
             self.allocator.free(stdout);
-            if (manifest.task_name) |name| self.allocator.free(name);
-            if (manifest.cache_key) |key| self.allocator.free(key);
-            if (manifest.timestamp) |ts| self.allocator.free(ts);
+            self.allocator.free(manifest.task_name);
+            self.allocator.free(manifest.cache_key);
+            self.allocator.free(manifest.timestamp);
             return err;
         };
 

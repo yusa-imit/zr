@@ -1127,3 +1127,110 @@ test "880: cache with no subcommand shows usage" {
         std.mem.indexOf(u8, output, "Commands") != null or
         std.mem.indexOf(u8, output, "error") != null);
 }
+
+test "881: cache restore displays cached stdout on cache hit" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.output-test]
+        \\cmd = "echo 'Hello from cached task'"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // First run - populate cache
+    var result1 = try runZr(allocator, &.{ "run", "output-test" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expect(result1.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result1.stdout, "Hello from cached task") != null);
+
+    // Second run - should restore cached output
+    var result2 = try runZr(allocator, &.{ "run", "output-test" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expect(result2.exit_code == 0);
+    // Verify cached output is displayed
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "Hello from cached task") != null);
+}
+
+test "882: cache restore displays cached stderr on cache hit" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.stderr-test]
+        \\cmd = "echo 'Error message' >&2"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // First run - populate cache
+    var result1 = try runZr(allocator, &.{ "run", "stderr-test" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expect(result1.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result1.stderr, "Error message") != null);
+
+    // Second run - should restore cached stderr
+    var result2 = try runZr(allocator, &.{ "run", "stderr-test" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expect(result2.exit_code == 0);
+    // Verify cached stderr is displayed
+    try std.testing.expect(std.mem.indexOf(u8, result2.stderr, "Error message") != null);
+}
+
+test "883: cache restore handles both stdout and stderr" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.mixed-output]
+        \\cmd = "echo 'stdout message' && echo 'stderr message' >&2"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // First run - populate cache
+    var result1 = try runZr(allocator, &.{ "run", "mixed-output" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expect(result1.exit_code == 0);
+
+    // Second run - should restore both stdout and stderr
+    var result2 = try runZr(allocator, &.{ "run", "mixed-output" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expect(result2.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "stdout message") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stderr, "stderr message") != null);
+}

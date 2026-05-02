@@ -906,44 +906,40 @@ fn workerFn(ctx: WorkerCtx) void {
     // Check cache hit — skip execution if already succeeded with same cmd+env
     if (ctx.cache) {
         if (ctx.cache_key) |key| {
-            // First check local cache
-            var local_hit = false;
-            var store = cache_store.CacheStore.init(task_allocator) catch null;
-            if (store) |*s| {
-                defer s.deinit();
-                local_hit = s.hasHit(key);
-            }
+            // Try to retrieve cached entry
+            var store = cache_storage.CacheStore.init(task_allocator);
+            defer store.deinit();
+            var cached_entry = store.retrieve(key) catch null;
 
-            // If local miss, try remote cache (Phase 7)
-            if (!local_hit and ctx.cache_remote_config != null) {
-                if (ctx.cache_remote_config) |remote_cfg| {
-                    var remote_cache = cache_remote.RemoteCache.init(task_allocator, remote_cfg.*);
-                    defer remote_cache.deinit();
-                    // Pull from remote (null = miss)
-                    if (remote_cache.pull(key) catch null) |_data| {
-                        // Remote hit: save to local cache for next time
-                        // (data itself is just a marker, no actual artifact yet)
-                        task_allocator.free(_data);
-                        if (store) |*s| s.recordHit(key) catch {};
-                        local_hit = true;
-                    }
+            // If cache hit, restore outputs and skip execution
+            if (cached_entry) |*entry| {
+                defer entry.deinit(task_allocator);
+
+                // Write cached stdout if not empty
+                if (entry.stdout.len > 0) {
+                    std.fs.File.stdout().writeAll(entry.stdout) catch {};
                 }
-            }
 
-            if (local_hit) {
-                // Cache hit: record a skipped success result
+                // Write cached stderr if not empty
+                if (entry.stderr.len > 0) {
+                    std.fs.File.stderr().writeAll(entry.stderr) catch {};
+                }
+
+                // Record success with cached metadata
                 const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
                 ctx.results_mutex.lock();
                 defer ctx.results_mutex.unlock();
                 ctx.results.append(task_allocator, .{
                     .task_name = owned_name,
                     .success = true,
-                    .exit_code = 0,
-                    .duration_ms = 0,
-                    .skipped = true,
+                    .exit_code = entry.manifest.exit_code,
+                    .duration_ms = entry.manifest.duration_ms,
+                    .skipped = true, // Mark as skipped (cache hit)
                 }) catch task_allocator.free(owned_name);
                 return;
             }
+
+            // Cache miss — continue with execution (remote cache integration is Phase 7)
         }
     }
 
