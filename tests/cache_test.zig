@@ -1234,3 +1234,139 @@ test "883: cache restore handles both stdout and stderr" {
     try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "stdout message") != null);
     try std.testing.expect(std.mem.indexOf(u8, result2.stderr, "stderr message") != null);
 }
+
+test "884: list --show-cache displays cache status for cached tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.build]
+        \\cmd = "echo 'building'"
+        \\cache = true
+        \\
+        \\[tasks.test]
+        \\cmd = "echo 'testing'"
+        \\cache = true
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo 'deploying'"
+        \\cache = false
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // Run build task to populate cache
+    var result1 = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expect(result1.exit_code == 0);
+
+    // List with --show-cache should show [cached] for build task
+    var result2 = try runZr(allocator, &.{ "list", "--show-cache" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expect(result2.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "[cached]") != null);
+
+    // Run test task to populate its cache
+    var result3 = try runZr(allocator, &.{ "run", "test" }, tmp_path);
+    defer result3.deinit();
+    try std.testing.expect(result3.exit_code == 0);
+
+    // List again - both build and test should show [cached]
+    var result4 = try runZr(allocator, &.{ "list", "--show-cache" }, tmp_path);
+    defer result4.deinit();
+    try std.testing.expect(result4.exit_code == 0);
+
+    // Count [cached] occurrences - should be 2 (build + test)
+    var count: usize = 0;
+    var search_start: usize = 0;
+    while (std.mem.indexOfPos(u8, result4.stdout, search_start, "[cached]")) |pos| {
+        count += 1;
+        search_start = pos + "[cached]".len;
+    }
+    try std.testing.expectEqual(@as(usize, 2), count);
+}
+
+test "885: list --show-cache without cached tasks shows no cache markers" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.build]
+        \\cmd = "echo 'building'"
+        \\cache = true
+        \\
+        \\[tasks.test]
+        \\cmd = "echo 'testing'"
+        \\cache = true
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // List without running any tasks - no cache should exist
+    var result = try runZr(allocator, &.{ "list", "--show-cache" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[cached]") == null);
+}
+
+test "886: list --show-cache works with --group-by-tags" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [256]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const cache_toml =
+        \\[cache]
+        \\enabled = true
+        \\
+        \\[tasks.build]
+        \\cmd = "echo 'building'"
+        \\cache = true
+        \\tags = ["ci"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo 'testing'"
+        \\cache = true
+        \\tags = ["ci"]
+        \\
+    ;
+
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(cache_toml);
+
+    // Run build task to populate cache
+    var result1 = try runZr(allocator, &.{ "run", "build" }, tmp_path);
+    defer result1.deinit();
+    try std.testing.expect(result1.exit_code == 0);
+
+    // List with --show-cache and --group-by-tags
+    var result2 = try runZr(allocator, &.{ "list", "--show-cache", "--group-by-tags" }, tmp_path);
+    defer result2.deinit();
+    try std.testing.expect(result2.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "[cached]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "[ci]") != null);
+}
