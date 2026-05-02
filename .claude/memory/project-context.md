@@ -12,14 +12,14 @@
 ## Current Status
 
 - **Build version**: v1.81.0 (current in build.zig.zon) | Latest Release: v1.81.0 (2026-05-01)
-- **Unit tests**: 1516/1524 passing (8 skipped), 0 failed, 0 memory leaks
-- **Integration tests**: 5 watch mode tests + 37 artifact management tests + existing tests
-- **CI**: Green (no failures on main)
-- **GitHub Issues**: 6 open (6 zuda migrations), **0 bug reports**
+- **Unit tests**: 1527/1535 passing (8 skipped), 0 failed, 0 memory leaks
+- **Integration tests**: 30 cache storage tests + 7 cache CLI tests + 5 watch mode tests + 37 artifact management tests + existing tests
+- **CI**: In progress (awaiting results for commits 67b3c4e, 72211ed)
+- **GitHub Issues**: 6 open (5 zuda migrations, 1 zuda DAG), **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.4.0 (migrated 2026-04-30, Cycle 188)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-01, FEATURE Cycle 193)**: ✅ Task Result Caching & Memoization Phase 1 (Cache Key Generation) — Started new READY milestone for intelligent task output caching. Implemented CacheKeyGenerator module (~199 LOC) with SHA-256 content-based hashing for cache keys from task inputs (command, source files, env vars, params). Deterministic hashing with sorted env vars/params, glob pattern support for source file content hashing (10MB limit per file), graceful error handling. Zig 0.15.2 API: ArrayList empty literal, allocator params. Tests pending (Task struct initialization needs fixing). Commits: 8111bb9 (cache_key), 371e6e4 (log). Next: Cache storage module (Phase 2/4). Previous work: v1.81.0 RELEASE (Enhanced Watch Mode & Live Reload).
+- **Latest work (2026-05-02, FEATURE Cycle 196)**: ✅ Cache CLI Commands — Implemented user-facing cache management commands for Task Result Caching & Memoization milestone. Created src/cli/cache.zig (~227 LOC) with 3 subcommands: `cache clean` (clear all), `cache status` (show stats), `cache clear <task>` (clear specific task). Integrated into main.zig CLI dispatcher with help text. Added 7 integration tests (874-880). Milestone now 50% complete: cache key generation ✅, cache storage ✅, scheduler integration ✅, cache CLI ✅. Remaining: cache restore logic, remote backends, list integration, docs. All unit tests passing (1527/1535). Commits: 67b3c4e (cache CLI), 72211ed (counter). Next: Cache restore implementation.
 
 ## PRD Phase Status
 
