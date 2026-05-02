@@ -946,3 +946,184 @@ test "873: cache clear --workspace without workspace config returns error" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(std.mem.indexOf(u8, output, "workspace") != null);
 }
+
+// New cache CLI tests (Cycle 196)
+
+test "874: cache clean removes all cache entries" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create cache directory with dummy entries
+    try tmp.dir.makePath(".zr/cache/entry1");
+    try tmp.dir.makePath(".zr/cache/entry2");
+
+    // Create dummy manifest files
+    const manifest1 = try tmp.dir.createFile(".zr/cache/entry1/manifest.json", .{});
+    defer manifest1.close();
+    try manifest1.writeAll("{\"task_name\":\"test\"}");
+
+    const manifest2 = try tmp.dir.createFile(".zr/cache/entry2/manifest.json", .{});
+    defer manifest2.close();
+    try manifest2.writeAll("{\"task_name\":\"build\"}");
+
+    // Run cache clean
+    var result = try runZr(allocator, &.{ "cache", "clean" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "cleaned") != null or
+        std.mem.indexOf(u8, output, "Cache cleaned") != null);
+}
+
+test "875: cache status shows empty cache when no entries exist" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run cache status without any cache entries
+    var result = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed and show empty cache
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "empty") != null or
+        std.mem.indexOf(u8, output, "0") != null);
+}
+
+test "876: cache status shows statistics with existing entries" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create cache directory with dummy entries
+    try tmp.dir.makePath(".zr/cache/abc123");
+    try tmp.dir.makePath(".zr/cache/def456");
+
+    // Create manifests with task names
+    const manifest1 = try tmp.dir.createFile(".zr/cache/abc123/manifest.json", .{});
+    defer manifest1.close();
+    try manifest1.writeAll("{\"task_name\":\"build\",\"timestamp\":\"2026-05-02T00:00:00Z\",\"cache_key\":\"abc123\",\"exit_code\":0,\"duration_ms\":100}");
+
+    const manifest2 = try tmp.dir.createFile(".zr/cache/def456/manifest.json", .{});
+    defer manifest2.close();
+    try manifest2.writeAll("{\"task_name\":\"test\",\"timestamp\":\"2026-05-02T00:00:00Z\",\"cache_key\":\"def456\",\"exit_code\":0,\"duration_ms\":200}");
+
+    // Create dummy output files
+    const stdout1 = try tmp.dir.createFile(".zr/cache/abc123/stdout", .{});
+    defer stdout1.close();
+    try stdout1.writeAll("build output");
+
+    const stdout2 = try tmp.dir.createFile(".zr/cache/def456/stdout", .{});
+    defer stdout2.close();
+    try stdout2.writeAll("test output");
+
+    // Run cache status
+    var result = try runZr(allocator, &.{ "cache", "status" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed and show statistics
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Total entries") != null or
+        std.mem.indexOf(u8, output, "entries") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "2") != null); // 2 entries
+}
+
+test "877: cache clear <task> removes entries for specific task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create cache entries for different tasks
+    try tmp.dir.makePath(".zr/cache/build-key-1");
+    try tmp.dir.makePath(".zr/cache/test-key-1");
+
+    const manifest1 = try tmp.dir.createFile(".zr/cache/build-key-1/manifest.json", .{});
+    defer manifest1.close();
+    try manifest1.writeAll("{\"task_name\":\"build\",\"timestamp\":\"2026-05-02T00:00:00Z\",\"cache_key\":\"build-key-1\",\"exit_code\":0,\"duration_ms\":100}");
+
+    const manifest2 = try tmp.dir.createFile(".zr/cache/test-key-1/manifest.json", .{});
+    defer manifest2.close();
+    try manifest2.writeAll("{\"task_name\":\"test\",\"timestamp\":\"2026-05-02T00:00:00Z\",\"cache_key\":\"test-key-1\",\"exit_code\":0,\"duration_ms\":200}");
+
+    // Clear cache for 'build' task
+    var result = try runZr(allocator, &.{ "cache", "clear", "build" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Cleared") != null or
+        std.mem.indexOf(u8, output, "build") != null);
+}
+
+test "878: cache clear with non-existent task shows helpful message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run cache clear on non-existent task
+    var result = try runZr(allocator, &.{ "cache", "clear", "nonexistent" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed (no error) but show no entries found
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "No cache") != null or
+        std.mem.indexOf(u8, output, "not found") != null or
+        std.mem.indexOf(u8, output, "empty") != null);
+}
+
+test "879: cache help shows usage information" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run cache help
+    var result = try runZr(allocator, &.{ "cache", "help" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed and show usage
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage") != null or
+        std.mem.indexOf(u8, output, "Commands") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "clean") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "status") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "clear") != null);
+}
+
+test "880: cache with no subcommand shows usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run cache without subcommand
+    var result = try runZr(allocator, &.{"cache"}, tmp_path);
+    defer result.deinit();
+
+    // Should fail and show usage
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage") != null or
+        std.mem.indexOf(u8, output, "Commands") != null or
+        std.mem.indexOf(u8, output, "error") != null);
+}

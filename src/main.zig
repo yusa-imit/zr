@@ -90,6 +90,7 @@ const monitor_dashboard = @import("cli/monitor.zig");
 const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
 const artifacts_cmd = @import("cli/artifacts.zig");
+const cache_cmd = @import("cli/cache.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -1708,6 +1709,13 @@ fn run(
             return 1;
         };
         return 0;
+    } else if (std.mem.eql(u8, cmd, "cache")) {
+        // Handle cache management: zr cache clean/status/clear
+        cache_cmd.handle(allocator, effective_args) catch |err| {
+            try color.printError(ew, effective_color, "cache error: {}\n", .{err});
+            return 1;
+        };
+        return 0;
     }
 
     // This should never be reached due to alias expansion logic above
@@ -1736,8 +1744,9 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  workspace sync         Build synthetic workspace from multi-repo\n", .{});
     try w.print("  affected <task>        Run task on affected workspace members\n", .{});
-    try w.print("  cache clear            Clear all cached task results\n", .{});
+    try w.print("  cache clean            Clear all cached task results\n", .{});
     try w.print("  cache status           Show cache statistics\n", .{});
+    try w.print("  cache clear <task>     Clear cache for specific task\n", .{});
     try w.print("  clean [OPTIONS]        Clean zr data (cache, history, toolchains, plugins)\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin builtins        List available built-in plugins\n", .{});
