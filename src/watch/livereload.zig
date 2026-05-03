@@ -18,6 +18,10 @@ pub const LiveReloadServer = struct {
     clients_mutex: std.Thread.Mutex = .{},
     /// Server socket file descriptor (platform-dependent)
     server_fd: ?std.posix.socket_t = null,
+    /// Active handler threads (for proper shutdown synchronization)
+    handler_threads: std.ArrayList(std.Thread) = undefined,
+    /// Mutex for thread-safe handler_threads access
+    threads_mutex: std.Thread.Mutex = .{},
 
     const Self = @This();
 
@@ -44,6 +48,7 @@ pub const LiveReloadServer = struct {
             .port = port,
             .allocator = allocator,
             .clients = clients,
+            .handler_threads = std.ArrayList(std.Thread){},
         };
     }
 
@@ -53,6 +58,7 @@ pub const LiveReloadServer = struct {
             self.stop() catch {};
         }
         self.clients.deinit();
+        self.handler_threads.deinit(self.allocator);
     }
 
     /// Start the server listening for WebSocket connections (non-blocking).
@@ -101,31 +107,59 @@ pub const LiveReloadServer = struct {
     pub fn stop(self: *Self) !void {
         if (!self.running) return error.NotRunning;
 
-        // Set running to false FIRST so accept loop exits
+        // Set running to false FIRST so accept loop exits on next iteration
         self.running = false;
 
-        // Close server socket to unblock accept()
+        // Wake up accept() by connecting to ourselves (avoids BADF panic)
+        if (self.server_fd) |_| {
+            const wakeup_fd = std.posix.socket(
+                std.posix.AF.INET,
+                std.posix.SOCK.STREAM,
+                std.posix.IPPROTO.TCP,
+            ) catch null;
+            if (wakeup_fd) |fd| {
+                defer std.posix.close(fd);
+                const addr = std.net.Address.initIp4([_]u8{ 127, 0, 0, 1 }, self.port);
+                _ = std.posix.connect(fd, &addr.any, addr.getOsSockLen()) catch {};
+            }
+        }
+
+        // Give accept loop time to process wakeup and exit
+        std.Thread.sleep(100 * std.time.ns_per_ms);
+
+        // Now safe to close server socket (accept loop has exited)
         if (self.server_fd) |fd| {
             std.posix.close(fd);
             self.server_fd = null;
         }
 
-        // Give accept loop and client handlers time to exit cleanly
-        std.Thread.sleep(100 * std.time.ns_per_ms);
-
-        // Close any remaining connected clients and clear list
+        // Shutdown all client sockets to unblock handler threads
         {
             self.clients_mutex.lock();
             defer self.clients_mutex.unlock();
 
             var client_iter = self.clients.iterator();
             while (client_iter.next()) |entry| {
-                // Shutdown socket to unblock any reads
+                // Shutdown socket to unblock any reads in handler threads
                 std.posix.shutdown(entry.value_ptr.fd, .both) catch {};
             }
+        }
 
-            // Don't close FDs here - let handler threads do it
-            // Just clear the map
+        // Wait for all handler threads to complete
+        {
+            self.threads_mutex.lock();
+            defer self.threads_mutex.unlock();
+
+            for (self.handler_threads.items) |thread| {
+                thread.join();
+            }
+            self.handler_threads.clearRetainingCapacity();
+        }
+
+        // Now safe to clear clients (all handlers have exited)
+        {
+            self.clients_mutex.lock();
+            defer self.clients_mutex.unlock();
             self.clients.clearRetainingCapacity();
         }
     }
@@ -219,6 +253,9 @@ pub const LiveReloadServer = struct {
                 &client_addr_len,
                 0,
             ) catch |err| {
+                // Check if we're shutting down
+                if (!self.running) break;
+
                 // Server was closed, exit gracefully
                 if (err == error.SocketNotListening or
                     err == error.FileDescriptorInvalid or
@@ -231,12 +268,27 @@ pub const LiveReloadServer = struct {
                 continue;
             };
 
+            // If shutting down, close wakeup connection and exit
+            if (!self.running) {
+                std.posix.close(client_fd);
+                break;
+            }
+
             // Spawn handler for this connection
             const handler_thread = std.Thread.spawn(.{}, handleClient, .{ self, client_fd }) catch {
                 std.posix.close(client_fd);
                 continue;
             };
-            handler_thread.detach();
+
+            // Track thread for proper shutdown (don't detach)
+            {
+                self.threads_mutex.lock();
+                defer self.threads_mutex.unlock();
+                self.handler_threads.append(self.allocator, handler_thread) catch {
+                    // If tracking fails, detach and continue (graceful degradation)
+                    handler_thread.detach();
+                };
+            }
         }
     }
 
