@@ -1,30 +1,44 @@
 # zr Project Memory
 
-## Latest Session (2026-04-30, Feature Mode Cycle 187)
+## Latest Session (2026-05-03, Cycle 201 — FEATURE → CI OVERRIDE)
+
+### CI Failure Fix — LiveReloadServer Thread Race ✅
+- **Mode**: FEATURE → CI OVERRIDE (CI was RED on main, switched to fix mode)
+- **CI Status**: Was RED (segfault in test #317) → Fixed → Pushed (commit 11eb4a8) → Awaiting CI verification
+- **Open Issues**: 7 open (5 zuda migrations, 1 sailor v2.5.0, 1 unknown), **0 bug reports**
+- **Work**: Fixed critical race condition causing CI segfault in LiveReloadServer tests
+- **Root Cause**:
+  - Handler threads continued accessing `clients` HashMap after `deinit()` during shutdown
+  - Test lifecycle: start() → connect client → stop() → deinit() → handler thread still running
+  - `stop()` called `clients.clearRetainingCapacity()`, then `deinit()` called `clients.deinit()`
+  - Meanwhile, handler thread's defer block tried `clients.remove(id)` on deinitialized HashMap
+  - Resulted in segfault: "Segmentation fault at address 0x68" in HashMap.capacity()
+- **Solution**:
+  - Track handler threads in ArrayList (don't detach them)
+  - Wait for all handler threads to complete via `thread.join()` in `stop()`
+  - Only clear clients HashMap AFTER all threads have exited
+  - Use wakeup connection (connect to localhost) instead of closing server_fd to avoid BADF panic
+  - Check `running` flag after accept() to handle wakeup during shutdown
+- **Changes** (src/watch/livereload.zig, 62 lines modified):
+  - Added `handler_threads: ArrayList(std.Thread)` and `threads_mutex` fields
+  - Initialize handler_threads in `init()`, deinit in `deinit()`
+  - Track threads via `append()` instead of `detach()` in acceptLoop
+  - Modified `stop()`: wakeup accept → wait 100ms → close server_fd → shutdown client fds → join all threads → clear clients
+  - Added running check after accept() to close wakeup connection
+- **Test Results**: 1527/1535 passing (8 skipped, 0 failed) — all green ✅
+- **Commits**: 11eb4a8 (CI fix), 1a8797f (agent log)
+- **Next**: Resume feature development after CI confirms green
+
+## Previous Session (2026-04-30, Feature Mode Cycle 187)
 
 ### v1.80.0 RELEASE — Task Output Artifacts & Persistence ✅
 - **Mode**: FEATURE (counter 187, counter % 5 != 0)
 - **CI Status**: In progress (triggered by v1.80.0 release)
 - **Open Issues**: 5 open (5 zuda migrations), **0 bug reports**
-- **Milestone**: Task Output Artifacts & Persistence (RELEASED v1.80.0)
-- **Actions Taken**:
-  - ✅ **Milestone Status Update**: Updated docs/milestones.md — Task Output Artifacts IN_PROGRESS → DONE
-  - ✅ **Version Bump**: Updated build.zig.zon v1.79.0 → v1.80.0
-  - ✅ **CHANGELOG Entry**: Created comprehensive v1.80.0 entry (~45 LOC) documenting all 3 phases
-  - ✅ **Git Tag**: Created annotated tag v1.80.0 with release summary
-  - ✅ **GitHub Release**: Published release with comprehensive notes, features, examples, comparison table
-  - ✅ **Memory Updates**: Updated project-context.md with v1.80.0 status
-- **Commits**:
-  - f86f063 (milestone update)
-  - 6a51958 (version bump + changelog)
-  - Tag: v1.80.0
-- **GitHub Release**: https://github.com/yusa-imit/zr/releases/tag/v1.80.0
 - **Test Status**: 1487/1495 unit tests passing (8 skipped, 0 failed) — all green
-- **Milestone Summary** (Cycles 182, 184, 186, 187):
-  - **Phase 1** (Cycle 182): Schema + CLI skeleton (~140 LOC)
-  - **Phase 2** (Cycle 184): Collection logic + manifest (~220 LOC)
-  - **Phase 3** (Cycle 186): Compression + retention (~200 LOC)
-  - **Total**: ~560 LOC implementation + 37 integration tests
+- **Milestone**: Task Output Artifacts & Persistence (RELEASED v1.80.0)
+- **GitHub Release**: https://github.com/yusa-imit/zr/releases/tag/v1.80.0
+- **Commits**: f86f063 (milestone update), 6a51958 (version bump + changelog), Tag v1.80.0
 - **Next**: Choose from READY milestones (Task Result Caching, Enhanced Watch Mode, Dependency Resolution, sailor v2.3.0 Migration)
 
 ## Previous Session (2026-04-21, Stabilization Mode Cycle 150)
