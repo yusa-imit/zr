@@ -111,6 +111,7 @@ const toolchain_path = @import("toolchain/path.zig");
 const toolchain_version = @import("toolchain/version.zig");
 const constraints_mod = @import("config/constraints.zig");
 const constraint_mod = @import("config/constraint.zig");
+const lock_mod = @import("config/lock.zig");
 const repos = @import("config/repos.zig");
 const multirepo_sync = @import("multirepo/sync.zig");
 const multirepo_status = @import("multirepo/status.zig");
@@ -142,6 +143,7 @@ comptime {
     _ = matrix;
     _ = constraints_mod;
     _ = constraint_mod;
+    _ = lock_mod;
     _ = dag_mod;
     _ = topo_sort;
     _ = cycle_detect;
