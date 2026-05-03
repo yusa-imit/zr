@@ -126,12 +126,16 @@ test "448: conformance with --only-files flag filters scope" {
     defer zr_toml.close();
     try zr_toml.writeAll(conformance_toml);
 
-    // Run conformance (should handle gracefully)
+    // Run conformance (should handle gracefully when no .conformance file exists)
     var result = try runZr(allocator, &.{ "conformance" }, tmp_path);
     defer result.deinit();
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    // Should complete without error
-    try std.testing.expect(output.len >= 0);
+
+    // Should exit successfully
+    try std.testing.expectEqual(@as(u32, 0), result.exit_code);
+
+    // Should produce output (either stdout or stderr)
+    const has_output = result.stdout.len > 0 or result.stderr.len > 0;
+    try std.testing.expect(has_output);
 }
 
 test "487: conformance with --only-files and --fix applies fixes to specific files" {

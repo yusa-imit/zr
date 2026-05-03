@@ -34,12 +34,18 @@ test "zuda WorkStealingDeque: API exists and types match" {
     // This test verifies the generic function exists
     const DequeType = WorkStealingDeque(u32);
 
-    // Verify init returns the correct type
+    // Verify init returns the correct type and deque is usable
     var deque = try DequeType.init(testing.allocator);
     defer deque.deinit();
 
-    // If we reach here without compile errors, the API exists
-    try testing.expect(true);
+    // Verify deque is initialized correctly (empty state)
+    try testing.expectEqual(@as(usize, 0), deque.size());
+
+    // Verify basic operations work
+    try deque.push(42);
+    try testing.expectEqual(@as(usize, 1), deque.size());
+    try testing.expectEqual(@as(?u32, 42), deque.pop());
+    try testing.expectEqual(@as(usize, 0), deque.size());
 }
 
 test "zuda WorkStealingDeque: init and deinit without leaks" {
@@ -47,10 +53,17 @@ test "zuda WorkStealingDeque: init and deinit without leaks" {
 
     // testing.allocator detects memory leaks
     var deque = try WorkStealingDeque(u32).init(testing.allocator);
-    deque.deinit();
 
-    // If deinit() doesn't free all memory, this test will fail
-    try testing.expect(true);
+    // Verify deque is initialized to empty state before deinit
+    try testing.expectEqual(@as(usize, 0), deque.size());
+
+    // Verify we can use the deque before cleanup
+    try deque.push(100);
+    try testing.expectEqual(@as(usize, 1), deque.size());
+    try testing.expectEqual(@as(?u32, 100), deque.pop());
+
+    deque.deinit();
+    // If deinit() doesn't free all memory, testing allocator will fail
 }
 
 test "zuda WorkStealingDeque: basic push/pop LIFO order" {

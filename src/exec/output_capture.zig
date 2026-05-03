@@ -635,17 +635,30 @@ test "OutputCapture: buffer_size_bytes tracks correctly" {
 test "OutputCapture: multiple init/deinit cycles" {
     const allocator = std.testing.allocator;
 
-    for (0..5) |_| {
+    for (0..5) |i| {
         const config = OutputCaptureConfig{
             .mode = .buffer,
         };
 
         var capture = try OutputCapture.init(allocator, config);
+
+        // Verify init worked correctly
+        try std.testing.expectEqual(OutputMode.buffer, capture.config.mode);
+        try std.testing.expectEqual(@as(usize, 0), capture.buffer_size_bytes);
+
+        // Verify write works
         try capture.writeLine("test", false);
+        try std.testing.expectEqual(@as(usize, 5), capture.buffer_size_bytes); // "test\n"
+
+        // Verify we can write multiple times
+        const expected_msg = try std.fmt.allocPrint(allocator, "cycle{d}", .{i});
+        defer allocator.free(expected_msg);
+        try capture.writeLine(expected_msg, false);
+        try std.testing.expect(capture.buffer_size_bytes > 5);
+
         capture.deinit();
     }
-
-    // Should complete without errors or leaks
+    // testing allocator will detect leaks if deinit() fails
 }
 
 test "OutputCapture: config default values" {
