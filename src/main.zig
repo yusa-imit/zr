@@ -108,6 +108,7 @@ const toolchain_types = @import("toolchain/types.zig");
 const toolchain_installer = @import("toolchain/installer.zig");
 const toolchain_downloader = @import("toolchain/downloader.zig");
 const toolchain_path = @import("toolchain/path.zig");
+const toolchain_version = @import("toolchain/version.zig");
 const constraints_mod = @import("config/constraints.zig");
 const constraint_mod = @import("config/constraint.zig");
 const repos = @import("config/repos.zig");
