@@ -92,12 +92,12 @@ pub fn parseLockFile(allocator: std.mem.Allocator, path: []const u8) !LockFile {
 
     // Simple TOML parsing for lock file structure
     var metadata: LockFileMetadata = undefined;
-    var dependencies = std.ArrayList(LockFileDependency).init(allocator);
+    var dependencies: std.ArrayList(LockFileDependency) = .{};
     errdefer {
         for (dependencies.items) |*dep| {
             dep.deinit(allocator);
         }
-        dependencies.deinit();
+        dependencies.deinit(allocator);
     }
 
     var lines = std.mem.splitScalar(u8, file_data, '\n');
@@ -115,7 +115,7 @@ pub fn parseLockFile(allocator: std.mem.Allocator, path: []const u8) !LockFile {
             in_dependency = false;
         } else if (std.mem.eql(u8, trimmed, "[[dependencies]]")) {
             if (in_dependency and dep_fields == 4) {
-                try dependencies.append(current_dep);
+                try dependencies.append(allocator, current_dep);
             }
             in_metadata = false;
             in_dependency = true;
@@ -152,12 +152,12 @@ pub fn parseLockFile(allocator: std.mem.Allocator, path: []const u8) !LockFile {
 
     // Add final dependency if complete
     if (in_dependency and dep_fields == 4) {
-        try dependencies.append(current_dep);
+        try dependencies.append(allocator, current_dep);
     }
 
     return LockFile{
         .metadata = metadata,
-        .dependencies = try dependencies.toOwnedSlice(),
+        .dependencies = try dependencies.toOwnedSlice(allocator),
     };
 }
 
@@ -178,7 +178,7 @@ pub fn verifyLockFile(
         var constraint_parsed = try constraint.parseConstraint(allocator, constraint_entry.constraint);
         defer constraint_parsed.deinit(allocator);
 
-        const satisfies = try constraint.satisfies(resolved_version, constraint_parsed);
+        const satisfies = constraint.satisfies(resolved_version, constraint_parsed);
         if (!satisfies) return false;
     }
 
@@ -637,23 +637,54 @@ test "Lock file deinit cleans up all allocated memory" {
     // No way to verify deallocation directly, but at least test it doesn't crash
 }
 
-test "generateLockFile returns NotImplemented error" {
-    try std.testing.expectError(error.NotImplemented, generateLockFile(
-        std.testing.allocator,
-        "/tmp/test.zr-lock.toml",
-        &[_]LockFileDependency{},
-        "1.82.0",
-    ));
+test "generateLockFile creates valid TOML file" {
+    const deps = [_]LockFileDependency{
+        .{
+            .tool = "node",
+            .constraint = ">=18.0.0",
+            .resolved = "18.17.0",
+            .detected_at = "2026-05-04T15:50:00Z",
+        },
+    };
+
+    const test_path = "/tmp/zr-test-lock.toml";
+    defer std.fs.cwd().deleteFile(test_path) catch {};
+
+    try generateLockFile(std.testing.allocator, test_path, &deps, "1.82.0");
+
+    // Verify file exists and has content
+    const file_data = try std.fs.cwd().readFileAlloc(std.testing.allocator, test_path, 1024 * 1024);
+    defer std.testing.allocator.free(file_data);
+
+    try std.testing.expect(std.mem.indexOf(u8, file_data, "[metadata]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, file_data, "[[dependencies]]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, file_data, "tool = \"node\"") != null);
 }
 
-test "parseLockFile returns NotImplemented error" {
-    try std.testing.expectError(error.NotImplemented, parseLockFile(
-        std.testing.allocator,
-        "/tmp/test.zr-lock.toml",
-    ));
+test "parseLockFile parses generated lock file" {
+    const deps = [_]LockFileDependency{
+        .{
+            .tool = "node",
+            .constraint = ">=18.0.0",
+            .resolved = "18.17.0",
+            .detected_at = "2026-05-04T15:50:00Z",
+        },
+    };
+
+    const test_path = "/tmp/zr-test-parse-lock.toml";
+    defer std.fs.cwd().deleteFile(test_path) catch {};
+
+    try generateLockFile(std.testing.allocator, test_path, &deps, "1.82.0");
+
+    var parsed = try parseLockFile(std.testing.allocator, test_path);
+    defer parsed.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), parsed.dependencies.len);
+    try std.testing.expectEqualStrings("node", parsed.dependencies[0].tool);
+    try std.testing.expectEqualStrings("18.17.0", parsed.dependencies[0].resolved);
 }
 
-test "verifyLockFile returns NotImplemented error" {
+test "verifyLockFile validates constraints are satisfied" {
     var lock = LockFile{
         .metadata = .{
             .generated = try std.testing.allocator.dupe(u8, "2026-05-04T15:50:00Z"),
@@ -663,11 +694,9 @@ test "verifyLockFile returns NotImplemented error" {
     };
     defer lock.deinit(std.testing.allocator);
 
-    try std.testing.expectError(error.NotImplemented, verifyLockFile(
-        std.testing.allocator,
-        lock,
-        &[_]ConstraintEntry{},
-    ));
+    const constraints = [_]ConstraintEntry{};
+    const result = try verifyLockFile(std.testing.allocator, lock, &constraints);
+    try std.testing.expect(result);
 }
 
 test "needsUpdate returns false for valid lock" {
