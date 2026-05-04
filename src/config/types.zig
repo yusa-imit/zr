@@ -1160,6 +1160,10 @@ pub const Task = struct {
     /// Optional toolchain requirements for this task (e.g., ["node@20.11", "python@3.12"]).
     /// If specified and not installed, will be auto-installed before running the task.
     toolchain: [][]const u8 = &.{},
+    /// Tool version constraints (e.g., { node = ">=18.0.0", python = "^3.8.0" }).
+    /// Specifies required tool versions using semver constraints. Checked before task execution.
+    /// Dependency Resolution & Version Constraints feature (v1.83.0).
+    requires: ?std.StringHashMap([]const u8) = null,
     /// Task categorization tags (e.g., ["build", "test", "ci"]).
     /// Used for filtering and grouping tasks.
     tags: [][]const u8 = &.{},
@@ -1361,6 +1365,16 @@ pub const Task = struct {
         if (self.artifact_retention) |*ar| {
             var ar_mut = ar.*;
             ar_mut.deinit(allocator);
+        }
+        // v1.83.0 tool version constraints
+        if (self.requires) |*requires| {
+            var requires_mut = requires.*;
+            var it = requires_mut.iterator();
+            while (it.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                allocator.free(entry.value_ptr.*);
+            }
+            requires_mut.deinit();
         }
     }
 };

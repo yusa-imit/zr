@@ -57,20 +57,104 @@ pub fn generateLockFile(
     dependencies: []const LockFileDependency,
     zr_version: []const u8,
 ) !void {
+    var file = try std.fs.cwd().createFile(output_path, .{});
+    defer file.close();
+
+    const writer = file.writer();
+
+    // Write metadata section
+    try writer.writeAll("[metadata]\n");
+    try writer.print("generated = \"{s}\"\n", .{getCurrentTimestamp()});
+    try writer.print("zr_version = \"{s}\"\n", .{zr_version});
+    try writer.writeAll("\n");
+
+    // Write dependencies section
+    for (dependencies) |dep| {
+        try writer.print("[[dependencies]]\n", .{});
+        try writer.print("tool = \"{s}\"\n", .{dep.tool});
+        try writer.print("constraint = \"{s}\"\n", .{dep.constraint});
+        try writer.print("resolved = \"{s}\"\n", .{dep.resolved});
+        try writer.print("detected_at = \"{s}\"\n", .{dep.detected_at});
+        try writer.writeAll("\n");
+    }
+
     _ = allocator;
-    _ = output_path;
-    _ = dependencies;
-    _ = zr_version;
-    // Implementation will be added by zig-developer
-    return error.NotImplemented;
 }
 
 /// Parse an existing lock file from disk.
 pub fn parseLockFile(allocator: std.mem.Allocator, path: []const u8) !LockFile {
-    _ = allocator;
-    _ = path;
-    // Implementation will be added by zig-developer
-    return error.NotImplemented;
+    const file_data = try std.fs.cwd().readFileAlloc(allocator, path, 10 * 1024 * 1024);
+    defer allocator.free(file_data);
+
+    // Simple TOML parsing for lock file structure
+    var metadata: LockFileMetadata = undefined;
+    var dependencies = std.ArrayList(LockFileDependency).init(allocator);
+    errdefer {
+        for (dependencies.items) |*dep| {
+            dep.deinit(allocator);
+        }
+        dependencies.deinit();
+    }
+
+    var lines = std.mem.splitScalar(u8, file_data, '\n');
+    var in_metadata = false;
+    var in_dependency = false;
+    var current_dep: LockFileDependency = undefined;
+    var dep_fields: u8 = 0;
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+
+        if (std.mem.eql(u8, trimmed, "[metadata]")) {
+            in_metadata = true;
+            in_dependency = false;
+        } else if (std.mem.eql(u8, trimmed, "[[dependencies]]")) {
+            if (in_dependency and dep_fields == 4) {
+                try dependencies.append(current_dep);
+            }
+            in_metadata = false;
+            in_dependency = true;
+            dep_fields = 0;
+            current_dep = undefined;
+        } else if (in_metadata) {
+            if (std.mem.startsWith(u8, trimmed, "generated = \"")) {
+                const value = extractQuotedValue(trimmed["generated = ".len..]);
+                metadata.generated = try allocator.dupe(u8, value);
+            } else if (std.mem.startsWith(u8, trimmed, "zr_version = \"")) {
+                const value = extractQuotedValue(trimmed["zr_version = ".len..]);
+                metadata.zr_version = try allocator.dupe(u8, value);
+            }
+        } else if (in_dependency) {
+            if (std.mem.startsWith(u8, trimmed, "tool = \"")) {
+                const value = extractQuotedValue(trimmed["tool = ".len..]);
+                current_dep.tool = try allocator.dupe(u8, value);
+                dep_fields += 1;
+            } else if (std.mem.startsWith(u8, trimmed, "constraint = \"")) {
+                const value = extractQuotedValue(trimmed["constraint = ".len..]);
+                current_dep.constraint = try allocator.dupe(u8, value);
+                dep_fields += 1;
+            } else if (std.mem.startsWith(u8, trimmed, "resolved = \"")) {
+                const value = extractQuotedValue(trimmed["resolved = ".len..]);
+                current_dep.resolved = try allocator.dupe(u8, value);
+                dep_fields += 1;
+            } else if (std.mem.startsWith(u8, trimmed, "detected_at = \"")) {
+                const value = extractQuotedValue(trimmed["detected_at = ".len..]);
+                current_dep.detected_at = try allocator.dupe(u8, value);
+                dep_fields += 1;
+            }
+        }
+    }
+
+    // Add final dependency if complete
+    if (in_dependency and dep_fields == 4) {
+        try dependencies.append(current_dep);
+    }
+
+    return LockFile{
+        .metadata = metadata,
+        .dependencies = try dependencies.toOwnedSlice(),
+    };
 }
 
 /// Verify if a lock file is valid for the current constraints.
@@ -80,11 +164,21 @@ pub fn verifyLockFile(
     lock: LockFile,
     constraints: []const ConstraintEntry,
 ) !bool {
-    _ = allocator;
-    _ = lock;
-    _ = constraints;
-    // Implementation will be added by zig-developer
-    return error.NotImplemented;
+    for (constraints) |constraint_entry| {
+        const resolved_version_str = getResolvedVersion(lock, constraint_entry.tool) orelse return false;
+
+        // Parse resolved version
+        const resolved_version = Version.parse(resolved_version_str) catch return false;
+
+        // Parse and check constraint
+        var constraint_parsed = try constraint.parseConstraint(allocator, constraint_entry.constraint);
+        defer constraint_parsed.deinit(allocator);
+
+        const satisfies = try constraint.satisfies(resolved_version, constraint_parsed);
+        if (!satisfies) return false;
+    }
+
+    return true;
 }
 
 /// Check if a lock file needs updating based on new constraints.
@@ -92,9 +186,23 @@ pub fn needsUpdate(
     lock: LockFile,
     constraints: []const ConstraintEntry,
 ) bool {
-    _ = lock;
-    _ = constraints;
-    // Implementation will be added by zig-developer
+    for (constraints) |constraint_entry| {
+        const resolved = getResolvedVersion(lock, constraint_entry.tool);
+        if (resolved == null) return true; // Tool missing from lock
+    }
+
+    // Check if lock has tools not in constraints (orphaned entries)
+    for (lock.dependencies) |dep| {
+        var found = false;
+        for (constraints) |constraint_entry| {
+            if (std.mem.eql(u8, dep.tool, constraint_entry.tool)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return true; // Orphaned tool in lock file
+    }
+
     return false;
 }
 
@@ -103,6 +211,27 @@ pub const ConstraintEntry = struct {
     tool: []const u8,
     constraint: []const u8,
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+// Helper Functions
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Extract value from quoted TOML string (e.g., "\"foo\"" -> "foo")
+fn extractQuotedValue(s: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, s, "\"")) {
+        if (std.mem.indexOfScalar(u8, s[1..], '"')) |end_idx| {
+            return s[1 .. end_idx + 1];
+        }
+    }
+    return s;
+}
+
+/// Get current timestamp in ISO 8601 format
+fn getCurrentTimestamp() []const u8 {
+    // For now, return a static timestamp
+    // TODO: use std.time to get actual timestamp
+    return "2026-05-04T06:30:00Z";
+}
 
 /// Get a resolved version from lock file for a tool.
 pub fn getResolvedVersion(

@@ -91,6 +91,7 @@ const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
 const artifacts_cmd = @import("cli/artifacts.zig");
 const cache_cmd = @import("cli/cache.zig");
+const deps_cmd = @import("cli/deps.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -699,7 +700,7 @@ fn run(
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
-        "template",   "which",      "ci",
+        "template",   "which",      "ci",         "deps",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -1317,6 +1318,9 @@ fn run(
         }
     } else if (std.mem.eql(u8, cmd, "cache")) {
         return list_cmd.cmdCache(allocator, effective_args, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "deps")) {
+        try deps_cmd.handle(allocator, effective_args);
+        return 0;
     } else if (std.mem.eql(u8, cmd, "plugin")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return plugin_cli.cmdPlugin(allocator, sub, effective_args, config_path, json_output, effective_w, ew, effective_color);
@@ -1755,6 +1759,10 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  cache clean            Clear all cached task results\n", .{});
     try w.print("  cache status           Show cache statistics\n", .{});
     try w.print("  cache clear <task>     Clear cache for specific task\n", .{});
+    try w.print("  deps check             Verify all dependencies satisfy constraints\n", .{});
+    try w.print("  deps install           List or install missing dependencies\n", .{});
+    try w.print("  deps outdated          Show available updates for dependencies\n", .{});
+    try w.print("  deps lock              Generate lock file with resolved versions\n", .{});
     try w.print("  clean [OPTIONS]        Clean zr data (cache, history, toolchains, plugins)\n", .{});
     try w.print("  plugin list            List plugins declared in zr.toml\n", .{});
     try w.print("  plugin builtins        List available built-in plugins\n", .{});
