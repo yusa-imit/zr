@@ -57,16 +57,17 @@ pub fn generateLockFile(
     dependencies: []const LockFileDependency,
     zr_version: []const u8,
 ) !void {
-    var file = try std.fs.cwd().createFile(output_path, .{});
-    defer file.close();
+    // Build TOML content
+    var content: std.ArrayList(u8) = .{};
+    defer content.deinit(allocator);
 
-    const writer = file.writer();
+    const writer = content.writer(allocator);
 
     // Write metadata section
-    try writer.writeAll("[metadata]\n");
+    try writer.print("[metadata]\n", .{});
     try writer.print("generated = \"{s}\"\n", .{getCurrentTimestamp()});
     try writer.print("zr_version = \"{s}\"\n", .{zr_version});
-    try writer.writeAll("\n");
+    try writer.print("\n", .{});
 
     // Write dependencies section
     for (dependencies) |dep| {
@@ -75,10 +76,13 @@ pub fn generateLockFile(
         try writer.print("constraint = \"{s}\"\n", .{dep.constraint});
         try writer.print("resolved = \"{s}\"\n", .{dep.resolved});
         try writer.print("detected_at = \"{s}\"\n", .{dep.detected_at});
-        try writer.writeAll("\n");
+        try writer.print("\n", .{});
     }
 
-    _ = allocator;
+    // Write to file
+    var file = try std.fs.cwd().createFile(output_path, .{});
+    defer file.close();
+    try file.writeAll(content.items);
 }
 
 /// Parse an existing lock file from disk.

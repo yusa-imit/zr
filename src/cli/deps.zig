@@ -13,21 +13,21 @@ const LockFileDependency = lock_mod.LockFileDependency;
 
 /// Handle `zr deps` subcommands
 pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    if (args.len < 2) {
+    if (args.len < 3) {
         try printUsage();
         return error.MissingSubcommand;
     }
 
-    const subcommand = args[1];
+    const subcommand = args[2];
 
     if (std.mem.eql(u8, subcommand, "check")) {
-        try handleCheck(allocator, args[2..]);
+        try handleCheck(allocator, args[3..]);
     } else if (std.mem.eql(u8, subcommand, "install")) {
-        try handleInstall(allocator, args[2..]);
+        try handleInstall(allocator, args[3..]);
     } else if (std.mem.eql(u8, subcommand, "outdated")) {
-        try handleOutdated(allocator, args[2..]);
+        try handleOutdated(allocator, args[3..]);
     } else if (std.mem.eql(u8, subcommand, "lock")) {
-        try handleLock(allocator, args[2..]);
+        try handleLock(allocator, args[3..]);
     } else if (std.mem.eql(u8, subcommand, "help") or std.mem.eql(u8, subcommand, "--help")) {
         try printUsage();
     } else {
