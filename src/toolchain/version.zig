@@ -44,27 +44,123 @@ pub fn detectVersion(allocator: std.mem.Allocator, config: VersionDetectionConfi
 ///   - "python 3.11.4" → 3.11.4
 ///   - "zig 0.15.2" → 0.15.2
 ///   - "rustc 1.71.0 (8ede3aae2 2023-07-12)" → 1.71.0
+///   - "go version go1.21.0 linux/amd64" → 1.21.0
+///   - "openjdk version \"17.0.2\"" → 17.0.2
+///   - "(v5.36.0)" → 5.36.0
 pub fn parseVersionOutput(allocator: std.mem.Allocator, output: []const u8) !Version {
     _ = allocator; // May be needed for future string processing
 
-    const trimmed = std.mem.trim(u8, output, " \t\n\r");
+    // Take only the first line to avoid matching versions from dependencies
+    const first_line = if (std.mem.indexOf(u8, output, "\n")) |newline_idx|
+        output[0..newline_idx]
+    else
+        output;
 
-    // Split by whitespace and look for semantic version pattern
-    var parts = std.mem.splitScalar(u8, trimmed, ' ');
+    const trimmed = std.mem.trim(u8, first_line, " \t\n\r");
 
-    while (parts.next()) |part| {
-        // Try to parse each part as a version
-        // Handle leading 'v' prefix
-        const version_str = if (std.mem.startsWith(u8, part, "v"))
-            part[1..]
-        else
-            part;
+    var i: usize = 0;
+    while (i < trimmed.len) : (i += 1) {
+        // Skip non-version characters
+        const c = trimmed[i];
 
-        if (Version.parse(version_str)) |version| {
-            return version;
-        } else |_| {
-            // Not a version, continue searching
+        // Look for potential version start: digit, 'v', or opening paren/quote
+        if (c != 'v' and c != 'V' and !std.ascii.isDigit(c) and c != '(' and c != '"') {
             continue;
+        }
+
+        // Extract potential version substring
+        var start = i;
+        var end = i;
+
+        // Handle opening quotes or parens
+        var in_quotes = false;
+        var in_parens = false;
+        if (c == '"') {
+            in_quotes = true;
+            start += 1;
+        } else if (c == '(') {
+            in_parens = true;
+            start += 1;
+        }
+
+        // Find end of potential version string
+        end = start;
+        while (end < trimmed.len) : (end += 1) {
+            const end_c = trimmed[end];
+            if (in_quotes and end_c == '"') {
+                break;
+            } else if (in_parens and end_c == ')') {
+                break;
+            } else if (!in_quotes and !in_parens) {
+                // Stop at invalid version characters
+                // Valid: digits, dots, 'v'/'V' (for patterns like go1.21.0)
+                // Invalid: everything else (including hyphens, which indicate pre-release)
+                if (end_c != '.' and !std.ascii.isDigit(end_c) and end_c != 'v' and end_c != 'V') {
+                    break;
+                }
+            }
+        }
+
+        if (end > start) {
+            var candidate = trimmed[start..end];
+
+            // Handle 'v' or 'V' prefix
+            if (candidate.len > 0 and (candidate[0] == 'v' or candidate[0] == 'V')) {
+                candidate = candidate[1..];
+            }
+
+            // Special case: extract version from patterns like "go1.21.0"
+            // Look for a digit after a letter
+            if (candidate.len > 2) {
+                for (candidate, 0..) |ch, idx| {
+                    if (std.ascii.isAlphabetic(ch) and idx + 1 < candidate.len and std.ascii.isDigit(candidate[idx + 1])) {
+                        candidate = candidate[idx + 1 ..];
+                        break;
+                    }
+                }
+            }
+
+            // Try to parse as version
+            if (Version.parse(candidate)) |version| {
+                // Validate that this is a complete version, not part of a larger invalid one
+                // Check if there's a dot immediately before or after that would indicate
+                // this is part of a longer version string like "1.2.3.4.5"
+
+                // Check character before start (if not at beginning and not from quotes/parens)
+                if (start > 0 and !in_quotes and !in_parens) {
+                    const char_before = trimmed[start - 1];
+                    if (char_before == '.' or std.ascii.isDigit(char_before)) {
+                        // This is part of a larger version, skip it
+                        if (in_quotes or in_parens) {
+                            i = end;
+                        }
+                        continue;
+                    }
+                }
+
+                // Check character after end
+                if (end < trimmed.len) {
+                    const char_after = trimmed[end];
+                    // Reject if followed by dot or digit (part of larger version)
+                    // or by hyphen (pre-release suffix like -rc1)
+                    if (char_after == '.' or std.ascii.isDigit(char_after) or char_after == '-') {
+                        // This is part of a larger/invalid version, skip it
+                        if (in_quotes or in_parens) {
+                            i = end;
+                        }
+                        continue;
+                    }
+                }
+
+                return version;
+            } else |_| {
+                // Continue searching
+            }
+        }
+
+        // Skip past the attempted parse to avoid re-parsing same content
+        if (in_quotes or in_parens) {
+            i = end;
         }
     }
 
