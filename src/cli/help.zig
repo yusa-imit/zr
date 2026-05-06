@@ -124,3 +124,6 @@ pub fn cmdMan(
     // Generate man page
     try man_gen.formatManPage(allocator, task, w);
 }
+
+// Integration tests for help.zig exist in tests/task_documentation_test.zig
+// Unit tests TODO: Add tests for individual formatting functions
