@@ -9,13 +9,12 @@ const Allocator = std.mem.Allocator;
 const zuda = @import("zuda");
 
 /// Calculate the Levenshtein distance between two strings.
-/// Wrapper around zuda.algorithms.dynamic_programming.editDistance.
+/// Wrapper around zuda.algorithms.dynamic_programming.editDistance (re-exported from edit_distance.distance).
 ///
 /// Returns the minimum number of single-character edits (insertions, deletions, substitutions)
 /// required to transform `source` into `target`.
 pub fn distance(allocator: Allocator, source: []const u8, target: []const u8) !usize {
-    _ = allocator; // zuda.editDistance doesn't require allocator
-    return zuda.algorithms.dynamic_programming.editDistance(source, target);
+    return zuda.algorithms.dynamic_programming.editDistance(allocator, source, target);
 }
 
 /// Suggestion with its Levenshtein distance from the input
