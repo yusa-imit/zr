@@ -184,3 +184,8 @@ test "DAG: in-degree calculation" {
     try std.testing.expect(dag.getInDegree("test") == 2);
     try std.testing.expect(dag.getInDegree("deploy") == 0);
 }
+
+// Import zuda migration tests to include them in the test suite
+test {
+    _ = @import("zuda_migration_test.zig");
+}
