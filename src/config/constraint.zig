@@ -767,3 +767,28 @@ test "edge case: large version numbers" {
     try std.testing.expect(satisfies(v1, constraint));
     try std.testing.expect(!satisfies(v2, constraint));
 }
+
+test "error: invalid version format" {
+    // Missing patch number
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, "1.2"));
+
+    // Invalid characters
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, "invalid"));
+
+    // Negative version
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, "-1.0.0"));
+
+    // Empty string
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, ""));
+}
+
+test "error: malformed constraint syntax" {
+    // Double operators
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, ">>1.0.0"));
+
+    // Invalid range syntax
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, "1.0.0 - "));
+
+    // Missing version after operator
+    try std.testing.expectError(error.InvalidFormat, parseConstraint(std.testing.allocator, ">="));
+}

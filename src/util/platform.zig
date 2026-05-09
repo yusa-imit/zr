@@ -55,19 +55,19 @@ test "getHome returns valid path" {
     }
 }
 
-test "killProcess is callable" {
-    // We can't test actual killing without spawning a process,
-    // but we can verify the function compiles and runs without crashing
-    // on an invalid PID (kernel will reject it).
+test "killProcess is callable and doesn't crash" {
+    // We can't easily test actual process termination in a unit test,
+    // but we can verify the function compiles for all platforms and doesn't crash
+    // when called with an invalid PID (which the kernel will safely reject).
+    //
+    // The real test is: does this test complete without panic/crash?
+    // If we reach the end of this test block, killProcess is working.
     if (comptime native_os != .windows) {
-        killProcess(999999); // Invalid PID, kernel will reject
-        // Verify function executed without panicking
-        try std.testing.expect(true);
+        killProcess(999999); // Invalid PID, kernel will reject silently
     } else {
-        killProcess(0); // No-op on Windows
-        // Verify Windows path executed
-        try std.testing.expect(true);
+        killProcess(0); // No-op on Windows (PID 0 doesn't exist)
     }
+    // Test passes if we reach here without panic
 }
 
 test "getenv returns env vars on POSIX" {
@@ -78,6 +78,12 @@ test "getenv returns env vars on POSIX" {
         // PATH should exist on all POSIX systems
         const path = getenv("PATH");
         try std.testing.expect(path != null);
-        try std.testing.expect(path.?.len > 0);
+        if (path) |p| {
+            try std.testing.expect(p.len > 0);
+            // Verify PATH contains reasonable path separators
+            const has_separator = std.mem.indexOfScalar(u8, p, ':') != null or
+                std.mem.indexOfScalar(u8, p, '/') != null;
+            try std.testing.expect(has_separator);
+        }
     }
 }

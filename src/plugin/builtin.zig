@@ -547,11 +547,18 @@ test "cache plugin: onBeforeTask with no max_age is a no-op" {
     var handle = (try loadBuiltin(allocator, "cache", config)) orelse return error.TestExpectedHandle;
     defer handle.deinit();
 
+    // Verify plugin is cache kind
+    try std.testing.expectEqual(BuiltinHandle.BuiltinKind.cache, handle.kind);
+
     handle.onInit();
+
+    // Verify cache state was initialized with max_age_seconds = 0 (no expiry)
+    try std.testing.expect(handle.state == .cache);
+    try std.testing.expectEqual(@as(u64, 0), handle.state.cache.max_age_seconds);
 
     // Should not panic or error — max_age_seconds == 0 means no eviction.
     handle.onBeforeTask("my-task");
 
-    // Verify function executed without error
-    try std.testing.expect(true);
+    // Verify state is still .cache after calling onBeforeTask
+    try std.testing.expect(handle.state == .cache);
 }

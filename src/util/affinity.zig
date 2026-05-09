@@ -458,3 +458,39 @@ test "affinity: NUMA functions with empty topology" {
     const result2 = setThreadAffinityToPreferredNumaNode(&topology, 0);
     try testing.expectError(error.NoNumaNodes, result2);
 }
+
+test "affinity: empty CPU mask" {
+    const testing = std.testing;
+
+    // Empty array should be handled gracefully
+    const cpu_ids: []const u32 = &.{};
+
+    const result = setThreadAffinityMask(cpu_ids);
+
+    // Should fail with EmptyAffinityMask or UnsupportedPlatform
+    if (result) |_| {
+        // Unsupported platform - acceptable
+    } else |err| {
+        try testing.expect(err == error.EmptyAffinityMask or err == error.UnsupportedPlatform or err == error.InvalidCpuId);
+    }
+}
+
+test "affinity: duplicate CPU IDs in mask" {
+    const testing = std.testing;
+
+    // Duplicate CPU IDs should be handled gracefully
+    const cpu_ids = [_]u32{ 0, 1, 0, 1 };
+
+    const result = setThreadAffinityMask(&cpu_ids);
+
+    // Should either succeed or fail with platform-specific error
+    if (result) |_| {
+        // Success is acceptable - duplicates might just be ignored
+    } else |err| {
+        try testing.expect(
+            err == error.SetAffinityFailed or
+                err == error.UnsupportedPlatform or
+                err == error.InvalidCpuId,
+        );
+    }
+}

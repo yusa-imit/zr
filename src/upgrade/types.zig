@@ -53,3 +53,25 @@ test "Release init/deinit" {
     try std.testing.expectEqualStrings("", release.created_at);
     try std.testing.expectEqualStrings("", release.download_url);
 }
+
+test "Release deinit with allocated fields" {
+    const allocator = std.testing.allocator;
+    var release = Release.init(allocator);
+
+    // Allocate and assign strings to all fields
+    release.version = try allocator.dupe(u8, "1.2.3");
+    release.tag_name = try allocator.dupe(u8, "v1.2.3");
+    release.created_at = try allocator.dupe(u8, "2024-01-01T00:00:00Z");
+    release.download_url = try allocator.dupe(u8, "https://example.com/zr-1.2.3.tar.gz");
+    release.prerelease = true;
+
+    // Verify fields are correctly set before cleanup
+    try std.testing.expectEqualStrings("1.2.3", release.version);
+    try std.testing.expectEqualStrings("v1.2.3", release.tag_name);
+    try std.testing.expectEqual(true, release.prerelease);
+    try std.testing.expectEqualStrings("2024-01-01T00:00:00Z", release.created_at);
+    try std.testing.expectEqualStrings("https://example.com/zr-1.2.3.tar.gz", release.download_url);
+
+    // deinit should free all allocated memory without leaks
+    release.deinit();
+}

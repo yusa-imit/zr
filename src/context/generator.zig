@@ -419,10 +419,16 @@ test "getCurrentProjectName from git repository" {
     // For zr repo, should get "zr"
     // (This is fragile if run outside zr repo, but acceptable for unit test)
     if (std.mem.eql(u8, name, "zr")) {
-        try std.testing.expect(true); // Expected case
+        // Expected case - verify it's the exact string we expect
+        try std.testing.expectEqualStrings("zr", name);
     } else {
         // Could be running in a different git repo or directory
+        // Verify it's a valid identifier (alphanumeric, hyphens, underscores)
         try std.testing.expect(name.len > 0); // At least got a name
+        for (name) |c| {
+            const valid = std.ascii.isAlphanumeric(c) or c == '-' or c == '_' or c == '.';
+            try std.testing.expect(valid);
+        }
     }
 }
 

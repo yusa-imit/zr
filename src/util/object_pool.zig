@@ -118,11 +118,21 @@ test "ObjectPool deinit cleanup" {
 
     var pool = ObjectPool(TestStruct).init(std.testing.allocator);
 
-    _ = try pool.acquire();
-    _ = try pool.acquire();
-    _ = try pool.acquire();
+    const obj1 = try pool.acquire();
+    const obj2 = try pool.acquire();
+    const obj3 = try pool.acquire();
 
+    // Verify pool state after acquisition
     try std.testing.expectEqual(@as(usize, 3), pool.total());
+    try std.testing.expectEqual(@as(usize, 3), pool.all.items.len);
+    try std.testing.expectEqual(@as(usize, 0), pool.available());
+
+    // Release one object back to pool
+    try pool.release(obj1);
+
+    // Verify pool state after release
+    try std.testing.expectEqual(@as(usize, 3), pool.all.items.len); // Still 3 total
+    try std.testing.expectEqual(@as(usize, 1), pool.available()); // 1 available for reuse
 
     // deinit should free all objects without memory leaks
     pool.deinit();
