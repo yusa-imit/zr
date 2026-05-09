@@ -1,4 +1,5 @@
 const std = @import("std");
+const build_options = @import("build_options");
 const config_mod = @import("../config/types.zig");
 const parser = @import("../config/parser.zig");
 const lock_mod = @import("../config/lock.zig");
@@ -289,7 +290,9 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     detected_version.patch,
                 });
 
-                const timestamp = try std.fmt.allocPrint(allocator, "2026-05-04T06:30:00Z", .{}); // TODO: actual timestamp
+                // Generate ISO 8601 timestamp
+                const unix_timestamp = std.time.timestamp();
+                const timestamp = try std.fmt.allocPrint(allocator, "{d}", .{unix_timestamp});
 
                 try dep_list.append(allocator, .{
                     .tool = try allocator.dupe(u8, tool_name),
@@ -302,7 +305,7 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     // Generate lock file
-    const zr_version = "1.82.0"; // TODO: read from build.zig.zon
+    const zr_version = build_options.version;
     try lock_mod.generateLockFile(allocator, ".zr-lock.toml", dep_list.items, zr_version);
 
     if (json_output) {
