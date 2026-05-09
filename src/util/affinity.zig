@@ -139,6 +139,11 @@ pub fn setThreadAffinityMask(cpu_ids: []const u32) !void {
 }
 
 fn setThreadAffinityMaskLinux(cpu_ids: []const u32) !void {
+    // Check for empty mask early
+    if (cpu_ids.len == 0) {
+        return error.EmptyAffinityMask;
+    }
+
     const c = @cImport({
         @cDefine("_GNU_SOURCE", "");
         @cInclude("sched.h");
@@ -173,6 +178,11 @@ fn setThreadAffinityMaskLinux(cpu_ids: []const u32) !void {
 }
 
 fn setThreadAffinityMaskWindows(cpu_ids: []const u32) !void {
+    // Check for empty mask early
+    if (cpu_ids.len == 0) {
+        return error.EmptyAffinityMask;
+    }
+
     const windows = std.os.windows;
 
     // Build bitmask from CPU IDs
