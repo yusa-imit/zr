@@ -59,6 +59,8 @@ pub const DAG = struct {
         pub const Iterator = struct {
             vertex_it: @TypeOf(@as(ZudaGraph, undefined).vertexIterator()),
             dag: *const DAG,
+            // Reusable ArrayList to avoid allocations per iteration
+            temp_deps: std.ArrayList([]const u8),
 
             pub const Entry = struct {
                 key_ptr: []const u8,
@@ -68,11 +70,13 @@ pub const DAG = struct {
             pub fn next(self: *Iterator) ?Entry {
                 const vertex = self.vertex_it.next() orelse return null;
 
+                // Clear and reuse the temp deps list
+                self.temp_deps.clearRetainingCapacity();
+
                 // Get dependencies for this vertex (outgoing edges)
-                var deps = std.ArrayList([]const u8){};
                 if (self.dag.graph.getNeighbors(vertex)) |neighbors| {
                     for (neighbors) |edge| {
-                        deps.append(self.dag.allocator, edge.target) catch continue;
+                        self.temp_deps.append(self.dag.allocator, edge.target) catch continue;
                     }
                 }
 
@@ -80,9 +84,13 @@ pub const DAG = struct {
                     .key_ptr = vertex,
                     .value_ptr = Node{
                         .name = vertex,
-                        .dependencies = deps,
+                        .dependencies = self.temp_deps,
                     },
                 };
+            }
+
+            pub fn deinit(self: *Iterator) void {
+                self.temp_deps.deinit(self.dag.allocator);
             }
         };
 
@@ -90,6 +98,7 @@ pub const DAG = struct {
             return .{
                 .vertex_it = self.dag.graph.vertexIterator(),
                 .dag = self.dag,
+                .temp_deps = std.ArrayList([]const u8){},
             };
         }
 
@@ -122,6 +131,12 @@ pub const DAG = struct {
     }
 
     pub fn deinit(self: *DAG) void {
+        // Free all vertex names that we allocated in addNode()
+        var vertex_it = self.graph.vertexIterator();
+        while (vertex_it.next()) |vertex| {
+            self.allocator.free(vertex);
+        }
+
         self.graph.deinit();
     }
 

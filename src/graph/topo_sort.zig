@@ -59,6 +59,7 @@ pub fn topoSort(allocator: std.mem.Allocator, dag: *const DAG) !TopoSortResult {
     defer in_degree.deinit();
 
     var it = dag.nodes().iterator();
+    defer it.deinit();
     while (it.next()) |entry| {
         const node = entry.value_ptr;
         try in_degree.put(entry.key_ptr, node.dependencies.items.len);
@@ -91,8 +92,9 @@ pub fn topoSort(allocator: std.mem.Allocator, dag: *const DAG) !TopoSortResult {
         try result.append(allocator, try allocator.dupe(u8, current));
 
         // Find all nodes that have `current` as a dependency and reduce their in-degree
-        it = dag.nodes().iterator();
-        while (it.next()) |entry| {
+        var it2 = dag.nodes().iterator();
+        defer it2.deinit();
+        while (it2.next()) |entry| {
             const node = entry.value_ptr;
             for (node.dependencies.items) |dep| {
                 if (std.mem.eql(u8, dep, current)) {
@@ -148,9 +150,12 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
     var processed = std.StringHashMap(bool).init(allocator);
     defer processed.deinit();
 
-    var it = dag.nodes().iterator();
-    while (it.next()) |entry| {
-        try processed.put(entry.key_ptr, false);
+    {
+        var it = dag.nodes().iterator();
+        defer it.deinit();
+        while (it.next()) |entry| {
+            try processed.put(entry.key_ptr, false);
+        }
     }
 
     // Process levels until all nodes are processed
@@ -164,8 +169,9 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
         }
 
         // Find nodes whose dependencies are all processed
-        it = dag.nodes().iterator();
-        while (it.next()) |entry| {
+        var it3 = dag.nodes().iterator();
+        defer it3.deinit();
+        while (it3.next()) |entry| {
             const node_name = entry.key_ptr;
             const node = entry.value_ptr;
 

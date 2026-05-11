@@ -157,13 +157,16 @@ fn renderNode(
         dependents.deinit(allocator);
     }
 
-    var it = dag.nodes().iterator();
-    while (it.next()) |entry| {
-        const node = entry.value_ptr;
-        for (node.dependencies.items) |dep| {
-            if (std.mem.eql(u8, dep, task_name)) {
-                try dependents.append(allocator, try allocator.dupe(u8, node.name));
-                break;
+    {
+        var it = dag.nodes().iterator();
+        defer it.deinit();
+        while (it.next()) |entry| {
+            const node = entry.value_ptr;
+            for (node.dependencies.items) |dep| {
+                if (std.mem.eql(u8, dep, task_name)) {
+                    try dependents.append(allocator, try allocator.dupe(u8, node.name));
+                    break;
+                }
             }
         }
     }

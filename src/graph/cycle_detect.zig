@@ -26,10 +26,13 @@ pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectio
     var in_degree = std.StringHashMap(usize).init(allocator);
     defer in_degree.deinit();
 
-    var it = dag.nodes().iterator();
-    while (it.next()) |entry| {
-        const node = entry.value_ptr;
-        try in_degree.put(entry.key_ptr, node.dependencies.items.len);
+    {
+        var it = dag.nodes().iterator();
+        defer it.deinit();
+        while (it.next()) |entry| {
+            const node = entry.value_ptr;
+            try in_degree.put(entry.key_ptr, node.dependencies.items.len);
+        }
     }
 
     // Queue for nodes with in-degree 0 (no dependencies)
@@ -50,8 +53,9 @@ pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectio
         processed_count += 1;
 
         // Find all nodes that depend on `current` and reduce their in-degree
-        it = dag.nodes().iterator();
-        while (it.next()) |entry| {
+        var it2 = dag.nodes().iterator();
+        defer it2.deinit();
+        while (it2.next()) |entry| {
             const node = entry.value_ptr;
             for (node.dependencies.items) |dep| {
                 if (std.mem.eql(u8, dep, current)) {
@@ -98,13 +102,16 @@ pub fn wouldCreateCycle(allocator: std.mem.Allocator, dag: *DAG, from: []const u
     defer temp_dag.deinit();
 
     // Copy all nodes and edges
-    var it = dag.nodes().iterator();
-    while (it.next()) |entry| {
-        const node = entry.value_ptr;
-        try temp_dag.addNode(node.name);
+    {
+        var it = dag.nodes().iterator();
+        defer it.deinit();
+        while (it.next()) |entry| {
+            const node = entry.value_ptr;
+            try temp_dag.addNode(node.name);
 
-        for (node.dependencies.items) |dep| {
-            try temp_dag.addEdge(node.name, dep);
+            for (node.dependencies.items) |dep| {
+                try temp_dag.addEdge(node.name, dep);
+            }
         }
     }
 
