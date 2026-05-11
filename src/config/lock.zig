@@ -65,7 +65,9 @@ pub fn generateLockFile(
 
     // Write metadata section
     try writer.print("[metadata]\n", .{});
-    try writer.print("generated = \"{s}\"\n", .{getCurrentTimestamp()});
+    const timestamp = try getCurrentTimestamp(allocator);
+    defer allocator.free(timestamp);
+    try writer.print("generated = \"{s}\"\n", .{timestamp});
     try writer.print("zr_version = \"{s}\"\n", .{zr_version});
     try writer.print("\n", .{});
 
@@ -231,10 +233,52 @@ fn extractQuotedValue(s: []const u8) []const u8 {
 }
 
 /// Get current timestamp in ISO 8601 format
-fn getCurrentTimestamp() []const u8 {
-    // For now, return a static timestamp
-    // TODO: use std.time to get actual timestamp
-    return "2026-05-04T06:30:00Z";
+fn getCurrentTimestamp(allocator: std.mem.Allocator) ![]const u8 {
+    const ts = std.time.timestamp();
+    const epoch_seconds = @as(u64, @intCast(ts));
+
+    // Calculate date components from Unix timestamp
+    const days_since_epoch = epoch_seconds / 86400;
+    const seconds_today = epoch_seconds % 86400;
+
+    // Calculate year, month, day (simplified algorithm)
+    // Days since 1970-01-01
+    var year: u64 = 1970;
+    var days_left = days_since_epoch;
+
+    while (true) {
+        const days_in_year: u64 = if (isLeapYear(year)) 366 else 365;
+        if (days_left < days_in_year) break;
+        days_left -= days_in_year;
+        year += 1;
+    }
+
+    const days_in_months: [12]u64 = if (isLeapYear(year))
+        .{ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
+    else
+        .{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+    var month: u64 = 1;
+    for (days_in_months) |days_in_month| {
+        if (days_left < days_in_month) break;
+        days_left -= days_in_month;
+        month += 1;
+    }
+    const day = days_left + 1;
+
+    // Calculate time components
+    const hour = seconds_today / 3600;
+    const minute = (seconds_today % 3600) / 60;
+    const second = seconds_today % 60;
+
+    // Format as ISO 8601: YYYY-MM-DDTHH:MM:SSZ
+    return try std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z", .{
+        year, month, day, hour, minute, second,
+    });
+}
+
+fn isLeapYear(year: u64) bool {
+    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0);
 }
 
 /// Get a resolved version from lock file for a tool.
@@ -764,4 +808,48 @@ test "Lock file constraint and resolved have different values" {
     try std.testing.expect(!std.mem.eql(u8, dep.constraint, dep.resolved));
     try std.testing.expectEqualStrings(">=18.0.0", dep.constraint);
     try std.testing.expectEqualStrings("18.17.0", dep.resolved);
+}
+
+test "getCurrentTimestamp returns valid ISO 8601 format" {
+    const timestamp = try getCurrentTimestamp(std.testing.allocator);
+    defer std.testing.allocator.free(timestamp);
+
+    // ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ
+    // Should be exactly 20 characters
+    try std.testing.expectEqual(@as(usize, 20), timestamp.len);
+
+    // Check structure: YYYY-MM-DDTHH:MM:SSZ
+    try std.testing.expect(timestamp[4] == '-'); // Year separator
+    try std.testing.expect(timestamp[7] == '-'); // Month separator
+    try std.testing.expect(timestamp[10] == 'T'); // Date/time separator
+    try std.testing.expect(timestamp[13] == ':'); // Hour separator
+    try std.testing.expect(timestamp[16] == ':'); // Minute separator
+    try std.testing.expect(timestamp[19] == 'Z'); // UTC indicator
+
+    // Verify all expected positions are digits
+    const digit_positions = [_]usize{ 0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18 };
+    for (digit_positions) |pos| {
+        try std.testing.expect(std.ascii.isDigit(timestamp[pos]));
+    }
+
+    // Parse year and verify it's reasonable (>= 2024)
+    const year = try std.fmt.parseInt(u16, timestamp[0..4], 10);
+    try std.testing.expect(year >= 2024);
+}
+
+test "isLeapYear identifies leap years correctly" {
+    // Standard leap years
+    try std.testing.expect(isLeapYear(2024));
+    try std.testing.expect(isLeapYear(2020));
+    try std.testing.expect(isLeapYear(2000));
+
+    // Non-leap years
+    try std.testing.expect(!isLeapYear(2023));
+    try std.testing.expect(!isLeapYear(2021));
+    try std.testing.expect(!isLeapYear(1900)); // Divisible by 100 but not 400
+    try std.testing.expect(!isLeapYear(2100));
+
+    // Century leap years (divisible by 400)
+    try std.testing.expect(isLeapYear(2000));
+    try std.testing.expect(isLeapYear(2400));
 }
