@@ -157,7 +157,7 @@ fn renderNode(
         dependents.deinit(allocator);
     }
 
-    var it = dag.nodes.iterator();
+    var it = dag.nodes().iterator();
     while (it.next()) |entry| {
         const node = entry.value_ptr;
         for (node.dependencies.items) |dep| {

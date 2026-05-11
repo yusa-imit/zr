@@ -58,10 +58,10 @@ pub fn topoSort(allocator: std.mem.Allocator, dag: *const DAG) !TopoSortResult {
     var in_degree = std.StringHashMap(usize).init(allocator);
     defer in_degree.deinit();
 
-    var it = dag.nodes.iterator();
+    var it = dag.nodes().iterator();
     while (it.next()) |entry| {
         const node = entry.value_ptr;
-        try in_degree.put(entry.key_ptr.*, node.dependencies.items.len);
+        try in_degree.put(entry.key_ptr, node.dependencies.items.len);
     }
 
     // Queue for nodes with in-degree 0 (no dependencies)
@@ -91,15 +91,15 @@ pub fn topoSort(allocator: std.mem.Allocator, dag: *const DAG) !TopoSortResult {
         try result.append(allocator, try allocator.dupe(u8, current));
 
         // Find all nodes that have `current` as a dependency and reduce their in-degree
-        it = dag.nodes.iterator();
+        it = dag.nodes().iterator();
         while (it.next()) |entry| {
             const node = entry.value_ptr;
             for (node.dependencies.items) |dep| {
                 if (std.mem.eql(u8, dep, current)) {
-                    const degree = in_degree.getPtr(entry.key_ptr.*) orelse continue;
+                    const degree = in_degree.getPtr(entry.key_ptr) orelse continue;
                     degree.* -= 1;
                     if (degree.* == 0) {
-                        try queue.append(allocator, entry.key_ptr.*);
+                        try queue.append(allocator, entry.key_ptr);
                     }
                     break;
                 }
@@ -148,9 +148,9 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
     var processed = std.StringHashMap(bool).init(allocator);
     defer processed.deinit();
 
-    var it = dag.nodes.iterator();
+    var it = dag.nodes().iterator();
     while (it.next()) |entry| {
-        try processed.put(entry.key_ptr.*, false);
+        try processed.put(entry.key_ptr, false);
     }
 
     // Process levels until all nodes are processed
@@ -164,9 +164,9 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
         }
 
         // Find nodes whose dependencies are all processed
-        it = dag.nodes.iterator();
+        it = dag.nodes().iterator();
         while (it.next()) |entry| {
-            const node_name = entry.key_ptr.*;
+            const node_name = entry.key_ptr;
             const node = entry.value_ptr;
 
             if (processed.get(node_name).?) {

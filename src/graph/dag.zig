@@ -126,7 +126,7 @@ pub const DAG = struct {
     }
 
     /// Add a node to the graph
-    pub fn addNode(self: *DAG, name: []const u8) !void {
+    pub fn addNode(self: *DAG, name: []const u8) std.mem.Allocator.Error!void {
         // Check if already exists
         if (self.graph.containsVertex(name)) {
             return; // Already exists, nothing to do
@@ -136,11 +136,17 @@ pub const DAG = struct {
         const owned_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(owned_name);
 
-        try self.graph.addVertex(owned_name);
+        self.graph.addVertex(owned_name) catch |err| switch (err) {
+            error.VertexExists => {
+                self.allocator.free(owned_name);
+                return;
+            },
+            error.OutOfMemory => return error.OutOfMemory,
+        };
     }
 
     /// Add an edge from 'from' node to 'to' node (from depends on to)
-    pub fn addEdge(self: *DAG, from: []const u8, to: []const u8) !void {
+    pub fn addEdge(self: *DAG, from: []const u8, to: []const u8) std.mem.Allocator.Error!void {
         try self.addNode(from);
         try self.addNode(to);
 
@@ -149,7 +155,10 @@ pub const DAG = struct {
             return; // Already exists, nothing to do
         }
 
-        try self.graph.addEdge(from, to, {});
+        self.graph.addEdge(from, to, {}) catch |err| switch (err) {
+            error.VertexExists => return,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
     }
 
     /// Get a node by name
