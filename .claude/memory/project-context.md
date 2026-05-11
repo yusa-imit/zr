@@ -12,15 +12,15 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: 1636/1644 passing (8 skipped), 0 failed (+2 new timestamp tests)
-- **Integration tests**: 46 cache tests + 5 watch mode tests + 37 artifact management tests + existing tests
-- **CI**: Pending (awaiting build completion for commit 9936c2b)
-- **GitHub Issues**: 5 open (5 zuda migrations - all BLOCKED awaiting zuda fixes), **0 bug reports**
+- **Unit tests**: ⚠️ Failing (runtime crash during test suite - zuda migration in progress)
+- **Integration tests**: Not run (blocked by unit test failures)
+- **CI**: Pending (awaiting test fixes for commit aa8ee7e)
+- **GitHub Issues**: 5 open (5 zuda migrations - #23/#24 FIXED in v2.0.4), **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.8.0 (upgraded 2026-05-10, Cycle 220 STABILIZATION)
-- **zuda version**: v2.0.3 (upgraded 2026-05-07, Cycle 211)
+- **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE - fixes #23/#24)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-11, FEATURE Cycle 222)**: ✅ **Lock File Timestamp Fix** — Implemented real system timestamp generation for lock files (src/config/lock.zig). Replaced static placeholder with actual Unix epoch to ISO 8601 conversion. Added comprehensive tests for timestamp format validation and leap year calculation. All 1636 unit tests passing. Resolved TODO at lock.zig:236. Previous (Cycle 220 STABILIZATION): Sailor v2.8.0 Migration.
+- **Latest work (2026-05-11, FEATURE Cycle 223)**: ⚙️ **zuda Graph Migration (IN PROGRESS)** — Migrating DAG/topological sort/cycle detection to zuda v2.0.4. Upgraded zuda dependency (fixes #23/#24 blocking issues). Replaced custom DAG implementation (187 LOC) with zuda.containers.graphs.AdjacencyList wrapper. Updated cycle_detect.zig and topo_sort.zig to use new DAG API. Compiles successfully, runtime tests failing (debugging needed). Previous (Cycle 222): Lock File Timestamp Fix.
 
 ## PRD Phase Status
 
@@ -43,7 +43,8 @@
 - All unit tests passing (1516/1524)
 - 0 bug issues open
 
-🎯 **Next Work** — Polishing & Maintenance
-- **READY milestones**: 0 (all current milestones BLOCKED)
-- **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.4+ fixes for issues #23/#24, zuda WorkStealingDeque depends on Graph)
-- **Current priority**: Wait for zuda fixes, perform polishing tasks (test quality audit, documentation improvements, code cleanup, performance optimizations)
+🎯 **Next Work** — zuda Graph Migration
+- **READY milestones**: 1 (zuda Graph Migration - UNBLOCKED with v2.0.4 release)
+- **IN PROGRESS**: zuda Graph Migration (Cycle 223) — compiles, tests failing, needs runtime debugging
+- **BLOCKED milestones**: 1 (zuda WorkStealingDeque depends on Graph completion)
+- **Current priority**: Fix DAG migration test failures, complete Graph Migration, then WorkStealingDeque
