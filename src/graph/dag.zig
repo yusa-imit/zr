@@ -162,11 +162,39 @@ pub const DAG = struct {
     }
 
     /// Get a node by name
-    /// NOTE: Returns null for compatibility (zuda doesn't expose node pointers)
+    /// Returns an allocated Node that must be freed by the caller via node.deinit(allocator) + allocator.destroy(node)
+    /// Returns null if the node doesn't exist
     pub fn getNode(self: *DAG, name: []const u8) ?*Node {
-        _ = self;
-        _ = name;
-        return null;
+        if (!self.graph.containsVertex(name)) {
+            return null;
+        }
+
+        const node = self.allocator.create(Node) catch return null;
+        errdefer self.allocator.destroy(node);
+
+        node.* = Node{
+            .name = self.allocator.dupe(u8, name) catch {
+                self.allocator.destroy(node);
+                return null;
+            },
+            .dependencies = std.ArrayList([]const u8){},
+        };
+        errdefer {
+            self.allocator.free(node.name);
+            self.allocator.destroy(node);
+        }
+
+        // Get outgoing edges (dependencies)
+        if (self.graph.getNeighbors(name)) |neighbors| {
+            for (neighbors) |edge| {
+                node.dependencies.append(
+                    self.allocator,
+                    self.allocator.dupe(u8, edge.target) catch continue,
+                ) catch continue;
+            }
+        }
+
+        return node;
     }
 
     /// Get the in-degree of a node (number of nodes that depend on it)

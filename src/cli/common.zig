@@ -209,9 +209,17 @@ test "buildDag with conditional dependencies - condition true" {
 
     // build should depend on lint because condition is true
     const lint_node = dag.getNode("lint").?;
+    defer {
+        lint_node.deinit(allocator);
+        allocator.destroy(lint_node);
+    }
     try std.testing.expectEqual(@as(usize, 0), lint_node.dependencies.items.len);
 
     const build_node = dag.getNode("build").?;
+    defer {
+        build_node.deinit(allocator);
+        allocator.destroy(build_node);
+    }
     try std.testing.expectEqual(@as(usize, 1), build_node.dependencies.items.len);
     try std.testing.expectEqualStrings("lint", build_node.dependencies.items[0]);
 }
@@ -235,6 +243,10 @@ test "buildDag with conditional dependencies - condition false" {
 
     // build should NOT depend on lint because condition is false
     const build_node = dag.getNode("build").?;
+    defer {
+        build_node.deinit(allocator);
+        allocator.destroy(build_node);
+    }
     try std.testing.expectEqual(@as(usize, 0), build_node.dependencies.items.len);
 }
 
@@ -255,6 +267,10 @@ test "buildDag with optional dependencies - task exists" {
 
     // build should depend on format and lint because they exist
     const build_node = dag.getNode("build").?;
+    defer {
+        build_node.deinit(allocator);
+        allocator.destroy(build_node);
+    }
     try std.testing.expectEqual(@as(usize, 2), build_node.dependencies.items.len);
 }
 
@@ -275,6 +291,10 @@ test "buildDag with optional dependencies - task missing" {
 
     // build should only depend on format (missing_task is ignored)
     const build_node = dag.getNode("build").?;
+    defer {
+        build_node.deinit(allocator);
+        allocator.destroy(build_node);
+    }
     try std.testing.expectEqual(@as(usize, 1), build_node.dependencies.items.len);
     try std.testing.expectEqualStrings("format", build_node.dependencies.items[0]);
 }
@@ -296,5 +316,9 @@ test "buildDag with mixed dependency types" {
 
     // Verify the regular deps
     const build_node = dag.getNode("build").?;
+    defer {
+        build_node.deinit(allocator);
+        allocator.destroy(build_node);
+    }
     try std.testing.expectEqual(@as(usize, 2), build_node.dependencies.items.len); // install + generate
 }
