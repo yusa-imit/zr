@@ -26,10 +26,10 @@ pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectio
     var in_degree = std.StringHashMap(usize).init(allocator);
     defer in_degree.deinit();
 
-    var it = dag.nodes.iterator();
+    var it = dag.nodes().iterator();
     while (it.next()) |entry| {
         const node = entry.value_ptr;
-        try in_degree.put(entry.key_ptr.*, node.dependencies.items.len);
+        try in_degree.put(entry.key_ptr, node.dependencies.items.len);
     }
 
     // Queue for nodes with in-degree 0 (no dependencies)
@@ -50,15 +50,15 @@ pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectio
         processed_count += 1;
 
         // Find all nodes that depend on `current` and reduce their in-degree
-        it = dag.nodes.iterator();
+        it = dag.nodes().iterator();
         while (it.next()) |entry| {
             const node = entry.value_ptr;
             for (node.dependencies.items) |dep| {
                 if (std.mem.eql(u8, dep, current)) {
-                    const degree = in_degree.getPtr(entry.key_ptr.*) orelse continue;
+                    const degree = in_degree.getPtr(entry.key_ptr) orelse continue;
                     degree.* -= 1;
                     if (degree.* == 0) {
-                        try queue.append(allocator, entry.key_ptr.*);
+                        try queue.append(allocator, entry.key_ptr);
                     }
                     break;
                 }
@@ -67,7 +67,7 @@ pub fn detectCycle(allocator: std.mem.Allocator, dag: *const DAG) !CycleDetectio
     }
 
     // If we processed all nodes, there's no cycle
-    if (processed_count == dag.nodes.count()) {
+    if (processed_count == dag.nodes().count()) {
         return CycleDetectionResult{
             .has_cycle = false,
             .cycle_path = null,
@@ -98,7 +98,7 @@ pub fn wouldCreateCycle(allocator: std.mem.Allocator, dag: *DAG, from: []const u
     defer temp_dag.deinit();
 
     // Copy all nodes and edges
-    var it = dag.nodes.iterator();
+    var it = dag.nodes().iterator();
     while (it.next()) |entry| {
         const node = entry.value_ptr;
         try temp_dag.addNode(node.name);
