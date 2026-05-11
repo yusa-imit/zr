@@ -12,15 +12,15 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: ⚠️ Failing (runtime crash during test suite - zuda migration in progress)
-- **Integration tests**: Not run (blocked by unit test failures)
-- **CI**: Pending (awaiting test fixes for commit aa8ee7e)
-- **GitHub Issues**: 5 open (5 zuda migrations - #23/#24 FIXED in v2.0.4), **0 bug reports**
+- **Unit tests**: ✅ Passing (1640 passed, 6 skipped, 0 failed) — ⚠️ 58 tests leak memory (Issue #61)
+- **Integration tests**: Ready to run (unit tests passing)
+- **CI**: ⚠️ Failing due to memory leaks (tests pass but exit code 1 from allocator)
+- **GitHub Issues**: 6 open (5 zuda migrations + 1 memory leak bug), **0 panic bugs**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.8.0 (upgraded 2026-05-10, Cycle 220 STABILIZATION)
 - **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE - fixes #23/#24)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-11, FEATURE Cycle 223)**: ⚙️ **zuda Graph Migration (IN PROGRESS)** — Migrating DAG/topological sort/cycle detection to zuda v2.0.4. Upgraded zuda dependency (fixes #23/#24 blocking issues). Replaced custom DAG implementation (187 LOC) with zuda.containers.graphs.AdjacencyList wrapper. Updated cycle_detect.zig and topo_sort.zig to use new DAG API. Compiles successfully, runtime tests failing (debugging needed). Previous (Cycle 222): Lock File Timestamp Fix.
+- **Latest work (2026-05-12, FEATURE Cycle 224)**: ✅ **DAG.getNode() Fix (COMPLETE)** — Fixed CI-blocking null pointer panic in buildDag tests. Implemented DAG.getNode() to allocate Node from zuda graph data. Updated all test call sites to deinit returned nodes. All buildDag tests passing. Filed Issue #61 for memory leaks (separate concern). Previous (Cycle 223): zuda v2.0.4 Graph Migration (partial).
 
 ## PRD Phase Status
 
