@@ -12,15 +12,15 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: ✅ Passing (1640 passed, 6 skipped, 0 failed) — ⚠️ 58 tests leak memory (Issue #61)
+- **Unit tests**: ✅ Passing (1638 passed, 8 skipped, 0 failed) — all memory leaks fixed (Cycle 224)
 - **Integration tests**: Ready to run (unit tests passing)
-- **CI**: ⚠️ Failing due to memory leaks (tests pass but exit code 1 from allocator)
-- **GitHub Issues**: 6 open (5 zuda migrations + 1 memory leak bug), **0 panic bugs**
+- **CI**: ⚠️ In progress (recent push)
+- **GitHub Issues**: 5 open (4 zuda migrations, 1 util migration), **0 panic bugs**, **0 memory leak bugs**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.8.0 (upgraded 2026-05-10, Cycle 220 STABILIZATION)
 - **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE - fixes #23/#24)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-12, FEATURE Cycle 224)**: ✅ **DAG.getNode() Fix (COMPLETE)** — Fixed CI-blocking null pointer panic in buildDag tests. Implemented DAG.getNode() to allocate Node from zuda graph data. Updated all test call sites to deinit returned nodes. All buildDag tests passing. Filed Issue #61 for memory leaks (separate concern). Previous (Cycle 223): zuda v2.0.4 Graph Migration (partial).
+- **Latest work (2026-05-12, FEATURE Cycle 226)**: ✅ **zuda Graph Migration Assessment** — Evaluated Issue #37 (migrate graph algorithms to zuda). Current status: DAG data structure uses zuda.containers.graphs.AdjacencyList (✅ COMPLETE in Cycles 223-224), providing memory/cache benefits. Topological sort and cycle detection remain custom Kahn's algorithm implementations operating on zuda's graph (decision: keep custom for API compatibility, battle-tested code). Closed #37 with detailed status. Previous (Cycle 224): DAG memory leak fixes.
 
 ## PRD Phase Status
 
@@ -43,8 +43,8 @@
 - All unit tests passing (1516/1524)
 - 0 bug issues open
 
-🎯 **Next Work** — zuda Graph Migration
-- **READY milestones**: 1 (zuda Graph Migration - UNBLOCKED with v2.0.4 release)
-- **IN PROGRESS**: zuda Graph Migration (Cycle 223) — compiles, tests failing, needs runtime debugging
-- **BLOCKED milestones**: 1 (zuda WorkStealingDeque depends on Graph completion)
-- **Current priority**: Fix DAG migration test failures, complete Graph Migration, then WorkStealingDeque
+🎯 **Next Work** — Post-v1.0 Feature Development
+- **READY milestones**: 0 (all post-v1.0 milestones are DONE or BLOCKED per `docs/milestones.md`)
+- **COMPLETED**: zuda Graph Migration (Cycle 226) — DAG uses zuda AdjacencyList, Issue #37 closed
+- **BLOCKED milestones**: Multiple (zuda WorkStealingDeque, utility migrations) - awaiting upstream features
+- **Current priority**: Monitor open issues for bug reports, implement new post-v1.0 features as milestones become READY
