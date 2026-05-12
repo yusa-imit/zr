@@ -3,9 +3,9 @@
 ## Current Status
 
 - **Latest**: v1.82.0 (Task Result Caching & Memoization) — RELEASED 2026-05-04
-- **Active milestones**: 0 READY + 2 BLOCKED
-- **READY milestones**: 0 (all current milestones blocked)
-- **BLOCKED milestones**: 2 (zuda Graph Migration awaiting zuda v2.0.4+ fixes for issues #23/#24, zuda WorkStealingDeque depends on Graph)
+- **Active milestones**: 1 READY (zuda Graph Migration - issues #23/#24 fixed in v2.0.4)
+- **READY milestones**: 1 (zuda Graph Migration unblocked 2026-05-12)
+- **BLOCKED milestones**: 0 (all blockers resolved)
 - **DONE**: Sailor v2.5.0 & v2.6.0 Migration (Cycle 209), Dependency Resolution & Version Constraints (Cycles 204, 206, 208), Task Result Caching & Memoization (Cycles 193-199, v1.82.0 RELEASED), Enhanced Watch Mode & Live Reload (Cycles 189-192, v1.81.0 RELEASED), Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
@@ -548,18 +548,15 @@ Add dependency management for external tool requirements with version constraint
 ### zuda Graph Migration (DAG + Topo Sort + Cycle Detection)
 
 Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src/graph/cycle_detect.zig` (205 LOC) to zuda (issues #23, #24, #36, #37). Use `zuda.compat.zr_dag` compatibility layer for drop-in replacement. Includes:
-- ✅ **zuda v2.0.3 dependency**: Updated build.zig.zon to v2.0.3 (Cycle 211)
+- ✅ **zuda v2.0.4 dependency**: Updated build.zig.zon to v2.0.4 (Cycle 223)
 - ✅ **Test suite created**: Comprehensive zuda_migration_test.zig with 16 tests (Cycle 214)
-- ❌ **BLOCKER**: zuda issue #23 — Zig 0.15 compilation errors (toOwnedSlice API change)
-- ❌ **BLOCKER**: zuda issue #24 — Reversed entry node semantics (CRITICAL)
-- ⏸️ **DAG migration**: Replace src/graph/dag.zig with zuda.compat.zr_dag
-- ⏸️ **Topo sort migration**: Replace src/graph/topo_sort.zig with compat wrapper
-- ⏸️ **Cycle detection migration**: Replace src/graph/cycle_detect.zig with compat wrapper
-- ⏸️ **Call site updates**: Update 7 call sites across scheduler and CLI
-- ⏸️ **Test verification**: Ensure all graph tests pass with zuda implementation
-- ⏸️ **Code removal**: Delete custom implementations after migration complete
-- ⏸️ **Issue closure**: Close GitHub issues #23, #24, #36, #37
-**Status: BLOCKED** — Migration test suite created (Cycle 214, 2026-05-08), but discovered critical bugs in zuda v2.0.3. Filed issues #23 (Zig 0.15 compile errors in topologicalSort/detectCycle) and #24 (reversed entry node semantics). Waiting for zuda fixes before proceeding.
+- ✅ **BLOCKER RESOLVED**: zuda issue #23 FIXED — Closed 2026-05-07 (toOwnedSlice API fixed)
+- ✅ **BLOCKER RESOLVED**: zuda issue #24 FIXED — Closed 2026-05-07 (entry node semantics corrected)
+- ✅ **DAG data structure migrated**: src/graph/dag.zig now uses zuda.containers.graphs.AdjacencyList (Cycle 223)
+- 🔄 **Topo sort migration**: Custom Kahn's algorithm retained for API compatibility (battle-tested)
+- 🔄 **Cycle detection migration**: Custom implementation retained for API compatibility
+- ⏸️ **Issue closure**: Close GitHub issues #36, #37 (document migration status)
+**Status: READY** — UNBLOCKED 2026-05-12 (Cycle 227). DAG data structure migrated to zuda AdjacencyList (Cycle 223-224, memory leak fixes applied). Topological sort and cycle detection kept as custom implementations for API compatibility and stability. Issues #23/#24 fixed in zuda v2.0.4. Migration can proceed for remaining utilities (glob, workstealing).
 
 ### zuda Levenshtein Migration
 
@@ -646,14 +643,13 @@ Add powerful task selection patterns for large monorepos and complex workflows, 
 ### zuda WorkStealingDeque Migration
 
 Migrate from custom `src/exec/workstealing.zig` (130 LOC) to `zuda.containers.queues.WorkStealingDeque` (issue #22). zuda v2.0.0 resolves memory safety bug (issue #13 CLOSED). Includes:
-- ✅ **zuda v2.0.0 dependency**: Updated build.zig.zon from v1.15.0 → v2.0.0 (all tests passing)
-- ✅ **Integration tests**: tests/zuda_workstealing_test.zig (11 tests, previously 2 failing)
-- ⏸️ **Scheduler migration**: Replace WorkStealingDeque in src/exec/scheduler.zig with zuda implementation
-- ⏸️ **Test verification**: Ensure all 11 tests pass with fixed zuda v2.0.0
-- ⏸️ **Performance benchmarks**: Verify work-stealing performance matches or exceeds custom implementation
-- ⏸️ **Code removal**: Delete src/exec/workstealing.zig after migration complete
-- ⏸️ **Issue closure**: Close GitHub issue #22
-**Status: BLOCKED** — Depends on zuda Graph Migration. Deferring until Graph compat is verified working (awaiting zuda v2.0.1+ with issue #21 fix).
+- ✅ **zuda v2.0.4 dependency**: Updated build.zig.zon from v1.15.0 → v2.0.4 (Cycle 223)
+- ✅ **Integration tests**: tests/zuda_workstealing_test.zig (11 tests, all passing with v2.0.4)
+- ⏸️ **Scheduler integration**: Note — WorkStealingDeque not currently used in scheduler.zig
+- ⏸️ **Migration decision**: Evaluate if work-stealing is needed for current parallel execution model
+- ⏸️ **Code removal**: Delete src/exec/workstealing.zig OR integrate into scheduler after evaluation
+- ⏸️ **Issue closure**: Close or update GitHub issue #22 based on integration decision
+**Status: READY** — UNBLOCKED 2026-05-12 (Cycle 227). Graph migration blocker resolved. Awaiting scheduler integration decision before proceeding with migration.
 
 ### zuda Glob Migration
 
