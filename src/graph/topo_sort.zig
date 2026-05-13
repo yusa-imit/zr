@@ -1,3 +1,14 @@
+// src/graph/topo_sort.zig
+//
+// Topological sort for task dependency resolution
+//
+// NOTE: We keep a custom Kahn's algorithm implementation here instead of using
+// zuda's topological_sort because of semantic differences in edge direction:
+// - zr's DAG: edge A→B means "A depends on B" (dependency relationship)
+// - zuda's topo sort: edge A→B means "A before B" (ordering relationship)
+// Converting between these semantics would require reversing all edges, which
+// defeats the purpose of using a library. The custom impl is simple and correct.
+
 const std = @import("std");
 const DAG = @import("dag.zig").DAG;
 const cycle_detect = @import("cycle_detect.zig");
