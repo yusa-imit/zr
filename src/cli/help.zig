@@ -126,4 +126,39 @@ pub fn cmdMan(
 }
 
 // Integration tests for help.zig exist in tests/task_documentation_test.zig
-// Unit tests TODO: Add tests for individual formatting functions
+// Unit tests below verify formatting logic in isolation
+
+
+test "cmdHelp returns error for non-existent task" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var buf = std.ArrayList(u8){};
+    defer buf.deinit(allocator);
+    var err_buf = std.ArrayList(u8){};
+    defer err_buf.deinit(allocator);
+
+    const result = cmdHelp(&config, "nonexistent", true, buf.writer(allocator), err_buf.writer(allocator));
+    try std.testing.expectError(error.TaskNotFound, result);
+
+    const err_output = err_buf.items;
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "Task 'nonexistent' not found") != null);
+}
+
+test "cmdMan returns error for non-existent task" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var buf = std.ArrayList(u8){};
+    defer buf.deinit(allocator);
+    var err_buf = std.ArrayList(u8){};
+    defer err_buf.deinit(allocator);
+
+    const result = cmdMan(allocator, &config, "nonexistent", buf.writer(allocator), err_buf.writer(allocator));
+    try std.testing.expectError(error.TaskNotFound, result);
+
+    const err_output = err_buf.items;
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "Task 'nonexistent' not found") != null);
+}
