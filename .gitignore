@@ -26,3 +26,10 @@ docs/*.tar
 # OS
 .DS_Store
 Thumbs.db
+
+# Editor backups
+*.bak
+*.tmp
+*~
+*.swp
+*.swo
