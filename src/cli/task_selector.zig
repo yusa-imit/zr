@@ -122,3 +122,101 @@ pub fn parseTags(allocator: std.mem.Allocator, tags_str: []const u8) ![][]const 
     return tags.toOwnedSlice(allocator);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Tests
+// ────────────────────────────────────────────────────────────────────────────
+
+test "parseTags: single tag" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, "ci");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), tags.len);
+    try std.testing.expectEqualStrings("ci", tags[0]);
+}
+
+test "parseTags: multiple tags" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, "ci,fast,unit");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), tags.len);
+    try std.testing.expectEqualStrings("ci", tags[0]);
+    try std.testing.expectEqualStrings("fast", tags[1]);
+    try std.testing.expectEqualStrings("unit", tags[2]);
+}
+
+test "parseTags: tags with whitespace" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, " ci , fast , unit ");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), tags.len);
+    try std.testing.expectEqualStrings("ci", tags[0]);
+    try std.testing.expectEqualStrings("fast", tags[1]);
+    try std.testing.expectEqualStrings("unit", tags[2]);
+}
+
+test "parseTags: empty string returns empty slice" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, "");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), tags.len);
+}
+
+test "parseTags: only whitespace returns empty slice" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, "   \t  ");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), tags.len);
+}
+
+test "parseTags: trailing comma is ignored" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, "ci,fast,");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), tags.len);
+    try std.testing.expectEqualStrings("ci", tags[0]);
+    try std.testing.expectEqualStrings("fast", tags[1]);
+}
+
+test "parseTags: multiple consecutive commas" {
+    const allocator = std.testing.allocator;
+
+    const tags = try parseTags(allocator, "ci,,fast");
+    defer {
+        for (tags) |tag| allocator.free(tag);
+        allocator.free(tags);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), tags.len);
+    try std.testing.expectEqualStrings("ci", tags[0]);
+    try std.testing.expectEqualStrings("fast", tags[1]);
+}
