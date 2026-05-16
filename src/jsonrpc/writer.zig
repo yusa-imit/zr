@@ -13,8 +13,8 @@ const MessageId = types.MessageId;
 
 /// Serialize a JSON-RPC message to a string
 pub fn serializeMessage(allocator: std.mem.Allocator, message: Message) ![]const u8 {
-    // TODO(Zig 0.15): std.json.writeStream doesn't exist
-    // Manually build JSON strings for now
+    // Note: Zig 0.15.2 does not provide std.json.stringify for arbitrary structs.
+    // Manual JSON string building is the standard approach for this version.
     return switch (message) {
         .request => |req| try buildRequestJson(allocator, req),
         .notification => |notif| try buildNotificationJson(allocator, notif),

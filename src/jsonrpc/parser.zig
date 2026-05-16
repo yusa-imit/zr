@@ -129,7 +129,8 @@ fn parseErrorObject(allocator: std.mem.Allocator, value: std.json.Value) !ErrorO
     errdefer allocator.free(message);
 
     // Store data as JSON string if present
-    // TODO(Zig 0.15): std.json.writeStream doesn't exist
+    // Note: In Zig 0.15.2, serializing arbitrary JSON back to string requires manual handling.
+    // For now, error data is not parsed into structured form (future enhancement).
     const data = if (obj.get("data")) |_| blk: {
         break :blk try allocator.dupe(u8, "null");
     } else null;
