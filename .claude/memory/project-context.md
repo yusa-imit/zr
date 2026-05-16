@@ -12,16 +12,16 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: ✅ Passing (1647 passed, 8 skipped, 0 failed) — test fixes applied (Cycle 235)
-- **Integration tests**: Ready to run (unit tests passing)
+- **Unit tests**: ✅ Passing (1647 passed, 8 skipped, 0 failed)
+- **Integration tests**: 75 test files, 1731 tests (8 newly added in Cycle 240)
 - **Test coverage**: 97.6% (201/206 files) — exceeds 80% threshold
-- **CI**: ✅ Pending verification (recent runs cancelled)
+- **CI**: ⏳ In progress (~6 hours on integration tests - investigating)
 - **GitHub Issues**: 1 open (#30 zuda graph migration - WIP/draft status), **0 panic bugs**, **0 memory leak bugs**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
-- **Sailor version**: v2.10.0 (upgraded 2026-05-15, Cycle 236 FEATURE - AI/ML integration, smart autocomplete, layout intelligence)
-- **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE - fixes #23/#24)
+- **Sailor version**: v2.10.0 (upgraded 2026-05-15, Cycle 236 FEATURE)
+- **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-15, FEATURE Cycle 236)**: ✅ **Sailor v2.10.0 Migration** — Upgraded sailor from v2.8.0 to v2.10.0. New features: AI/ML integration (LLM client with streaming), smart autocomplete (context-aware suggestions), layout intelligence (AI-assisted optimization), natural language commands. Zero breaking changes. All unit tests passing (1647 passed, 8 skipped, 0 failed). Closed #63. Commit b545bea. Previous (Cycle 235): test repair in task_selector.zig.
+- **Latest work (2026-05-16, STABILIZATION Cycle 240)**: ✅ **Integration Test Coverage** — Added 8 missing integration test files to test suite (builtin_templates, env_export, numa_affinity, output_capture, task_aliases, task_params, which, workspace_inheritance). Fixed doc comment issues and import paths. Identified 8 CLI modules without tests: analytics_tui, artifacts, config_editor, graph_tui, task_selector, template_cmd, tui_mouse, tui_runner. Excluded 2 tests due to API incompatibilities (show_streaming_test: memoryStats not in Zig 0.15, graph_interactive_test: TestRunner not in helpers). Commits: a3f5cbf (session counter + jsonrpc comment improvements), f6f945f (integration test additions).
 
 ## PRD Phase Status
 
