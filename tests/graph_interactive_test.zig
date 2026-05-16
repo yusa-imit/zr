@@ -1,6 +1,6 @@
 /// Integration tests for interactive workflow visualizer (v1.58.0)
 const std = @import("std");
-const helpers = @import("test_helpers.zig");
+const helpers = @import("helpers.zig");
 
 // Test 3907: Interactive visualizer generates valid HTML
 test "graph --interactive generates valid HTML" {

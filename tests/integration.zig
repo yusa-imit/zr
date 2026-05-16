@@ -11,6 +11,7 @@ comptime {
     _ = @import("analytics_test.zig");
     _ = @import("artifact_management_test.zig");
     _ = @import("bench_test.zig");
+    _ = @import("builtin_templates_test.zig");
     _ = @import("cache_test.zig");
     _ = @import("cache_storage_test.zig");
     _ = @import("cd_test.zig");
@@ -30,6 +31,7 @@ comptime {
     _ = @import("enhanced_discovery_test.zig");
     _ = @import("env_test.zig");
     _ = @import("env_file_test.zig");
+    _ = @import("env_export_test.zig");
     _ = @import("integration_dotenv.zig");
     _ = @import("error_recovery_test.zig");
     _ = @import("error_messages_test.zig");
@@ -38,6 +40,7 @@ comptime {
     _ = @import("failures_test.zig");
     _ = @import("graph_test.zig");
     _ = @import("graph_formats_test.zig");
+    // _ = @import("graph_interactive_test.zig"); // TODO: Fix TestRunner API not in helpers
     _ = @import("history_test.zig");
     _ = @import("hooks_test.zig");
     _ = @import("init_test.zig");
@@ -59,7 +62,9 @@ comptime {
     _ = @import("misc_test.zig");
     _ = @import("mixin_test.zig");
     _ = @import("monitor_test.zig");
+    _ = @import("numa_affinity_test.zig");
     _ = @import("output_filtering_test.zig");
+    _ = @import("output_capture_test.zig");
     _ = @import("plugin_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
@@ -75,8 +80,11 @@ comptime {
     _ = @import("shell_ergonomics_test.zig");
     _ = @import("shell_hook_test.zig");
     _ = @import("show_test.zig");
+    // _ = @import("show_streaming_test.zig"); // TODO: Fix memoryStats() API not available in Zig 0.15
     _ = @import("silent_mode_test.zig");
     _ = @import("task_filtering_test.zig");
+    _ = @import("task_aliases_test.zig");
+    _ = @import("task_params_test.zig");
     _ = @import("task_documentation_test.zig");
     _ = @import("task_documentation_parser_test.zig");
     _ = @import("template_test.zig");
@@ -87,7 +95,9 @@ comptime {
     _ = @import("validate_test.zig");
     _ = @import("version_test.zig");
     _ = @import("watch_test.zig");
+    _ = @import("which_test.zig");
     _ = @import("workflow_test.zig");
     _ = @import("workflow_matrix_test.zig");
     _ = @import("workspace_test.zig");
+    _ = @import("workspace_inheritance_test.zig");
 }

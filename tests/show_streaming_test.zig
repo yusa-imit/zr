@@ -3,7 +3,7 @@ const helpers = @import("helpers.zig");
 const runZr = helpers.runZr;
 const writeTmpConfig = helpers.writeTmpConfig;
 
-/// Test that show with --output streams large files without loading into memory
+// Test that show with --output streams large files without loading into memory
 test "show --output streams large file without OOM (>100MB simulated)" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -56,7 +56,7 @@ test "show --output streams large file without OOM (>100MB simulated)" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
-/// Test that streaming with --search filter works correctly
+// Test that streaming with --search filter works correctly
 test "show --output --search streams and filters without loading full file" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -112,7 +112,7 @@ test "show --output --search streams and filters without loading full file" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "INFO: Regular log") == null);
 }
 
-/// Test that streaming with --head works correctly
+// Test that streaming with --head works correctly
 test "show --output --head streams only requested lines" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -163,7 +163,7 @@ test "show --output --head streams only requested lines" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Line number 100") == null);
 }
 
-/// Test that streaming with --tail works correctly
+// Test that streaming with --tail works correctly
 test "show --output --tail streams only last N lines efficiently" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -215,7 +215,7 @@ test "show --output --tail streams only last N lines efficiently" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Line number 1000") == null);
 }
 
-/// Test that highlighting still works in streaming mode
+// Test that highlighting still works in streaming mode
 test "show --output --search preserves highlighting in streaming mode" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -269,7 +269,7 @@ test "show --output --search preserves highlighting in streaming mode" {
     try std.testing.expect(count >= 90 and count <= 110); // Allow some tolerance
 }
 
-/// Test memory usage stays under threshold for multi-GB file (simulated)
+// Test memory usage stays under threshold for multi-GB file (simulated)
 test "show --output memory usage stays under 50MB for large files" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -327,7 +327,7 @@ test "show --output memory usage stays under 50MB for large files" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Log entry 1999999") != null);
 }
 
-/// Test that streaming works with combined filters (search + head)
+// Test that streaming works with combined filters (search + head)
 test "show --output --search --head streams with combined filters" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -385,7 +385,7 @@ test "show --output --search --head streams with combined filters" {
     try std.testing.expectEqual(@as(usize, 5), count);
 }
 
-/// Test edge case: empty file
+// Test edge case: empty file
 test "show --output streams empty file correctly" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -418,7 +418,7 @@ test "show --output streams empty file correctly" {
     try std.testing.expectEqual(@as(usize, 0), trimmed.len);
 }
 
-/// Test edge case: file with single line
+// Test edge case: file with single line
 test "show --output streams single line file correctly" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
