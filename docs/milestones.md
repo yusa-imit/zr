@@ -18,6 +18,19 @@
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
 
+### Code Quality & Documentation Polish
+
+Polish code quality, improve documentation, and enhance user experience with small but impactful improvements. Focus on developer experience, code maintainability, and documentation accuracy. This milestone addresses technical debt and ensures the codebase is ready for long-term maintenance. Includes:
+- **Code comment accuracy**: Review and update comments that reference old version numbers or outdated behavior
+- **Error message clarity**: Review all user-facing error messages for consistency and helpfulness
+- **Documentation updates**: Update README and guides to reflect current feature set and version (v1.82.0)
+- **Example improvements**: Ensure all examples in `examples/` are tested and up-to-date
+- **Test documentation**: Add test docstrings to clarify what each test validates
+- **Performance annotations**: Add performance characteristics comments to hot-path functions
+- **Memory safety audit**: Review allocator usage patterns and ensure consistent error handling
+- **CLI help text**: Ensure all commands have consistent, helpful --help output
+**Status: ACTIVE** — Started 2026-05-17 (Cycle 243 FEATURE). This is a continuous improvement milestone with no fixed end date. Work items completed incrementally as time permits.
+
 ### Enhanced Environment Variable Management
 
 Improve environment variable handling with .env file support, variable interpolation, and flexible merging strategies. Currently tasks can only specify env vars in TOML, requiring duplication for shared environments. This milestone adds .env file loading, variable expansion, and inheritance patterns similar to docker-compose and direnv. Includes:
