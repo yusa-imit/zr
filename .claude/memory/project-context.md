@@ -21,7 +21,7 @@
 - **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
 - **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-18, FEATURE Cycle 246)**: 🐛 **Bug Fix** — Fixed pre-existing test failure: cmdHistory FileTooBig error caused by 1MB history file exceeding read limit. Increased history file size limit from 1MB→10MB (store.zig), increased test buffer sizes 4KB→64KB (run.zig), fixed cmdHistory test to use /dev/null writer. All tests now passing (1647/1647). Commits: 3b49d43 (counter→246), 0625379 (fix).
+- **Latest work (2026-05-18, FEATURE Cycle 247)**: 📚 **Documentation Polish** — Code Quality & Documentation Polish milestone work. Removed outdated comment in livereload.zig (WebSocket tests fully implemented), updated version references in docs (v1.56.0/v1.71.0 → v1.82.0) in getting-started.md, command-reference.md, troubleshooting.md. All tests passing (1647/1647). Commits: 5cc9d5a (counter→247), 2441c59 (comment fix), 053c935 (docs).
 
 ## PRD Phase Status
 
