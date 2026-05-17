@@ -44,7 +44,7 @@ sudo cp zig-out/bin/zr /usr/local/bin/
 
 ```bash
 zr --version
-# zr v1.56.0
+# zr v1.82.0
 ```
 
 ## Quick Start

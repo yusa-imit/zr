@@ -1402,7 +1402,7 @@ zr doctor
 
 **Output**:
 ```
-✓ zr v1.71.0
+✓ zr v1.82.0
 ✓ Config: zr.toml (valid)
 ✓ Node.js 20.11.1 (required: 20.11.1)
 ✓ Git repository
