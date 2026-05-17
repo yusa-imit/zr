@@ -1378,10 +1378,10 @@ test "printRunResultJson emits valid JSON structure" {
 test "cmdRun: missing config returns error" {
     const allocator = std.testing.allocator;
 
-    var out_buf: [4096]u8 = undefined;
+    var out_buf: [65536]u8 = undefined; // Larger buffer to avoid FileTooBig
     const stdout = std.fs.File.stdout();
     var out_w = stdout.writer(&out_buf);
-    var err_buf: [4096]u8 = undefined;
+    var err_buf: [65536]u8 = undefined; // Larger buffer
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
@@ -1424,10 +1424,10 @@ test "cmdRun: unknown task returns error" {
     const toml_content = "[tasks.build]\ncmd = \"echo build\"\n";
     try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
 
-    var out_buf: [4096]u8 = undefined;
+    var out_buf: [65536]u8 = undefined; // Larger buffer to avoid FileTooBig
     const stdout = std.fs.File.stdout();
     var out_w = stdout.writer(&out_buf);
-    var err_buf: [4096]u8 = undefined;
+    var err_buf: [65536]u8 = undefined; // Larger buffer
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
@@ -1470,10 +1470,10 @@ test "cmdRun: dry run shows plan without executing" {
     const toml_content = "[tasks.hello]\ncmd = \"echo hello\"\n";
     try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
 
-    var out_buf: [4096]u8 = undefined;
+    var out_buf: [65536]u8 = undefined; // Larger buffer to avoid FileTooBig
     const stdout = std.fs.File.stdout();
     var out_w = stdout.writer(&out_buf);
-    var err_buf: [4096]u8 = undefined;
+    var err_buf: [65536]u8 = undefined; // Larger buffer
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
@@ -1516,10 +1516,10 @@ test "cmdRun: successful task returns 0" {
     const toml_content = "[tasks.hello]\ncmd = \"true\"\n";
     try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
 
-    var out_buf: [4096]u8 = undefined;
+    var out_buf: [65536]u8 = undefined; // Larger buffer to avoid FileTooBig
     const stdout = std.fs.File.stdout();
     var out_w = stdout.writer(&out_buf);
-    var err_buf: [4096]u8 = undefined;
+    var err_buf: [65536]u8 = undefined; // Larger buffer
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
@@ -1562,10 +1562,10 @@ test "cmdRun: failing task returns 1" {
     const toml_content = "[tasks.fail]\ncmd = \"false\"\n";
     try tmp_dir.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_content });
 
-    var out_buf: [4096]u8 = undefined;
+    var out_buf: [65536]u8 = undefined; // Larger buffer to avoid FileTooBig
     const stdout = std.fs.File.stdout();
     var out_w = stdout.writer(&out_buf);
-    var err_buf: [4096]u8 = undefined;
+    var err_buf: [65536]u8 = undefined; // Larger buffer
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
@@ -1613,18 +1613,22 @@ test "printDryRunPlan: empty plan" {
     try printDryRunPlan(allocator, &out_w.interface, false, plan, &config);
 }
 
-test "cmdHistory: empty history returns 0" {
+test "cmdHistory: returns 0 even with large history" {
     const allocator = std.testing.allocator;
 
-    var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
-    var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    // Note: This test may use the real .zr_history file if it exists.
+    // The output can be large (1MB+), so we use /dev/null as writer
+    // to avoid buffer overflow while still testing the return code.
+    const builtin = @import("builtin");
+    const devnull = try std.fs.openFileAbsolute(if (builtin.os.tag == .windows) "NUL" else "/dev/null", .{ .mode = .write_only });
+    defer devnull.close();
 
-    // cmdHistory reads from .zr_history in cwd; if it doesn't exist it shows "No history yet"
-    // Either way it should return 0
+    var out_buf: [4096]u8 = undefined;
+    var out_w = devnull.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = devnull.writer(&err_buf);
+
+    // cmdHistory should always return 0 regardless of history content
     const result = try cmdHistory(
         allocator,
         false,

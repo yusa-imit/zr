@@ -78,7 +78,7 @@ pub const Store = struct {
             records.deinit(allocator);
         }
 
-        const content = std.fs.cwd().readFileAlloc(allocator, self.path, 1024 * 1024) catch |err| {
+        const content = std.fs.cwd().readFileAlloc(allocator, self.path, 10 * 1024 * 1024) catch |err| {
             if (err == error.FileNotFound) return records;
             return err;
         };
