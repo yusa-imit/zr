@@ -151,7 +151,10 @@ fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (install_deps) {
-        // TODO: actual installation logic
+        // TODO(future): Implement automatic dependency installation
+        // This would integrate with toolchain management to automatically download
+        // and install missing tools (node, python, etc.) similar to asdf/mise.
+        // Needs: toolchain downloader integration, version resolver, install hooks
         std.debug.print("Auto-installation not yet implemented\n", .{});
     }
 
@@ -245,7 +248,11 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (update_mode) {
-        // TODO: update existing lock file
+        // TODO(future): Implement lock file update logic
+        // This would read existing .zr-lock.toml, resolve latest compatible versions
+        // for each dependency based on constraints, and regenerate the lock file.
+        // Needs: lock file parser, version resolver, constraint checker integration
+        std.debug.print("Lock file update not yet implemented\n", .{});
     }
 
     var config = try loadConfig(allocator);
@@ -436,13 +443,13 @@ fn printInstallHelp() !void {
         \\List or install missing dependencies.
         \\
         \\Options:
-        \\  --install-deps   Automatically install missing tools (experimental)
+        \\  --install-deps   Automatically install missing tools (not yet implemented)
         \\  --json           Output in JSON format
         \\  --help           Show this help message
         \\
         \\Examples:
         \\  zr deps install
-        \\  zr deps install --install-deps
+        \\  zr deps install --install-deps  # Not yet functional
         \\
     , .{});
 }
@@ -472,13 +479,13 @@ fn printLockHelp() !void {
         \\Generate lock file with resolved dependency versions.
         \\
         \\Options:
-        \\  --update    Update lock file with latest compatible versions
+        \\  --update    Update lock file with latest compatible versions (not yet implemented)
         \\  --json      Output in JSON format
         \\  --help      Show this help message
         \\
         \\Examples:
         \\  zr deps lock
-        \\  zr deps lock --update
+        \\  zr deps lock --update  # Not yet functional
         \\
     , .{});
 }
