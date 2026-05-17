@@ -544,7 +544,7 @@ test "LiveReloadServer initial client count is zero" {
     try std.testing.expectEqual(@as(usize, 0), server.clientCount());
 }
 
-// --- WebSocket Integration Tests (will fail until TODOs are implemented) ---
+// --- WebSocket Integration Tests ---
 
 test "LiveReloadServer binds to port successfully" {
     const allocator = std.testing.allocator;
