@@ -12,7 +12,7 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: ✅ Passing (1647 passed, 8 skipped, 0 failed)
+- **Unit tests**: ✅ Passing (1647 passed, 8 skipped, 0 failed) — fixed FileTooBig test failure Cycle 246
 - **Integration tests**: 107 test files (added help_test.zig in Cycle 245)
 - **Test coverage**: 97.6% (201/206 files) — exceeds 80% threshold
 - **CI**: ⏳ In progress (checking latest run)
@@ -21,7 +21,7 @@
 - **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
 - **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-17, STABILIZATION Cycle 245)**: 🔧 **Stabilization** — Migrated to sailor v2.10.1 (test reliability patch, zero functional changes). Added integration tests for help command (9 tests covering task details, descriptions, examples, error handling). Closed issue #64. All unit tests passing (1647/1655). Commits: 29727a7 (counter→245), c8b780a (sailor v2.10.1), 38f6171 (help tests).
+- **Latest work (2026-05-18, FEATURE Cycle 246)**: 🐛 **Bug Fix** — Fixed pre-existing test failure: cmdHistory FileTooBig error caused by 1MB history file exceeding read limit. Increased history file size limit from 1MB→10MB (store.zig), increased test buffer sizes 4KB→64KB (run.zig), fixed cmdHistory test to use /dev/null writer. All tests now passing (1647/1647). Commits: 3b49d43 (counter→246), 0625379 (fix).
 
 ## PRD Phase Status
 
