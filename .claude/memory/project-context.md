@@ -21,7 +21,7 @@
 - **Sailor version**: v2.10.0 (upgraded 2026-05-15, Cycle 236 FEATURE)
 - **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-17, FEATURE Cycle 243)**: 📝 **Milestone Establishment** — Established new "Code Quality & Documentation Polish" milestone per protocol (0 active milestones → must create new ones). Milestone focuses on continuous improvements: code comments, error messages, documentation accuracy, test quality, memory safety audits. All tests passing (1647/1655), 97.6% test coverage, 0 open issues. CI in-progress (not failing). Dependencies current: Sailor v2.10.0, zuda v2.0.4. Commits: f860578 (counter→243), 7e029ac (milestone addition).
+- **Latest work (2026-05-17, FEATURE Cycle 244)**: 📝 **Help Text Clarity** — Improved user experience by clarifying unimplemented features in deps command help text. Updated `deps install --install-deps` and `deps lock --update` to explicitly state "not yet implemented" (previously said "experimental" which was misleading). Enhanced TODO comments with implementation requirements. Part of Code Quality & Documentation Polish milestone. All tests passing (1647/1655). Commits: a220d80 (help text clarification), 9402df3 (counter→244).
 
 ## PRD Phase Status
 
