@@ -4,7 +4,7 @@ const sailor = @import("sailor");
 /// Handle `zr artifacts` subcommands
 pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 2) {
-        _ = std.debug.print("error: missing subcommand\n", .{});
+        std.debug.print("✗ Missing subcommand\n\n", .{});
         return error.MissingSubcommand;
     }
 
@@ -17,14 +17,14 @@ pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, subcommand, "help")) {
         try printUsage();
     } else {
-        _ = std.debug.print("error: unknown subcommand '{s}'\n", .{subcommand});
+        std.debug.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
         return error.UnknownSubcommand;
     }
 }
 
 fn handleGet(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        _ = std.debug.print("error: get requires a task name\n", .{});
+        std.debug.print("✗ Get requires a task name\n\n", .{});
         return error.MissingTaskName;
     }
 
@@ -111,7 +111,7 @@ fn handleGet(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        _ = std.debug.print("error: clean requires --older-than or --task flag\n", .{});
+        std.debug.print("✗ Clean requires --older-than or --task flag\n\n", .{});
         return error.MissingCleanFlag;
     }
 
@@ -136,7 +136,7 @@ fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (older_than) |time_str| {
         // Parse time string (e.g., "30d")
         if (time_str.len < 2 or time_str[time_str.len - 1] != 'd') {
-            _ = std.debug.print("error: --older-than format must be like '30d' (days)\n", .{});
+            std.debug.print("✗ --older-than format must be like '30d' (days)\n\n", .{});
             return error.InvalidTimeFormat;
         }
 

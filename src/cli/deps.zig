@@ -32,7 +32,7 @@ pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, subcommand, "help") or std.mem.eql(u8, subcommand, "--help")) {
         try printUsage();
     } else {
-        std.debug.print("error: unknown subcommand '{s}'\n", .{subcommand});
+        std.debug.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
         try printUsage();
         return error.UnknownSubcommand;
     }
@@ -287,7 +287,7 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     .tool_name = tool_name,
                 };
                 const detected_version = version_mod.detectVersion(allocator, version_config) catch {
-                    std.debug.print("Warning: Could not detect version for {s}\n", .{tool_name});
+                    std.debug.print("⚠ Warning: Could not detect version for {s}\n", .{tool_name});
                     continue;
                 };
 

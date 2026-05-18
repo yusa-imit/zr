@@ -19,7 +19,7 @@ pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, subcommand, "help")) {
         try printUsage();
     } else {
-        std.debug.print("error: unknown subcommand '{s}'\n", .{subcommand});
+        std.debug.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
         return error.UnknownSubcommand;
     }
 }
@@ -132,8 +132,8 @@ fn handleStatus(allocator: std.mem.Allocator) !void {
 /// Handle `zr cache clear <task>` - clear cache for specific task
 fn handleClear(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.debug.print("error: clear requires a task name or cache key\n", .{});
-        std.debug.print("usage: zr cache clear <task-name-or-key>\n", .{});
+        std.debug.print("✗ Clear requires a task name or cache key\n\n", .{});
+        std.debug.print("  Usage: zr cache clear <task-name-or-key>\n", .{});
         return error.MissingTaskName;
     }
 
