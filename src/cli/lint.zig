@@ -35,7 +35,7 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
 
     // Load config
     var config = config_loader.loadFromFile(allocator, config_path) catch |err| {
-        std.debug.print("✗ Failed to load config: {s}\n", .{@errorName(err)});
+        std.debug.print("✗ [Lint]: Failed to load config: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer config.deinit();
@@ -87,7 +87,7 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         }
         return 0;
     } else {
-        std.debug.print("✗ Found {d} constraint violation(s)\n\n", .{result.violations.len});
+        std.debug.print("✗ [Lint]: Found {d} constraint violation(s)\n\n", .{result.violations.len});
 
         for (result.violations, 1..) |violation, idx| {
             const rule_str = switch (violation.rule) {

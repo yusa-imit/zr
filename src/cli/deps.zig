@@ -32,7 +32,7 @@ pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, subcommand, "help") or std.mem.eql(u8, subcommand, "--help")) {
         try printUsage();
     } else {
-        std.debug.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
+        std.debug.print("✗ [Deps]: Unknown subcommand '{s}'\n\n", .{subcommand});
         try printUsage();
         return error.UnknownSubcommand;
     }
@@ -368,12 +368,12 @@ fn printCheckResults(results: []const CheckResult) !void {
     var all_ok = true;
     for (results) |result| {
         if (result.error_msg) |err_msg| {
-            std.debug.print("✗ {s}: {s}\n", .{ result.tool, err_msg });
+            std.debug.print("✗ [Deps]: {s}: {s}\n", .{ result.tool, err_msg });
             all_ok = false;
         } else if (result.satisfied) {
             std.debug.print("✓ {s} ({s}) satisfies {s}\n", .{ result.tool, result.installed.?, result.constraint });
         } else {
-            std.debug.print("✗ {s} ({s}) does not satisfy {s}\n", .{ result.tool, result.installed.?, result.constraint });
+            std.debug.print("✗ [Deps]: {s} ({s}) does not satisfy {s}\n", .{ result.tool, result.installed.?, result.constraint });
             all_ok = false;
         }
     }
