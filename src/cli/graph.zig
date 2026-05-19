@@ -685,7 +685,7 @@ pub fn graphCommand(
             config_path = arg["--config=".len..];
         } else if (std.mem.eql(u8, arg, "--affected")) {
             if (i + 1 >= args.len) {
-                try color.printError(ew, use_color, "graph: --affected requires a git reference\n", .{});
+                try color.printError(ew, use_color, "✗ graph: --affected requires a git reference\n", .{});
                 return 1;
             }
             i += 1;
@@ -696,7 +696,7 @@ pub fn graphCommand(
             try printGraphHelp(w);
             return 0;
         } else {
-            try color.printError(ew, use_color, "graph: unknown argument '{s}'\n", .{arg});
+            try color.printError(ew, use_color, "✗ graph: unknown argument '{s}'\n", .{arg});
             return 1;
         }
     }
@@ -743,11 +743,11 @@ pub fn graphCommand(
             .json => try renderTasksJson(w, &config, use_color),
             .interactive => unreachable, // Already handled above
             .html => {
-                try color.printError(ew, use_color, "graph: HTML format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
+                try color.printError(ew, use_color, "✗ graph: HTML format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
                 return 1;
             },
             .tui => {
-                try color.printError(ew, use_color, "graph: TUI format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
+                try color.printError(ew, use_color, "✗ graph: TUI format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
                 return 1;
             },
         }
@@ -756,7 +756,7 @@ pub fn graphCommand(
 
     // Legacy workspace graph handling (unchanged)
     if (watch_flag) {
-        try color.printError(ew, use_color, "graph: --watch is only supported for task graphs (use --type=tasks)\n", .{});
+        try color.printError(ew, use_color, "✗ graph: --watch is only supported for task graphs (use --type=tasks)\n", .{});
         return 1;
     }
 
@@ -822,7 +822,7 @@ pub fn graphCommand(
             };
         },
         .interactive => {
-            try color.printError(ew, use_color, "graph: interactive format is only for task graphs (use --type=tasks or --interactive)\n", .{});
+            try color.printError(ew, use_color, "✗ graph: interactive format is only for task graphs (use --type=tasks or --interactive)\n", .{});
             return 1;
         },
     }
