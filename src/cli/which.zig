@@ -17,7 +17,7 @@ pub fn cmdWhich(
     // Check if task exists
     const task = config.tasks.get(task_name) orelse {
         try color.printError(err_writer, use_color,
-            "which: task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
+            "✗ [Which]: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
             .{task_name},
         );
         return 1;
