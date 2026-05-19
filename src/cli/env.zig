@@ -29,7 +29,7 @@ pub fn cmdEnv(
                 resolve_var = args[i + 1];
                 i += 1;
             } else {
-                try color.printError(ew, use_color, "env: --resolve requires a variable name\n\n  Hint: zr env --resolve VAR_NAME\n", .{});
+                try color.printError(ew, use_color, "✗ Env command: --resolve requires a variable name\n\n  Hint: zr env --resolve VAR_NAME\n", .{});
                 return 1;
             }
         } else if (std.mem.eql(u8, arg, "--task")) {
@@ -37,7 +37,7 @@ pub fn cmdEnv(
                 task_name = args[i + 1];
                 i += 1;
             } else {
-                try color.printError(ew, use_color, "env: --task requires a task name\n\n  Hint: zr env --task TASK_NAME\n", .{});
+                try color.printError(ew, use_color, "✗ Env command: --task requires a task name\n\n  Hint: zr env --task TASK_NAME\n", .{});
                 return 1;
             }
         } else if (std.mem.eql(u8, arg, "--layers")) {
@@ -48,7 +48,7 @@ pub fn cmdEnv(
             if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "--")) {
                 shell_type = shell_hook.parseShellType(args[i + 1]);
                 if (shell_type == null) {
-                    try color.printError(ew, use_color, "env: unknown shell type '{s}'\n\n  Hint: supported shells are bash, zsh, fish\n", .{args[i + 1]});
+                    try color.printError(ew, use_color, "✗ Env command: unknown shell type '{s}'\n\n  Hint: supported shells are bash, zsh, fish\n", .{args[i + 1]});
                     return 1;
                 }
                 i += 1;
@@ -59,7 +59,7 @@ pub fn cmdEnv(
             if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "--")) {
                 shell_type = shell_hook.parseShellType(args[i + 1]);
                 if (shell_type == null) {
-                    try color.printError(ew, use_color, "env: unknown shell type '{s}'\n\n  Hint: supported shells are bash, zsh, fish\n", .{args[i + 1]});
+                    try color.printError(ew, use_color, "✗ Env command: unknown shell type '{s}'\n\n  Hint: supported shells are bash, zsh, fish\n", .{args[i + 1]});
                     return 1;
                 }
                 i += 1;
@@ -68,7 +68,7 @@ pub fn cmdEnv(
             try printHelp(w, use_color);
             return 0;
         } else {
-            try color.printError(ew, use_color, "env: unknown argument '{s}'\n\n  Hint: zr env --help\n", .{arg});
+            try color.printError(ew, use_color, "✗ Env command: unknown argument '{s}'\n\n  Hint: zr env --help\n", .{arg});
             return 1;
         }
     }
@@ -161,14 +161,14 @@ fn displayTaskEnv(
 ) !u8 {
     // Load configuration
     var config = loader.loadFromFile(allocator, config_path) catch |err| {
-        try color.printError(ew, use_color, "env: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
+        try color.printError(ew, use_color, "✗ Env command: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
         return 1;
     };
     defer config.deinit();
 
     // Find the task
     const task = config.tasks.get(task_name) orelse {
-        try color.printError(ew, use_color, "env: task '{s}' not found\n\n  Hint: use 'zr list' to see available tasks\n", .{task_name});
+        try color.printError(ew, use_color, "✗ Env command: task '{s}' not found\n\n  Hint: use 'zr list' to see available tasks\n", .{task_name});
         return 1;
     };
 
@@ -297,7 +297,7 @@ fn generateShellFunctions(
 ) !u8 {
     // Load configuration
     var config = loader.loadFromFile(allocator, config_path) catch |err| {
-        try color.printError(ew, use_color, "env: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
+        try color.printError(ew, use_color, "✗ Env command: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
         return 1;
     };
     defer config.deinit();
@@ -370,7 +370,7 @@ fn exportEnv(
     // Load configuration if task name specified
     const task_env = if (task_name) |task| blk: {
         var config = loader.loadFromFile(allocator, config_path) catch |err| {
-            try color.printError(ew, use_color, "env: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
+            try color.printError(ew, use_color, "✗ Env command: failed to load config: {}\n\n  Hint: ensure zr.toml exists\n", .{err});
             return 1;
         };
         defer config.deinit();

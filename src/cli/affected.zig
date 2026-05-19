@@ -46,7 +46,7 @@ pub fn cmdAffected(
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--base")) {
             if (i + 1 >= args.len) {
-                try color.printError(ew, use_color, "affected: --base requires a git reference\n\n  Hint: zr affected build --base origin/main\n", .{});
+                try color.printError(ew, use_color, "✗ Affected command: --base requires a git reference\n\n  Hint: zr affected build --base origin/main\n", .{});
                 return 1;
             }
             i += 1;
@@ -67,17 +67,17 @@ pub fn cmdAffected(
             if (task_name == null) {
                 task_name = arg;
             } else {
-                try color.printError(ew, use_color, "affected: unexpected argument '{s}'\n\n  Hint: zr affected <task> [options]\n", .{arg});
+                try color.printError(ew, use_color, "✗ Affected command: unexpected argument '{s}'\n\n  Hint: zr affected <task> [options]\n", .{arg});
                 return 1;
             }
         } else {
-            try color.printError(ew, use_color, "affected: unknown option '{s}'\n\n  Hint: run 'zr affected --help' for usage\n", .{arg});
+            try color.printError(ew, use_color, "✗ Affected command: unknown option '{s}'\n\n  Hint: run 'zr affected --help' for usage\n", .{arg});
             return 1;
         }
     }
 
     if (task_name == null and !list_only) {
-        try color.printError(ew, use_color, "affected: missing task name\n\n  Hint: zr affected <task> [options]\n  Or:   zr affected --list [options]\n", .{});
+        try color.printError(ew, use_color, "✗ Affected command: missing task name\n\n  Hint: zr affected <task> [options]\n  Or:   zr affected --list [options]\n", .{});
         return 1;
     }
 
@@ -86,7 +86,7 @@ pub fn cmdAffected(
     defer cfg.deinit();
 
     if (cfg.workspace == null) {
-        try color.printError(ew, use_color, "affected: not a workspace project\n\n  Hint: define [workspace] in {s} to use affected detection\n", .{config_path});
+        try color.printError(ew, use_color, "✗ Affected command: not a workspace project\n\n  Hint: define [workspace] in {s} to use affected detection\n", .{config_path});
         return 1;
     }
 
@@ -98,7 +98,7 @@ pub fn cmdAffected(
     }
 
     if (members.len == 0) {
-        try color.printError(ew, use_color, "affected: no workspace members found\n\n  Hint: check your [workspace] members patterns\n", .{});
+        try color.printError(ew, use_color, "✗ Affected command: no workspace members found\n\n  Hint: check your [workspace] members patterns\n", .{});
         return 1;
     }
 
@@ -108,7 +108,7 @@ pub fn cmdAffected(
 
     // Detect affected projects
     var affected_result = affected_util.detectAffected(allocator, base_ref, members, cwd) catch |err| {
-        try color.printError(ew, use_color, "affected: failed to detect changes: {s}\n\n  Hint: ensure git is installed and this is a git repository\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "✗ Affected command: failed to detect changes: {s}\n\n  Hint: ensure git is installed and this is a git repository\n", .{@errorName(err)});
         return 1;
     };
     defer affected_result.deinit(allocator);

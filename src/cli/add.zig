@@ -15,7 +15,7 @@ pub fn cmdAdd(
     use_color: bool,
 ) !u8 {
     if (args.len < 1) {
-        try color.printError(ew, use_color, "add: missing type\n\n  Hint: zr add task | zr add workflow | zr add profile\n", .{});
+        try color.printError(ew, use_color, "✗ Add command: missing type\n\n  Hint: zr add task | zr add workflow | zr add profile\n", .{});
         return 1;
     }
 
@@ -46,7 +46,7 @@ pub fn cmdAdd(
         } else if (std.mem.eql(u8, add_type, "workflow")) {
             return add_interactive.addWorkflowInteractive(allocator, name, config_path, w, ew, use_color);
         } else {
-            try color.printError(ew, use_color, "add: interactive mode not yet supported for '{s}'\n\n  Hint: Use 'task' or 'workflow'\n", .{add_type});
+            try color.printError(ew, use_color, "✗ Add command: interactive mode not yet supported for '{s}'\n\n  Hint: Use 'task' or 'workflow'\n", .{add_type});
             return 1;
         }
     }
@@ -58,7 +58,7 @@ pub fn cmdAdd(
     } else if (std.mem.eql(u8, add_type, "profile")) {
         return addProfile(allocator, name, config_path, w, ew, use_color);
     } else {
-        try color.printError(ew, use_color, "add: unknown type '{s}'\n\n  Hint: zr add task | zr add workflow | zr add profile\n", .{add_type});
+        try color.printError(ew, use_color, "✗ Add command: unknown type '{s}'\n\n  Hint: zr add task | zr add workflow | zr add profile\n", .{add_type});
         return 1;
     }
 }
@@ -205,7 +205,7 @@ fn addTask(
     // Append to config file
     const config_file = std.fs.cwd().openFile(config_path, .{ .mode = .read_write }) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "add: config file not found: {s}\n\n  Hint: Run 'zr init' first\n", .{config_path});
+            try color.printError(ew, use_color, "✗ Add command: config file not found: {s}\n\n  Hint: Run 'zr init' first\n", .{config_path});
             return 1;
         }
         return err;
@@ -282,7 +282,7 @@ fn addWorkflow(
     }
 
     if (stages.items.len == 0) {
-        try color.printError(ew, use_color, "add: workflow must have at least one stage\n", .{});
+        try color.printError(ew, use_color, "✗ Add command: workflow must have at least one stage\n\n  Hint: Add at least one [[workflow.stages]] section\n", .{});
         return 1;
     }
 
@@ -316,7 +316,7 @@ fn addWorkflow(
     // Append to config file
     const config_file = std.fs.cwd().openFile(config_path, .{ .mode = .read_write }) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "add: config file not found: {s}\n\n  Hint: Run 'zr init' first\n", .{config_path});
+            try color.printError(ew, use_color, "✗ Add command: config file not found: {s}\n\n  Hint: Run 'zr init' first\n", .{config_path});
             return 1;
         }
         return err;
@@ -415,7 +415,7 @@ fn addProfile(
     // Append to config file
     const config_file = std.fs.cwd().openFile(config_path, .{ .mode = .read_write }) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "add: config file not found: {s}\n\n  Hint: Run 'zr init' first\n", .{config_path});
+            try color.printError(ew, use_color, "✗ Add command: config file not found: {s}\n\n  Hint: Run 'zr init' first\n", .{config_path});
             return 1;
         }
         return err;
