@@ -35,7 +35,7 @@ pub fn cmdTools(
         return 0;
     } else {
         try color.printError(ew, use_color,
-            "tools: unknown subcommand '{s}'\n\n  Hint: zr tools list | install | outdated | upgrade\n",
+            "✗ [Tools]: Unknown subcommand '{s}'\n\n  Hint: zr tools list | install | outdated | upgrade\n",
             .{sub});
         return 1;
     }
@@ -62,7 +62,7 @@ fn cmdToolsList(
         const kind_str = args[3];
         filter_kind = ToolKind.fromString(kind_str) orelse {
             try color.printError(ew, use_color,
-                "tools list: unknown tool kind '{s}'\n\n  Hint: supported kinds: node, python, zig, go, rust, deno, bun, java\n",
+                "✗ [Tools List]: Unknown tool kind '{s}'\n\n  Hint: supported kinds: node, python, zig, go, rust, deno, bun, java\n",
                 .{kind_str});
             return 1;
         };
@@ -123,7 +123,7 @@ fn cmdToolsInstall(
 
     if (args.len < 4) {
         try color.printError(ew, use_color,
-            "tools install: missing tool specification\n\n  Hint: zr tools install <kind>@<version>\n  Example: zr tools install node@20.11.1\n",
+            "✗ [Tools Install]: Missing tool specification\n\n  Hint: zr tools install <kind>@<version>\n  Example: zr tools install node@20.11.1\n",
             .{});
         return 1;
     }
@@ -134,27 +134,27 @@ fn cmdToolsInstall(
     var split = std.mem.splitScalar(u8, spec_str, '@');
     const kind_str = split.next() orelse {
         try color.printError(ew, use_color,
-            "tools install: invalid spec '{s}'\n\n  Hint: use format <kind>@<version> (e.g., node@20.11.1)\n",
+            "✗ [Tools Install]: Invalid spec '{s}'\n\n  Hint: use format <kind>@<version> (e.g., node@20.11.1)\n",
             .{spec_str});
         return 1;
     };
     const version_str = split.next() orelse {
         try color.printError(ew, use_color,
-            "tools install: missing version in spec '{s}'\n\n  Hint: use format <kind>@<version> (e.g., node@20.11.1)\n",
+            "✗ [Tools Install]: Missing version in spec '{s}'\n\n  Hint: use format <kind>@<version> (e.g., node@20.11.1)\n",
             .{spec_str});
         return 1;
     };
 
     const kind = ToolKind.fromString(kind_str) orelse {
         try color.printError(ew, use_color,
-            "tools install: unknown tool kind '{s}'\n\n  Hint: supported kinds: node, python, zig, go, rust, deno, bun, java\n",
+            "✗ [Tools Install]: Unknown tool kind '{s}'\n\n  Hint: supported kinds: node, python, zig, go, rust, deno, bun, java\n",
             .{kind_str});
         return 1;
     };
 
     const parsed_version = ToolVersion.parse(version_str) catch |err| {
         try color.printError(ew, use_color,
-            "tools install: invalid version '{s}': {s}\n\n  Hint: use semantic version format (e.g., 20.11.1, 20.11, or 20)\n",
+            "✗ [Tools Install]: Invalid version '{s}': {s}\n\n  Hint: use semantic version format (e.g., 20.11.1, 20.11, or 20)\n",
             .{ version_str, @errorName(err) });
         return 1;
     };
@@ -165,11 +165,11 @@ fn cmdToolsInstall(
             if (err == error.PartialVersionNotSupported) {
                 const minor = parsed_version.minor orelse 0;
                 try color.printError(ew, use_color,
-                    "tools install: partial version resolution not supported for {s}\n\n  Hint: provide full version (e.g., {d}.{d}.0)\n",
+                    "✗ [Tools Install]: Partial version resolution not supported for {s}\n\n  Hint: provide full version (e.g., {d}.{d}.0)\n",
                     .{ kind.toString(), parsed_version.major, minor });
             } else {
                 try color.printError(ew, use_color,
-                    "tools install: failed to resolve version '{s}': {s}\n\n  Hint: check network connection or use a full version\n",
+                    "✗ [Tools Install]: Failed to resolve version '{s}': {s}\n\n  Hint: check network connection or use a full version\n",
                     .{ version_str, @errorName(err) });
             }
             return 1;
@@ -191,7 +191,7 @@ fn cmdToolsInstall(
 
     toolchain_installer.install(allocator, kind, version) catch |err| {
         try color.printError(ew, use_color,
-            "tools install: failed to install {s} {s}: {s}\n\n  Hint: check network connection and version availability\n",
+            "✗ [Tools Install]: Failed to install {s} {s}: {s}\n\n  Hint: check network connection and version availability\n",
             .{ kind.toString(), version_str, @errorName(err) });
         return 1;
     };
