@@ -19,9 +19,9 @@
 - **GitHub Issues**: 1 open (zuda migration #65 - **BLOCKED** yusa-imit/zuda#28), **0 panic bugs**, **0 memory leak bugs**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
-- **zuda version**: v2.0.4+f95785b (upgraded 2026-05-20, Cycle 257 FEATURE — commit with Zig 0.15 toOwnedSlice fix, awaiting v2.0.5 release)
+- **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix from commit 35581ca)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-21, FEATURE Cycle 258)**: ⏸️ **zuda Migration BLOCKED** — Attempted migration to zuda.compat.zr_dag but discovered compilation error in detectCycle() return type mismatch (!?[][]const u8 vs ![][]const u8). Filed upstream issue yusa-imit/zuda#28. Tested both commit f95785b and latest 5eb27dc — bug exists in both. Per CLAUDE.md policy (no local workarounds), migration work paused until upstream fix. Code quality audit completed: tests have meaningful assertions (no always-true tests), deinit tests verify state, error messages follow ✗ + Hint pattern, README/docs up-to-date (v1.82.0). Unit tests: 1647/1655 passing (8 skipped). 1 commit (session counter).
+- **Latest work (2026-05-21, FEATURE Cycle 259)**: ✅ **zuda Migration UNBLOCKED** — Upstream issue yusa-imit/zuda#28 (detectCycle return type mismatch) was resolved in commit 35581ca. Upgraded zuda dependency to main@4ff2325 (contains fix + recent improvements). Unit tests: 1647/1655 passing (8 skipped). Build successful, binary works (zr v1.82.0). Issue #65 already closed (status: unblocked for future work). Test coverage: 97.6% (201/206 files, 5 CLI files tested via integration tests). 2 commits (session counter + zuda upgrade).
 
 ## PRD Phase Status
 
@@ -47,7 +47,7 @@
 🎯 **Next Work** — Post-v1.0 Feature Development
 - **ACTIVE milestones**: 1 (Code Quality & Documentation Polish — continuous improvement, Cycle 243)
 - **READY milestones**: 0
-- **BLOCKED milestones**: 1 (Issue #65 zuda Graph Migration - yusa-imit/zuda#28 detectCycle type bug, ETA 1-2 days)
+- **BLOCKED milestones**: 0 (Issue #65 blocker resolved — zuda@main includes detectCycle fix)
 - **COMPLETED (Cycle 229)**: Test cleanup — removed obsolete zuda_migration_test.zig (dead code)
 - **COMPLETED (Cycle 228)**: zuda WorkStealingDeque Migration — analyzed scheduler, removed unused code, closed all migration issues
 - **COMPLETED (Cycle 226-227, 232)**: zuda Graph Migration — DAG migrated to zuda AdjacencyList, levenshtein→editDistance, glob→globMatch. Topo sort kept custom (edge semantics incompatibility), documented in #62
