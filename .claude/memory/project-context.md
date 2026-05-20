@@ -16,12 +16,12 @@
 - **Integration tests**: 107 test files - comprehensive coverage
 - **Test coverage**: 97.6% (201/206 files) — exceeds 80% threshold
 - **CI**: Recent runs cancelled (not failed) - likely manual intervention
-- **GitHub Issues**: 1 open (zuda migration - blocked), **0 panic bugs**, **0 memory leak bugs**
+- **GitHub Issues**: 1 open (zuda migration #65 - unblocked), **0 panic bugs**, **0 memory leak bugs**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
-- **zuda version**: v2.0.4 (upgraded 2026-05-11, Cycle 223 FEATURE)
+- **zuda version**: v2.0.4+f95785b (upgraded 2026-05-20, Cycle 257 FEATURE — commit with Zig 0.15 toOwnedSlice fix, awaiting v2.0.5 release)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-20, FEATURE Cycle 256)**: 🔄 **zuda Graph Migration (blocked)** — Discovered zuda.compat.zr_dag compatibility layer for drop-in replacement of dag/topo_sort/cycle_detect (891 LOC). Created integration tests (242 LOC). Migration **blocked** by zuda v2.0.4 Zig 0.15 compatibility bug (toOwnedSlice API change). Filed yusa-imit/zuda#27. Waiting for zuda v2.0.5 release. Also performed Code Quality audit (comments, errors, README, examples - all current). Unit tests: 1647/1655 passing (8 skipped). 2 commits pushed. Issue #65 updated with progress. CI: in progress.
+- **Latest work (2026-05-20, FEATURE Cycle 257)**: ✅ **zuda Dependency Unblocked** — Updated zuda to commit f95785b which includes fix for yusa-imit/zuda#27 (toOwnedSlice API compatibility with Zig 0.15). The issue was filed in Cycle 256 and resolved upstream within hours. Now using the fixed commit directly while awaiting v2.0.5 release. Unit tests: 1647/1655 passing (8 skipped). zuda.compat.zr_dag is now ready for migration work in next cycle. 1 commit ready to push.
 
 ## PRD Phase Status
 
