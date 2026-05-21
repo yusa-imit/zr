@@ -1397,7 +1397,7 @@ fn run(
         return lsp_server.serve(allocator);
     } else if (std.mem.eql(u8, cmd, "conformance")) {
         const conformance_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return conformance_cmd.cmdConformance(allocator, conformance_args);
+        return conformance_cmd.cmdConformance(allocator, conformance_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "bench")) {
         const bench_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return bench_cmd.cmdBench(allocator, bench_args);
