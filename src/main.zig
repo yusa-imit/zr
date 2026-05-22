@@ -1371,8 +1371,7 @@ fn run(
         return 0;
     } else if (std.mem.eql(u8, cmd, "publish")) {
         const publish_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        try publish_cmd.cmdPublish(allocator, publish_args);
-        return 0;
+        return publish_cmd.cmdPublish(allocator, publish_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "analytics")) {
         const analytics_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return analytics_cmd.cmdAnalytics(allocator, analytics_args, json_output);

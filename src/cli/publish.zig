@@ -6,9 +6,15 @@ const bump = @import("../versioning/bump.zig");
 const conventional = @import("../versioning/conventional.zig");
 const changelog = @import("../versioning/changelog.zig");
 const common = @import("common.zig");
-const color = @import("../output/color.zig");
+const output = @import("../output/color.zig");
 
-pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void {
+pub fn cmdPublish(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    w: *std.io.Writer,
+    ew: *std.io.Writer,
+    use_color: bool,
+) !u8 {
     var bump_type: ?types.BumpType = null;
     var package_name: ?[]const u8 = null;
     var config_path: []const u8 = "zr.toml";
@@ -21,57 +27,57 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--bump")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --bump requires a value (major|minor|patch)\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: --bump requires a value\n\n  Hint: Use --bump major, --bump minor, or --bump patch\n", .{});
+                return 1;
             }
             i += 1;
             bump_type = types.BumpType.fromString(args[i]) orelse {
-                std.debug.print("Error: Invalid bump type. Use: major, minor, or patch\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: Invalid bump type '{s}'\n\n  Hint: Use major, minor, or patch\n", .{args[i]});
+                return 1;
             };
         } else if (std.mem.eql(u8, arg, "--package")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --package requires a value\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: --package requires a value\n\n  Hint: zr publish --package my-package\n", .{});
+                return 1;
             }
             i += 1;
             package_name = args[i];
         } else if (std.mem.eql(u8, arg, "--config")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --config requires a value\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: --config requires a path argument\n\n  Hint: zr publish --config path/to/zr.toml\n", .{});
+                return 1;
             }
             i += 1;
             config_path = args[i];
         } else if (std.mem.eql(u8, arg, "--changelog")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --changelog requires a value\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: --changelog requires a path argument\n\n  Hint: zr publish --changelog CHANGELOG.md\n", .{});
+                return 1;
             }
             i += 1;
             changelog_path = args[i];
         } else if (std.mem.eql(u8, arg, "--since")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --since requires a value\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: --since requires a git reference\n\n  Hint: zr publish --since v1.0.0\n", .{});
+                return 1;
             }
             i += 1;
             since_ref = args[i];
         } else if (std.mem.eql(u8, arg, "--dry-run") or std.mem.eql(u8, arg, "-n")) {
             dry_run = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printPublishHelp();
-            return;
+            try printPublishHelp(w, ew, use_color);
+            return 0;
         } else {
-            std.debug.print("Error: Unknown option: {s}\n", .{arg});
-            return;
+            try output.printError(ew, use_color, "✗ [Publish]: Unknown option '{s}'\n\n  Hint: zr publish --help\n", .{arg});
+            return 1;
         }
     }
 
     // Load config
     const cfg = loader.loadFromFile(allocator, config_path) catch |err| {
-        std.debug.print("Error: Failed to load config: {s}\n", .{@errorName(err)});
-        return;
+        try output.printError(ew, use_color, "✗ [Publish]: Failed to load config from {s}\n\n  Error: {s}\n  Hint: Check that {s} exists and is valid TOML\n", .{ config_path, @errorName(err), config_path });
+        return 1;
     };
     defer {
         var mut_cfg = cfg;
@@ -80,12 +86,12 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
 
     // Get versioning config
     const versioning_cfg = cfg.versioning orelse {
-        std.debug.print("Error: No [versioning] section found in config\n", .{});
-        std.debug.print("Add a [versioning] section to your zr.toml:\n", .{});
-        std.debug.print("  [versioning]\n", .{});
-        std.debug.print("  mode = \"independent\"  # or \"fixed\"\n", .{});
-        std.debug.print("  convention = \"conventional\"  # or \"manual\"\n", .{});
-        return;
+        try output.printError(ew, use_color, "✗ [Publish]: No [versioning] section found in config\n\n", .{});
+        try ew.print("  Add a [versioning] section to your zr.toml:\n", .{});
+        try ew.print("  [versioning]\n", .{});
+        try ew.print("  mode = \"independent\"  # or \"fixed\"\n", .{});
+        try ew.print("  convention = \"conventional\"  # or \"manual\"\n\n", .{});
+        return 1;
     };
 
     // Determine package.json path
@@ -97,8 +103,8 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
 
     // Read current version
     const current_version = bump.readPackageJsonVersion(allocator, pkg_json_path) catch |err| {
-        std.debug.print("Error: Failed to read package.json: {s}\n", .{@errorName(err)});
-        return;
+        try output.printError(ew, use_color, "✗ [Publish]: Failed to read {s}\n\n  Error: {s}\n  Hint: Ensure {s} exists and contains a valid version field\n", .{ pkg_json_path, @errorName(err), pkg_json_path });
+        return 1;
     };
     defer allocator.free(current_version);
 
@@ -120,15 +126,15 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
             }
 
             if (commits.items.len == 0) {
-                std.debug.print("Error: No commits found since last version\n", .{});
-                return;
+                try output.printError(ew, use_color, "✗ [Publish]: No commits found since {s}\n\n  Hint: Ensure there are new commits to release\n", .{ref});
+                return 1;
             }
 
-            std.debug.print("Found {d} commits since {s}\n", .{ commits.items.len, ref });
+            try output.printInfo(w, use_color, "Found {d} commits since {s}\n", .{ commits.items.len, ref });
             break :blk conventional.determineBumpType(commits.items);
         } else {
-            std.debug.print("Error: --bump is required when convention is 'manual'\n", .{});
-            return;
+            try output.printError(ew, use_color, "✗ [Publish]: --bump is required when convention is 'manual'\n\n  Hint: zr publish --bump patch\n", .{});
+            return 1;
         }
     };
 
@@ -137,21 +143,21 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
     defer allocator.free(new_version);
 
     // Show what will be done
-    std.debug.print("\n", .{});
-    std.debug.print("Current version: {s}\n", .{current_version});
-    std.debug.print("Bump type:       {s}\n", .{@tagName(actual_bump_type)});
-    std.debug.print("New version:     {s}\n", .{new_version});
-    std.debug.print("Package:         {s}\n", .{pkg_json_path});
-    std.debug.print("\n", .{});
+    try w.print("\n", .{});
+    try output.printInfo(w, use_color, "Current version: {s}\n", .{current_version});
+    try output.printInfo(w, use_color, "Bump type:       {s}\n", .{@tagName(actual_bump_type)});
+    try output.printInfo(w, use_color, "New version:     {s}\n", .{new_version});
+    try output.printInfo(w, use_color, "Package:         {s}\n", .{pkg_json_path});
+    try w.print("\n", .{});
 
     if (dry_run) {
-        std.debug.print("(Dry run - no changes made)\n", .{});
-        return;
+        try output.printInfo(w, use_color, "(Dry run - no changes made)\n", .{});
+        return 0;
     }
 
     // Update package.json
     try bump.writePackageJsonVersion(allocator, pkg_json_path, new_version);
-    std.debug.print("✓ Updated {s}\n", .{pkg_json_path});
+    try output.printSuccess(w, use_color, "✓ Updated {s}\n", .{pkg_json_path});
 
     // Generate and update CHANGELOG.md
     if (versioning_cfg.convention == .conventional) {
@@ -169,7 +175,7 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
             defer allocator.free(changelog_section);
 
             try changelog.prependToChangelog(allocator, changelog_path, changelog_section);
-            std.debug.print("✓ Updated {s}\n", .{changelog_path});
+            try output.printSuccess(w, use_color, "✓ Updated {s}\n", .{changelog_path});
         }
     }
 
@@ -181,8 +187,8 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
         .allocator = allocator,
         .argv = &[_][]const u8{ "git", "tag", tag_name },
     }) catch |err| {
-        std.debug.print("Error: Failed to create git tag: {s}\n", .{@errorName(err)});
-        return;
+        try output.printError(ew, use_color, "✗ [Publish]: Failed to create git tag\n\n  Error: {s}\n", .{@errorName(err)});
+        return 1;
     };
     defer {
         allocator.free(tag_result.stdout);
@@ -190,20 +196,24 @@ pub fn cmdPublish(allocator: std.mem.Allocator, args: []const []const u8) !void 
     }
 
     if (tag_result.term.Exited != 0) {
-        std.debug.print("Warning: Failed to create git tag: {s}\n", .{tag_result.stderr});
+        try output.printWarning(w, use_color, "⚠ Failed to create git tag: {s}\n", .{tag_result.stderr});
     } else {
-        std.debug.print("✓ Created git tag {s}\n", .{tag_name});
+        try output.printSuccess(w, use_color, "✓ Created git tag {s}\n", .{tag_name});
     }
 
-    std.debug.print("\n", .{});
-    std.debug.print("Next steps:\n", .{});
-    std.debug.print("  git add {s} {s}\n", .{ pkg_json_path, changelog_path });
-    std.debug.print("  git commit -m \"chore: release {s}\"\n", .{new_version});
-    std.debug.print("  git push --follow-tags\n", .{});
-    std.debug.print("\n", .{});
+    try w.print("\n", .{});
+    try output.printInfo(w, use_color, "Next steps:\n", .{});
+    try w.print("  git add {s} {s}\n", .{ pkg_json_path, changelog_path });
+    try w.print("  git commit -m \"chore: release {s}\"\n", .{new_version});
+    try w.print("  git push --follow-tags\n", .{});
+    try w.print("\n", .{});
+
+    return 0;
 }
 
-fn printPublishHelp() !void {
+fn printPublishHelp(w: *std.io.Writer, ew: *std.io.Writer, use_color: bool) !void {
+    _ = ew;
+    _ = use_color;
     const help =
         \\Usage: zr publish [OPTIONS]
         \\
@@ -233,44 +243,74 @@ fn printPublishHelp() !void {
         \\  zr publish --dry-run
         \\
     ;
-    std.debug.print("{s}\n", .{help});
+    try w.print("{s}\n", .{help});
 }
 
 test "cmdPublish help does not error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
     const args = [_][]const u8{"--help"};
-    // Verify --help flag is parsed and returns without error
-    try cmdPublish(std.testing.allocator, &args);
+    const exit_code = try cmdPublish(allocator, &args, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
 }
 
 test "cmdPublish handles invalid options gracefully" {
-    // Test invalid option (prints error and returns, doesn't crash)
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
     const invalid_args = [_][]const u8{"--invalid-option"};
-    try cmdPublish(std.testing.allocator, &invalid_args);
+    const exit_code = try cmdPublish(allocator, &invalid_args, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), exit_code);
 }
 
 test "cmdPublish handles missing option values" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
     // Test missing bump value (prints error and returns)
     const missing_bump = [_][]const u8{"--bump"};
-    try cmdPublish(std.testing.allocator, &missing_bump);
+    const exit_code1 = try cmdPublish(allocator, &missing_bump, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), exit_code1);
 
     // Test missing package value
     const missing_package = [_][]const u8{"--package"};
-    try cmdPublish(std.testing.allocator, &missing_package);
+    const exit_code2 = try cmdPublish(allocator, &missing_package, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), exit_code2);
 
     // Test missing config value
     const missing_config = [_][]const u8{"--config"};
-    try cmdPublish(std.testing.allocator, &missing_config);
+    const exit_code3 = try cmdPublish(allocator, &missing_config, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), exit_code3);
 
     // Test missing changelog value
     const missing_changelog = [_][]const u8{"--changelog"};
-    try cmdPublish(std.testing.allocator, &missing_changelog);
+    const exit_code4 = try cmdPublish(allocator, &missing_changelog, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), exit_code4);
 
     // Test missing since value
     const missing_since = [_][]const u8{"--since"};
-    try cmdPublish(std.testing.allocator, &missing_since);
+    const exit_code5 = try cmdPublish(allocator, &missing_since, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 1), exit_code5);
 }
 
 test "printPublishHelp does not crash" {
-    // Verify help function can be called without error
-    try printPublishHelp();
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    try printPublishHelp(&out_w, &err_w, false);
 }
