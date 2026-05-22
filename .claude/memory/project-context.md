@@ -12,16 +12,16 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: ✅ Passing (1647 passed, 8 skipped, 0 failed)
+- **Unit tests**: ✅ Passing (1655 passed, 8 skipped, 0 failed)
 - **Integration tests**: 107 test files - comprehensive coverage
 - **Test coverage**: 97.6% (201/206 files) — exceeds 80% threshold
-- **CI**: Recent runs cancelled (not failed) - likely manual intervention
-- **GitHub Issues**: 1 open (zuda migration #65 - **BLOCKED** yusa-imit/zuda#28), **0 panic bugs**, **0 memory leak bugs**
+- **CI**: In progress (run 26278678766) - testing publish command fixes
+- **GitHub Issues**: 1 open (zuda migration #65 - **BLOCKED** yusa-imit/zuda#28), **0 panic bugs**, **0 memory leak bugs**, **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
 - **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix from commit 35581ca)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-22, FEATURE Cycle 263)**: ✅ **CLI Error Message Standardization** — Refactored `conformance.zig` to use writer pattern for consistent error messaging. Changes: (1) cmdConformance signature updated to accept `w`, `ew`, `use_color` parameters. (2) Replaced all `std.debug.print` calls with `output.printError/printInfo/printSuccess`. (3) Added structured error messages with hints (e.g., "✗ [Conformance]: --config requires a path argument\n\n  Hint: zr conformance --config path/to/zr.toml\n"). (4) Updated main.zig call site to pass `effective_w, ew, effective_color`. (5) Updated test to use `std.Io.Writer.fixed` pattern. All tests passing (1647/1655). 1 commit (refactor). Next: Continue standardizing remaining CLI commands (45+ commands still use `std.debug.print`).
+- **Latest work (2026-05-22, STABILIZATION Cycle 265)**: ✅ **Fixed Broken Tests in Publish Command** — Corrected function signature errors in `src/cli/publish.zig` tests and `src/main.zig` publish command invocation. Changes: (1) All test functions updated to pass 5 required parameters: allocator, args, out_w, err_w, use_color. (2) Tests now use `std.Io.Writer.fixed()` pattern for buffer writers. (3) Fixed main.zig to return cmdPublish result and pass effective_w, ew, effective_color. All 1655 tests passing. 1 commit (fix). Integration test review: All major commands already have comprehensive integration tests (57 CLI commands, 107 test files). TUI commands (analytics_tui, graph_tui, tui_mouse, tui_runner, config_editor) excluded from black-box testing as expected. Next: Monitor CI completion, continue code quality polish.
 
 ## PRD Phase Status
 
