@@ -1386,6 +1386,27 @@ fn run(
         }
         const subcmd = effective_args[2];
         if (std.mem.eql(u8, subcmd, "serve")) {
+            // Check for --help flag
+            const mcp_args = if (effective_args.len >= 4) effective_args[3..] else &[_][]const u8{};
+            for (mcp_args) |arg| {
+                if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                    try color.printBold(effective_w, effective_color, "Usage: zr mcp serve [OPTIONS]\n\n", .{});
+                    try effective_w.print("Start MCP (Model Context Protocol) server for AI integration.\n\n", .{});
+                    try color.printBold(effective_w, effective_color, "DESCRIPTION:\n", .{});
+                    try effective_w.print("  The MCP server enables AI assistants like Claude Code and Cursor to\n", .{});
+                    try effective_w.print("  interact with your project by exposing zr commands as MCP tools.\n\n", .{});
+                    try color.printBold(effective_w, effective_color, "OPTIONS:\n", .{});
+                    try effective_w.print("  --help, -h          Show this help message\n\n", .{});
+                    try color.printBold(effective_w, effective_color, "EXAMPLES:\n", .{});
+                    try effective_w.print("  # Start MCP server (typically called by AI editor)\n", .{});
+                    try effective_w.print("  zr mcp serve\n\n", .{});
+                    try color.printBold(effective_w, effective_color, "INTEGRATION:\n", .{});
+                    try effective_w.print("  Add to Claude Code config:\n", .{});
+                    try effective_w.print("  {{\"mcpServers\": {{\"zr\": {{\"command\": \"zr\", \"args\": [\"mcp\", \"serve\"]}}}}}}\n\n", .{});
+                    try effective_w.print("  See docs/guides/mcp-integration.md for detailed setup instructions.\n", .{});
+                    return 0;
+                }
+            }
             return mcp_server.serve(allocator);
         } else {
             try color.printError(ew, effective_color, "mcp: unknown subcommand '{s}'\n\n  Hint: zr mcp serve\n", .{subcmd});
@@ -1393,6 +1414,31 @@ fn run(
         }
     } else if (std.mem.eql(u8, cmd, "lsp")) {
         // LSP server: zr lsp
+        // Check for --help flag
+        const lsp_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        for (lsp_args) |arg| {
+            if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                try color.printBold(effective_w, effective_color, "Usage: zr lsp [OPTIONS]\n\n", .{});
+                try effective_w.print("Start LSP (Language Server Protocol) server for editor integration.\n\n", .{});
+                try color.printBold(effective_w, effective_color, "DESCRIPTION:\n", .{});
+                try effective_w.print("  The LSP server provides rich editing features for zr.toml files:\n", .{});
+                try effective_w.print("  - Syntax highlighting and validation\n", .{});
+                try effective_w.print("  - Auto-completion for task names, fields, and dependencies\n", .{});
+                try effective_w.print("  - Hover documentation for configuration options\n", .{});
+                try effective_w.print("  - Go-to-definition for task dependencies\n", .{});
+                try effective_w.print("  - Real-time diagnostics for configuration errors\n\n", .{});
+                try color.printBold(effective_w, effective_color, "OPTIONS:\n", .{});
+                try effective_w.print("  --help, -h          Show this help message\n\n", .{});
+                try color.printBold(effective_w, effective_color, "EXAMPLES:\n", .{});
+                try effective_w.print("  # Start LSP server (typically called by editor)\n", .{});
+                try effective_w.print("  zr lsp\n\n", .{});
+                try color.printBold(effective_w, effective_color, "EDITOR INTEGRATION:\n", .{});
+                try effective_w.print("  VS Code: Install the zr extension from marketplace\n", .{});
+                try effective_w.print("  Neovim:  Configure nvim-lspconfig with cmd = {{\"zr\", \"lsp\"}}\n\n", .{});
+                try effective_w.print("  See docs/guides/lsp-setup.md for detailed setup instructions.\n", .{});
+                return 0;
+            }
+        }
         return lsp_server.serve(allocator);
     } else if (std.mem.eql(u8, cmd, "conformance")) {
         const conformance_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
