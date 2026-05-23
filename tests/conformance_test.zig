@@ -133,9 +133,12 @@ test "448: conformance with --only-files flag filters scope" {
     // Should exit successfully
     try std.testing.expectEqual(@as(u32, 0), result.exit_code);
 
-    // Should produce output (either stdout or stderr)
-    const has_output = result.stdout.len > 0 or result.stderr.len > 0;
-    try std.testing.expect(has_output);
+    // Should produce conformance report output
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "conformance") != null or
+        std.mem.indexOf(u8, output, "rule") != null or
+        std.mem.indexOf(u8, output, "passed") != null or
+        std.mem.indexOf(u8, output, "checked") != null);
 }
 
 test "487: conformance with --only-files and --fix applies fixes to specific files" {

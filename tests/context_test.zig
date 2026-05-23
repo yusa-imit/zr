@@ -264,9 +264,8 @@ test "568: context with --scope flag filters metadata by path" {
     var result = try runZr(allocator, &.{ "--config", config, "context", "--scope", "src/" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Should generate context scoped to src/ path
-    const has_output = result.stdout.len > 0 or result.stderr.len > 0;
-    try std.testing.expect(has_output);
+    // Should generate context output (JSON structure with task catalog)
+    try std.testing.expect(result.stdout.len > 0);
 }
 
 test "615: context with --format yaml and --scope combined filters and formats correctly" {
