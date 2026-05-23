@@ -131,8 +131,10 @@ test "156: graph command with --format json output" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // JSON output should contain task info
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "tasks") != null or result.stdout.len > 0);
+    // JSON output should contain task information
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "tasks") != null or
+        std.mem.indexOf(u8, result.stdout, "nodes") != null or
+        std.mem.indexOf(u8, result.stdout, "build") != null);
 }
 
 test "188: graph command with --ascii shows tree visualization" {

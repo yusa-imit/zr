@@ -1998,9 +1998,11 @@ test "558: workspace run with --profile and --dry-run shows execution plan with 
 
     var result = try runZr(allocator, &.{ "--config", config, "--profile", "prod", "--dry-run", "workspace", "run", "deploy" }, tmp_path);
     defer result.deinit();
-    // Workspace run with dry-run should succeed or show deploy-related output
+    // Workspace run with dry-run should show deploy-related output
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(std.mem.indexOf(u8, output, "deploy") != null or std.mem.indexOf(u8, output, "pkg") != null or result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, output, "deploy") != null or
+        std.mem.indexOf(u8, output, "pkg") != null or
+        std.mem.indexOf(u8, output, "production") != null);
 }
 
 test "567: workspace run with --parallel and --format csv shows structured output" {
@@ -2389,8 +2391,15 @@ test "659: workspace run with --format json and multiple tasks" {
     var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "test", "--format", "json" }, tmp_path);
     defer result.deinit();
 
-    // Should output JSON with workspace results
-    try std.testing.expect(result.exit_code == 0 or result.stderr.len > 0);
+    // Should succeed or fail with an error message (not silently crash)
+    if (result.exit_code == 0) {
+        // Success: should contain JSON format indicators
+        try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null or
+            result.stdout.len > 0);
+    } else {
+        // Failure: should have error output
+        try std.testing.expect(result.stderr.len > 0);
+    }
 }
 
 test "666: workspace run with --affected and --exclude-self shows only dependents" {

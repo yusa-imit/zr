@@ -856,9 +856,10 @@ test "parser: malformed rich description table missing short field" {
     var result = try runZr(allocator, &.{ "--config", config, "help", "bad" }, tmp_path);
     defer result.deinit();
 
-    // Parser should error or handle gracefully - short is required
-    // Accept either error exit or graceful handling
-    try std.testing.expect(result.exit_code == 1 or result.exit_code == 0);
+    // Parser should either error or handle gracefully when 'short' field is missing
+    // Either way, output should contain something (not a silent crash)
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
 }
 
 test "parser: invalid type for examples field" {
