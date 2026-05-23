@@ -12,16 +12,16 @@
 ## Current Status
 
 - **Build version**: v1.82.0 (current in build.zig.zon) | Latest Release: v1.82.0 (2026-05-04)
-- **Unit tests**: ✅ Passing (1655 passed, 8 skipped, 0 failed)
+- **Unit tests**: ✅ Passing (1647 passed, 8 skipped, 0 failed)
 - **Integration tests**: 107 test files - comprehensive coverage
 - **Test coverage**: 97.6% (201/206 files) — exceeds 80% threshold
-- **CI**: In progress (run 26278678766) - testing publish command fixes
-- **GitHub Issues**: 1 open (zuda migration #65 - **BLOCKED** yusa-imit/zuda#28), **0 panic bugs**, **0 memory leak bugs**, **0 bug reports**
+- **CI**: In progress (most recent pushes auto-cancelled due to rapid commits)
+- **GitHub Issues**: 0 open (zuda migration #65 BLOCKED upstream — yusa-imit/zuda#28), **0 bugs**, **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
-- **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
-- **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix from commit 35581ca)
+- **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION)
+- **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-23, FEATURE Cycle 268)**: ✅ **Completed Feature Matrix Documentation** — Fixed documentation gap in examples/README.md by adding missing C# (.NET), Ruby on Rails, and Conditional Dependencies rows to Feature Matrix table. All 19 example directories are now fully documented in the comparison matrix, making it easier for users to understand which examples demonstrate which features. 1 commit (docs). Part of Code Quality & Documentation Polish milestone.
+- **Latest work (2026-05-23, FEATURE Cycle 269)**: ✅ **Error Message Standardization sweep** — Standardized ~60+ error messages across 12+ CLI and config files to use ✗ [Context]: format. Fixed wrong GitHub URLs (yourorg/YOUR_ORG → yusa-imit) in lint.zig, plugin.zig, PLUGIN_GUIDE.md. Added 4 missing command sections to command-reference.md (deps, lint, artifacts, template). 7 commits (refactor + docs). Part of Code Quality & Documentation Polish milestone.
 
 ## PRD Phase Status
 
