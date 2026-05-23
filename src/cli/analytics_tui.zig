@@ -30,18 +30,18 @@ pub fn cmdAnalyticsTui(allocator: std.mem.Allocator, args: []const []const u8) !
         if (std.mem.eql(u8, arg, "--limit") or std.mem.eql(u8, arg, "-n")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ --limit requires a number\n", .{});
+                std.debug.print("✗ [Analytics]: --limit requires a number\n", .{});
                 return 1;
             }
             limit = std.fmt.parseInt(usize, args[i], 10) catch {
-                std.debug.print("✗ invalid limit value: {s}\n", .{args[i]});
+                std.debug.print("✗ [Analytics]: invalid limit value: {s}\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printHelp();
             return 0;
         } else {
-            std.debug.print("✗ unknown flag: {s}\n", .{arg});
+            std.debug.print("✗ [Analytics]: unknown flag: {s}\n", .{arg});
             try printHelp();
             return 1;
         }
@@ -49,7 +49,7 @@ pub fn cmdAnalyticsTui(allocator: std.mem.Allocator, args: []const []const u8) !
 
     // Collect analytics data
     var report = collector.collectAnalytics(allocator, limit) catch |err| {
-        std.debug.print("✗ failed to collect analytics: {s}\n", .{@errorName(err)});
+        std.debug.print("✗ [Analytics]: failed to collect analytics: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer report.deinit();

@@ -33,25 +33,25 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
         } else if (std.mem.eql(u8, arg, "--output") or std.mem.eql(u8, arg, "-o")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ --output requires a file path\n", .{});
+                std.debug.print("✗ [Analytics]: --output requires a file path\n", .{});
                 return 1;
             }
             output_path = args[i];
         } else if (std.mem.eql(u8, arg, "--limit") or std.mem.eql(u8, arg, "-n")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ --limit requires a number\n", .{});
+                std.debug.print("✗ [Analytics]: --limit requires a number\n", .{});
                 return 1;
             }
             limit = std.fmt.parseInt(usize, args[i], 10) catch {
-                std.debug.print("✗ invalid limit value: {s}\n", .{args[i]});
+                std.debug.print("✗ [Analytics]: invalid limit value: {s}\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printHelp();
             return 0;
         } else {
-            std.debug.print("✗ unknown flag: {s}\n", .{arg});
+            std.debug.print("✗ [Analytics]: unknown flag: {s}\n", .{arg});
             try printHelp();
             return 1;
         }
@@ -74,7 +74,7 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
 
     // Collect analytics data
     var report = collector.collectAnalytics(allocator, limit) catch |err| {
-        std.debug.print("✗ failed to collect analytics: {s}\n", .{@errorName(err)});
+        std.debug.print("✗ [Analytics]: failed to collect analytics: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer report.deinit();
@@ -87,12 +87,12 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
     // Generate report
     const content = if (json_output)
         json_gen.generateJsonReport(allocator, &report) catch |err| {
-            std.debug.print("✗ failed to generate JSON report: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Analytics]: failed to generate JSON report: {s}\n", .{@errorName(err)});
             return 1;
         }
     else
         html_gen.generateHtmlReport(allocator, &report) catch |err| {
-            std.debug.print("✗ failed to generate HTML report: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Analytics]: failed to generate HTML report: {s}\n", .{@errorName(err)});
             return 1;
         };
     defer allocator.free(content);
@@ -101,13 +101,13 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
     if (output_path) |path| {
         // Write to file
         const file = std.fs.cwd().createFile(path, .{}) catch |err| {
-            std.debug.print("✗ failed to create output file: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Analytics]: failed to create output file: {s}\n", .{@errorName(err)});
             return 1;
         };
         defer file.close();
 
         file.writeAll(content) catch |err| {
-            std.debug.print("✗ failed to write output file: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Analytics]: failed to write output file: {s}\n", .{@errorName(err)});
             return 1;
         };
 
@@ -141,13 +141,13 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
         defer allocator.free(temp_path_for_write);
 
         const file = std.fs.cwd().createFile(temp_path_for_write, .{}) catch |err| {
-            std.debug.print("✗ failed to create temporary file: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Analytics]: failed to create temporary file: {s}\n", .{@errorName(err)});
             return 1;
         };
         defer file.close();
 
         file.writeAll(content) catch |err| {
-            std.debug.print("✗ failed to write temporary file: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Analytics]: failed to write temporary file: {s}\n", .{@errorName(err)});
             return 1;
         };
 
