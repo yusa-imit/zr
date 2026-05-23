@@ -565,9 +565,9 @@ zr plugin install registry:myorg/custom-plugin
 ## Resources
 
 - **Plugin Development Guide**: [PLUGIN_DEV_GUIDE.md](./PLUGIN_DEV_GUIDE.md)
-- **zr GitHub**: https://github.com/yourorg/zr
-- **Example Plugins**: https://github.com/yourorg/zr-plugins
-- **Report Issues**: https://github.com/yourorg/zr/issues
+- **zr GitHub**: https://github.com/yusa-imit/zr
+- **Example Plugins**: https://github.com/yusa-imit/zr-plugins
+- **Report Issues**: https://github.com/yusa-imit/zr/issues
 
 ---
 

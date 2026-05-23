@@ -92,17 +92,17 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--format=text")) {
             config.format = .text;
         } else if (std.mem.startsWith(u8, arg, "--format=")) {
-            std.debug.print("Unknown format. Supported: text, json, csv\n", .{});
+            std.debug.print("✗ [Bench]: unknown format\n\n  Hint: Supported formats: text, json, csv\n", .{});
             return 1;
         } else {
-            std.debug.print("Unknown argument: {s}\n", .{arg});
+            std.debug.print("✗ [Bench]: unknown argument: {s}\n", .{arg});
             return 1;
         }
     }
 
     // Run benchmark
     var stats = runner.runBenchmark(allocator, &config) catch |err| {
-        std.debug.print("Benchmark failed: {}\n", .{err});
+        std.debug.print("✗ [Bench]: benchmark failed: {}\n", .{err});
         return 1;
     };
     defer stats.deinit();
