@@ -830,8 +830,10 @@ test "575: validate with --verbose flag shows detailed validation diagnostics" {
     var result = try runZr(allocator, &.{ "--config", config, "validate", "--verbose" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Should show detailed validation output
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // Should show validation success message
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "valid") != null or
+        std.mem.indexOf(u8, output, "✓") != null);
 }
 
 test "600: validate with invalid task name characters shows clear error" {

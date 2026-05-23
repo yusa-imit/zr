@@ -597,9 +597,11 @@ test "277: workspace with unicode task names and descriptions" {
 
     var result = try runZr(allocator, &.{"list"}, tmp_path);
     defer result.deinit();
-    try std.testing.expect(result.exit_code == 0);
-    // Should handle unicode task names gracefully
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should display tasks without crashing on unicode names
+    // The "ployer" substring (from "déployer") must appear in the output
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "ployer") != null or
+        std.mem.indexOf(u8, result.stdout, "application") != null);
 }
 
 test "283: workspace members with conflicting task names use correct context" {

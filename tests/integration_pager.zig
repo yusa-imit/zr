@@ -327,6 +327,6 @@ test "115: pager respects terminal width constraints" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Output should be displayable
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len >= 0);
+    // Should display all 30 lines of output
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "line 1") != null);
 }

@@ -84,8 +84,12 @@ test "83: schedule remove deletes existing schedule" {
     // Remove the schedule
     var result = try runZr(allocator, &.{ "--config", config, "schedule", "remove", "noon-task" }, tmp_path);
     defer result.deinit();
-    try std.testing.expect(result.exit_code == 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "removed") != null or std.mem.indexOf(u8, result.stdout, "deleted") != null or std.mem.indexOf(u8, result.stderr, "removed") != null or std.mem.indexOf(u8, result.stderr, "deleted") != null or result.stdout.len > 0 or result.stderr.len > 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should confirm the schedule was removed
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "removed") != null or
+        std.mem.indexOf(u8, output, "deleted") != null or
+        std.mem.indexOf(u8, output, "noon-task") != null);
 }
 
 test "110: schedule with invalid cron expression fails gracefully" {
