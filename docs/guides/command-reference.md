@@ -61,6 +61,10 @@ Complete reference for all `zr` CLI commands.
   - [version](#version) — Version management
   - [upgrade](#upgrade) — Upgrade zr
   - [completion](#completion) — Shell completion
+  - [deps](#deps) — Dependency version constraints
+  - [lint](#lint) — Architecture constraint checking
+  - [artifacts](#artifacts) — Task artifact management
+  - [template](#template) — Task template management
 
 ---
 
@@ -1552,6 +1556,174 @@ zr completion powershell > zr.ps1
 - `zsh`
 - `fish`
 - `powershell`
+
+---
+
+### deps
+
+Manage tool dependencies with version constraints.
+
+**Syntax**:
+```bash
+zr deps <subcommand> [options]
+```
+
+**Subcommands**:
+
+| Subcommand | Description |
+|------------|-------------|
+| `check` | Verify installed tool versions against constraints |
+| `install` | Install all tools matching constraints |
+| `outdated` | List tools with available updates |
+| `lock` | Generate a lock file for reproducible builds |
+
+**Examples**:
+```bash
+# Check all tool versions
+zr deps check
+
+# Install all required tools
+zr deps install
+
+# Show outdated tools
+zr deps outdated
+
+# Generate lock file
+zr deps lock --output deps.lock
+```
+
+**Configuration**:
+```toml
+[toolchain]
+constraints = [
+  { tool = "node", version = "^20.0.0" },
+  { tool = "python", version = ">=3.10" },
+  { tool = "go", version = "~1.22" },
+]
+```
+
+**See also**: [Dependency management guide](dependency-management.md)
+
+---
+
+### lint
+
+Validate architecture constraints between workspace members.
+
+**Syntax**:
+```bash
+zr lint [options]
+```
+
+**Options**:
+- `-c, --config <path>` — Config file path (default: `zr.toml`)
+- `-v, --verbose` — Show detailed validation output
+
+**Examples**:
+```bash
+# Check architecture constraints
+zr lint
+
+# Verbose output
+zr lint --verbose
+
+# Use custom config
+zr lint --config workspace.toml
+```
+
+**Configuration**:
+```toml
+[[constraints]]
+rule = "no-circular"
+scope = "all"
+
+[[constraints]]
+rule = "tag-based"
+from_tags = ["app"]
+to_tags = ["lib", "util"]
+```
+
+**See also**: [validate](#validate)
+
+---
+
+### artifacts
+
+Manage task output artifacts.
+
+**Syntax**:
+```bash
+zr artifacts <subcommand> [options]
+```
+
+**Subcommands**:
+
+| Subcommand | Description |
+|------------|-------------|
+| `get <task>` | List artifacts for a task |
+| `clean` | Remove artifacts based on policy |
+
+**Examples**:
+```bash
+# List artifacts for the build task
+zr artifacts get build
+
+# Get most recent artifact
+zr artifacts get build --latest
+
+# Clean artifacts older than 30 days
+zr artifacts clean --older-than 30d
+
+# Clean all artifacts for a specific task
+zr artifacts clean --task build
+```
+
+**Configuration**:
+```toml
+[tasks.build]
+cmd = "cargo build --release"
+artifacts = ["target/release/myapp", "target/release/*.so"]
+artifact_retention = "7d"  # or { count = 10 }
+```
+
+**See also**: [Artifact management guide](guides/artifact-management.md)
+
+---
+
+### template
+
+Manage task templates for rapid task creation.
+
+**Syntax**:
+```bash
+zr template <subcommand> [name] [options]
+```
+
+**Subcommands**:
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List available templates |
+| `show <name>` | Show template details |
+| `apply <template> <task>` | Apply template to create a task |
+| `add <name>` | Add a built-in template |
+
+**Examples**:
+```bash
+# List available templates
+zr template list
+
+# Show a specific template
+zr template show node-build
+
+# Apply a template to create a task
+zr template apply node-build my-build
+
+# Add a built-in template with variables
+zr template add docker-build --var image=myapp
+```
+
+**See also**: [add](#add)
 
 ---
 
