@@ -50,21 +50,18 @@ pub fn cmdLive(
     _ = max_jobs; // Reserved for future use when scheduler supports progress callbacks
     // Check if stdout is a TTY
     if (!std.fs.File.stdout().isTty()) {
-        try w.writeAll("Error: live mode requires a TTY terminal\n");
-        try w.writeAll("Hint: Use 'zr run' for non-interactive execution\n");
+        try w.writeAll("✗ [Live]: live mode requires a TTY terminal\n\n  Hint: Use 'zr run' for non-interactive execution\n");
         return 1;
     }
 
     // Check if we're on Windows (raw mode not supported)
     if (comptime builtin.os.tag == .windows) {
-        try w.writeAll("Error: live mode is not yet supported on Windows\n");
-        try w.writeAll("Hint: Use 'zr run' or 'zr interactive' instead\n");
+        try w.writeAll("✗ [Live]: live mode is not yet supported on Windows\n\n  Hint: Use 'zr run' or 'zr interactive' instead\n");
         return 1;
     }
 
     if (task_names.len == 0) {
-        try w.writeAll("Error: No tasks specified\n");
-        try w.writeAll("Hint: Usage: zr live <task> [task...]\n");
+        try w.writeAll("✗ [Live]: no tasks specified\n\n  Hint: Usage: zr live <task> [task...]\n");
         return 1;
     }
 

@@ -173,7 +173,7 @@ pub const ConfigEditor = struct {
         const cwd = std.fs.cwd();
         const file = cwd.openFile("zr.toml", .{ .mode = .read_write }) catch |err| {
             if (err == error.FileNotFound) {
-                try ew.writeAll("Error: zr.toml not found. Run `zr init` first.\n");
+                try ew.writeAll("✗ [Config]: zr.toml not found\n\n  Hint: Run 'zr init' to create a starter config\n");
                 return 1;
             }
             return err;

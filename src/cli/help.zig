@@ -16,7 +16,7 @@ pub fn cmdHelp(
     _ = _use_color; // Unused for now
     // Find the task
     const task = config.tasks.get(task_name) orelse {
-        try ew.print("Error: Task '{s}' not found\n", .{task_name});
+        try ew.print("✗ [Help]: task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n", .{task_name});
         return error.TaskNotFound;
     };
 
@@ -117,7 +117,7 @@ pub fn cmdMan(
 ) !void {
     // Find the task
     const task = config.tasks.get(task_name) orelse {
-        try ew.print("Error: Task '{s}' not found\n", .{task_name});
+        try ew.print("✗ [Help]: task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n", .{task_name});
         return error.TaskNotFound;
     };
 
@@ -143,7 +143,7 @@ test "cmdHelp returns error for non-existent task" {
     try std.testing.expectError(error.TaskNotFound, result);
 
     const err_output = err_buf.items;
-    try std.testing.expect(std.mem.indexOf(u8, err_output, "Task 'nonexistent' not found") != null);
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "task 'nonexistent' not found") != null);
 }
 
 test "cmdMan returns error for non-existent task" {
@@ -160,5 +160,5 @@ test "cmdMan returns error for non-existent task" {
     try std.testing.expectError(error.TaskNotFound, result);
 
     const err_output = err_buf.items;
-    try std.testing.expect(std.mem.indexOf(u8, err_output, "Task 'nonexistent' not found") != null);
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "task 'nonexistent' not found") != null);
 }

@@ -66,8 +66,7 @@ pub fn showTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8 
     defer err_w.interface.flush() catch {};
 
     if (args.len == 0) {
-        try err_w.interface.print("Error: template name required\n", .{});
-        try err_w.interface.print("Usage: zr template show <name>\n", .{});
+        try err_w.interface.print("✗ [Template]: template name required\n\n  Hint: Usage: zr template show <name>\n", .{});
         return 1;
     }
 
@@ -77,7 +76,7 @@ pub fn showTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8 
     defer config.deinit();
 
     const template = config.templates.get(template_name) orelse {
-        try err_w.interface.print("Error: template '{s}' not found\n", .{template_name});
+        try err_w.interface.print("✗ [Template]: template '{s}' not found\n\n  Hint: Run 'zr template list' to see available templates\n", .{template_name});
         return 1;
     };
 
@@ -192,14 +191,12 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
     defer err_w.interface.flush() catch {};
 
     if (args.len == 0) {
-        try err_w.interface.print("Error: template name required\n", .{});
-        try err_w.interface.print("Usage: zr template apply <template-name> <task-name>\n", .{});
+        try err_w.interface.print("✗ [Template]: template name required\n\n  Hint: Usage: zr template apply <template-name> <task-name>\n", .{});
         return 1;
     }
 
     if (args.len < 2) {
-        try err_w.interface.print("Error: task name required\n", .{});
-        try err_w.interface.print("Usage: zr template apply <template-name> <task-name>\n", .{});
+        try err_w.interface.print("✗ [Template]: task name required\n\n  Hint: Usage: zr template apply <template-name> <task-name>\n", .{});
         return 1;
     }
 
@@ -210,7 +207,7 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
     defer config.deinit();
 
     const template = config.templates.get(template_name) orelse {
-        try err_w.interface.print("Error: template '{s}' not found\n", .{template_name});
+        try err_w.interface.print("✗ [Template]: template '{s}' not found\n\n  Hint: Run 'zr template list' to see available templates\n", .{template_name});
         return 1;
     };
 
@@ -261,7 +258,7 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
 
             const value = std.mem.trim(u8, buffer.items, &std.ascii.whitespace);
             if (value.len == 0) {
-                try err_w.interface.print("Error: parameter value cannot be empty\n", .{});
+                try err_w.interface.print("✗ [Template]: parameter value cannot be empty\n", .{});
                 return 1;
             }
 
@@ -420,8 +417,7 @@ pub fn showBuiltinTemplate(allocator: std.mem.Allocator, args: []const []const u
     defer err_w.interface.flush() catch {};
 
     if (args.len == 0) {
-        try err_w.interface.print("Error: template name required\n", .{});
-        try err_w.interface.print("Usage: zr template show <name>\n", .{});
+        try err_w.interface.print("✗ [Template]: template name required\n\n  Hint: Usage: zr template show <name>\n", .{});
         return 1;
     }
 
@@ -448,8 +444,7 @@ pub fn addBuiltinTemplate(allocator: std.mem.Allocator, args: []const []const u8
     defer err_w.interface.flush() catch {};
 
     if (args.len == 0) {
-        try err_w.interface.print("Error: template name required\n", .{});
-        try err_w.interface.print("Usage: zr template add <name> [--var KEY=VALUE ...] [--output <path>]\n", .{});
+        try err_w.interface.print("✗ [Template]: template name required\n\n  Hint: Usage: zr template add <name> [--var KEY=VALUE ...] [--output <path>]\n", .{});
         return 1;
     }
 
@@ -472,7 +467,7 @@ pub fn addBuiltinTemplate(allocator: std.mem.Allocator, args: []const []const u8
                 const value = var_arg[eq_pos + 1 ..];
                 try variables.put(key, value);
             } else {
-                try err_w.interface.print("Error: Invalid --var format, expected KEY=VALUE\n", .{});
+                try err_w.interface.print("✗ [Template]: invalid --var format, expected KEY=VALUE\n", .{});
                 return 1;
             }
         } else if (std.mem.eql(u8, arg, "--output") and i + 1 < args.len) {
