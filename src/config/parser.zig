@@ -308,7 +308,7 @@ fn validateSectionHeader(line: []const u8, prefix: []const u8) ParseError![]cons
     const start = prefix.len;
     const end = std.mem.indexOf(u8, line[start..], "]") orelse {
         // Missing closing bracket - return helpful error
-        std.debug.print("Error: Malformed TOML section header: '{s}'\n", .{line});
+        std.debug.print("✗ [Config]: Malformed TOML section header: '{s}'\n", .{line});
         std.debug.print("  Expected closing bracket ']' after '{s}'\n", .{prefix});
         return error.MalformedSectionHeader;
     };
@@ -972,13 +972,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Parse task name: "[profiles.X.tasks.Y]" → Y
             const tasks_marker = ".tasks.";
             const tm_idx = std.mem.indexOf(u8, trimmed, tasks_marker) orelse {
-                std.debug.print("Error: Malformed profile task section: '{s}'\n", .{trimmed});
+                std.debug.print("✗ [Config]: Malformed profile task section: '{s}'\n", .{trimmed});
                 std.debug.print("  Expected '.tasks.' in section header\n", .{});
                 return error.MalformedSectionHeader;
             };
             const after_tasks = trimmed[tm_idx + tasks_marker.len ..];
             const rbracket = std.mem.indexOf(u8, after_tasks, "]") orelse {
-                std.debug.print("Error: Malformed profile task section: '{s}'\n", .{trimmed});
+                std.debug.print("✗ [Config]: Malformed profile task section: '{s}'\n", .{trimmed});
                 std.debug.print("  Expected closing bracket ']'\n", .{});
                 return error.MalformedSectionHeader;
             };
@@ -1444,7 +1444,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.watch])
             if (watch_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1453,11 +1453,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
                 if (!std.mem.eql(u8, task_name, before_watch)) {
-                    std.debug.print("Error: [tasks.{s}.watch] must follow [tasks.{s}]\n", .{ before_watch, before_watch });
+                    std.debug.print("✗ [Config]: [tasks.{s}.watch] must follow [tasks.{s}]\n", .{ before_watch, before_watch });
                     return error.MalformedSectionHeader;
                 }
             } else {
-                std.debug.print("Error: [tasks.{s}.watch] must follow [tasks.{s}]\n", .{ before_watch, before_watch });
+                std.debug.print("✗ [Config]: [tasks.{s}.watch] must follow [tasks.{s}]\n", .{ before_watch, before_watch });
                 return error.MalformedSectionHeader;
             }
 
@@ -1475,7 +1475,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.retry])
             if (retry_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1484,11 +1484,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
                 if (!std.mem.eql(u8, task_name, before_retry)) {
-                    std.debug.print("Error: [tasks.{s}.retry] must follow [tasks.{s}]\n", .{ before_retry, before_retry });
+                    std.debug.print("✗ [Config]: [tasks.{s}.retry] must follow [tasks.{s}]\n", .{ before_retry, before_retry });
                     return error.MalformedSectionHeader;
                 }
             } else {
-                std.debug.print("Error: [tasks.{s}.retry] must follow [tasks.{s}]\n", .{ before_retry, before_retry });
+                std.debug.print("✗ [Config]: [tasks.{s}.retry] must follow [tasks.{s}]\n", .{ before_retry, before_retry });
                 return error.MalformedSectionHeader;
             }
 
@@ -1509,7 +1509,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.matrix])
             if (matrix_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1534,7 +1534,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.env])
             if (env_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1559,7 +1559,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.toolchain])
             if (toolchain_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1588,7 +1588,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.description])
             if (desc_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'description', 'outputs', 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'description', 'outputs', 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1597,11 +1597,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
                 if (!std.mem.eql(u8, task_name, before_desc)) {
-                    std.debug.print("Error: [tasks.{s}.description] must follow [tasks.{s}]\n", .{ before_desc, before_desc });
+                    std.debug.print("✗ [Config]: [tasks.{s}.description] must follow [tasks.{s}]\n", .{ before_desc, before_desc });
                     return error.MalformedSectionHeader;
                 }
             } else {
-                std.debug.print("Error: [tasks.{s}.description] must follow [tasks.{s}]\n", .{ before_desc, before_desc });
+                std.debug.print("✗ [Config]: [tasks.{s}.description] must follow [tasks.{s}]\n", .{ before_desc, before_desc });
                 return error.MalformedSectionHeader;
             }
 
@@ -1623,7 +1623,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [tasks.outputs])
             if (outputs_idx <= "[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'description', 'outputs', 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'description', 'outputs', 'watch', 'env', 'matrix', 'toolchain', 'hooks', or 'retry' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -1632,11 +1632,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
                 if (!std.mem.eql(u8, task_name, before_outputs)) {
-                    std.debug.print("Error: [tasks.{s}.outputs] must follow [tasks.{s}]\n", .{ before_outputs, before_outputs });
+                    std.debug.print("✗ [Config]: [tasks.{s}.outputs] must follow [tasks.{s}]\n", .{ before_outputs, before_outputs });
                     return error.MalformedSectionHeader;
                 }
             } else {
-                std.debug.print("Error: [tasks.{s}.outputs] must follow [tasks.{s}]\n", .{ before_outputs, before_outputs });
+                std.debug.print("✗ [Config]: [tasks.{s}.outputs] must follow [tasks.{s}]\n", .{ before_outputs, before_outputs });
                 return error.MalformedSectionHeader;
             }
 
@@ -1670,7 +1670,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             // Check if task name would be empty (e.g., [[tasks.hooks]])
             if (hooks_idx <= "[[tasks.".len) {
-                std.debug.print("Error: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
+                std.debug.print("✗ [Config]: Invalid section header. Tasks cannot be named 'watch', 'env', 'matrix', 'toolchain', or 'hooks' as these are reserved for subsections.\n", .{});
                 return error.ReservedTaskName;
             }
 
@@ -2305,7 +2305,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 // Inside [concurrency_groups.X] — parse max_workers (v1.62.0)
                 if (std.mem.eql(u8, key, "max_workers")) {
                     cgroup_max_workers = std.fmt.parseInt(u32, value, 10) catch |err| {
-                        std.debug.print("Error: Invalid max_workers value: {s}\n", .{value});
+                        std.debug.print("✗ [Config]: Invalid max_workers value: {s}\n", .{value});
                         return err;
                     };
                 }
