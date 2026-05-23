@@ -1152,9 +1152,12 @@ test "552: graph with --affected but no git repo shows appropriate error" {
 
     var result = try runZr(allocator, &.{ "--config", config, "graph", "--affected", "HEAD" }, tmp_path);
     defer result.deinit();
-    // Should fail gracefully with appropriate error
-    try std.testing.expect(result.exit_code != 0 or result.exit_code == 0);
-    // Git error is acceptable
+    // Should fail with error about git not available / not a git repo
+    try std.testing.expect(result.exit_code != 0);
+    const stderr = result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, stderr, "affected") != null or
+        std.mem.indexOf(u8, stderr, "git") != null or
+        std.mem.indexOf(u8, stderr, "failed") != null);
 }
 
 test "563: graph with --format html generates HTML visualization output" {

@@ -409,8 +409,8 @@ test "378: alias rm command removes alias (shorthand for remove)" {
     var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
     defer list_result.deinit();
     const output = if (list_result.stdout.len > 0) list_result.stdout else list_result.stderr;
-    // Should not contain removed alias
-    try std.testing.expect(std.mem.indexOf(u8, output, "temp") == null or result.exit_code == 0);
+    // "temp" should not appear in the alias list after removal
+    try std.testing.expect(std.mem.indexOf(u8, output, "temp") == null);
 }
 
 test "379: alias delete command removes alias (alternative shorthand for remove)" {
@@ -438,8 +438,8 @@ test "379: alias delete command removes alias (alternative shorthand for remove)
     var list_result = try runZr(allocator, &.{ "alias", "list" }, tmp_path);
     defer list_result.deinit();
     const output = if (list_result.stdout.len > 0) list_result.stdout else list_result.stderr;
-    // Should not contain removed alias
-    try std.testing.expect(std.mem.indexOf(u8, output, "temp2") == null or result.exit_code == 0);
+    // "temp2" should not appear in the alias list after removal
+    try std.testing.expect(std.mem.indexOf(u8, output, "temp2") == null);
 }
 
 test "461: alias with circular reference detection prevents infinite loops" {

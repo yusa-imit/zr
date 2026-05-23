@@ -94,6 +94,23 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.startsWith(u8, arg, "--format=")) {
             std.debug.print("✗ [Bench]: unknown format\n\n  Hint: Supported formats: text, json, csv\n", .{});
             return 1;
+        } else if (std.mem.eql(u8, arg, "--format") or std.mem.eql(u8, arg, "-f")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("✗ [Bench]: missing value for --format\n\n  Hint: Supported formats: text, json, csv\n", .{});
+                return 1;
+            }
+            const fmt = args[i];
+            if (std.mem.eql(u8, fmt, "json")) {
+                config.format = .json;
+            } else if (std.mem.eql(u8, fmt, "csv")) {
+                config.format = .csv;
+            } else if (std.mem.eql(u8, fmt, "text")) {
+                config.format = .text;
+            } else {
+                std.debug.print("✗ [Bench]: unknown format '{s}'\n\n  Hint: Supported formats: text, json, csv\n", .{fmt});
+                return 1;
+            }
         } else {
             std.debug.print("✗ [Bench]: unknown argument: {s}\n", .{arg});
             return 1;

@@ -395,14 +395,17 @@ test "603: plugin list with --format json outputs structured plugin data" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Plugin list with JSON format (may not be supported)
+    // Plugin list with JSON format
     var result = try runZr(allocator, &.{ "plugin", "list", "--format", "json" }, tmp_path);
     defer result.deinit();
-    // May succeed or fail depending on format support
-    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
-    // If successful, should have output
+    // Should either succeed with JSON output or fail with an error message
     if (result.exit_code == 0) {
-        try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+        // JSON output should contain array brackets
+        try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[") != null or
+            std.mem.indexOf(u8, result.stdout, "{") != null);
+    } else {
+        // Should provide an error message
+        try std.testing.expect(result.stderr.len > 0);
     }
 }
 

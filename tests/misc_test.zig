@@ -56,8 +56,10 @@ test "24: doctor checks system status" {
     var result = try runZr(allocator, &.{"doctor"}, null);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Doctor writes to stderr by default, so check either stdout or stderr
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // Doctor should output a diagnostic report mentioning "doctor" or system check info
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "doctor") != null or
+        std.mem.indexOf(u8, output, "zr") != null);
 }
 
 test "28: upgrade checks for updates" {
@@ -117,9 +119,12 @@ test "40: codeowners shows code ownership" {
     var result = try runZr(allocator, &.{ "codeowners" }, tmp_path);
     defer result.deinit();
 
-    // May fail if no CODEOWNERS file exists, but should not crash
-    // Verify we get output explaining the issue or showing help
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // May fail if no CODEOWNERS file exists, but should output something useful
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "CODEOWNERS") != null or
+        std.mem.indexOf(u8, output, "No ") != null or
+        std.mem.indexOf(u8, output, "not found") != null or
+        std.mem.indexOf(u8, output, "Owner") != null);
 }
 
 test "43: version shows version information" {
@@ -133,9 +138,12 @@ test "43: version shows version information" {
     var result = try runZr(allocator, &.{"version"}, tmp_path);
     defer result.deinit();
 
-    // May fail without package.json, but should not crash
-    // Verify command completes and provides some output
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // Without a zr.toml or versioning config, version should fail with a descriptive error
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    // Should explain the issue (missing config or versioning section)
+    try std.testing.expect(std.mem.indexOf(u8, output, "version") != null or
+        std.mem.indexOf(u8, output, "zr.toml") != null or
+        std.mem.indexOf(u8, output, "versioning") != null);
 }
 
 test "44: publish --dry-run simulates publish" {
@@ -152,9 +160,12 @@ test "44: publish --dry-run simulates publish" {
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--dry-run" }, tmp_path);
     defer result.deinit();
 
-    // May fail without git repo, but should not crash
-    // Verify command completes and provides feedback
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // publish --dry-run: may fail without git repo, but should produce a descriptive message
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "dry") != null or
+        std.mem.indexOf(u8, output, "publish") != null or
+        std.mem.indexOf(u8, output, "git") != null or
+        std.mem.indexOf(u8, output, "Dry") != null);
 }
 
 test "53: watch requires task argument" {
@@ -1782,9 +1793,11 @@ test "545: publish with --tag and --format json shows structured release info" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--tag", "v1.0.0", "--format", "json", "--dry-run" }, tmp_path);
     defer result.deinit();
-    // With --dry-run, should succeed and show JSON
+    // With --dry-run, should output version-related information
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(std.mem.indexOf(u8, output, "1.0.0") != null or std.mem.indexOf(u8, output, "version") != null or result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, output, "1.0.0") != null or
+        std.mem.indexOf(u8, output, "version") != null or
+        std.mem.indexOf(u8, output, "publish") != null);
 }
 
 test "566: publish with --since flag filters commits by date" {
@@ -2224,8 +2237,12 @@ test "637: setup with --check validates toolchains without installing" {
     var result = try runZr(allocator, &.{ "--config", config, "setup", "--check" }, tmp_path);
     defer result.deinit();
 
-    // Should check without installing (may fail or succeed, just shouldn't crash)
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // setup --check should report tool status without installing
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "node") != null or
+        std.mem.indexOf(u8, output, "check") != null or
+        std.mem.indexOf(u8, output, "tool") != null or
+        std.mem.indexOf(u8, output, "Setup") != null);
 }
 
 test "638: publish with --tag and --changelog generates both artifacts" {

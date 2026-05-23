@@ -187,10 +187,10 @@ test "390: env command with multiple --export flags" {
     // Show env with task-specific vars
     var result = try runZr(allocator, &.{ "env", "--task", "hello" }, tmp_path);
     defer result.deinit();
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(output.len > 0);
-    // Should show multiple env vars
-    try std.testing.expect(std.mem.indexOf(u8, output, "VAR1") != null or result.exit_code == 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = result.stdout;
+    // Should show task-specific env vars
+    try std.testing.expect(std.mem.indexOf(u8, output, "VAR1") != null);
 }
 
 test "410: env command with --task flag shows task-specific environment" {

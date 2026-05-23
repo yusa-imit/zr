@@ -755,8 +755,8 @@ test "204: run with --monitor flag displays resource usage" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Monitor output should show at least execution happened
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // Monitor output should show task output (echo hello)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
 }
 
 test "208: run with deps_serial executes dependencies sequentially" {
@@ -789,8 +789,8 @@ test "208: run with deps_serial executes dependencies sequentially" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // All tasks should execute
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // All tasks should execute and produce output
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "main") != null);
 }
 
 test "209: run with timeout terminates long-running tasks" {
@@ -1299,10 +1299,9 @@ test "285: run with --profile flag sets profile-specific environment" {
 
     var result = try runZr(allocator, &.{ "run", "check", "--profile=prod" }, tmp_path);
     defer result.deinit();
-    try std.testing.expect(result.exit_code == 0);
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    // Profile env var should be set
-    try std.testing.expect(std.mem.indexOf(u8, output, "production") != null or result.exit_code == 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Profile env var should be set — "echo $ENV" should print "production"
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "production") != null);
 }
 
 test "287: run with dependency chain of 5+ tasks executes in correct order" {
@@ -2187,8 +2186,8 @@ test "426: run with very long task name (>256 chars) handles gracefully" {
 
     var result = try runZr(allocator, &.{ "--config", config, "run", long_name }, tmp_path);
     defer result.deinit();
-    // Should either reject or handle gracefully
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // Task does not exist — should fail with non-zero exit code
+    try std.testing.expect(result.exit_code != 0);
 }
 
 test "430: run with --profile flag and profile containing invalid env var syntax" {
@@ -2213,9 +2212,10 @@ test "430: run with --profile flag and profile containing invalid env var syntax
 
     var result = try runZr(allocator, &.{ "--config", config, "run", "build", "--profile=bad" }, tmp_path);
     defer result.deinit();
-    // Should handle env vars with special chars
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(output.len > 0);
+    // Should handle env vars with = in values and succeed
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // The env var value "value with = equals" should appear in output
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "value with") != null);
 }
 
 test "434: run with task name containing only special characters" {
@@ -2237,8 +2237,12 @@ test "434: run with task name containing only special characters" {
 
     var result = try runZr(allocator, &.{ "--config", config, "run", "@!#$" }, tmp_path);
     defer result.deinit();
-    // Should either run successfully or reject with clear error
-    try std.testing.expect(result.stdout.len > 0 or result.stderr.len > 0);
+    // Should either run the task ("echo special") or reject with a clear error
+    if (result.exit_code == 0) {
+        try std.testing.expect(std.mem.indexOf(u8, result.stdout, "special") != null);
+    } else {
+        try std.testing.expect(result.stderr.len > 0);
+    }
 }
 
 test "436: run with --format=json and empty task output" {

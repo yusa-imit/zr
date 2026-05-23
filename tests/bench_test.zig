@@ -270,12 +270,12 @@ test "403: bench with --iterations=1 and --format json" {
         \\
     );
 
-    // Benchmark with single iteration
+    // Benchmark with single iteration in JSON format
     var result = try runZr(allocator, &.{ "bench", "quick", "--iterations", "1", "--format", "json" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(output.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"total_runs\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"mean_ns\"") != null);
 }
 
 test "424: bench command with timeout shows performance within constraints" {
@@ -421,12 +421,12 @@ test "524: bench with invalid --format shows error message" {
     defer zr_toml.close();
     try zr_toml.writeAll(toml);
 
-    var result = try runZr(allocator, &.{ "bench", "fast", "--iterations", "2", "--warmup", "1", "--format", "csv" }, tmp_path);
+    var result = try runZr(allocator, &.{ "bench", "fast", "--iterations", "2", "--warmup", "1", "--format=xml" }, tmp_path);
     defer result.deinit();
     // Should return error for unsupported format
     try std.testing.expect(result.exit_code != 0);
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(std.mem.indexOf(u8, output, "unknown format") != null or output.len > 0);
+    const output = if (result.stderr.len > 0) result.stderr else result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "unknown format") != null);
 }
 
 test "540: bench with --format csv exports iteration data for analysis" {
@@ -447,8 +447,9 @@ test "540: bench with --format csv exports iteration data for analysis" {
 
     var result = try runZr(allocator, &.{ "--config", config, "bench", "fast", "--iterations", "3", "--format", "csv" }, tmp_path);
     defer result.deinit();
-    // --format csv flag may not be supported, just check it doesn't crash
-    try std.testing.expect(result.exit_code <= 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // CSV output should contain header row with expected columns
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "iteration,duration_ns") != null);
 }
 
 test "550: bench with --profile flag applies environment overrides" {
@@ -595,12 +596,9 @@ test "664: bench with --format json outputs structured performance data" {
     defer result.deinit();
 
     // Should output JSON with benchmark statistics
-    try std.testing.expect(result.exit_code == 0);
-    const output = result.stdout;
-    try std.testing.expect(std.mem.indexOf(u8, output, "mean") != null or
-                            std.mem.indexOf(u8, output, "median") != null or
-                            std.mem.indexOf(u8, output, "iterations") != null or
-                            result.stderr.len > 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"mean_ns\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"total_runs\"") != null);
 }
 
 test "675: bench with --profile and custom env vars shows environment impact on performance" {
@@ -651,10 +649,10 @@ test "692: bench with --format json and multiple iterations outputs statistics" 
     defer result.deinit();
 
     // Should output JSON with statistics (mean, median, min, max, stddev)
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(output.len > 0);
-    // Check for JSON structure
-    try std.testing.expect(std.mem.indexOf(u8, output, "{") != null or result.exit_code == 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"mean_ns\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"min_ns\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"max_ns\"") != null);
 }
 
 test "702: bench with --warmup=0 and --iterations=1 runs minimal benchmark" {

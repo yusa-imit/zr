@@ -368,8 +368,8 @@ test "989: section syntax - precedence when both inline and section syntax prese
     var result = try runZr(allocator, &.{ "--config", config, "run", "both" }, null);
     defer result.deinit();
 
-    // Task should run and fail (documents current precedence behavior)
-    try std.testing.expect(result.exit_code != 0 or result.exit_code == 0);
+    // Task cmd is "exit 1" so it always fails — config should be accepted with section taking precedence
+    try std.testing.expect(result.exit_code != 0);
 }
 
 test "990: section syntax - jitter flag in section configuration" {
