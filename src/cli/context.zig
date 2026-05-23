@@ -23,13 +23,13 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
             } else if (std.mem.eql(u8, format_str, "yaml")) {
                 format = .yaml;
             } else {
-                std.debug.print("✗ unknown format '{s}' (use json or yaml)\n", .{format_str});
+                std.debug.print("✗ [Context]: unknown format '{s}'\n\n  Hint: Use json or yaml\n", .{format_str});
                 return 1;
             }
         } else if (std.mem.eql(u8, arg, "--scope")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ --scope requires a path\n", .{});
+                std.debug.print("✗ [Context]: --scope requires a path\n", .{});
                 return 1;
             }
             scope = args[i];
@@ -37,7 +37,7 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
             try printHelp();
             return 0;
         } else {
-            std.debug.print("✗ unknown flag: {s}\n", .{arg});
+            std.debug.print("✗ [Context]: unknown flag: {s}\n", .{arg});
             try printHelp();
             return 1;
         }
@@ -45,7 +45,7 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
 
     // Generate context
     var ctx = generator.generateContext(allocator, scope) catch |err| {
-        std.debug.print("✗ failed to generate context: {s}\n", .{@errorName(err)});
+        std.debug.print("✗ [Context]: failed to generate context: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer ctx.deinit();
@@ -53,11 +53,11 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     // Generate output
     const output = switch (format) {
         .json => json_gen.generateJsonOutput(allocator, &ctx) catch |err| {
-            std.debug.print("✗ failed to generate JSON output: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Context]: failed to generate JSON output: {s}\n", .{@errorName(err)});
             return 1;
         },
         .yaml => yaml_gen.generateYamlOutput(allocator, &ctx) catch |err| {
-            std.debug.print("✗ failed to generate YAML output: {s}\n", .{@errorName(err)});
+            std.debug.print("✗ [Context]: failed to generate YAML output: {s}\n", .{@errorName(err)});
             return 1;
         },
     };
