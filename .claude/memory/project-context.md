@@ -21,7 +21,7 @@
 - **Sailor version**: v2.10.1 (upgraded 2026-05-17, Cycle 245 STABILIZATION — zero functional changes, test reliability patch)
 - **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix from commit 35581ca)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-05-23, FEATURE Cycle 267)**: ✅ **Added --help Support for MCP and LSP Commands** — Enhanced user experience by adding comprehensive --help documentation for `zr mcp serve` and `zr lsp` commands. Changes: (1) Added --help/-h flag handling in main.zig for both commands. (2) Help messages include command description, available options, usage examples, and integration instructions with doc references. (3) MCP help explains AI integration with Claude Code/Cursor. (4) LSP help describes rich editing features (completion, hover, diagnostics, goto-def) and editor setup. All 1655 tests passing. 1 commit (feat). Part of Code Quality & Documentation Polish milestone.
+- **Latest work (2026-05-23, FEATURE Cycle 268)**: ✅ **Completed Feature Matrix Documentation** — Fixed documentation gap in examples/README.md by adding missing C# (.NET), Ruby on Rails, and Conditional Dependencies rows to Feature Matrix table. All 19 example directories are now fully documented in the comparison matrix, making it easier for users to understand which examples demonstrate which features. 1 commit (docs). Part of Code Quality & Documentation Polish milestone.
 
 ## PRD Phase Status
 
