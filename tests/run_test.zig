@@ -1285,7 +1285,7 @@ test "285: run with --profile flag sets profile-specific environment" {
     const tmp_path = try tmp.dir.realpath(".", &buf);
 
     const profile_toml =
-        \\[profile.prod]
+        \\[profiles.prod]
         \\env = { ENV = "production" }
         \\
         \\[tasks.check]
