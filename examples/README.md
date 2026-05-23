@@ -318,6 +318,9 @@ Comprehensive integration with GitHub Actions for continuous integration and dep
 | Zig Build          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
 | Deno Fresh         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
 | Bun Elysia         | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| C# (.NET)          | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Ruby on Rails      | ✓     | ✓    | -      | ✓     | -         | -       | -          | ✓           | ✓         |
+| Conditional Deps   | ✓     | ✓    | -      | -     | -         | -       | -          | -           | -         |
 | Migration (Make)   | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | ✓           | ✓         |
 | Docker/Kubernetes  | ✓     | ✓    | ✓      | -     | -         | -       | -          | -           | ✓         |
 | GitHub Actions CI  | ✓     | ✓    | ✓      | ✓     | -         | -       | -          | -           | ✓         |
