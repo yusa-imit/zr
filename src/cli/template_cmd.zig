@@ -83,8 +83,7 @@ fn printTemplateSummary(writer: anytype, template: Template) !void {
 pub fn showTemplate(writer: anytype, name: []const u8) !void {
     const registry = Registry.init();
     const template = registry.findByName(name) orelse {
-        try writer.print("Error: Template '{s}' not found\n", .{name});
-        try writer.print("Run 'zr template list' to see available templates\n", .{});
+        try writer.print("✗ [Template]: template '{s}' not found\n\n  Hint: Run 'zr template list' to see available templates\n", .{name});
         return error.TemplateNotFound;
     };
 
@@ -123,15 +122,14 @@ pub fn addTemplate(
 ) !void {
     const registry = Registry.init();
     const template = registry.findByName(name) orelse {
-        try writer.print("Error: Template '{s}' not found\n", .{name});
+        try writer.print("✗ [Template]: template '{s}' not found\n\n  Hint: Run 'zr template list' to see available templates\n", .{name});
         return error.TemplateNotFound;
     };
 
     // Validate required variables
     for (template.variables) |v| {
         if (v.required and !variables.contains(v.name)) {
-            try writer.print("Error: Required variable '{s}' not provided\n", .{v.name});
-            try writer.print("Use --var {s}=VALUE to set it\n", .{v.name});
+            try writer.print("✗ [Template]: required variable '{s}' not provided\n\n  Hint: Use --var {s}=VALUE to set it\n", .{ v.name, v.name });
             return error.MissingRequiredVariable;
         }
     }

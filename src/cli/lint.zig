@@ -20,7 +20,7 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--config") or std.mem.eql(u8, arg, "-c")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --config requires a path\n", .{});
+                std.debug.print("✗ [Lint]: --config requires a path\n", .{});
                 return 1;
             }
             i += 1;
@@ -242,7 +242,7 @@ fn printHelp() void {
         \\  tag-based           Control dependencies based on project tags
         \\  banned-dependency   Explicitly ban specific dependencies
         \\
-        \\For more information: https://github.com/YOUR_ORG/zr
+        \\For more information: https://github.com/yusa-imit/zr
         \\
     ;
     std.debug.print("{s}", .{help});

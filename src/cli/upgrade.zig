@@ -18,7 +18,7 @@ pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
             options.check_only = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
             if (i + 1 >= args.len) {
-                std.debug.print("Error: --version requires a value\n", .{});
+                std.debug.print("✗ [Upgrade]: --version requires a value\n", .{});
                 return 1;
             }
             i += 1;
@@ -28,8 +28,7 @@ pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
             options.verbose = true;
         } else {
-            std.debug.print("Unknown option: {s}\n", .{arg});
-            std.debug.print("Use --help for usage information\n", .{});
+            std.debug.print("✗ [Upgrade]: unknown option '{s}'\n\n  Hint: Run 'zr upgrade --help' to see valid options\n", .{arg});
             return 1;
         }
     }

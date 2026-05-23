@@ -691,7 +691,7 @@ fn cmdPluginCreate(
     const readme_content = try std.fmt.allocPrint(allocator,
         \\# {s}
         \\
-        \\A [zr](https://github.com/yourorg/zr) plugin.
+        \\A [zr](https://github.com/yusa-imit/zr) plugin.
         \\
         \\## Building
         \\

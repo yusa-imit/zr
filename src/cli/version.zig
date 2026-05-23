@@ -25,20 +25,20 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--bump") or std.mem.eql(u8, arg, "-b")) {
             if (i + 1 >= args.len) {
-                try stderr_writer.interface.print("Error: --bump requires a value (major|minor|patch)\n", .{});
+                try stderr_writer.interface.print("✗ [Version]: --bump requires a value\n\n  Hint: Use major, minor, or patch\n", .{});
                 try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
             i += 1;
             bump_type = versioning_types.BumpType.fromString(args[i]);
             if (bump_type == null) {
-                try stderr_writer.interface.print("Error: invalid bump type '{s}' (must be major|minor|patch)\n", .{args[i]});
+                try stderr_writer.interface.print("✗ [Version]: invalid bump type '{s}'\n\n  Hint: Use major, minor, or patch\n", .{args[i]});
                 try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "--package") or std.mem.eql(u8, arg, "-p")) {
             if (i + 1 >= args.len) {
-                try stderr_writer.interface.print("Error: --package requires a path\n", .{});
+                try stderr_writer.interface.print("✗ [Version]: --package requires a path\n", .{});
                 try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
@@ -46,7 +46,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
             package_path = args[i];
         } else if (std.mem.eql(u8, arg, "--config") or std.mem.eql(u8, arg, "-c")) {
             if (i + 1 >= args.len) {
-                try stderr_writer.interface.print("Error: --config requires a path\n", .{});
+                try stderr_writer.interface.print("✗ [Version]: --config requires a path\n", .{});
                 try stderr_writer.interface.flush();
                 std.process.exit(1);
             }
@@ -56,7 +56,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
             try printHelp(&stdout_writer.interface);
             return;
         } else {
-            try stderr_writer.interface.print("Error: unknown argument '{s}'\n", .{arg});
+            try stderr_writer.interface.print("✗ [Version]: unknown argument '{s}'\n", .{arg});
             try printHelp(&stderr_writer.interface);
             try stderr_writer.interface.flush();
             std.process.exit(1);
@@ -65,7 +65,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
 
     // Load config
     var config = config_loader.loadFromFile(allocator, config_path) catch |err| {
-        try stderr_writer.interface.print("Error loading config: {}\n", .{err});
+        try stderr_writer.interface.print("✗ [Version]: failed to load config: {}\n", .{err});
         try stderr_writer.interface.flush();
         std.process.exit(1);
     };
@@ -73,11 +73,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
 
     // Check if versioning is configured
     if (config.versioning == null) {
-        try stderr_writer.interface.print("Error: [versioning] section not found in zr.toml\n", .{});
-        try stderr_writer.interface.print("Add the following to your zr.toml:\n\n", .{});
-        try stderr_writer.interface.print("[versioning]\n", .{});
-        try stderr_writer.interface.print("mode = \"independent\"  # or \"fixed\"\n", .{});
-        try stderr_writer.interface.print("convention = \"conventional\"  # or \"manual\"\n", .{});
+        try stderr_writer.interface.print("✗ [Version]: [versioning] section not found in zr.toml\n\n  Add the following to your zr.toml:\n\n  [versioning]\n  mode = \"independent\"  # or \"fixed\"\n  convention = \"conventional\"  # or \"manual\"\n", .{});
         try stderr_writer.interface.flush();
         std.process.exit(1);
     }
@@ -91,8 +87,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
     // Check if package.json exists
     const pkg_file = std.fs.cwd().openFile(pkg_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
-            try stderr_writer.interface.print("Error: {s} not found\n", .{pkg_path});
-            try stderr_writer.interface.print("Hint: Use --package to specify a different file\n", .{});
+            try stderr_writer.interface.print("✗ [Version]: {s} not found\n\n  Hint: Use --package to specify a different file\n", .{pkg_path});
             try stderr_writer.interface.flush();
             std.process.exit(1);
         }
