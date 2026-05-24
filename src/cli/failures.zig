@@ -13,7 +13,8 @@ pub const FailuresOptions = struct {
 };
 
 /// Execute the failures command to view captured failure reports.
-pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
+pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
+    _ = ew; // Not needed for failures command, but accept for consistency
     var mgr = try replay.ReplayManager.init(allocator, options.storage_dir);
     defer mgr.deinit();
 
@@ -40,9 +41,9 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
 
     if (failures_list.items.len == 0) {
         if (options.task) |t| {
-            std.debug.print("No failure reports found for task: {s}\n", .{t});
+            try w.print("No failure reports found for task: {s}\n", .{t});
         } else {
-            std.debug.print("No failure reports found.\n", .{});
+            try w.print("No failure reports found.\n", .{});
         }
         return 0;
     }
@@ -50,13 +51,13 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
     // Display each failure report
     for (failures_list.items, 0..) |*failure, i| {
         if (i > 0) {
-            std.debug.print("\n", .{});
+            try w.print("\n", .{});
             if (options.use_color) {
-                std.debug.print("\x1b[2m", .{}); // dim
+                try w.print("\x1b[2m", .{}); // dim
             }
-            std.debug.print("{s}\n\n", .{"─" ** 80});
+            try w.print("{s}\n\n", .{"─" ** 80});
             if (options.use_color) {
-                std.debug.print("\x1b[0m", .{}); // reset
+                try w.print("\x1b[0m", .{}); // reset
             }
         }
 
@@ -64,14 +65,15 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
         defer buf.deinit(allocator);
         const buf_writer = buf.writer(allocator);
         try failure.formatReport(buf_writer);
-        std.debug.print("{s}", .{buf.items});
+        try w.print("{s}", .{buf.items});
     }
 
     return 0;
 }
 
 /// Clear all captured failure reports.
-pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions) !u8 {
+pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
+    _ = ew; // Not needed for clear command, but accept for consistency
     var mgr = try replay.ReplayManager.init(allocator, options.storage_dir);
     defer mgr.deinit();
 
@@ -83,7 +85,7 @@ pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions) 
     // Delete all JSON files from disk
     const dir = std.fs.cwd().openDir(options.storage_dir, .{ .iterate = true }) catch |err| {
         if (err == error.FileNotFound) {
-            std.debug.print("No failure reports to clear.\n", .{});
+            try w.print("No failure reports to clear.\n", .{});
             return 0;
         }
         return err;
@@ -108,7 +110,7 @@ pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions) 
     }
     mgr.failures.clearRetainingCapacity();
 
-    std.debug.print("Cleared {d} failure report(s).\n", .{count});
+    try w.print("Cleared {d} failure report(s).\n", .{count});
     return 0;
 }
 
@@ -147,4 +149,40 @@ test "FailuresOptions: all custom values" {
     try testing.expectEqualStrings("test", opts.task.?);
     try testing.expectEqualStrings("/custom/path", opts.storage_dir);
     try testing.expect(opts.use_color == false);
+}
+
+test "cmdFailures writes to writer when no failures found" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const opts = FailuresOptions{
+        .storage_dir = "/nonexistent/failures",
+    };
+
+    // This should FAIL until cmdFailures is refactored to accept writers
+    const code = try cmdFailures(allocator, opts, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "cmdFailuresClear writes to writer when clearing" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const opts = FailuresOptions{
+        .storage_dir = "/nonexistent/failures",
+    };
+
+    // This should FAIL until cmdFailuresClear is refactored to accept writers
+    const code = try cmdFailuresClear(allocator, opts, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 0), code);
 }

@@ -3,7 +3,7 @@ const generator = @import("../context/generator.zig");
 const json_gen = @import("../context/json.zig");
 const yaml_gen = @import("../context/yaml.zig");
 
-pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var format: enum { json, yaml } = .json;
     var scope: ?[]const u8 = null;
 
@@ -14,7 +14,7 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         if (std.mem.eql(u8, arg, "--format")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ --format requires a value (json or yaml)\n", .{});
+                try ew.print("✗ --format requires a value (json or yaml)\n", .{});
                 return 1;
             }
             const format_str = args[i];
@@ -23,29 +23,29 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
             } else if (std.mem.eql(u8, format_str, "yaml")) {
                 format = .yaml;
             } else {
-                std.debug.print("✗ [Context]: unknown format '{s}'\n\n  Hint: Use json or yaml\n", .{format_str});
+                try ew.print("✗ [Context]: unknown format '{s}'\n\n  Hint: Use json or yaml\n", .{format_str});
                 return 1;
             }
         } else if (std.mem.eql(u8, arg, "--scope")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ [Context]: --scope requires a path\n", .{});
+                try ew.print("✗ [Context]: --scope requires a path\n", .{});
                 return 1;
             }
             scope = args[i];
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printHelp();
+            try printHelp(ew);
             return 0;
         } else {
-            std.debug.print("✗ [Context]: unknown flag: {s}\n", .{arg});
-            try printHelp();
+            try ew.print("✗ [Context]: unknown flag: {s}\n", .{arg});
+            try printHelp(ew);
             return 1;
         }
     }
 
     // Generate context
     var ctx = generator.generateContext(allocator, scope) catch |err| {
-        std.debug.print("✗ [Context]: failed to generate context: {s}\n", .{@errorName(err)});
+        try ew.print("✗ [Context]: failed to generate context: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer ctx.deinit();
@@ -53,26 +53,24 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     // Generate output
     const output = switch (format) {
         .json => json_gen.generateJsonOutput(allocator, &ctx) catch |err| {
-            std.debug.print("✗ [Context]: failed to generate JSON output: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Context]: failed to generate JSON output: {s}\n", .{@errorName(err)});
             return 1;
         },
         .yaml => yaml_gen.generateYamlOutput(allocator, &ctx) catch |err| {
-            std.debug.print("✗ [Context]: failed to generate YAML output: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Context]: failed to generate YAML output: {s}\n", .{@errorName(err)});
             return 1;
         },
     };
     defer allocator.free(output);
 
-    // Print to stdout
-    const stdout = std.fs.File.stdout();
-    try stdout.writeAll(output);
+    // Print to writer
+    try w.print("{s}", .{output});
 
     return 0;
 }
 
-fn printHelp() !void {
-    const stdout = std.fs.File.stdout();
-    try stdout.writeAll(
+fn printHelp(ew: *std.Io.Writer) !void {
+    try ew.print(
         \\zr context - Generate AI-friendly project metadata
         \\
         \\Usage:
@@ -98,12 +96,50 @@ fn printHelp() !void {
         \\  zr context --scope=packages/api  # Only show packages/api scope
         \\
         \\
-    );
+    , .{});
 }
 
 test "cmdContext help" {
     const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
     const args = [_][]const u8{"--help"};
-    const result = try cmdContext(allocator, &args);
+    const result = try cmdContext(allocator, &args, &out_w.interface, &err_w.interface);
     try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdContext writes help to writer when --help provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = &[_][]const u8{"--help"};
+
+    // This should FAIL until cmdContext is refactored to accept writers
+    const code = try cmdContext(allocator, args, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "cmdContext writes error to ew when unknown flag provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = &[_][]const u8{"--unknown-flag"};
+
+    // This should FAIL until cmdContext is refactored to accept writers
+    const code = try cmdContext(allocator, args, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 1), code);
 }

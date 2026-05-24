@@ -1380,7 +1380,7 @@ fn run(
         return analytics_cmd.cmdAnalytics(allocator, analytics_args, json_output, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "context")) {
         const context_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return context_cmd.cmdContext(allocator, context_args);
+        return context_cmd.cmdContext(allocator, context_args, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "mcp")) {
         // MCP server: zr mcp serve
         if (effective_args.len < 3) {
@@ -1448,7 +1448,7 @@ fn run(
         return conformance_cmd.cmdConformance(allocator, conformance_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "bench")) {
         const bench_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return bench_cmd.cmdBench(allocator, bench_args);
+        return bench_cmd.cmdBench(allocator, bench_args, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "doctor")) {
         const doctor_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = doctor_cmd.DoctorOptions{};
@@ -1487,7 +1487,7 @@ fn run(
         return clean_cmd.cmdClean(allocator, clean_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "upgrade")) {
         const upgrade_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return upgrade_cmd.cmdUpgrade(allocator, upgrade_args);
+        return upgrade_cmd.cmdUpgrade(allocator, upgrade_args, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "alias")) {
         const alias_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return alias_cmd.cmdAlias(allocator, alias_args, effective_w, ew, effective_color);
@@ -1667,9 +1667,9 @@ fn run(
         }
 
         if (std.mem.eql(u8, subcommand, "clear")) {
-            return failures_cmd.cmdFailuresClear(allocator, opts);
+            return failures_cmd.cmdFailuresClear(allocator, opts, effective_w, ew);
         } else {
-            return failures_cmd.cmdFailures(allocator, opts);
+            return failures_cmd.cmdFailures(allocator, opts, effective_w, ew);
         }
     } else if (std.mem.eql(u8, cmd, "template")) {
         const template_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
@@ -1771,7 +1771,7 @@ fn run(
         return 0;
     } else if (std.mem.eql(u8, cmd, "cache")) {
         // Handle cache management: zr cache clean/status/clear
-        cache_cmd.handle(allocator, effective_args) catch |err| {
+        cache_cmd.handle(allocator, effective_args, effective_w, ew) catch |err| {
             try color.printError(ew, effective_color, "cache error: {}\n", .{err});
             return 1;
         };

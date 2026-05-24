@@ -4,7 +4,7 @@ const checker = @import("../upgrade/checker.zig");
 const installer = @import("../upgrade/installer.zig");
 const types = @import("../upgrade/types.zig");
 
-pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var options = types.UpgradeOptions{};
 
     // Parse arguments
@@ -12,13 +12,13 @@ pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            printHelp();
+            try printHelp(ew);
             return 0;
         } else if (std.mem.eql(u8, arg, "--check")) {
             options.check_only = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
             if (i + 1 >= args.len) {
-                std.debug.print("✗ [Upgrade]: --version requires a value\n", .{});
+                try ew.print("✗ [Upgrade]: --version requires a value\n", .{});
                 return 1;
             }
             i += 1;
@@ -28,22 +28,18 @@ pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
             options.verbose = true;
         } else {
-            std.debug.print("✗ [Upgrade]: unknown option '{s}'\n\n  Hint: Run 'zr upgrade --help' to see valid options\n", .{arg});
+            try ew.print("✗ [Upgrade]: unknown option '{s}'\n\n  Hint: Run 'zr upgrade --help' to see valid options\n", .{arg});
             return 1;
         }
     }
 
-    return try runUpgrade(allocator, options);
+    return try runUpgrade(allocator, options, w, ew);
 }
 
-fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions) !u8 {
-    var stdout_buf: [4096]u8 = undefined;
-    const stdout_file = std.fs.File.stdout();
-    var stdout_writer = stdout_file.writer(&stdout_buf);
-    defer stdout_writer.interface.flush() catch {};
-
+fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
+    _ = ew; // Not used in runUpgrade
     // Check for updates
-    try stdout_writer.interface.print("Checking for updates...\n", .{});
+    try w.print("Checking for updates...\n", .{});
 
     const maybe_release = try checker.checkForUpdate(
         allocator,
@@ -60,19 +56,18 @@ fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions) !u8 {
         const bold = output.Code.bold;
         const reset = output.Code.reset;
 
-        try stdout_writer.interface.print("{s}{s}Update available:{s}\n", .{ green, bold, reset });
-        try stdout_writer.interface.print("  Current: {s}\n", .{checker.CURRENT_VERSION});
-        try stdout_writer.interface.print("  Latest:  {s}\n", .{release.version});
-        try stdout_writer.interface.print("  Released: {s}\n\n", .{release.created_at});
+        try w.print("{s}{s}Update available:{s}\n", .{ green, bold, reset });
+        try w.print("  Current: {s}\n", .{checker.CURRENT_VERSION});
+        try w.print("  Latest:  {s}\n", .{release.version});
+        try w.print("  Released: {s}\n\n", .{release.created_at});
 
         if (options.check_only) {
-            try stdout_writer.interface.print("Run 'zr upgrade' to install the update.\n", .{});
+            try w.print("Run 'zr upgrade' to install the update.\n", .{});
             return 0;
         }
 
         // Confirm before installing
-        try stdout_writer.interface.print("Do you want to upgrade? [y/N]: ", .{});
-        stdout_writer.interface.flush() catch {};
+        try w.print("Do you want to upgrade? [y/N]: ", .{});
 
         const stdin_file = std.fs.File.stdin();
         var buf: [256]u8 = undefined;
@@ -80,15 +75,15 @@ fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions) !u8 {
         const input = std.mem.trim(u8, buf[0..bytes_read], " \t\r\n");
 
         if (!std.mem.eql(u8, input, "y") and !std.mem.eql(u8, input, "Y")) {
-            try stdout_writer.interface.print("Upgrade cancelled.\n", .{});
+            try w.print("Upgrade cancelled.\n", .{});
             return 0;
         }
 
         // Install the update
         try installer.installRelease(allocator, release, options.verbose);
 
-        try stdout_writer.interface.print("\n{s}{s}✓ Upgrade complete!{s}\n", .{ green, bold, reset });
-        try stdout_writer.interface.print("Run 'zr --version' to verify.\n", .{});
+        try w.print("\n{s}{s}✓ Upgrade complete!{s}\n", .{ green, bold, reset });
+        try w.print("Run 'zr --version' to verify.\n", .{});
 
         return 0;
     } else {
@@ -96,7 +91,7 @@ fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions) !u8 {
         const bold = output.Code.bold;
         const reset = output.Code.reset;
 
-        try stdout_writer.interface.print("{s}{s}✓ You are already on the latest version ({s}){s}\n", .{
+        try w.print("{s}{s}✓ You are already on the latest version ({s}){s}\n", .{
             green,
             bold,
             checker.CURRENT_VERSION,
@@ -106,8 +101,8 @@ fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions) !u8 {
     }
 }
 
-fn printHelp() void {
-    std.debug.print(
+fn printHelp(ew: *std.Io.Writer) !void {
+    try ew.print(
         \\Usage: zr upgrade [OPTIONS]
         \\
         \\Upgrade zr to the latest version.
@@ -130,8 +125,14 @@ fn printHelp() void {
 
 test "cmdUpgrade help" {
     const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
     const args = [_][]const u8{"--help"};
-    const exit_code = try cmdUpgrade(allocator, &args);
+    const exit_code = try cmdUpgrade(allocator, &args, &out_w.interface, &err_w.interface);
     try std.testing.expectEqual(@as(u8, 0), exit_code);
 }
 
@@ -141,4 +142,36 @@ test "UpgradeOptions defaults" {
     try std.testing.expect(!options.include_prerelease);
     try std.testing.expect(!options.verbose);
     try std.testing.expect(options.version == null);
+}
+
+test "cmdUpgrade writes help to writer when --help provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = &[_][]const u8{"--help"};
+
+    // This should FAIL until cmdUpgrade is refactored to accept writers
+    const code = try cmdUpgrade(allocator, args, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "cmdUpgrade writes error to ew when unknown option provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = &[_][]const u8{"--unknown-option"};
+
+    // This should FAIL until cmdUpgrade is refactored to accept writers
+    const code = try cmdUpgrade(allocator, args, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 1), code);
 }

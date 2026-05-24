@@ -6,16 +6,16 @@ const formatter = @import("../bench/formatter.zig");
 const BenchmarkConfig = types.BenchmarkConfig;
 
 /// Parse and execute the bench command.
-pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     if (args.len == 0) {
-        try printHelp();
+        try printHelp(ew);
         return 1;
     }
 
     // Check for help flag
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printHelp();
+            try printHelp(ew);
             return 0;
         }
     }
@@ -33,34 +33,34 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
             const eq_idx = std.mem.indexOf(u8, arg, "=") orelse continue;
             const value = arg[eq_idx + 1 ..];
             config.iterations = std.fmt.parseInt(usize, value, 10) catch {
-                std.debug.print("Invalid iterations value: {s}\n", .{value});
+                try ew.print("Invalid iterations value: {s}\n", .{value});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--iterations") or std.mem.eql(u8, arg, "-n")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("Missing value for --iterations\n", .{});
+                try ew.print("Missing value for --iterations\n", .{});
                 return 1;
             }
             config.iterations = std.fmt.parseInt(usize, args[i], 10) catch {
-                std.debug.print("Invalid iterations value: {s}\n", .{args[i]});
+                try ew.print("Invalid iterations value: {s}\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.startsWith(u8, arg, "--warmup=")) {
             const eq_idx = std.mem.indexOf(u8, arg, "=") orelse continue;
             const value = arg[eq_idx + 1 ..];
             config.warmup_runs = std.fmt.parseInt(usize, value, 10) catch {
-                std.debug.print("Invalid warmup value: {s}\n", .{value});
+                try ew.print("Invalid warmup value: {s}\n", .{value});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--warmup")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("Missing value for --warmup\n", .{});
+                try ew.print("Missing value for --warmup\n", .{});
                 return 1;
             }
             config.warmup_runs = std.fmt.parseInt(usize, args[i], 10) catch {
-                std.debug.print("Invalid warmup value: {s}\n", .{args[i]});
+                try ew.print("Invalid warmup value: {s}\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.startsWith(u8, arg, "--config=")) {
@@ -69,7 +69,7 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--config")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("Missing value for --config\n", .{});
+                try ew.print("Missing value for --config\n", .{});
                 return 1;
             }
             config.config_path = args[i];
@@ -79,7 +79,7 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--profile") or std.mem.eql(u8, arg, "-p")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("Missing value for --profile\n", .{});
+                try ew.print("Missing value for --profile\n", .{});
                 return 1;
             }
             config.profile = args[i];
@@ -92,12 +92,12 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--format=text")) {
             config.format = .text;
         } else if (std.mem.startsWith(u8, arg, "--format=")) {
-            std.debug.print("✗ [Bench]: unknown format\n\n  Hint: Supported formats: text, json, csv\n", .{});
+            try ew.print("✗ [Bench]: unknown format\n\n  Hint: Supported formats: text, json, csv\n", .{});
             return 1;
         } else if (std.mem.eql(u8, arg, "--format") or std.mem.eql(u8, arg, "-f")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ [Bench]: missing value for --format\n\n  Hint: Supported formats: text, json, csv\n", .{});
+                try ew.print("✗ [Bench]: missing value for --format\n\n  Hint: Supported formats: text, json, csv\n", .{});
                 return 1;
             }
             const fmt = args[i];
@@ -108,32 +108,28 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
             } else if (std.mem.eql(u8, fmt, "text")) {
                 config.format = .text;
             } else {
-                std.debug.print("✗ [Bench]: unknown format '{s}'\n\n  Hint: Supported formats: text, json, csv\n", .{fmt});
+                try ew.print("✗ [Bench]: unknown format '{s}'\n\n  Hint: Supported formats: text, json, csv\n", .{fmt});
                 return 1;
             }
         } else {
-            std.debug.print("✗ [Bench]: unknown argument: {s}\n", .{arg});
+            try ew.print("✗ [Bench]: unknown argument: {s}\n", .{arg});
             return 1;
         }
     }
 
     // Run benchmark
     var stats = runner.runBenchmark(allocator, &config) catch |err| {
-        std.debug.print("✗ [Bench]: benchmark failed: {}\n", .{err});
+        try ew.print("✗ [Bench]: benchmark failed: {}\n", .{err});
         return 1;
     };
     defer stats.deinit();
 
     // Print results
-    var out_buf: [8192]u8 = undefined;
-    const stdout_f = std.fs.File.stdout();
-    var stdout_w = stdout_f.writer(&out_buf);
     switch (config.format) {
-        .text => try formatter.printText(&stdout_w.interface, &stats),
-        .json => try formatter.printJson(&stdout_w.interface, &stats),
-        .csv => try formatter.printCsv(&stdout_w.interface, &stats),
+        .text => try formatter.printText(w, &stats),
+        .json => try formatter.printJson(w, &stats),
+        .csv => try formatter.printCsv(w, &stats),
     }
-    try stdout_w.interface.flush();
 
     // Return error code if any runs failed
     if (stats.failed_runs > 0) {
@@ -143,12 +139,8 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     return 0;
 }
 
-fn printHelp() !void {
-    var buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var stderr_w = stderr_f.writer(&buf);
-    defer stderr_w.interface.flush() catch {};
-    try stderr_w.interface.print(
+fn printHelp(ew: *std.Io.Writer) !void {
+    try ew.print(
         \\Usage: zr bench <task> [options]
         \\
         \\Run a task multiple times and collect performance statistics.
@@ -173,7 +165,45 @@ fn printHelp() !void {
 
 test "cmdBench help" {
     const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
     const args = &[_][]const u8{"--help"};
-    const exit_code = try cmdBench(allocator, args);
+    const exit_code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface);
     try std.testing.expectEqual(@as(u8, 0), exit_code);
+}
+
+test "cmdBench writes help to writer when --help provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = &[_][]const u8{"--help"};
+
+    // This should FAIL until cmdBench is refactored to accept writers
+    const code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "cmdBench writes error to ew when unknown flag provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = &[_][]const u8{ "mytask", "--unknown-flag" };
+
+    // This should FAIL until cmdBench is refactored to accept writers
+    const code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface);
+    try std.testing.expectEqual(@as(u8, 1), code);
 }
