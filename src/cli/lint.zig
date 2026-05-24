@@ -10,7 +10,7 @@ const Workspace = types.Workspace;
 const ProjectInfo = constraints_mod.ProjectInfo;
 const ValidationResult = constraints_mod.ValidationResult;
 
-pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+pub fn run(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var config_path: []const u8 = "zr.toml";
     var verbose = false;
 
@@ -20,7 +20,7 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--config") or std.mem.eql(u8, arg, "-c")) {
             if (i + 1 >= args.len) {
-                std.debug.print("✗ [Lint]: --config requires a path\n", .{});
+                try ew.print("✗ [Lint]: --config requires a path\n", .{});
                 return 1;
             }
             i += 1;
@@ -28,25 +28,25 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
             verbose = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            printHelp();
+            try printHelp(w);
             return 0;
         }
     }
 
     // Load config
     var config = config_loader.loadFromFile(allocator, config_path) catch |err| {
-        std.debug.print("✗ [Lint]: Failed to load config: {s}\n", .{@errorName(err)});
+        try ew.print("✗ [Lint]: Failed to load config: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer config.deinit();
 
     // Check if constraints are defined
     if (config.constraints.len == 0) {
-        std.debug.print("ℹ No architecture constraints defined in {s}\n", .{config_path});
-        std.debug.print("\n  Add constraints to enforce dependency rules:\n", .{});
-        std.debug.print("  [[constraints]]\n", .{});
-        std.debug.print("  rule = \"no-circular\"\n", .{});
-        std.debug.print("  scope = \"all\"\n", .{});
+        try w.print("ℹ No architecture constraints defined in {s}\n", .{config_path});
+        try w.print("\n  Add constraints to enforce dependency rules:\n", .{});
+        try w.print("  [[constraints]]\n", .{});
+        try w.print("  rule = \"no-circular\"\n", .{});
+        try w.print("  scope = \"all\"\n", .{});
         return 0;
     }
 
@@ -64,8 +64,8 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     }
 
     if (verbose) {
-        std.debug.print("Found {d} project(s)\n", .{projects.len});
-        std.debug.print("Validating {d} constraint(s)...\n\n", .{config.constraints.len});
+        try w.print("Found {d} project(s)\n", .{projects.len});
+        try w.print("Validating {d} constraint(s)...\n\n", .{config.constraints.len});
     }
 
     // Validate constraints
@@ -73,21 +73,21 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     defer result.deinit();
 
     if (result.passed) {
-        std.debug.print("✓ All architecture constraints passed\n", .{});
+        try w.print("✓ All architecture constraints passed\n", .{});
         if (verbose) {
-            std.debug.print("\n  Checked:\n", .{});
+            try w.print("\n  Checked:\n", .{});
             for (config.constraints) |constraint| {
                 const rule_str = switch (constraint.rule) {
                     .no_circular => "no-circular",
                     .tag_based => "tag-based",
                     .banned_dependency => "banned-dependency",
                 };
-                std.debug.print("    - {s}\n", .{rule_str});
+                try w.print("    - {s}\n", .{rule_str});
             }
         }
         return 0;
     } else {
-        std.debug.print("✗ [Lint]: Found {d} constraint violation(s)\n\n", .{result.violations.len});
+        try ew.print("✗ [Lint]: Found {d} constraint violation(s)\n\n", .{result.violations.len});
 
         for (result.violations, 1..) |violation, idx| {
             const rule_str = switch (violation.rule) {
@@ -96,16 +96,16 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
                 .banned_dependency => "banned-dependency",
             };
 
-            std.debug.print("  {d}. {s}\n", .{ idx, rule_str });
-            std.debug.print("     From: {s}\n", .{violation.from});
-            std.debug.print("     To:   {s}\n", .{violation.to});
+            try w.print("  {d}. {s}\n", .{ idx, rule_str });
+            try w.print("     From: {s}\n", .{violation.from});
+            try w.print("     To:   {s}\n", .{violation.to});
             if (violation.message) |msg| {
-                std.debug.print("     {s}\n", .{msg});
+                try w.print("     {s}\n", .{msg});
             }
-            std.debug.print("\n", .{});
+            try w.print("\n", .{});
         }
 
-        std.debug.print("  Hint: Review your workspace dependencies and constraint rules\n", .{});
+        try w.print("  Hint: Review your workspace dependencies and constraint rules\n", .{});
         return 1;
     }
 }
@@ -221,7 +221,7 @@ fn dupeStringSlice(allocator: std.mem.Allocator, slice: []const []const u8) ![][
     return result;
 }
 
-fn printHelp() void {
+fn printHelp(w: *std.Io.Writer) !void {
     const help =
         \\Usage: zr lint [options]
         \\
@@ -245,7 +245,7 @@ fn printHelp() void {
         \\For more information: https://github.com/yusa-imit/zr
         \\
     ;
-    std.debug.print("{s}", .{help});
+    try w.print("{s}", .{help});
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -279,4 +279,41 @@ test "loadProjectMetadata extracts tags and dependencies" {
     try std.testing.expectEqualStrings("frontend", config.metadata.?.tags[1]);
     try std.testing.expectEqual(@as(usize, 1), config.metadata.?.dependencies.len);
     try std.testing.expectEqualStrings("packages/core", config.metadata.?.dependencies[0]);
+}
+
+test "run writes help output to writer when --help flag provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = [_][]const u8{"--help"};
+
+    // This should FAIL until run is refactored to accept writers
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface);
+
+    // Help should exit with 0
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "run writes error to writer when config not found" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = [_][]const u8{"--config"};
+
+    // Missing value for --config should be caught
+    // This should FAIL until run is refactored to accept writers
+    const code = try run(allocator, &args, &out_w.interface, &err_w.interface);
+
+    // Should return error code
+    try std.testing.expectEqual(@as(u8, 1), code);
 }

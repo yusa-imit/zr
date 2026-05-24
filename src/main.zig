@@ -1361,7 +1361,7 @@ fn run(
         return graph_cmd.graphCommand(allocator, graph_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "lint")) {
         const lint_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return lint_cmd.run(allocator, lint_args);
+        return lint_cmd.run(allocator, lint_args, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "repo")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         return repo_cmd.cmdRepo(allocator, sub, effective_args, effective_w, ew, effective_color);
@@ -1459,7 +1459,7 @@ fn run(
                 opts.verbose = true;
             }
         }
-        return doctor_cmd.cmdDoctor(allocator, opts);
+        return doctor_cmd.cmdDoctor(allocator, opts, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "cd")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "cd: missing workspace member name\n\n  Hint: zr cd <member-name>\n", .{});

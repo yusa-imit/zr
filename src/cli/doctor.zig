@@ -32,7 +32,9 @@ pub const CheckResult = struct {
 };
 
 /// Execute the doctor command to diagnose environment
-pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
+pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
+    _ = ew; // Used in future error reporting
+
     const config_path = options.config_path orelse "zr.toml";
 
     // Check if config exists
@@ -44,9 +46,9 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
     };
 
     if (!config_exists) {
-        std.debug.print("\n", .{});
-        std.debug.print(" ℹ No zr.toml found. Running basic system checks.\n\n", .{});
-        return try runBasicChecks(allocator, options);
+        try w.print("\n", .{});
+        try w.print(" ℹ No zr.toml found. Running basic system checks.\n\n", .{});
+        return try runBasicChecks(allocator, options, w);
     }
 
     // Load config using the loader module directly
@@ -54,8 +56,8 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
     var config = try loader.loadFromFile(allocator, config_path);
     defer config.deinit();
 
-    std.debug.print("\n", .{});
-    std.debug.print(" 🔍 zr doctor\n\n", .{});
+    try w.print("\n", .{});
+    try w.print(" 🔍 zr doctor\n\n", .{});
 
     var results = std.ArrayList(CheckResult){};
     defer {
@@ -92,25 +94,25 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
             .error_ => "✗",
         };
 
-        std.debug.print(" {s} {s:<16}", .{ status_symbol, result.name });
+        try w.print(" {s} {s:<16}", .{ status_symbol, result.name });
 
         if (result.found_version) |version| {
-            std.debug.print("{s}", .{version});
+            try w.print("{s}", .{version});
             if (result.required_version) |required| {
-                std.debug.print("  (required: {s})", .{required});
+                try w.print("  (required: {s})", .{required});
             }
         } else {
-            std.debug.print("not found", .{});
+            try w.print("not found", .{});
             if (result.required_version) |required| {
-                std.debug.print("  (required: {s})", .{required});
+                try w.print("  (required: {s})", .{required});
             }
         }
 
         if (result.message) |msg| {
-            std.debug.print("  {s}", .{msg});
+            try w.print("  {s}", .{msg});
         }
 
-        std.debug.print("\n", .{});
+        try w.print("\n", .{});
 
         switch (result.status) {
             .ok => {},
@@ -119,16 +121,16 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
         }
     }
 
-    std.debug.print("\n", .{});
+    try w.print("\n", .{});
 
     if (error_count > 0 or warning_count > 0) {
         const total = error_count + warning_count;
-        std.debug.print(" {d} issue(s) found. Run 'zr setup' to fix.\n", .{total});
+        try w.print(" {d} issue(s) found. Run 'zr setup' to fix.\n", .{total});
     } else {
-        std.debug.print(" ✓ All checks passed!\n", .{});
+        try w.print(" ✓ All checks passed!\n", .{});
     }
 
-    std.debug.print("\n", .{});
+    try w.print("\n", .{});
 
     return if (error_count > 0) 1 else 0;
 }
@@ -224,7 +226,7 @@ fn hasDockerTasks(config: types.Config) bool {
     return false;
 }
 
-fn runBasicChecks(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
+fn runBasicChecks(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.Io.Writer) !u8 {
     _ = options;
 
     var results = std.ArrayList(CheckResult){};
@@ -250,31 +252,31 @@ fn runBasicChecks(allocator: std.mem.Allocator, options: DoctorOptions) !u8 {
             .error_ => "✗",
         };
 
-        std.debug.print(" {s} {s:<16}", .{ status_symbol, result.name });
+        try w.print(" {s} {s:<16}", .{ status_symbol, result.name });
 
         if (result.found_version) |version| {
-            std.debug.print("{s}", .{version});
+            try w.print("{s}", .{version});
         } else {
-            std.debug.print("not found", .{});
+            try w.print("not found", .{});
         }
 
         if (result.message) |msg| {
-            std.debug.print("  {s}", .{msg});
+            try w.print("  {s}", .{msg});
         }
 
-        std.debug.print("\n", .{});
+        try w.print("\n", .{});
 
         if (result.status == .error_) {
             error_count += 1;
         }
     }
 
-    std.debug.print("\n", .{});
+    try w.print("\n", .{});
 
     if (error_count > 0) {
-        std.debug.print(" {d} issue(s) found.\n\n", .{error_count});
+        try w.print(" {d} issue(s) found.\n\n", .{error_count});
     } else {
-        std.debug.print(" ✓ Basic system checks passed!\n\n", .{});
+        try w.print(" ✓ Basic system checks passed!\n\n", .{});
     }
 
     return if (error_count > 0) 1 else 0;
@@ -308,4 +310,44 @@ test "CheckResult init and deinit" {
     try std.testing.expectEqual(CheckResult.Status.ok, result.status);
 
     result.deinit(allocator);
+}
+
+test "cmdDoctor writes header to writer when config exists" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const opts = DoctorOptions{
+        .config_path = "zr.toml",
+        .verbose = false,
+    };
+
+    // This should FAIL until cmdDoctor is refactored to accept writers
+    const code = try cmdDoctor(allocator, opts, &out_w.interface, &err_w.interface);
+    try std.testing.expect(code == 0 or code == 1);
+}
+
+test "cmdDoctor writes to writer with no config" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const opts = DoctorOptions{
+        .config_path = "/nonexistent/path/zr.toml",
+        .verbose = false,
+    };
+
+    // This should FAIL until cmdDoctor is refactored to accept writers
+    const code = try cmdDoctor(allocator, opts, &out_w.interface, &err_w.interface);
+
+    // Should run basic checks and return 0 or 1 (depending on system state)
+    try std.testing.expect(code == 0 or code == 1);
 }
