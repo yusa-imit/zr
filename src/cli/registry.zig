@@ -125,3 +125,119 @@ fn printServeHelp(w: anytype, use_color: bool) !void {
     try w.writeAll("  zr registry serve --port 3000 --host 0.0.0.0\n");
     try w.writeAll("  zr registry serve --data-dir /var/lib/zr-registry\n");
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+
+test "cmdRegistry: no subcommand prints help without error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry" };
+    try cmdRegistry(std.testing.allocator, &args, false, &out, &err_out);
+    const written = out_buf[0..out.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "USAGE:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "serve") != null);
+}
+
+test "cmdRegistry: help subcommand prints help without error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "help" };
+    try cmdRegistry(std.testing.allocator, &args, false, &out, &err_out);
+    try std.testing.expect(std.mem.indexOf(u8, out_buf[0..out.end], "USAGE:") != null);
+}
+
+test "cmdRegistry: --help flag prints help without error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "--help" };
+    try cmdRegistry(std.testing.allocator, &args, false, &out, &err_out);
+    try std.testing.expect(std.mem.indexOf(u8, out_buf[0..out.end], "USAGE:") != null);
+}
+
+test "cmdRegistry: unknown subcommand returns UnknownSubcommand error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "nonexistent" };
+    try std.testing.expectError(error.UnknownSubcommand, cmdRegistry(std.testing.allocator, &args, false, &out, &err_out));
+    try std.testing.expect(std.mem.indexOf(u8, err_buf[0..err_out.end], "nonexistent") != null);
+}
+
+test "cmdRegistry serve: --help flag prints serve help without error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "serve", "--help" };
+    try cmdRegistry(std.testing.allocator, &args, false, &out, &err_out);
+    const written = out_buf[0..out.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "--port") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "--host") != null);
+}
+
+test "cmdRegistry serve: missing --port value returns MissingArgument error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "serve", "--port" };
+    try std.testing.expectError(error.MissingArgument, cmdRegistry(std.testing.allocator, &args, false, &out, &err_out));
+    try std.testing.expect(std.mem.indexOf(u8, err_buf[0..err_out.end], "--port") != null);
+}
+
+test "cmdRegistry serve: invalid port number returns InvalidPort error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "serve", "--port", "notaport" };
+    try std.testing.expectError(error.InvalidPort, cmdRegistry(std.testing.allocator, &args, false, &out, &err_out));
+    try std.testing.expect(std.mem.indexOf(u8, err_buf[0..err_out.end], "notaport") != null);
+}
+
+test "cmdRegistry serve: missing --host value returns MissingArgument error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "serve", "--host" };
+    try std.testing.expectError(error.MissingArgument, cmdRegistry(std.testing.allocator, &args, false, &out, &err_out));
+    try std.testing.expect(std.mem.indexOf(u8, err_buf[0..err_out.end], "--host") != null);
+}
+
+test "cmdRegistry serve: missing --data-dir value returns MissingArgument error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "serve", "--data-dir" };
+    try std.testing.expectError(error.MissingArgument, cmdRegistry(std.testing.allocator, &args, false, &out, &err_out));
+    try std.testing.expect(std.mem.indexOf(u8, err_buf[0..err_out.end], "--data-dir") != null);
+}
+
+test "cmdRegistry serve: unknown option returns UnknownOption error" {
+    var out_buf: [4096]u8 = undefined;
+    var out = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_out = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "zr", "registry", "serve", "--bogus-flag" };
+    try std.testing.expectError(error.UnknownOption, cmdRegistry(std.testing.allocator, &args, false, &out, &err_out));
+    try std.testing.expect(std.mem.indexOf(u8, err_buf[0..err_out.end], "--bogus-flag") != null);
+}
