@@ -13,19 +13,19 @@ pub fn cmdSetup(
     _ = args; // --help could be added later
 
     // Step 1: Load config
-    std.debug.print("\n🔧 Starting project setup...\n\n", .{});
+    try w.print("\n🔧 Starting project setup...\n\n", .{});
 
     const cwd_path = std.fs.cwd().realpathAlloc(allocator, ".") catch |err| {
-        std.debug.print(" ✗ Failed to get current directory: {s}\n", .{@errorName(err)});
+        try ew.print(" ✗ Failed to get current directory: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer allocator.free(cwd_path);
 
-    std.debug.print(" → Loading configuration...\n", .{});
+    try w.print(" → Loading configuration...\n", .{});
 
     const cfg = config_mod.loadFromFile(allocator, "zr.toml") catch |err| {
-        std.debug.print(" ✗ Failed to load zr.toml: {s}\n", .{@errorName(err)});
-        std.debug.print("\n   Hint: Run `zr init` to create a starter config.\n", .{});
+        try ew.print(" ✗ Failed to load zr.toml: {s}\n", .{@errorName(err)});
+        try ew.print("\n   Hint: Run `zr init` to create a starter config.\n", .{});
         return 1;
     };
     defer {
@@ -33,44 +33,44 @@ pub fn cmdSetup(
         mut_cfg.deinit();
     }
 
-    std.debug.print(" ✓ Configuration loaded\n\n", .{});
+    try w.print(" ✓ Configuration loaded\n\n", .{});
 
     // Step 2: Install toolchains if defined
     if (cfg.toolchains.tools.len > 0) {
-        std.debug.print(" → Installing toolchains...\n", .{});
+        try w.print(" → Installing toolchains...\n", .{});
 
         for (cfg.toolchains.tools) |tool_spec| {
             const is_installed = try toolchain.isInstalled(allocator, tool_spec.kind, tool_spec.version);
 
             if (is_installed) {
-                std.debug.print("   ✓ {s}@{} already installed\n", .{
+                try w.print("   ✓ {s}@{} already installed\n", .{
                     @tagName(tool_spec.kind),
                     tool_spec.version,
                 });
             } else {
-                std.debug.print("   ⏳ Installing {s}@{}...\n", .{
+                try w.print("   ⏳ Installing {s}@{}...\n", .{
                     @tagName(tool_spec.kind),
                     tool_spec.version,
                 });
 
                 toolchain.install(allocator, tool_spec.kind, tool_spec.version) catch |err| {
-                    std.debug.print("   ✗ Failed to install {s}@{}: {s}\n", .{
+                    try ew.print("   ✗ Failed to install {s}@{}: {s}\n", .{
                         @tagName(tool_spec.kind),
                         tool_spec.version,
                         @errorName(err),
                     });
-                    std.debug.print("\n   Hint: Check internet connection or try installing manually.\n", .{});
+                    try ew.print("\n   Hint: Check internet connection or try installing manually.\n", .{});
                     return 1;
                 };
 
-                std.debug.print("   ✓ {s}@{} installed successfully\n", .{
+                try w.print("   ✓ {s}@{} installed successfully\n", .{
                     @tagName(tool_spec.kind),
                     tool_spec.version,
                 });
             }
         }
 
-        std.debug.print(" ✓ All toolchains ready\n\n", .{});
+        try w.print(" ✓ All toolchains ready\n\n", .{});
     }
 
     // Step 3: Look for common setup tasks
@@ -85,8 +85,8 @@ pub fn cmdSetup(
     }
 
     if (found_setup_task) |task_name| {
-        std.debug.print(" → Running setup task: {s}\n", .{task_name});
-        std.debug.print("\n   Hint: Executing `zr run {s}`\n\n", .{task_name});
+        try w.print(" → Running setup task: {s}\n", .{task_name});
+        try w.print("\n   Hint: Executing `zr run {s}`\n\n", .{task_name});
 
         // Execute the task directly via cmdRun
         var empty_params = std.StringHashMap([]const u8).init(allocator);
@@ -112,21 +112,21 @@ pub fn cmdSetup(
         );
 
         if (exit_code != 0) {
-            std.debug.print("\n ✗ Setup task failed with exit code {d}\n", .{exit_code});
+            try ew.print("\n ✗ Setup task failed with exit code {d}\n", .{exit_code});
             return exit_code;
         }
 
-        std.debug.print("\n ✓ Setup task completed\n\n", .{});
+        try w.print("\n ✓ Setup task completed\n\n", .{});
     } else {
-        std.debug.print(" ℹ  No setup task found (looked for: setup, install, bootstrap, prepare, deps)\n\n", .{});
+        try w.print(" ℹ  No setup task found (looked for: setup, install, bootstrap, prepare, deps)\n\n", .{});
     }
 
     // Step 4: Complete
-    std.debug.print("✨ Setup complete!\n\n", .{});
-    std.debug.print("Next steps:\n", .{});
-    std.debug.print("  • zr list       - See available tasks\n", .{});
-    std.debug.print("  • zr run <task> - Run a specific task\n", .{});
-    std.debug.print("  • zr --help     - View all commands\n\n", .{});
+    try w.print("✨ Setup complete!\n\n", .{});
+    try w.print("Next steps:\n", .{});
+    try w.print("  • zr list       - See available tasks\n", .{});
+    try w.print("  • zr run <task> - Run a specific task\n", .{});
+    try w.print("  • zr --help     - View all commands\n\n", .{});
 
     return 0;
 }
