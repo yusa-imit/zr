@@ -115,7 +115,7 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
 
         // Open in browser if HTML (unless --no-open)
         if (!json_output and !no_open) {
-            try openInBrowser(path);
+            try openInBrowser(path, w);
         }
     } else if (json_output) {
         // Print JSON to stdout
@@ -153,14 +153,14 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
 
         try w.print("✓ Report generated: {s}\n", .{temp_path_for_write});
         if (!no_open) {
-            try openInBrowser(temp_path_for_write);
+            try openInBrowser(temp_path_for_write, w);
         }
     }
 
     return 0;
 }
 
-fn openInBrowser(path: []const u8) !void {
+fn openInBrowser(path: []const u8, w: *std.Io.Writer) !void {
     const builtin = @import("builtin");
 
     const cmd = switch (builtin.os.tag) {
@@ -168,7 +168,7 @@ fn openInBrowser(path: []const u8) !void {
         .linux => "xdg-open",
         .windows => "start",
         else => {
-            std.debug.print("Note: Opening browser not supported on this platform. View the report at: {s}\n", .{path});
+            try w.print("Note: Opening browser not supported on this platform. View the report at: {s}\n", .{path});
             return;
         },
     };
@@ -179,11 +179,11 @@ fn openInBrowser(path: []const u8) !void {
     child.stderr_behavior = .Ignore;
 
     _ = child.spawnAndWait() catch {
-        std.debug.print("Note: Failed to open browser automatically. View the report at: {s}\n", .{path});
+        try w.print("Note: Failed to open browser automatically. View the report at: {s}\n", .{path});
         return;
     };
 
-    std.debug.print("Opening report in browser...\n", .{});
+    try w.print("Opening report in browser...\n", .{});
 }
 
 fn printHelp(w: *std.Io.Writer) !void {
