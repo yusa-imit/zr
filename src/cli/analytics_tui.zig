@@ -20,7 +20,7 @@ const collector = @import("../analytics/collector.zig");
 const color = @import("../output/color.zig");
 
 /// Entry point for `zr analytics --tui` command
-pub fn cmdAnalyticsTui(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+pub fn cmdAnalyticsTui(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var limit: ?usize = null;
 
     // Parse flags
@@ -30,32 +30,32 @@ pub fn cmdAnalyticsTui(allocator: std.mem.Allocator, args: []const []const u8) !
         if (std.mem.eql(u8, arg, "--limit") or std.mem.eql(u8, arg, "-n")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ [Analytics]: --limit requires a number\n", .{});
+                try ew.print("✗ [Analytics]: --limit requires a number\n", .{});
                 return 1;
             }
             limit = std.fmt.parseInt(usize, args[i], 10) catch {
-                std.debug.print("✗ [Analytics]: invalid limit value: {s}\n", .{args[i]});
+                try ew.print("✗ [Analytics]: invalid limit value: {s}\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printHelp();
+            try printHelp(w);
             return 0;
         } else {
-            std.debug.print("✗ [Analytics]: unknown flag: {s}\n", .{arg});
-            try printHelp();
+            try ew.print("✗ [Analytics]: unknown flag: {s}\n", .{arg});
+            try printHelp(w);
             return 1;
         }
     }
 
     // Collect analytics data
     var report = collector.collectAnalytics(allocator, limit) catch |err| {
-        std.debug.print("✗ [Analytics]: failed to collect analytics: {s}\n", .{@errorName(err)});
+        try ew.print("✗ [Analytics]: failed to collect analytics: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer report.deinit();
 
     if (report.total_executions == 0) {
-        std.debug.print("No execution history found. Run some tasks first with `zr run <task>`.\n", .{});
+        try w.print("No execution history found. Run some tasks first with `zr run <task>`.\n", .{});
         return 0;
     }
 
@@ -277,9 +277,8 @@ fn renderFooter(buffer: *stui.Buffer, area: stui.Rect) void {
     buffer.setString(area.x, area.y, footer, .{});
 }
 
-fn printHelp() !void {
-    const stdout = std.fs.File.stdout();
-    try stdout.writeAll(
+fn printHelp(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr analytics --tui [options]
         \\
         \\TUI dashboard for analytics data visualization (snapshot mode).
@@ -297,10 +296,18 @@ fn printHelp() !void {
         \\      widgets. For interactive dashboards, use 'zr analytics' to generate an
         \\      HTML report.
         \\
-    );
+    , .{});
 }
 
 test "cmdAnalyticsTui help" {
-    const result = try cmdAnalyticsTui(std.testing.allocator, &.{"--help"});
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdAnalyticsTui(allocator, &.{"--help"}, &out_w.interface, &err_w.interface);
     try std.testing.expectEqual(@as(u8, 0), result);
 }

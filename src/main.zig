@@ -1377,7 +1377,7 @@ fn run(
         return publish_cmd.cmdPublish(allocator, publish_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "analytics")) {
         const analytics_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return analytics_cmd.cmdAnalytics(allocator, analytics_args, json_output);
+        return analytics_cmd.cmdAnalytics(allocator, analytics_args, json_output, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "context")) {
         const context_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return context_cmd.cmdContext(allocator, context_args);
@@ -1764,7 +1764,7 @@ fn run(
         return which_cmd.cmdWhich(allocator, task_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "artifacts")) {
         // Handle artifact management: zr artifacts get/clean
-        artifacts_cmd.handle(allocator, effective_args) catch |err| {
+        artifacts_cmd.handle(allocator, effective_args, effective_w, ew) catch |err| {
             try color.printError(ew, effective_color, "artifacts error: {}\n", .{err});
             return 1;
         };

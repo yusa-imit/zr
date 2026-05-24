@@ -2,29 +2,29 @@ const std = @import("std");
 const sailor = @import("sailor");
 
 /// Handle `zr artifacts` subcommands
-pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
+pub fn handle(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     if (args.len < 2) {
-        std.debug.print("✗ Missing subcommand\n\n", .{});
+        try ew.print("✗ Missing subcommand\n\n", .{});
         return error.MissingSubcommand;
     }
 
     const subcommand = args[1];
 
     if (std.mem.eql(u8, subcommand, "get")) {
-        try handleGet(allocator, args[2..]);
+        try handleGet(allocator, args[2..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "clean")) {
-        try handleClean(allocator, args[2..]);
+        try handleClean(allocator, args[2..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "help")) {
-        try printUsage();
+        try printUsage(w);
     } else {
-        std.debug.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
+        try ew.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
         return error.UnknownSubcommand;
     }
 }
 
-fn handleGet(allocator: std.mem.Allocator, args: []const []const u8) !void {
+fn handleGet(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     if (args.len < 1) {
-        std.debug.print("✗ Get requires a task name\n\n", .{});
+        try ew.print("✗ Get requires a task name\n\n", .{});
         return error.MissingTaskName;
     }
 
@@ -41,7 +41,7 @@ fn handleGet(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer allocator.free(artifacts_base);
 
     var dir = std.fs.cwd().openDir(artifacts_base, .{ .iterate = true }) catch {
-        _ = std.debug.print("No artifacts found for task '{s}'\n", .{task_name});
+        try w.print("No artifacts found for task '{s}'\n", .{task_name});
         return;
     };
     defer dir.close();
@@ -77,7 +77,7 @@ fn handleGet(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (show_latest) {
         // Show only the latest artifact with detailed info
         if (artifact_list.items.len == 0) {
-            _ = std.debug.print("No artifacts found for task '{s}'\n", .{task_name});
+            try w.print("No artifacts found for task '{s}'\n", .{task_name});
             return;
         }
 
@@ -87,31 +87,31 @@ fn handleGet(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         // Read and display manifest
         const manifest_data = std.fs.cwd().readFileAlloc(allocator, manifest_path, 1024 * 1024) catch |err| {
-            _ = std.debug.print("Latest artifact: {s} (no manifest: {})\n", .{ latest.name, err });
+            try w.print("Latest artifact: {s} (no manifest: {})\n", .{ latest.name, err });
             return;
         };
         defer allocator.free(manifest_data);
 
-        _ = std.debug.print("Latest artifact for task '{s}':\n", .{task_name});
-        _ = std.debug.print("  Timestamp: {d}\n", .{latest.timestamp});
-        _ = std.debug.print("  Manifest:\n{s}\n", .{manifest_data});
+        try w.print("Latest artifact for task '{s}':\n", .{task_name});
+        try w.print("  Timestamp: {d}\n", .{latest.timestamp});
+        try w.print("  Manifest:\n{s}\n", .{manifest_data});
     } else {
         // List all artifacts
         if (artifact_list.items.len == 0) {
-            _ = std.debug.print("No artifacts found for task '{s}'\n", .{task_name});
+            try w.print("No artifacts found for task '{s}'\n", .{task_name});
             return;
         }
 
-        _ = std.debug.print("Artifacts for task '{s}' ({d} total):\n", .{ task_name, artifact_list.items.len });
+        try w.print("Artifacts for task '{s}' ({d} total):\n", .{ task_name, artifact_list.items.len });
         for (artifact_list.items) |item| {
-            _ = std.debug.print("  - {s}\n", .{item.name});
+            try w.print("  - {s}\n", .{item.name});
         }
     }
 }
 
-fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
+fn handleClean(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     if (args.len < 1) {
-        std.debug.print("✗ Clean requires --older-than or --task flag\n\n", .{});
+        try ew.print("✗ Clean requires --older-than or --task flag\n\n", .{});
         return error.MissingCleanFlag;
     }
 
@@ -136,7 +136,7 @@ fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (older_than) |time_str| {
         // Parse time string (e.g., "30d")
         if (time_str.len < 2 or time_str[time_str.len - 1] != 'd') {
-            std.debug.print("✗ --older-than format must be like '30d' (days)\n\n", .{});
+            try ew.print("✗ --older-than format must be like '30d' (days)\n\n", .{});
             return error.InvalidTimeFormat;
         }
 
@@ -154,7 +154,7 @@ fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
         } else {
             // Clean all tasks
             var artifacts_dir = std.fs.cwd().openDir(".zr/artifacts", .{ .iterate = true }) catch {
-                _ = std.debug.print("No artifacts directory found\n", .{});
+                try w.print("No artifacts directory found\n", .{});
                 return;
             };
             defer artifacts_dir.close();
@@ -167,7 +167,7 @@ fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
             }
         }
 
-        _ = std.debug.print("Cleaned {d} artifacts older than {s}\n", .{ deleted_count, time_str });
+        try w.print("Cleaned {d} artifacts older than {s}\n", .{ deleted_count, time_str });
     } else if (task_name) |tn| {
         const artifacts_base = try std.fmt.allocPrint(allocator, ".zr/artifacts/{s}", .{tn});
         defer allocator.free(artifacts_base);
@@ -177,7 +177,7 @@ fn handleClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 return err;
             }
         };
-        _ = std.debug.print("Cleaned all artifacts for task '{s}'\n", .{tn});
+        try w.print("Cleaned all artifacts for task '{s}'\n", .{tn});
     }
 }
 
@@ -209,13 +209,56 @@ fn cleanTaskArtifacts(allocator: std.mem.Allocator, task_name: []const u8, cutof
     return deleted;
 }
 
-fn printUsage() !void {
+fn printUsage(w: *std.Io.Writer) !void {
     const usage = "Usage: zr artifacts <subcommand> [options]\n\nSubcommands:\n  get <task>              List artifacts for a task\n    --latest              Show only the most recent artifact\n  clean                   Remove artifacts based on policy\n    --older-than <time>   Remove artifacts older than specified time (e.g., 30d)\n    --task <name>         Remove all artifacts for a specific task\n  help                    Show this help message\n";
-    _ = std.debug.print("{s}", .{usage});
+    try w.print("{s}", .{usage});
 }
 
 test "artifacts: handle missing subcommand" {
     const allocator = std.testing.allocator;
-    const result = handle(allocator, &[_][]const u8{"artifacts"});
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = handle(allocator, &[_][]const u8{"artifacts"}, &out_w.interface, &err_w.interface);
     try std.testing.expectError(error.MissingSubcommand, result);
+}
+
+test "handle writes error to ew with missing subcommand" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = [_][]const u8{"artifacts"};
+
+    // This should FAIL until handle is refactored to accept writers
+    const result = handle(allocator, &args, &out_w.interface, &err_w.interface);
+
+    // Should error with MissingSubcommand
+    try std.testing.expectError(error.MissingSubcommand, result);
+}
+
+test "handle writes error to ew with unknown subcommand" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = [_][]const u8{ "artifacts", "unknown-sub" };
+
+    // This should FAIL until handle is refactored to accept writers
+    const result = handle(allocator, &args, &out_w.interface, &err_w.interface);
+
+    // Should error with UnknownSubcommand
+    try std.testing.expectError(error.UnknownSubcommand, result);
 }

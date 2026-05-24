@@ -6,7 +6,7 @@ const json_gen = @import("../analytics/json.zig");
 const platform = @import("../util/platform.zig");
 const analytics_tui = @import("analytics_tui.zig");
 
-pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, global_json: bool) !u8 {
+pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, global_json: bool, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var json_output = global_json;
     var output_path: ?[]const u8 = null;
     var limit: ?usize = null;
@@ -33,26 +33,26 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
         } else if (std.mem.eql(u8, arg, "--output") or std.mem.eql(u8, arg, "-o")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ [Analytics]: --output requires a file path\n", .{});
+                try ew.print("✗ [Analytics]: --output requires a file path\n", .{});
                 return 1;
             }
             output_path = args[i];
         } else if (std.mem.eql(u8, arg, "--limit") or std.mem.eql(u8, arg, "-n")) {
             i += 1;
             if (i >= args.len) {
-                std.debug.print("✗ [Analytics]: --limit requires a number\n", .{});
+                try ew.print("✗ [Analytics]: --limit requires a number\n", .{});
                 return 1;
             }
             limit = std.fmt.parseInt(usize, args[i], 10) catch {
-                std.debug.print("✗ [Analytics]: invalid limit value: {s}\n", .{args[i]});
+                try ew.print("✗ [Analytics]: invalid limit value: {s}\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printHelp();
+            try printHelp(w);
             return 0;
         } else {
-            std.debug.print("✗ [Analytics]: unknown flag: {s}\n", .{arg});
-            try printHelp();
+            try ew.print("✗ [Analytics]: unknown flag: {s}\n", .{arg});
+            try printHelp(w);
             return 1;
         }
     }
@@ -69,30 +69,30 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
             }
         }
 
-        return analytics_tui.cmdAnalyticsTui(allocator, filtered_args.items);
+        return analytics_tui.cmdAnalyticsTui(allocator, filtered_args.items, w, ew);
     }
 
     // Collect analytics data
     var report = collector.collectAnalytics(allocator, limit) catch |err| {
-        std.debug.print("✗ [Analytics]: failed to collect analytics: {s}\n", .{@errorName(err)});
+        try ew.print("✗ [Analytics]: failed to collect analytics: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer report.deinit();
 
     if (report.total_executions == 0) {
-        std.debug.print("No execution history found. Run some tasks first with `zr run <task>`.\n", .{});
+        try w.print("No execution history found. Run some tasks first with `zr run <task>`.\n", .{});
         return 0;
     }
 
     // Generate report
     const content = if (json_output)
         json_gen.generateJsonReport(allocator, &report) catch |err| {
-            std.debug.print("✗ [Analytics]: failed to generate JSON report: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Analytics]: failed to generate JSON report: {s}\n", .{@errorName(err)});
             return 1;
         }
     else
         html_gen.generateHtmlReport(allocator, &report) catch |err| {
-            std.debug.print("✗ [Analytics]: failed to generate HTML report: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Analytics]: failed to generate HTML report: {s}\n", .{@errorName(err)});
             return 1;
         };
     defer allocator.free(content);
@@ -101,17 +101,17 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
     if (output_path) |path| {
         // Write to file
         const file = std.fs.cwd().createFile(path, .{}) catch |err| {
-            std.debug.print("✗ [Analytics]: failed to create output file: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Analytics]: failed to create output file: {s}\n", .{@errorName(err)});
             return 1;
         };
         defer file.close();
 
         file.writeAll(content) catch |err| {
-            std.debug.print("✗ [Analytics]: failed to write output file: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Analytics]: failed to write output file: {s}\n", .{@errorName(err)});
             return 1;
         };
 
-        std.debug.print("✓ Report saved to {s}\n", .{path});
+        try w.print("✓ Report saved to {s}\n", .{path});
 
         // Open in browser if HTML (unless --no-open)
         if (!json_output and !no_open) {
@@ -141,17 +141,17 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
         defer allocator.free(temp_path_for_write);
 
         const file = std.fs.cwd().createFile(temp_path_for_write, .{}) catch |err| {
-            std.debug.print("✗ [Analytics]: failed to create temporary file: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Analytics]: failed to create temporary file: {s}\n", .{@errorName(err)});
             return 1;
         };
         defer file.close();
 
         file.writeAll(content) catch |err| {
-            std.debug.print("✗ [Analytics]: failed to write temporary file: {s}\n", .{@errorName(err)});
+            try ew.print("✗ [Analytics]: failed to write temporary file: {s}\n", .{@errorName(err)});
             return 1;
         };
 
-        std.debug.print("✓ Report generated: {s}\n", .{temp_path_for_write});
+        try w.print("✓ Report generated: {s}\n", .{temp_path_for_write});
         if (!no_open) {
             try openInBrowser(temp_path_for_write);
         }
@@ -186,9 +186,8 @@ fn openInBrowser(path: []const u8) !void {
     std.debug.print("Opening report in browser...\n", .{});
 }
 
-fn printHelp() !void {
-    const stdout = std.fs.File.stdout();
-    try stdout.writeAll(
+fn printHelp(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr analytics [options]
         \\
         \\Generate build analysis reports from execution history.
@@ -215,12 +214,56 @@ fn printHelp() !void {
         \\  - Critical path identification
         \\  - Parallelization efficiency metrics
         \\
-    );
+    , .{});
 }
 
 test "cmdAnalytics help" {
     // Verifies that --help flag returns exit code 0
     // Help content is verified by integration tests
-    const result = try cmdAnalytics(std.testing.allocator, &.{"--help"}, false);
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const result = try cmdAnalytics(allocator, &.{"--help"}, false, &out_w.interface, &err_w.interface);
     try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "cmdAnalytics writes help to writer when --help provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = [_][]const u8{"--help"};
+
+    // This should FAIL until cmdAnalytics is refactored to accept writers
+    const code = try cmdAnalytics(allocator, &args, false, &out_w.interface, &err_w.interface);
+
+    // Help should exit with 0
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "cmdAnalytics writes error to ew when unknown flag provided" {
+    const allocator = std.testing.allocator;
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [1024]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const args = [_][]const u8{"--unknown-flag"};
+
+    // This should FAIL until cmdAnalytics is refactored to accept writers
+    const code = try cmdAnalytics(allocator, &args, false, &out_w.interface, &err_w.interface);
+
+    // Unknown flag should exit with 1
+    try std.testing.expectEqual(@as(u8, 1), code);
 }
