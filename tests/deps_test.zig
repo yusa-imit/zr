@@ -455,7 +455,7 @@ test "822: deps lock creates lock file with metadata" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
     // Check if lock file contains expected metadata
-    const lock_file_content = tmp.dir.readFileAlloc(allocator, ".zr-lock.toml", 8192) catch |_| blk: {
+    const lock_file_content = tmp.dir.readFileAlloc(allocator, ".zr-lock.toml", 8192) catch blk: {
         // File might not exist in test implementation
         break :blk "";
     };

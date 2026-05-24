@@ -24,6 +24,7 @@ comptime {
     _ = @import("conditional_test.zig");
     _ = @import("conditional_deps_test.zig");
     _ = @import("conditional_deps_dryrun_test.zig");
+    _ = @import("deps_test.zig");
     _ = @import("conformance_test.zig");
     _ = @import("context_test.zig");
     _ = @import("doctor_test.zig");

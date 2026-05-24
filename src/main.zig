@@ -1319,7 +1319,10 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "cache")) {
         return list_cmd.cmdCache(allocator, effective_args, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "deps")) {
-        try deps_cmd.handle(allocator, effective_args);
+        deps_cmd.handle(allocator, effective_args, effective_w, ew) catch |err| switch (err) {
+            error.UnsatisfiedConstraints, error.TaskNotFound, error.UnknownSubcommand, error.ConfigNotFound => return 1,
+            else => return err,
+        };
         return 0;
     } else if (std.mem.eql(u8, cmd, "plugin")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";

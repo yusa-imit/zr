@@ -13,33 +13,33 @@ const LockFile = lock_mod.LockFile;
 const LockFileDependency = lock_mod.LockFileDependency;
 
 /// Handle `zr deps` subcommands
-pub fn handle(allocator: std.mem.Allocator, args: []const []const u8) !void {
+pub fn handle(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     if (args.len < 3) {
-        try printUsage();
-        return error.MissingSubcommand;
+        try printUsage(w);
+        return;
     }
 
     const subcommand = args[2];
 
     if (std.mem.eql(u8, subcommand, "check")) {
-        try handleCheck(allocator, args[3..]);
+        try handleCheck(allocator, args[3..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "install")) {
-        try handleInstall(allocator, args[3..]);
+        try handleInstall(allocator, args[3..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "outdated")) {
-        try handleOutdated(allocator, args[3..]);
+        try handleOutdated(args[3..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "lock")) {
-        try handleLock(allocator, args[3..]);
+        try handleLock(allocator, args[3..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "help") or std.mem.eql(u8, subcommand, "--help")) {
-        try printUsage();
+        try printUsage(w);
     } else {
-        std.debug.print("✗ [Deps]: Unknown subcommand '{s}'\n\n", .{subcommand});
-        try printUsage();
+        try ew.print("✗ [Deps]: Unknown subcommand '{s}'\n\n", .{subcommand});
+        try printUsage(w);
         return error.UnknownSubcommand;
     }
 }
 
 /// Handle `zr deps check` - verify all dependencies satisfy constraints
-fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
+fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     var task_filter: ?[]const u8 = null;
     var json_output = false;
 
@@ -48,7 +48,7 @@ fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--help")) {
-            try printCheckHelp();
+            try printCheckHelp(w);
             return;
         } else if (std.mem.eql(u8, arg, "--json")) {
             json_output = true;
@@ -62,7 +62,13 @@ fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     // Load config
-    var config = try loadConfig(allocator);
+    var config = loadConfig(allocator) catch |err| {
+        if (err == error.FileNotFound) {
+            try ew.print("✗ [Deps]: zr.toml not found in current directory\n\n  Hint: Run 'zr init' to create a configuration file\n", .{});
+            return error.ConfigNotFound;
+        }
+        return err;
+    };
     defer config.deinit();
 
     // Collect all dependencies
@@ -87,10 +93,14 @@ fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (dep_map.count() == 0) {
+        if (task_filter) |filter| {
+            try ew.print("✗ [Deps]: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n", .{filter});
+            return error.TaskNotFound;
+        }
         if (json_output) {
-            std.debug.print("{{\"status\":\"ok\",\"message\":\"No dependencies defined\"}}\n", .{});
+            try w.print("{{\"status\":\"ok\",\"message\":\"No dependencies defined\"}}\n", .{});
         } else {
-            std.debug.print("No dependencies defined\n", .{});
+            try w.print("No dependencies defined\n", .{});
         }
         return;
     }
@@ -123,9 +133,9 @@ fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // Output results
     if (json_output) {
-        try printCheckResultsJson(allocator, results.items);
+        try printCheckResultsJson(results.items, w);
     } else {
-        try printCheckResults(results.items);
+        try printCheckResults(results.items, w, ew);
     }
 
     if (!all_satisfied) {
@@ -134,14 +144,14 @@ fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
 }
 
 /// Handle `zr deps install` - list/install missing dependencies
-fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8) !void {
+fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     var install_deps = false;
     var json_output = false;
 
     // Parse flags
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--help")) {
-            try printInstallHelp();
+            try printInstallHelp(w);
             return;
         } else if (std.mem.eql(u8, arg, "--install-deps")) {
             install_deps = true;
@@ -155,10 +165,16 @@ fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8) !void {
         // This would integrate with toolchain management to automatically download
         // and install missing tools (node, python, etc.) similar to asdf/mise.
         // Needs: toolchain downloader integration, version resolver, install hooks
-        std.debug.print("Auto-installation not yet implemented\n", .{});
+        try w.print("Auto-installation not yet implemented\n", .{});
     }
 
-    var config = try loadConfig(allocator);
+    var config = loadConfig(allocator) catch |err| {
+        if (err == error.FileNotFound) {
+            try ew.print("✗ [Deps]: zr.toml not found in current directory\n\n  Hint: Run 'zr init' to create a configuration file\n", .{});
+            return error.ConfigNotFound;
+        }
+        return err;
+    };
     defer config.deinit();
 
     var dep_map = std.StringHashMap([]const u8).init(allocator);
@@ -176,26 +192,26 @@ fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (json_output) {
-        std.debug.print("{{\"dependencies\":[", .{});
+        try w.print("{{\"dependencies\":[", .{});
         var first = true;
         var dep_iter = dep_map.iterator();
         while (dep_iter.next()) |entry| {
-            if (!first) std.debug.print(",", .{});
-            std.debug.print("{{\"tool\":\"{s}\",\"version\":\"{s}\"}}", .{ entry.key_ptr.*, entry.value_ptr.* });
+            if (!first) try w.print(",", .{});
+            try w.print("{{\"tool\":\"{s}\",\"version\":\"{s}\"}}", .{ entry.key_ptr.*, entry.value_ptr.* });
             first = false;
         }
-        std.debug.print("]}}\n", .{});
+        try w.print("]}}\n", .{});
     } else {
-        std.debug.print("Dependencies:\n", .{});
+        try w.print("Dependencies:\n", .{});
         var dep_iter = dep_map.iterator();
         while (dep_iter.next()) |entry| {
-            std.debug.print("  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            try w.print("  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
         }
     }
 }
 
 /// Handle `zr deps outdated` - show available updates
-fn handleOutdated(_: std.mem.Allocator, args: []const []const u8) !void {
+fn handleOutdated(args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     var task_filter: ?[]const u8 = null;
     var json_output = false;
 
@@ -204,7 +220,7 @@ fn handleOutdated(_: std.mem.Allocator, args: []const []const u8) !void {
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--help")) {
-            try printOutdatedHelp();
+            try printOutdatedHelp(w);
             return;
         } else if (std.mem.eql(u8, arg, "--json")) {
             json_output = true;
@@ -217,28 +233,30 @@ fn handleOutdated(_: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
+    _ = ew;
+
     // Placeholder - actual implementation would query registries for latest versions
     if (json_output) {
-        std.debug.print("{{\"outdated\":[]}}\n", .{});
+        try w.print("{{\"outdated\":[]}}\n", .{});
     } else {
         if (task_filter) |filter| {
-            std.debug.print("Checking for outdated dependencies for task: {s}...\n", .{filter});
+            try w.print("Checking for outdated dependencies for task: {s}...\n", .{filter});
         } else {
-            std.debug.print("Checking for outdated dependencies...\n", .{});
+            try w.print("Checking for outdated dependencies...\n", .{});
         }
-        std.debug.print("No updates available\n", .{});
+        try w.print("No updates available\n", .{});
     }
 }
 
 /// Handle `zr deps lock` - generate lock file
-fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
+fn handleLock(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     var update_mode = false;
     var json_output = false;
 
     // Parse flags
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--help")) {
-            try printLockHelp();
+            try printLockHelp(w);
             return;
         } else if (std.mem.eql(u8, arg, "--update")) {
             update_mode = true;
@@ -252,10 +270,16 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
         // This would read existing .zr-lock.toml, resolve latest compatible versions
         // for each dependency based on constraints, and regenerate the lock file.
         // Needs: lock file parser, version resolver, constraint checker integration
-        std.debug.print("Lock file update not yet implemented\n", .{});
+        try w.print("Lock file update not yet implemented\n", .{});
     }
 
-    var config = try loadConfig(allocator);
+    var config = loadConfig(allocator) catch |err| {
+        if (err == error.FileNotFound) {
+            try ew.print("✗ [Deps]: zr.toml not found in current directory\n\n  Hint: Run 'zr init' to create a configuration file\n", .{});
+            return error.ConfigNotFound;
+        }
+        return err;
+    };
     defer config.deinit();
 
     // Collect all dependencies
@@ -287,7 +311,7 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     .tool_name = tool_name,
                 };
                 const detected_version = version_mod.detectVersion(allocator, version_config) catch {
-                    std.debug.print("⚠ Warning: Could not detect version for {s}\n", .{tool_name});
+                    try w.print("⚠ Warning: Could not detect version for {s}\n", .{tool_name});
                     continue;
                 };
 
@@ -316,9 +340,9 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try lock_mod.generateLockFile(allocator, ".zr-lock.toml", dep_list.items, zr_version);
 
     if (json_output) {
-        std.debug.print("{{\"status\":\"ok\",\"lock_file\":\".zr-lock.toml\"}}\n", .{});
+        try w.print("{{\"status\":\"ok\",\"lock_file\":\".zr-lock.toml\"}}\n", .{});
     } else {
-        std.debug.print("Generated .zr-lock.toml with {d} dependencies\n", .{dep_list.items.len});
+        try w.print("Generated .zr-lock.toml with {d} dependencies\n", .{dep_list.items.len});
     }
 }
 
@@ -364,45 +388,44 @@ fn loadConfig(allocator: std.mem.Allocator) !Config {
     return try parser.parseToml(allocator, file_data);
 }
 
-fn printCheckResults(results: []const CheckResult) !void {
+fn printCheckResults(results: []const CheckResult, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     var all_ok = true;
     for (results) |result| {
         if (result.error_msg) |err_msg| {
-            std.debug.print("✗ [Deps]: {s}: {s}\n", .{ result.tool, err_msg });
+            try ew.print("✗ [Deps]: {s}: {s}\n", .{ result.tool, err_msg });
             all_ok = false;
         } else if (result.satisfied) {
-            std.debug.print("✓ {s} ({s}) satisfies {s}\n", .{ result.tool, result.installed.?, result.constraint });
+            try w.print("✓ {s} ({s}) satisfies {s}\n", .{ result.tool, result.installed.?, result.constraint });
         } else {
-            std.debug.print("✗ [Deps]: {s} ({s}) does not satisfy {s}\n", .{ result.tool, result.installed.?, result.constraint });
+            try ew.print("✗ [Deps]: {s} ({s}) does not satisfy {s}\n", .{ result.tool, result.installed.?, result.constraint });
             all_ok = false;
         }
     }
 
     if (all_ok) {
-        std.debug.print("\nAll dependencies satisfied\n", .{});
+        try w.print("\nAll dependencies satisfied\n", .{});
     }
 }
 
-fn printCheckResultsJson(allocator: std.mem.Allocator, results: []const CheckResult) !void {
-    _ = allocator;
-    std.debug.print("{{\"results\":[", .{});
+fn printCheckResultsJson(results: []const CheckResult, w: *std.Io.Writer) !void {
+    try w.print("{{\"results\":[", .{});
     for (results, 0..) |result, i| {
-        if (i > 0) std.debug.print(",", .{});
-        std.debug.print("{{\"tool\":\"{s}\",\"constraint\":\"{s}\",\"installed\":", .{ result.tool, result.constraint });
+        if (i > 0) try w.print(",", .{});
+        try w.print("{{\"tool\":\"{s}\",\"constraint\":\"{s}\",\"installed\":", .{ result.tool, result.constraint });
         if (result.installed) |installed| {
-            std.debug.print("\"{s}\"", .{installed});
+            try w.print("\"{s}\"", .{installed});
         } else {
-            std.debug.print("null", .{});
+            try w.print("null", .{});
         }
-        std.debug.print(",\"satisfied\":{s}}}", .{if (result.satisfied) "true" else "false"});
+        try w.print(",\"satisfied\":{s}}}", .{if (result.satisfied) "true" else "false"});
     }
-    std.debug.print("]}}\n", .{});
+    try w.print("]}}\n", .{});
 }
 
 // ─── Help Messages ─────────────────────────────────────────────────────────
 
-fn printUsage() !void {
-    std.debug.print(
+fn printUsage(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr deps <subcommand> [options]
         \\
         \\Subcommands:
@@ -417,8 +440,8 @@ fn printUsage() !void {
     , .{});
 }
 
-fn printCheckHelp() !void {
-    std.debug.print(
+fn printCheckHelp(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr deps check [options]
         \\
         \\Verify that all task dependencies satisfy version constraints.
@@ -436,8 +459,8 @@ fn printCheckHelp() !void {
     , .{});
 }
 
-fn printInstallHelp() !void {
-    std.debug.print(
+fn printInstallHelp(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr deps install [options]
         \\
         \\List or install missing dependencies.
@@ -454,8 +477,8 @@ fn printInstallHelp() !void {
     , .{});
 }
 
-fn printOutdatedHelp() !void {
-    std.debug.print(
+fn printOutdatedHelp(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr deps outdated [options]
         \\
         \\Show available updates for dependencies.
@@ -472,8 +495,8 @@ fn printOutdatedHelp() !void {
     , .{});
 }
 
-fn printLockHelp() !void {
-    std.debug.print(
+fn printLockHelp(w: *std.Io.Writer) !void {
+    try w.print(
         \\Usage: zr deps lock [options]
         \\
         \\Generate lock file with resolved dependency versions.
