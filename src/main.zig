@@ -90,7 +90,6 @@ const monitor_dashboard = @import("cli/monitor.zig");
 const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
 const artifacts_cmd = @import("cli/artifacts.zig");
-const cache_cmd = @import("cli/cache.zig");
 const deps_cmd = @import("cli/deps.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
@@ -1779,13 +1778,6 @@ fn run(
         const artifacts_argv = if (effective_args.len >= 2) effective_args[1..] else effective_args;
         artifacts_cmd.handle(allocator, artifacts_argv, effective_w, ew) catch |err| {
             try color.printError(ew, effective_color, "artifacts error: {}\n", .{err});
-            return 1;
-        };
-        return 0;
-    } else if (std.mem.eql(u8, cmd, "cache")) {
-        // Handle cache management: zr cache clean/status/clear
-        cache_cmd.handle(allocator, effective_args, effective_w, ew) catch |err| {
-            try color.printError(ew, effective_color, "cache error: {}\n", .{err});
             return 1;
         };
         return 0;
