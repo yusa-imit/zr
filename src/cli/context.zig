@@ -26,6 +26,16 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8, w: *st
                 try ew.print("✗ [Context]: unknown format '{s}'\n\n  Hint: Use json or yaml\n", .{format_str});
                 return 1;
             }
+        } else if (std.mem.startsWith(u8, arg, "--format=")) {
+            const format_str = arg["--format=".len..];
+            if (std.mem.eql(u8, format_str, "json")) {
+                format = .json;
+            } else if (std.mem.eql(u8, format_str, "yaml")) {
+                format = .yaml;
+            } else {
+                try ew.print("✗ [Context]: unknown format '{s}'\n\n  Hint: Use json or yaml\n", .{format_str});
+                return 1;
+            }
         } else if (std.mem.eql(u8, arg, "--scope")) {
             i += 1;
             if (i >= args.len) {
@@ -33,6 +43,8 @@ pub fn cmdContext(allocator: std.mem.Allocator, args: []const []const u8, w: *st
                 return 1;
             }
             scope = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--scope=")) {
+            scope = arg["--scope=".len..];
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printHelp(ew);
             return 0;
