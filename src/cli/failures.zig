@@ -12,6 +12,30 @@ pub const FailuresOptions = struct {
     use_color: bool = true,
 };
 
+pub fn printHelp(w: *std.Io.Writer) !void {
+    try w.print(
+        \\Usage: zr failures [list|clear] [options]
+        \\
+        \\View or clear captured task failure reports.
+        \\
+        \\Subcommands:
+        \\  list             Show all captured failure reports (default)
+        \\  clear            Delete all failure reports
+        \\
+        \\Options:
+        \\  --task=<name>          Show failures for a specific task only
+        \\  --storage-dir=<path>   Storage directory (default: .zr/failures)
+        \\  --help, -h             Show this help message
+        \\
+        \\Examples:
+        \\  zr failures               List all failure reports
+        \\  zr failures list          Same as above
+        \\  zr failures --task=build  Show failures for the 'build' task
+        \\  zr failures clear         Delete all failure reports
+        \\
+    , .{});
+}
+
 /// Execute the failures command to view captured failure reports.
 pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     _ = ew; // Not needed for failures command, but accept for consistency

@@ -700,7 +700,7 @@ fn run(
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
         "lsp",        "add",        "edit",       "failures",
-        "template",   "which",      "ci",         "deps",
+        "template",   "which",      "ci",         "deps",       "artifacts",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -1647,6 +1647,14 @@ fn run(
             .use_color = effective_color,
         };
 
+        // Handle --help before subcommand dispatch
+        if (failures_args.len > 0 and
+            (std.mem.eql(u8, failures_args[0], "--help") or std.mem.eql(u8, failures_args[0], "-h")))
+        {
+            try failures_cmd.printHelp(effective_w);
+            return 0;
+        }
+
         // Parse subcommand: `failures list` (default) or `failures clear`
         var subcommand: []const u8 = "list";
         var failures_opts_args = failures_args;
@@ -1724,7 +1732,10 @@ fn run(
         const subcommand = ci_args[0];
         const sub_args = if (ci_args.len > 1) ci_args[1..] else &[_][]const u8{};
 
-        if (std.mem.eql(u8, subcommand, "generate")) {
+        if (std.mem.eql(u8, subcommand, "--help") or std.mem.eql(u8, subcommand, "-h")) {
+            try ci_cmd.printHelp(effective_w);
+            return 0;
+        } else if (std.mem.eql(u8, subcommand, "generate")) {
             // Parse flags
             var ci_platform: ?[]const u8 = null;
             var ci_template_type: ?[]const u8 = null;
@@ -1764,7 +1775,9 @@ fn run(
         return which_cmd.cmdWhich(allocator, task_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "artifacts")) {
         // Handle artifact management: zr artifacts get/clean
-        artifacts_cmd.handle(allocator, effective_args, effective_w, ew) catch |err| {
+        // Pass effective_args[1..] so artifacts.handle sees args[0]="artifacts", args[1]=subcommand
+        const artifacts_argv = if (effective_args.len >= 2) effective_args[1..] else effective_args;
+        artifacts_cmd.handle(allocator, artifacts_argv, effective_w, ew) catch |err| {
             try color.printError(ew, effective_color, "artifacts error: {}\n", .{err});
             return 1;
         };

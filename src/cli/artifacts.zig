@@ -4,7 +4,7 @@ const sailor = @import("sailor");
 /// Handle `zr artifacts` subcommands
 pub fn handle(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
     if (args.len < 2) {
-        try ew.print("✗ Missing subcommand\n\n", .{});
+        try printUsage(w);
         return error.MissingSubcommand;
     }
 
@@ -14,7 +14,10 @@ pub fn handle(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io
         try handleGet(allocator, args[2..], w, ew);
     } else if (std.mem.eql(u8, subcommand, "clean")) {
         try handleClean(allocator, args[2..], w, ew);
-    } else if (std.mem.eql(u8, subcommand, "help")) {
+    } else if (std.mem.eql(u8, subcommand, "help") or
+        std.mem.eql(u8, subcommand, "--help") or
+        std.mem.eql(u8, subcommand, "-h"))
+    {
         try printUsage(w);
     } else {
         try ew.print("✗ Unknown subcommand '{s}'\n\n", .{subcommand});
