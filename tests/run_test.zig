@@ -3883,3 +3883,78 @@ test "3808: run --dry-run without history shows no estimates" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Dry run") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "newtest") != null);
 }
+
+
+test "3810: run --dir filters tasks by cwd prefix" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.makeDir("frontend");
+    try tmp.dir.makeDir("backend");
+
+    const frontend_path = try std.fmt.allocPrint(allocator, "{s}/frontend", .{tmp_path});
+    defer allocator.free(frontend_path);
+    const backend_path = try std.fmt.allocPrint(allocator, "{s}/backend", .{tmp_path});
+    defer allocator.free(backend_path);
+
+    const toml = try std.fmt.allocPrint(allocator,
+        \\[tasks.build-frontend]
+        \\cmd = "echo frontend"
+        \\cwd = "{s}"
+        \\
+        \\[tasks.build-backend]
+        \\cmd = "echo backend"
+        \\cwd = "{s}"
+        \\
+        \\[tasks.test-all]
+        \\cmd = "echo testing"
+        \\
+    , .{ frontend_path, backend_path });
+    defer allocator.free(toml);
+
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // --dir=<frontend_path> should match only build-frontend (not build-backend or test-all)
+    const dir_arg = try std.fmt.allocPrint(allocator, "--dir={s}", .{frontend_path});
+    defer allocator.free(dir_arg);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", dir_arg, "*" }, tmp_path);
+    defer result.deinit();
+
+    // Should run frontend task only
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "frontend") != null);
+    // Should NOT run backend (different cwd)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "backend") == null);
+}
+
+test "3811: run --dir with no matching tasks reports error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml_content);
+    defer allocator.free(config);
+
+    // --dir=/nonexistent won't match any task (build has no cwd set)
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--dir=/nonexistent", "*" }, tmp_path);
+    defer result.deinit();
+
+    // Should report no matching tasks (exit code 1 or message about no tasks)
+    try std.testing.expect(result.exit_code != 0 or
+        std.mem.indexOf(u8, result.stderr, "match") != null or
+        std.mem.indexOf(u8, result.stderr, "filter") != null or
+        std.mem.indexOf(u8, result.stdout, "match") != null);
+}

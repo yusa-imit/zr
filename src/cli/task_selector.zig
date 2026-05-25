@@ -14,7 +14,7 @@ pub const TaskFilter = struct {
     /// Tags that tasks MUST NOT have. Any match excludes the task.
     exclude_tags: []const []const u8 = &.{},
 
-    /// Directory filter (not yet implemented in v1.77.0).
+    /// Directory prefix filter: only include tasks whose cwd starts with this path.
     dir_filter: ?[]const u8 = null,
 };
 
@@ -90,6 +90,14 @@ pub fn selectTasks(
                 if (should_exclude) break;
             }
             if (should_exclude) continue; // Task has an excluded tag
+        }
+
+        // Apply directory filter: task cwd must start with the given path
+        if (filter.dir_filter) |dir| {
+            const task_cwd = task.cwd orelse "";
+            if (!std.mem.startsWith(u8, task_cwd, dir)) {
+                continue;
+            }
         }
 
         // Task passed all filters - add to results
@@ -191,6 +199,128 @@ test "parseTags: only whitespace returns empty slice" {
     }
 
     try std.testing.expectEqual(@as(usize, 0), tags.len);
+}
+
+test "selectTasks: dir_filter includes only tasks with matching cwd prefix" {
+    const allocator = std.testing.allocator;
+
+    var tasks = std.StringHashMap(types.Task).init(allocator);
+    defer tasks.deinit();
+
+    var frontend_task = types.Task{
+        .name = "build-frontend",
+        .cmd = "echo frontend",
+        .cwd = "/app/frontend",
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    var backend_task = types.Task{
+        .name = "build-backend",
+        .cmd = "echo backend",
+        .cwd = "/app/backend",
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    var no_cwd_task = types.Task{
+        .name = "test",
+        .cmd = "echo test",
+        .cwd = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+
+    try tasks.put("build-frontend", frontend_task);
+    try tasks.put("build-backend", backend_task);
+    try tasks.put("test", no_cwd_task);
+
+    const filter = TaskFilter{ .dir_filter = "/app/frontend" };
+    var result = try selectTasks(allocator, tasks, filter);
+    defer result.deinit();
+
+    // Only build-frontend should match (cwd starts with /app/frontend)
+    try std.testing.expectEqual(@as(usize, 1), result.task_names.len);
+    try std.testing.expectEqualStrings("build-frontend", result.task_names[0]);
+
+    _ = &frontend_task;
+    _ = &backend_task;
+    _ = &no_cwd_task;
+}
+
+test "selectTasks: dir_filter null includes all tasks regardless of cwd" {
+    const allocator = std.testing.allocator;
+
+    var tasks = std.StringHashMap(types.Task).init(allocator);
+    defer tasks.deinit();
+
+    var t1 = types.Task{
+        .name = "a",
+        .cmd = "echo a",
+        .cwd = "/some/path",
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    var t2 = types.Task{
+        .name = "b",
+        .cmd = "echo b",
+        .cwd = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+
+    try tasks.put("a", t1);
+    try tasks.put("b", t2);
+
+    const filter = TaskFilter{}; // no dir_filter
+    var result = try selectTasks(allocator, tasks, filter);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), result.task_names.len);
+
+    _ = &t1;
+    _ = &t2;
+}
+
+test "selectTasks: dir_filter excludes tasks with no cwd" {
+    const allocator = std.testing.allocator;
+
+    var tasks = std.StringHashMap(types.Task).init(allocator);
+    defer tasks.deinit();
+
+    var t1 = types.Task{
+        .name = "with-cwd",
+        .cmd = "echo a",
+        .cwd = "/project/src",
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+    var t2 = types.Task{
+        .name = "no-cwd",
+        .cmd = "echo b",
+        .cwd = null,
+        .deps = &.{},
+        .deps_serial = &.{},
+        .env = &.{},
+    };
+
+    try tasks.put("with-cwd", t1);
+    try tasks.put("no-cwd", t2);
+
+    const filter = TaskFilter{ .dir_filter = "/project" };
+    var result = try selectTasks(allocator, tasks, filter);
+    defer result.deinit();
+
+    // Only "with-cwd" matches since "no-cwd" has null cwd (which becomes "")
+    try std.testing.expectEqual(@as(usize, 1), result.task_names.len);
+    try std.testing.expectEqualStrings("with-cwd", result.task_names[0]);
+
+    _ = &t1;
+    _ = &t2;
 }
 
 test "parseTags: trailing comma is ignored" {

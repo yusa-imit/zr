@@ -928,6 +928,7 @@ fn run(
             for (exclude_tags_list.items) |tag| allocator.free(tag);
             exclude_tags_list.deinit(allocator);
         }
+        var run_dir_filter: ?[]const u8 = null;
 
         // Parse runtime task parameters (v1.75.0)
         // Supports 3 syntaxes:
@@ -966,6 +967,9 @@ fn run(
                 // --exclude-tag=tagname syntax (repeatable)
                 const tag = arg["--exclude-tag=".len..];
                 try exclude_tags_list.append(allocator, try allocator.dupe(u8, tag));
+            } else if (std.mem.startsWith(u8, arg, "--dir=")) {
+                // --dir=<path> syntax: filter tasks by cwd prefix
+                run_dir_filter = arg["--dir=".len..];
             } else if (std.mem.eql(u8, arg, "--param")) {
                 // --param key=value syntax
                 i += 1;
@@ -995,9 +999,9 @@ fn run(
             }
         }
 
-        // Check if task filtering is requested (glob pattern or tags)
+        // Check if task filtering is requested (glob pattern, tags, or dir)
         const has_glob_pattern = std.mem.indexOfAny(u8, task_name, "*?") != null;
-        const has_filters = include_tags.items.len > 0 or exclude_tags_list.items.len > 0;
+        const has_filters = include_tags.items.len > 0 or exclude_tags_list.items.len > 0 or run_dir_filter != null;
 
         if (has_glob_pattern or has_filters) {
             // Task filtering mode: load config and select matching tasks
@@ -1008,6 +1012,7 @@ fn run(
                 .pattern = if (has_glob_pattern) task_name else null,
                 .include_tags = include_tags.items,
                 .exclude_tags = exclude_tags_list.items,
+                .dir_filter = run_dir_filter,
             };
 
             var selection = try task_selector.selectTasks(allocator, config.tasks, filter);
