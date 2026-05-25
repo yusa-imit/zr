@@ -6,11 +6,15 @@ const lock_mod = @import("../config/lock.zig");
 const version_mod = @import("../toolchain/version.zig");
 const constraint_mod = @import("../config/constraint.zig");
 const semver = @import("../util/semver.zig");
+const toolchain_types = @import("../toolchain/types.zig");
+const toolchain_installer = @import("../toolchain/installer.zig");
 
 const TaskConfig = config_mod.TaskConfig;
 const Config = config_mod.Config;
 const LockFile = lock_mod.LockFile;
 const LockFileDependency = lock_mod.LockFileDependency;
+const ToolKind = toolchain_types.ToolKind;
+const ToolVersion = toolchain_types.ToolVersion;
 
 /// Handle `zr deps` subcommands
 pub fn handle(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !void {
@@ -160,14 +164,6 @@ fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8, w: *std
         }
     }
 
-    if (install_deps) {
-        // TODO(future): Implement automatic dependency installation
-        // This would integrate with toolchain management to automatically download
-        // and install missing tools (node, python, etc.) similar to asdf/mise.
-        // Needs: toolchain downloader integration, version resolver, install hooks
-        try w.print("Auto-installation not yet implemented\n", .{});
-    }
-
     var config = loadConfig(allocator) catch |err| {
         if (err == error.FileNotFound) {
             try ew.print("✗ [Deps]: zr.toml not found in current directory\n\n  Hint: Run 'zr init' to create a configuration file\n", .{});
@@ -191,11 +187,85 @@ fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8, w: *std
         }
     }
 
+    if (install_deps) {
+        var installed_count: usize = 0;
+        var already_ok_count: usize = 0;
+        var failed_count: usize = 0;
+
+        var dep_iter = dep_map.iterator();
+        while (dep_iter.next()) |entry| {
+            const tool_name = entry.key_ptr.*;
+            const constraint_str = entry.value_ptr.*;
+
+            // Check if dependency is already satisfied
+            const already_satisfied = blk: {
+                const result = checkDependency(allocator, tool_name, constraint_str) catch break :blk false;
+                if (result.installed) |installed| {
+                    allocator.free(installed);
+                }
+                break :blk result.satisfied;
+            };
+
+            if (already_satisfied) {
+                try w.print("✓ {s}: satisfies {s}\n", .{ tool_name, constraint_str });
+                already_ok_count += 1;
+                continue;
+            }
+
+            // Extract version from constraint
+            const version_str_opt = targetVersionFromConstraint(constraint_str);
+            if (version_str_opt == null) {
+                try ew.print("⚠ {s}: cannot determine install version from '{s}'\n\n  Hint: Use 'zr tools install {s}@<version>' to install manually\n", .{ tool_name, constraint_str, tool_name });
+                failed_count += 1;
+                continue;
+            }
+            const version_str = version_str_opt.?;
+
+            // Parse tool kind
+            const kind = ToolKind.fromString(tool_name);
+            if (kind == null) {
+                try ew.print("⚠ {s}: not a managed toolchain — install manually\n\n  Hint: Supported: node, python, zig, go, rust, deno, bun, java\n", .{tool_name});
+                failed_count += 1;
+                continue;
+            }
+
+            // Parse version
+            const version = ToolVersion.parse(version_str) catch {
+                try ew.print("⚠ {s}: cannot parse version '{s}'\n\n  Hint: Use 'zr tools install {s}@<version>' to install manually\n", .{ tool_name, version_str, tool_name });
+                failed_count += 1;
+                continue;
+            };
+
+            // Attempt installation
+            try w.print("Installing {s} {s}...\n", .{ tool_name, version_str });
+            toolchain_installer.install(allocator, kind.?, version) catch |err| {
+                if (err == error.AlreadyInstalled) {
+                    try w.print("✓ {s} {s}: already installed\n", .{ tool_name, version_str });
+                    already_ok_count += 1;
+                } else {
+                    try ew.print("✗ [Deps]: {s}: installation failed ({s})\n\n  Hint: Try 'zr tools install {s}@{s}' manually\n", .{ tool_name, @errorName(err), tool_name, version_str });
+                    failed_count += 1;
+                }
+                continue;
+            };
+
+            try w.print("✓ {s} {s}: installed\n", .{ tool_name, version_str });
+            installed_count += 1;
+        }
+
+        try w.print("\n  {d} installed, {d} already satisfied, {d} failed\n", .{ installed_count, already_ok_count, failed_count });
+
+        if (failed_count > 0) {
+            return error.InstallFailed;
+        }
+        return;
+    }
+
     if (json_output) {
         try w.print("{{\"dependencies\":[", .{});
         var first = true;
-        var dep_iter = dep_map.iterator();
-        while (dep_iter.next()) |entry| {
+        var list_iter = dep_map.iterator();
+        while (list_iter.next()) |entry| {
             if (!first) try w.print(",", .{});
             try w.print("{{\"tool\":\"{s}\",\"version\":\"{s}\"}}", .{ entry.key_ptr.*, entry.value_ptr.* });
             first = false;
@@ -203,8 +273,8 @@ fn handleInstall(allocator: std.mem.Allocator, args: []const []const u8, w: *std
         try w.print("]}}\n", .{});
     } else {
         try w.print("Dependencies:\n", .{});
-        var dep_iter = dep_map.iterator();
-        while (dep_iter.next()) |entry| {
+        var list_iter = dep_map.iterator();
+        while (list_iter.next()) |entry| {
             try w.print("  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
         }
     }
@@ -265,14 +335,6 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io
         }
     }
 
-    if (update_mode) {
-        // TODO(future): Implement lock file update logic
-        // This would read existing .zr-lock.toml, resolve latest compatible versions
-        // for each dependency based on constraints, and regenerate the lock file.
-        // Needs: lock file parser, version resolver, constraint checker integration
-        try w.print("Lock file update not yet implemented\n", .{});
-    }
-
     var config = loadConfig(allocator) catch |err| {
         if (err == error.FileNotFound) {
             try ew.print("✗ [Deps]: zr.toml not found in current directory\n\n  Hint: Run 'zr init' to create a configuration file\n", .{});
@@ -281,6 +343,27 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io
         return err;
     };
     defer config.deinit();
+
+    // Load existing lock file for --update comparison
+    var old_versions = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = old_versions.iterator();
+        while (it.next()) |entry| allocator.free(entry.value_ptr.*);
+        old_versions.deinit();
+    }
+    var has_existing_lock = false;
+    if (update_mode) {
+        if (lock_mod.parseLockFile(allocator, ".zr-lock.toml")) |old_lock| {
+            var old_lock_copy = old_lock;
+            defer old_lock_copy.deinit(allocator);
+            has_existing_lock = true;
+            for (old_lock.dependencies) |dep| {
+                try old_versions.put(dep.tool, try allocator.dupe(u8, dep.resolved));
+            }
+        } else |_| {
+            // No existing lock file — will create fresh
+        }
+    }
 
     // Collect all dependencies
     var dep_list: std.ArrayList(LockFileDependency) = .{};
@@ -321,6 +404,19 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io
                     detected_version.patch,
                 });
 
+                // In update mode, report changes
+                if (update_mode) {
+                    if (old_versions.get(tool_name)) |old_ver| {
+                        if (!std.mem.eql(u8, old_ver, version_str)) {
+                            try w.print("↑ {s}: {s} → {s}\n", .{ tool_name, old_ver, version_str });
+                        } else {
+                            try w.print("  {s}: {s} (unchanged)\n", .{ tool_name, version_str });
+                        }
+                    } else {
+                        try w.print("+ {s}: {s} (new)\n", .{ tool_name, version_str });
+                    }
+                }
+
                 // Generate ISO 8601 timestamp
                 const unix_timestamp = std.time.timestamp();
                 const timestamp = try std.fmt.allocPrint(allocator, "{d}", .{unix_timestamp});
@@ -341,6 +437,12 @@ fn handleLock(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io
 
     if (json_output) {
         try w.print("{{\"status\":\"ok\",\"lock_file\":\".zr-lock.toml\"}}\n", .{});
+    } else if (update_mode) {
+        if (has_existing_lock) {
+            try w.print("\nUpdated .zr-lock.toml with {d} dependencies\n", .{dep_list.items.len});
+        } else {
+            try w.print("Generated .zr-lock.toml with {d} dependencies\n", .{dep_list.items.len});
+        }
     } else {
         try w.print("Generated .zr-lock.toml with {d} dependencies\n", .{dep_list.items.len});
     }
@@ -466,13 +568,13 @@ fn printInstallHelp(w: *std.Io.Writer) !void {
         \\List or install missing dependencies.
         \\
         \\Options:
-        \\  --install-deps   Automatically install missing tools (not yet implemented)
-        \\  --json           Output in JSON format
+        \\  --install-deps   Automatically install missing tools via toolchain manager
+        \\  --json           Output in JSON format (listing mode only)
         \\  --help           Show this help message
         \\
         \\Examples:
         \\  zr deps install
-        \\  zr deps install --install-deps  # Not yet functional
+        \\  zr deps install --install-deps
         \\
     , .{});
 }
@@ -502,13 +604,129 @@ fn printLockHelp(w: *std.Io.Writer) !void {
         \\Generate lock file with resolved dependency versions.
         \\
         \\Options:
-        \\  --update    Update lock file with latest compatible versions (not yet implemented)
+        \\  --update    Re-detect versions and update lock file, reporting changes
         \\  --json      Output in JSON format
         \\  --help      Show this help message
         \\
         \\Examples:
         \\  zr deps lock
-        \\  zr deps lock --update  # Not yet functional
+        \\  zr deps lock --update
         \\
     , .{});
+}
+
+// ─── Helper Functions for Install ─────────────────────────────────────────
+
+fn targetVersionFromConstraint(constraint_str: []const u8) ?[]const u8 {
+    var s = constraint_str;
+    // Strip compound operators first
+    if (std.mem.startsWith(u8, s, ">=") or std.mem.startsWith(u8, s, "<=")) {
+        s = s[2..];
+    } else if (s.len > 0 and (s[0] == '^' or s[0] == '~' or s[0] == '>' or s[0] == '<' or s[0] == '=')) {
+        s = s[1..];
+    }
+    // Reject empty, wildcards, spaces (ranges), or alternatives
+    if (s.len == 0) return null;
+    if (std.mem.indexOfAny(u8, s, " |") != null) return null;
+    if (std.mem.eql(u8, s, "*") or std.mem.eql(u8, s, "x")) return null;
+    // Trim trailing ".x", ".X", ".*" wildcard patterns
+    const wildcards = [_][]const u8{ ".x", ".X", ".*" };
+    for (wildcards) |suffix| {
+        if (std.mem.endsWith(u8, s, suffix)) {
+            s = s[0 .. s.len - suffix.len];
+        }
+    }
+    return if (s.len == 0) null else s;
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────
+
+test "targetVersionFromConstraint extracts version from caret constraint" {
+    const result = targetVersionFromConstraint("^20.11.1");
+    try std.testing.expectEqualStrings("20.11.1", result.?);
+}
+
+test "targetVersionFromConstraint extracts version from tilde constraint" {
+    const result = targetVersionFromConstraint("~3.9");
+    try std.testing.expectEqualStrings("3.9", result.?);
+}
+
+test "targetVersionFromConstraint extracts version from >= operator" {
+    const result = targetVersionFromConstraint(">=3.9");
+    try std.testing.expectEqualStrings("3.9", result.?);
+}
+
+test "targetVersionFromConstraint extracts version from > operator" {
+    const result = targetVersionFromConstraint(">3.9");
+    try std.testing.expectEqualStrings("3.9", result.?);
+}
+
+test "targetVersionFromConstraint extracts version from = operator" {
+    const result = targetVersionFromConstraint("=3.12.1");
+    try std.testing.expectEqualStrings("3.12.1", result.?);
+}
+
+test "targetVersionFromConstraint handles no operator" {
+    const result = targetVersionFromConstraint("20");
+    try std.testing.expectEqualStrings("20", result.?);
+}
+
+test "targetVersionFromConstraint strips .x suffix from 1.x" {
+    const result = targetVersionFromConstraint("1.x");
+    try std.testing.expectEqualStrings("1", result.?);
+}
+
+test "targetVersionFromConstraint strips .x suffix from 1.2.x" {
+    const result = targetVersionFromConstraint("1.2.x");
+    try std.testing.expectEqualStrings("1.2", result.?);
+}
+
+test "targetVersionFromConstraint returns null for wildcard *" {
+    const result = targetVersionFromConstraint("*");
+    try std.testing.expect(result == null);
+}
+
+test "targetVersionFromConstraint returns null for wildcard x" {
+    const result = targetVersionFromConstraint("x");
+    try std.testing.expect(result == null);
+}
+
+test "targetVersionFromConstraint handles <= operator" {
+    const result = targetVersionFromConstraint("<=3.9");
+    try std.testing.expectEqualStrings("3.9", result.?);
+}
+
+test "targetVersionFromConstraint handles < operator" {
+    const result = targetVersionFromConstraint("<2.0.0");
+    try std.testing.expectEqualStrings("2.0.0", result.?);
+}
+
+test "targetVersionFromConstraint extracts from complex caret with patch" {
+    const result = targetVersionFromConstraint("^1.2.3");
+    try std.testing.expectEqualStrings("1.2.3", result.?);
+}
+
+test "targetVersionFromConstraint extracts from tilde with patch" {
+    const result = targetVersionFromConstraint("~1.2.3");
+    try std.testing.expectEqualStrings("1.2.3", result.?);
+}
+
+test "targetVersionFromConstraint handles three-part version" {
+    const result = targetVersionFromConstraint(">=16.0.0");
+    try std.testing.expectEqualStrings("16.0.0", result.?);
+}
+
+test "targetVersionFromConstraint returns null for range with space" {
+    const result = targetVersionFromConstraint(">=1.2.0 <2.0.0");
+    try std.testing.expect(result == null);
+}
+
+test "targetVersionFromConstraint returns null for alternatives with ||" {
+    const result = targetVersionFromConstraint("1.x || 2.x");
+    try std.testing.expect(result == null);
+}
+
+test "targetVersionFromConstraint strips >= from complex version" {
+    const result = targetVersionFromConstraint(">=18.0.0");
+    try std.testing.expectEqualStrings("18.0.0", result.?);
 }

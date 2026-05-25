@@ -524,6 +524,12 @@ const WorkerCtx = struct {
     env_file: []const []const u8,
     /// Working directory for resolving relative .env paths (v1.78.0).
     task_cwd: ?[]const u8,
+    /// Artifact patterns for collecting task outputs (v1.80.0).
+    artifacts: ?[]const []const u8,
+    /// Artifact retention policy (v1.80.0).
+    artifact_retention: ?types.ArtifactRetention,
+    /// Whether to compress collected artifacts (v1.80.0).
+    compress_artifacts: bool,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -2266,6 +2272,9 @@ pub fn run(
                 .executed_tasks = &executed_tasks,
                 .env_file = task.env_file orelse &[_][]const u8{},
                 .task_cwd = task.cwd,
+                .artifacts = task.artifacts,
+                .artifact_retention = task.artifact_retention,
+                .compress_artifacts = task.compress_artifacts,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

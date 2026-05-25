@@ -5676,3 +5676,20 @@ test "parse task with HTTP remote and env vars set" {
     try std.testing.expectEqualStrings("JVM_OPTS", task.remote_env.?[0][0]);
     try std.testing.expectEqualStrings("-Xmx2g", task.remote_env.?[0][1]);
 }
+
+test "parse task with artifacts field" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "echo build"
+        \\artifacts = ["dist/*.wasm", "logs/*.log"]
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+    try std.testing.expect(task.artifacts != null);
+    try std.testing.expectEqual(@as(usize, 2), task.artifacts.?.len);
+    try std.testing.expectEqualStrings("dist/*.wasm", task.artifacts.?[0]);
+    try std.testing.expectEqualStrings("logs/*.log", task.artifacts.?[1]);
+}

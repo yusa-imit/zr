@@ -608,3 +608,159 @@ test "830: deps without any arguments shows help" {
         std.mem.indexOf(u8, result.stdout, "help") != null or
         std.mem.indexOf(u8, result.stdout, "check") != null);
 }
+
+test "831: deps install --install-deps with missing config file errors" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Don't create zr.toml
+
+    var result = try runZr(allocator, &.{ "deps", "install", "--install-deps" }, tmp_path);
+    defer result.deinit();
+
+    // Should error with exit code 1
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Should mention config file or not found
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr.toml") != null or
+        std.mem.indexOf(u8, result.stderr, "not found") != null);
+}
+
+test "832: deps install --install-deps with no dependencies shows summary" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with tasks but no requires
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = SIMPLE_DEPS_TOML });
+
+    var result = try runZr(allocator, &.{ "deps", "install", "--install-deps" }, tmp_path);
+    defer result.deinit();
+
+    // Should show install summary with "0 installed"
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "0 installed") != null or
+        std.mem.indexOf(u8, result.stdout, "No dependencies") != null);
+}
+
+test "833: deps install without --install-deps still lists dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with dependencies
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = BASIC_DEPS_TOML });
+
+    var result = try runZr(allocator, &.{ "deps", "install" }, tmp_path);
+    defer result.deinit();
+
+    // Should list dependencies (not auto-install)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Dependencies") != null or
+        std.mem.indexOf(u8, result.stdout, "node") != null or
+        std.mem.indexOf(u8, result.stdout, "python") != null);
+}
+
+test "834: deps install --install-deps accepts the flag and processes dependencies" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with dependencies
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = BASIC_DEPS_TOML });
+
+    var result = try runZr(allocator, &.{ "deps", "install", "--install-deps" }, tmp_path);
+    defer result.deinit();
+
+    // Should attempt to process/install dependencies (may succeed or fail based on system state)
+    // The key test is that it doesn't return "not yet implemented"
+    // and that it recognizes the flag
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Auto-installation not yet implemented") == null);
+}
+
+test "835: deps lock --update with no existing lock file generates fresh lock" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with node dep (likely installed on test system)
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = BASIC_DEPS_TOML });
+
+    var result = try runZr(allocator, &.{ "deps", "lock", "--update" }, tmp_path);
+    defer result.deinit();
+
+    // Should not contain "not yet implemented"
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "not yet implemented") == null);
+    // Should mention lock file
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, ".zr-lock.toml") != null or
+        std.mem.indexOf(u8, result.stdout, "lock") != null or
+        std.mem.indexOf(u8, result.stdout, "dependencies") != null);
+}
+
+test "836: deps lock --update with existing lock file reports changes or unchanged" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = BASIC_DEPS_TOML });
+
+    // Generate initial lock file first
+    var lock_result = try runZr(allocator, &.{ "deps", "lock" }, tmp_path);
+    defer lock_result.deinit();
+
+    // Now run --update on top of existing lock file
+    var update_result = try runZr(allocator, &.{ "deps", "lock", "--update" }, tmp_path);
+    defer update_result.deinit();
+
+    // Should not contain "not yet implemented"
+    try std.testing.expect(std.mem.indexOf(u8, update_result.stdout, "not yet implemented") == null);
+    // Should generate updated lock file
+    try std.testing.expect(std.mem.indexOf(u8, update_result.stdout, ".zr-lock.toml") != null or
+        std.mem.indexOf(u8, update_result.stdout, "Updated") != null or
+        std.mem.indexOf(u8, update_result.stdout, "unchanged") != null);
+}
+
+test "837: deps lock --update with no config file errors" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // No zr.toml
+    var result = try runZr(allocator, &.{ "deps", "lock", "--update" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "zr.toml") != null or
+        std.mem.indexOf(u8, result.stderr, "not found") != null);
+}
+
+test "838: deps lock help shows --update without not-yet-implemented" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{ "deps", "lock", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--update") != null);
+    // Should not say "not yet implemented" in help
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "not yet implemented") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Not yet functional") == null);
+}

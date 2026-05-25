@@ -7,7 +7,7 @@ test "add: no arguments shows error" {
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "add: missing type") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "[Add]: missing type") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Hint: zr add task") != null);
 }
 
@@ -17,7 +17,7 @@ test "add: unknown type shows error" {
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "add: unknown type 'unknown'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "[Add]: unknown type 'unknown'") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Hint: zr add task") != null);
 }
 
