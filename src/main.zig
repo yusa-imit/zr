@@ -1465,8 +1465,19 @@ fn run(
         }
         return doctor_cmd.cmdDoctor(allocator, opts, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "cd")) {
-        if (effective_args.len < 3) {
-            try color.printError(ew, effective_color, "cd: missing workspace member name\n\n  Hint: zr cd <member-name>\n", .{});
+        if (effective_args.len < 3 or std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h")) {
+            if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+                try effective_w.writeAll("Usage: zr cd <member-name>\n\n");
+                try effective_w.writeAll("Change directory to a workspace member project.\n\n");
+                try effective_w.writeAll("Arguments:\n");
+                try effective_w.writeAll("  <member-name>   Name of the workspace member to navigate to\n\n");
+                try effective_w.writeAll("Examples:\n");
+                try effective_w.writeAll("  zr cd frontend\n");
+                try effective_w.writeAll("  zr cd backend/api\n\n");
+                try effective_w.writeAll("Note: Use with eval: eval $(zr cd frontend)\n");
+                return 0;
+            }
+            try color.printError(ew, effective_color, "✗ [CD]: missing workspace member name\n\n  Hint: zr cd <member-name>\n", .{});
             return 1;
         }
         const member_name = effective_args[2];
@@ -1521,30 +1532,56 @@ fn run(
             return 0;
         }
 
-        // Parse --limit flag from remaining args
+        // Parse --limit and --format flags from remaining args
         var limit: usize = 20; // Default to last 20 runs
+        var estimate_json = json_output; // inherit global --format json
         var i: usize = 3;
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
             if (std.mem.eql(u8, arg, "--limit")) {
                 i += 1;
                 if (i >= effective_args.len) {
-                    try color.printError(ew, effective_color, "error: --limit requires a number\n", .{});
+                    try color.printError(ew, effective_color, "✗ [Estimate]: --limit requires a number\n", .{});
                     return 1;
                 }
                 limit = std.fmt.parseInt(usize, effective_args[i], 10) catch {
-                    try color.printError(ew, effective_color, "error: invalid limit value: {s}\n", .{effective_args[i]});
+                    try color.printError(ew, effective_color, "✗ [Estimate]: invalid limit value: {s}\n", .{effective_args[i]});
                     return 1;
                 };
                 if (limit == 0) {
-                    try color.printError(ew, effective_color, "error: --limit must be greater than 0\n", .{});
+                    try color.printError(ew, effective_color, "✗ [Estimate]: --limit must be greater than 0\n", .{});
                     return 1;
                 }
+            } else if (std.mem.startsWith(u8, arg, "--limit=")) {
+                const val = arg["--limit=".len..];
+                limit = std.fmt.parseInt(usize, val, 10) catch {
+                    try color.printError(ew, effective_color, "✗ [Estimate]: invalid limit value: {s}\n", .{val});
+                    return 1;
+                };
+                if (limit == 0) {
+                    try color.printError(ew, effective_color, "✗ [Estimate]: --limit must be greater than 0\n", .{});
+                    return 1;
+                }
+            } else if (std.mem.eql(u8, arg, "--format")) {
+                i += 1;
+                if (i >= effective_args.len) {
+                    try color.printError(ew, effective_color, "✗ [Estimate]: --format requires a value (text|json)\n", .{});
+                    return 1;
+                }
+                if (std.mem.eql(u8, effective_args[i], "json")) {
+                    estimate_json = true;
+                } else if (std.mem.eql(u8, effective_args[i], "text")) {
+                    estimate_json = false;
+                }
+            } else if (std.mem.eql(u8, arg, "--format=json")) {
+                estimate_json = true;
+            } else if (std.mem.eql(u8, arg, "--format=text")) {
+                estimate_json = false;
             }
         }
 
         // Convert json_output to estimate's OutputFormat
-        const estimate_format: estimate_cmd.OutputFormat = if (json_output) .json else .text;
+        const estimate_format: estimate_cmd.OutputFormat = if (estimate_json) .json else .text;
 
         return estimate_cmd.cmdEstimate(allocator, task_name, config_path, limit, effective_w, ew, effective_color, estimate_format);
     } else if (std.mem.eql(u8, cmd, "show")) {
