@@ -73,6 +73,10 @@ pub const SchedulerConfig = struct {
     /// Key-value map of parameter names to values passed from CLI.
     /// Used for {{param}} interpolation in task commands and env vars.
     runtime_params: ?*const std.StringHashMap([]const u8) = null,
+    /// List of task names to skip (v1.83.0).
+    /// Tasks in this list are marked as skipped (success=true, skipped=true, exit_code=0)
+    /// instead of being executed.
+    skip_tasks: []const []const u8 = &.{},
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
@@ -2078,6 +2082,32 @@ pub fn run(
                 };
                 results_mutex.unlock();
                 continue;
+            }
+
+            // Skip task if it's in the explicit skip list (v1.83.0).
+            if (sched_config.skip_tasks.len > 0) {
+                var should_explicit_skip = false;
+                for (sched_config.skip_tasks) |skip_name| {
+                    if (std.mem.eql(u8, skip_name, task_name)) {
+                        should_explicit_skip = true;
+                        break;
+                    }
+                }
+                if (should_explicit_skip) {
+                    const owned_name = try allocator.dupe(u8, task_name);
+                    results_mutex.lock();
+                    results.append(allocator, .{
+                        .task_name = owned_name,
+                        .success = true,
+                        .exit_code = 0,
+                        .duration_ms = 0,
+                        .skipped = true,
+                    }) catch {
+                        allocator.free(owned_name);
+                    };
+                    results_mutex.unlock();
+                    continue;
+                }
             }
 
             // Evaluate condition expression — skip task if condition is false.

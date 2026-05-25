@@ -169,6 +169,7 @@ pub fn cmdRun(
     silent_override: bool,
     show_env: bool,
     runtime_params: std.StringHashMap([]const u8),
+    skip_tasks: []const []const u8,
 ) !u8 {
     defer {
         // Cleanup runtime params
@@ -349,6 +350,7 @@ pub fn cmdRun(
         .silent_override = silent_override,
         .force_run = force_run,
         .runtime_params = &resolved_params,
+        .skip_tasks = skip_tasks,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -438,6 +440,7 @@ pub fn cmdWatch(
     use_color: bool,
     filter_options: filter_mod.FilterOptions,
     silent_override: bool,
+    skip_tasks: []const []const u8,
 ) !u8 {
     // Verify task exists and extract WatchConfig before starting the watch loop (v1.17.0).
     var watch_options = watcher.WatcherOptions{};
@@ -605,6 +608,7 @@ pub fn cmdWatch(
             .max_jobs = max_jobs,
             .filter_options = filter_options,
             .silent_override = silent_override,
+            .skip_tasks = skip_tasks,
         }) catch |err| {
             switch (err) {
                 error.CycleDetected => try color.printError(err_writer, use_color,
@@ -672,6 +676,7 @@ pub fn cmdWorkflow(
     use_color: bool,
     filter_options: filter_mod.FilterOptions,
     silent_override: bool,
+    skip_tasks: []const []const u8,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -869,6 +874,7 @@ pub fn cmdWorkflow(
                 .extra_env = extra_env_slice,
                 .filter_options = filter_options,
                 .silent_override = silent_override,
+                .skip_tasks = skip_tasks,
             }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
@@ -932,6 +938,7 @@ pub fn cmdWorkflow(
                     .extra_env = extra_env_slice,
                     .filter_options = filter_options,
                     .silent_override = silent_override,
+                    .skip_tasks = skip_tasks,
                 }) catch |err| {
                     try color.printError(err_writer, use_color,
                         "workflow: on_failure task '{s}' failed: {s}\n",
@@ -1405,6 +1412,7 @@ test "cmdRun: missing config returns error" {
         false, // silent_override
         false, // show_env
         empty_params,
+        &.{},
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1451,6 +1459,7 @@ test "cmdRun: unknown task returns error" {
         false, // silent_override
         false, // show_env
         empty_params,
+        &.{},
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1497,6 +1506,7 @@ test "cmdRun: dry run shows plan without executing" {
         false, // silent_override
         false, // show_env
         empty_params,
+        &.{},
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1543,6 +1553,7 @@ test "cmdRun: successful task returns 0" {
         false, // silent_override
         false, // show_env
         empty_params,
+        &.{},
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1589,6 +1600,7 @@ test "cmdRun: failing task returns 1" {
         false, // silent_override
         false, // show_env
         empty_params,
+        &.{},
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

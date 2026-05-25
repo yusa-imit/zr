@@ -109,6 +109,7 @@ pub fn cmdSetup(
             false, // silent_override
             false, // show_env
             empty_params,
+            &.{},
         );
 
         if (exit_code != 0) {

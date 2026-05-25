@@ -470,7 +470,7 @@ fn run(
             // Run default task
             var empty_params = std.StringHashMap([]const u8).init(allocator);
             defer empty_params.deinit();
-            return run_cmd.cmdRun(allocator, "default", null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params);
+            return run_cmd.cmdRun(allocator, "default", null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{});
         }
 
         // Count tasks
@@ -485,7 +485,7 @@ fn run(
             const single_task = task_it.next().?;
             var empty_params2 = std.StringHashMap([]const u8).init(allocator);
             defer empty_params2.deinit();
-            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params2);
+            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params2, &.{});
         } else {
             // Multiple tasks → interactive picker
             if (!std.fs.File.stdout().isTty()) {
@@ -516,9 +516,9 @@ fn run(
             if (picker_result.kind == .task) {
                 var empty_params = std.StringHashMap([]const u8).init(allocator);
                 defer empty_params.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params);
+                return run_cmd.cmdRun(allocator, picker_result.name, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{});
             } else {
-                return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color, .{}, false);
+                return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color, .{}, false, &.{});
             }
         }
     }
@@ -804,7 +804,7 @@ fn run(
             try color.printError(ew, effective_color, "w/: missing workflow name\n\n  Hint: zr w/<workflow-name>\n", .{});
             return 1;
         }
-        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent);
+        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent, &.{});
     }
 
     // History-based shortcuts: !! (last task), !-N (Nth-to-last task)
@@ -866,7 +866,7 @@ fn run(
         // Re-run the task (use 'run' command with the task name)
         var empty_params = std.StringHashMap([]const u8).init(allocator);
         defer empty_params.deinit();
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{});
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
@@ -908,11 +908,11 @@ fn run(
                 // Picker mode doesn't support params (empty map)
                 var empty_params = std.StringHashMap([]const u8).init(allocator);
                 defer empty_params.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params);
+                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{});
             } else {
                 // Workflow selected — delegate to workflow command
                 config.deinit();
-                return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent);
+                return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent, &.{});
             }
         }
         const task_name = effective_args[2];
@@ -929,6 +929,13 @@ fn run(
             exclude_tags_list.deinit(allocator);
         }
         var run_dir_filter: ?[]const u8 = null;
+
+        // Parse --skip flags (v1.83.0)
+        var skip_tasks_list = std.ArrayList([]const u8){};
+        defer {
+            for (skip_tasks_list.items) |task| allocator.free(task);
+            skip_tasks_list.deinit(allocator);
+        }
 
         // Parse runtime task parameters (v1.75.0)
         // Supports 3 syntaxes:
@@ -985,6 +992,33 @@ fn run(
                 } else {
                     try color.printError(ew, effective_color, "run: --param argument must be key=value format, got '{s}'\n", .{kv});
                     return 1;
+                }
+            } else if (std.mem.eql(u8, arg, "--skip")) {
+                // --skip <tasks> syntax (repeatable, comma-separated)
+                i += 1;
+                if (i >= effective_args.len) {
+                    try color.printError(ew, effective_color, "run: --skip requires task name argument\n", .{});
+                    return 1;
+                }
+                const skip_arg = effective_args[i];
+                // Split by comma and add each task to skip_tasks_list
+                var it = std.mem.splitSequence(u8, skip_arg, ",");
+                while (it.next()) |task| {
+                    const trimmed = std.mem.trim(u8, task, " \t");
+                    if (trimmed.len > 0) {
+                        try skip_tasks_list.append(allocator, try allocator.dupe(u8, trimmed));
+                    }
+                }
+            } else if (std.mem.startsWith(u8, arg, "--skip=")) {
+                // --skip=<tasks> syntax (repeatable, comma-separated)
+                const skip_arg = arg["--skip=".len..];
+                // Split by comma and add each task to skip_tasks_list
+                var it = std.mem.splitSequence(u8, skip_arg, ",");
+                while (it.next()) |task| {
+                    const trimmed = std.mem.trim(u8, task, " \t");
+                    if (trimmed.len > 0) {
+                        try skip_tasks_list.append(allocator, try allocator.dupe(u8, trimmed));
+                    }
                 }
             } else if (std.mem.indexOf(u8, arg, "=")) |eq_pos| {
                 // Named key=value syntax
@@ -1076,6 +1110,7 @@ fn run(
                     silent,
                     show_env,
                     runtime_params,
+                    skip_tasks_list.items,
                 );
                 if (exit_code != 0) {
                     all_success = false;
@@ -1088,7 +1123,7 @@ fn run(
         }
 
         // No filtering — run single task directly (existing behavior)
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
@@ -1096,7 +1131,7 @@ fn run(
         }
         const task_name = effective_args[2];
         const watch_paths: []const []const u8 = if (effective_args.len > 3) effective_args[3..] else &[_][]const u8{"."};
-        return run_cmd.cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color, filter_options, silent);
+        return run_cmd.cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color, filter_options, silent, &.{});
     } else if (std.mem.eql(u8, cmd, "workflow")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
@@ -1113,7 +1148,7 @@ fn run(
             }
         }
 
-        return run_cmd.cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, matrix_show, effective_w, ew, effective_color, filter_options, silent);
+        return run_cmd.cmdWorkflow(allocator, wf_name, profile_name, dry_run, max_jobs, config_path, matrix_show, effective_w, ew, effective_color, filter_options, silent, &.{});
     } else if (std.mem.eql(u8, cmd, "list")) {
         // Parse list options
         var tree_mode = false;

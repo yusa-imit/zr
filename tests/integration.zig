@@ -76,6 +76,7 @@ comptime {
     _ = @import("retry_section_syntax_test.zig");
     _ = @import("run_test.zig");
     _ = @import("schedule_test.zig");
+    _ = @import("skip_test.zig");
     _ = @import("task_picker_test.zig");
     _ = @import("setup_test.zig");
     _ = @import("shell_ergonomics_test.zig");

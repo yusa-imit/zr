@@ -306,6 +306,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         false, // silent_override
         false, // show_env
         empty_params,
+        &.{},
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}
@@ -543,6 +544,7 @@ fn handleRunWorkflow(allocator: std.mem.Allocator, params_json: []const u8) !Too
         false, // use_color
         .{},   // filter_options
         false, // silent_override
+        &.{},
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}
