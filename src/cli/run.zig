@@ -171,14 +171,6 @@ pub fn cmdRun(
     runtime_params: std.StringHashMap([]const u8),
     skip_tasks: []const []const u8,
 ) !u8 {
-    defer {
-        // Cleanup runtime params
-        var it = runtime_params.iterator();
-        while (it.next()) |entry| {
-            allocator.free(entry.key_ptr.*);
-            allocator.free(entry.value_ptr.*);
-        }
-    }
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 

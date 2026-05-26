@@ -929,6 +929,7 @@ fn run(
             exclude_tags_list.deinit(allocator);
         }
         var run_dir_filter: ?[]const u8 = null;
+        var fail_fast = false;
 
         // Parse --skip flags (v1.83.0)
         var skip_tasks_list = std.ArrayList([]const u8){};
@@ -943,7 +944,14 @@ fn run(
         //   2. Named: zr run task name=Alice city=London
         //   3. --param flag: zr run task --param name=Alice --param city=London
         var runtime_params = std.StringHashMap([]const u8).init(allocator);
-        defer runtime_params.deinit();
+        defer {
+            var _rp_it = runtime_params.iterator();
+            while (_rp_it.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                allocator.free(entry.value_ptr.*);
+            }
+            runtime_params.deinit();
+        }
 
         var positional_index: usize = 0;
         var i: usize = 3;
@@ -1020,6 +1028,8 @@ fn run(
                         try skip_tasks_list.append(allocator, try allocator.dupe(u8, trimmed));
                     }
                 }
+            } else if (std.mem.eql(u8, arg, "--fail-fast")) {
+                fail_fast = true;
             } else if (std.mem.indexOf(u8, arg, "=")) |eq_pos| {
                 // Named key=value syntax
                 const key = arg[0..eq_pos];
@@ -1091,7 +1101,6 @@ fn run(
             var all_success = true;
             for (selection.task_names) |selected_task_name| {
                 // Note: runtime_params apply to all selected tasks
-                // In the future, we might want to allow per-task params
                 const exit_code = try run_cmd.cmdRun(
                     allocator,
                     selected_task_name,
@@ -1114,8 +1123,10 @@ fn run(
                 );
                 if (exit_code != 0) {
                     all_success = false;
-                    // Continue running other tasks even if one fails
-                    // (unless we want to add --fail-fast flag in the future)
+                    if (fail_fast) {
+                        try color.printError(ew, effective_color, "run: Task '{s}' failed — stopping (--fail-fast)\n", .{selected_task_name});
+                        break;
+                    }
                 }
             }
 
@@ -1875,7 +1886,12 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try color.printBold(w, use_color, "Usage:\n", .{});
     try w.print("  zr [options] <command> [arguments]\n\n", .{});
     try color.printBold(w, use_color, "Commands:\n", .{});
-    try w.print("  run <task>             Run a task and its dependencies\n", .{});
+    try w.print("  run <task|pattern>     Run a task and its dependencies\n", .{});
+    try w.print("    --tag=TAG            Filter tasks by tag (repeatable, AND logic)\n", .{});
+    try w.print("    --exclude-tag=TAG    Exclude tasks with tag (repeatable)\n", .{});
+    try w.print("    --dir=PATH           Filter tasks by working directory prefix\n", .{});
+    try w.print("    --skip=TASK          Skip specific tasks (repeatable, comma-separated)\n", .{});
+    try w.print("    --fail-fast          Stop on first task failure (default: continue)\n", .{});
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
     try w.print("  workflow <name>        Run a workflow by name\n", .{});
     try w.print("  list [pattern] [--tree] [--tags=TAG,...]  List tasks (filters: pattern, tags; --tree for dependency tree)\n", .{});

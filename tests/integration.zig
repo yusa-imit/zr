@@ -38,6 +38,7 @@ comptime {
     _ = @import("error_messages_test.zig");
     _ = @import("estimate_test.zig");
     _ = @import("export_test.zig");
+    _ = @import("fail_fast_test.zig");
     _ = @import("failures_test.zig");
     _ = @import("graph_test.zig");
     _ = @import("graph_formats_test.zig");

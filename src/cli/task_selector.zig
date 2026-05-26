@@ -104,6 +104,14 @@ pub fn selectTasks(
         try matched.append(allocator, try allocator.dupe(u8, task_name));
     }
 
+    // Sort alphabetically for deterministic execution order
+    const items = matched.items;
+    std.mem.sort([]const u8, items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+
     return SelectionResult{
         .task_names = try matched.toOwnedSlice(allocator),
         .allocator = allocator,

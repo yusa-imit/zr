@@ -136,6 +136,9 @@ test "503: run target task with --skip target itself" {
 
     // Should succeed (even though target is skipped)
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // lint task should NOT have executed (it was skipped)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "linting") == null);
 }
 
 test "504: run with --skip nonexistent task succeeds" {
@@ -169,6 +172,12 @@ test "505: run with --skip and --dry-run together" {
 
     // Should succeed
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // lint must not have executed (skipped) — "linting" is the echo output from lint's cmd
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "linting") == null);
+
+    // build should appear in dry-run preview (build was not skipped)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
 }
 
 test "506: run with --skip and --json output" {

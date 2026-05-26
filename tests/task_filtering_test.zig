@@ -170,6 +170,14 @@ test "task filtering: glob pattern invalid syntax shows error" {
 
     // Should fail with error message
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+
+    // Error output should mention the invalid pattern or glob error
+    try std.testing.expect(
+        std.mem.indexOf(u8, result.stderr, "invalid") != null or
+        std.mem.indexOf(u8, result.stderr, "glob") != null or
+        std.mem.indexOf(u8, result.stderr, "pattern") != null or
+        std.mem.indexOf(u8, result.stderr, "test:[") != null
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
