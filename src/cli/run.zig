@@ -978,8 +978,32 @@ pub fn cmdWorkflow(
     }
 }
 
+/// Format a Unix timestamp as a human-readable relative time string.
+/// Writes into buf (must be at least 16 bytes) and returns the written slice.
+pub fn formatRelativeTime(timestamp: i64, now: i64, buf: []u8) []const u8 {
+    const diff = now - timestamp;
+    if (diff < 60) {
+        const s = "just now";
+        @memcpy(buf[0..s.len], s);
+        return buf[0..s.len];
+    } else if (diff < 3600) {
+        const mins = @divTrunc(diff, 60);
+        return std.fmt.bufPrint(buf, "{d}m ago", .{mins}) catch buf[0..0];
+    } else if (diff < 86400) {
+        const hours = @divTrunc(diff, 3600);
+        return std.fmt.bufPrint(buf, "{d}h ago", .{hours}) catch buf[0..0];
+    } else if (diff < 604800) {
+        const days = @divTrunc(diff, 86400);
+        return std.fmt.bufPrint(buf, "{d}d ago", .{days}) catch buf[0..0];
+    } else {
+        const weeks = @divTrunc(diff, 604800);
+        return std.fmt.bufPrint(buf, "{d}w ago", .{weeks}) catch buf[0..0];
+    }
+}
+
 pub fn cmdHistory(
     allocator: std.mem.Allocator,
+    args: []const []const u8,
     json_output: bool,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
@@ -987,13 +1011,43 @@ pub fn cmdHistory(
 ) !u8 {
     _ = err_writer;
 
+    // Parse flags
+    var limit: usize = 20;
+    var show_stats = false;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try w.writeAll("Usage: zr history [options] [stats]\n\n");
+            try w.writeAll("Show recent task run history or aggregated statistics.\n\n");
+            try w.writeAll("Subcommands:\n");
+            try w.writeAll("  stats               Show per-task aggregated statistics\n\n");
+            try w.writeAll("Options:\n");
+            try w.writeAll("  --limit=N           Number of recent runs to show (default: 20)\n");
+            try w.writeAll("  --json              Output as JSON\n");
+            try w.writeAll("  -h, --help          Show this help\n\n");
+            try w.writeAll("Examples:\n");
+            try w.writeAll("  zr history              # Show last 20 runs\n");
+            try w.writeAll("  zr history --limit=50   # Show last 50 runs\n");
+            try w.writeAll("  zr history stats        # Show per-task statistics\n");
+            return 0;
+        } else if (std.mem.eql(u8, arg, "stats")) {
+            show_stats = true;
+        } else if (std.mem.startsWith(u8, arg, "--limit=")) {
+            const n = std.fmt.parseInt(usize, arg["--limit=".len..], 10) catch 20;
+            limit = n;
+        }
+    }
+
     const hist_path = try history.defaultHistoryPath(allocator);
     defer allocator.free(hist_path);
 
     var store = try history.Store.init(allocator, hist_path);
     defer store.deinit();
 
-    var records = try store.loadLast(allocator, 20);
+    if (show_stats) {
+        return cmdHistoryStats(allocator, &store, w, use_color);
+    }
+
+    var records = try store.loadLast(allocator, limit);
     defer {
         for (records.items) |r| r.deinit(allocator);
         records.deinit(allocator);
@@ -1025,6 +1079,8 @@ pub fn cmdHistory(
     try color.printHeader(w, use_color, "Recent Runs:", .{});
     try w.print("\n", .{});
 
+    const now = std.time.timestamp();
+    var time_buf: [16]u8 = undefined;
     for (records.items) |rec| {
         const status_icon: []const u8 = if (rec.success) "✓" else "✗";
         if (rec.success) {
@@ -1033,10 +1089,86 @@ pub fn cmdHistory(
             try color.printError(w, use_color, "  {s} ", .{status_icon});
         }
         try color.printInfo(w, use_color, "{s:<20}", .{rec.task_name});
-        try color.printDim(w, use_color, "  {d}ms  ({d} task(s))  ts:{d}\n", .{
+        const rel_time = formatRelativeTime(rec.timestamp, now, &time_buf);
+        try color.printDim(w, use_color, "  {d}ms  ({d} task(s))  {s}\n", .{
             rec.duration_ms,
             rec.task_count,
-            rec.timestamp,
+            rel_time,
+        });
+    }
+
+    return 0;
+}
+
+fn cmdHistoryStats(
+    allocator: std.mem.Allocator,
+    store: *history.Store,
+    w: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    const stats_module = @import("../history/stats.zig");
+
+    // Load up to 10000 records for stats aggregation
+    var records = try store.loadLast(allocator, 10000);
+    defer {
+        for (records.items) |r| r.deinit(allocator);
+        records.deinit(allocator);
+    }
+
+    if (records.items.len == 0) {
+        try color.printDim(w, use_color, "No history yet. Run a task with 'zr run <task>'.\n", .{});
+        return 0;
+    }
+
+    // Collect unique task names and success counts
+    var task_runs = std.StringHashMap(struct { total: u32, success: u32 }).init(allocator);
+    defer task_runs.deinit();
+
+    for (records.items) |rec| {
+        const entry = try task_runs.getOrPut(rec.task_name);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{ .total = 0, .success = 0 };
+        }
+        entry.value_ptr.total += 1;
+        if (rec.success) entry.value_ptr.success += 1;
+    }
+
+    try color.printHeader(w, use_color, "Task Statistics", .{});
+    try w.print(" ({d} total runs)\n\n", .{records.items.len});
+    try color.printDim(w, use_color, "  {s:<20}  {s:>5}  {s:>7}  {s:>7}  {s:>7}  {s:>7}\n", .{
+        "Task", "Runs", "Success", "Avg", "P90", "P99",
+    });
+    try color.printDim(w, use_color, "  {s:-<20}  {s:->5}  {s:->7}  {s:->7}  {s:->7}  {s:->7}\n", .{
+        "", "", "", "", "", "",
+    });
+
+    var it = task_runs.iterator();
+    while (it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        const counts = entry.value_ptr.*;
+        const success_pct = @as(u32, @intFromFloat(@as(f64, @floatFromInt(counts.success)) / @as(f64, @floatFromInt(counts.total)) * 100.0));
+
+        var avg_str: [16]u8 = undefined;
+        var p90_str: [16]u8 = undefined;
+        var p99_str: [16]u8 = undefined;
+
+        const avg_s = if (try stats_module.calculateStats(records.items, task_name, allocator)) |s| blk: {
+            break :blk std.fmt.bufPrint(&avg_str, "{d}ms", .{s.avg_ms}) catch "?";
+        } else "?";
+        const p90_s = if (try stats_module.calculateStats(records.items, task_name, allocator)) |s| blk: {
+            break :blk std.fmt.bufPrint(&p90_str, "{d}ms", .{s.p90_ms}) catch "?";
+        } else "?";
+        const p99_s = if (try stats_module.calculateStats(records.items, task_name, allocator)) |s| blk: {
+            break :blk std.fmt.bufPrint(&p99_str, "{d}ms", .{s.p99_ms}) catch "?";
+        } else "?";
+
+        try w.print("  {s:<20}  {d:>5}  {d:>6}%  {s:>7}  {s:>7}  {s:>7}\n", .{
+            task_name,
+            counts.total,
+            success_pct,
+            avg_s,
+            p90_s,
+            p99_s,
         });
     }
 
@@ -1642,6 +1774,70 @@ test "cmdHistory: returns 0 even with large history" {
     // cmdHistory should always return 0 regardless of history content
     const result = try cmdHistory(
         allocator,
+        &.{},
+        false,
+        &out_w.interface,
+        &err_w.interface,
+        false,
+    );
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
+
+test "formatRelativeTime: just now" {
+    var buf: [16]u8 = undefined;
+    const now: i64 = 1000;
+    const timestamp: i64 = 970; // 30 seconds ago
+    const result = formatRelativeTime(timestamp, now, &buf);
+    try std.testing.expectEqualStrings("just now", result);
+}
+
+test "formatRelativeTime: minutes ago" {
+    var buf: [16]u8 = undefined;
+    const now: i64 = 1000;
+    const timestamp: i64 = 910; // 90 seconds ago
+    const result = formatRelativeTime(timestamp, now, &buf);
+    try std.testing.expectEqualStrings("1m ago", result);
+}
+
+test "formatRelativeTime: hours ago" {
+    var buf: [16]u8 = undefined;
+    const now: i64 = 5000;
+    const timestamp: i64 = 1339; // 3661 seconds ago
+    const result = formatRelativeTime(timestamp, now, &buf);
+    try std.testing.expectEqualStrings("1h ago", result);
+}
+
+test "formatRelativeTime: days ago" {
+    var buf: [16]u8 = undefined;
+    const now: i64 = 100000;
+    const timestamp: i64 = 13599; // 86401 seconds ago (1 day + 1 second)
+    const result = formatRelativeTime(timestamp, now, &buf);
+    try std.testing.expectEqualStrings("1d ago", result);
+}
+
+test "formatRelativeTime: weeks ago" {
+    var buf: [16]u8 = undefined;
+    const now: i64 = 1000000;
+    const timestamp: i64 = 395200; // 604800 seconds ago (exactly 7 days)
+    const result = formatRelativeTime(timestamp, now, &buf);
+    try std.testing.expectEqualStrings("1w ago", result);
+}
+
+test "cmdHistory with args: returns 0 on --help" {
+    const allocator = std.testing.allocator;
+
+    const builtin = @import("builtin");
+    const devnull = try std.fs.openFileAbsolute(if (builtin.os.tag == .windows) "NUL" else "/dev/null", .{ .mode = .write_only });
+    defer devnull.close();
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = devnull.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = devnull.writer(&err_buf);
+
+    const result = try cmdHistory(
+        allocator,
+        &.{"--help"},
         false,
         &out_w.interface,
         &err_w.interface,

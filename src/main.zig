@@ -1307,7 +1307,8 @@ fn run(
         }
         return list_cmd.cmdGraph(allocator, config_path, json_output, ascii_mode, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "history")) {
-        return run_cmd.cmdHistory(allocator, json_output, effective_w, ew, effective_color);
+        const history_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return run_cmd.cmdHistory(allocator, history_args, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
         // Parse init options
         var detect_mode = false;

@@ -615,6 +615,7 @@ fn handleTaskHistory(allocator: std.mem.Allocator, params_json: []const u8) !Too
     // Call history command with JSON output
     const exit_code = run.cmdHistory(
         allocator,
+        &.{}, // no extra args
         true, // json_output
         &stdout_writer.interface,
         &stderr_writer.interface,
