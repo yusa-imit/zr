@@ -1097,11 +1097,10 @@ pub fn cmdHistory(
     const now = std.time.timestamp();
     var time_buf: [16]u8 = undefined;
     for (records.items) |rec| {
-        const status_icon: []const u8 = if (rec.success) "✓" else "✗";
         if (rec.success) {
-            try color.printSuccess(w, use_color, "  {s} ", .{status_icon});
+            try color.printSuccess(w, use_color, " ", .{});
         } else {
-            try color.printError(w, use_color, "  {s} ", .{status_icon});
+            try color.printError(w, use_color, " ", .{});
         }
         try color.printInfo(w, use_color, "{s:<20}", .{rec.task_name});
         const rel_time = formatRelativeTime(rec.timestamp, now, &time_buf);
