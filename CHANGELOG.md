@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.83.0] - 2026-05-27
+
+### Added
+- **Desktop Notifications** — Task completion notifications on macOS and Linux
+  - `notify = true` in task config enables notifications for that task
+  - `notify_on = "success"|"failure"|"always"` controls when notifications are sent
+  - `notify_title = "Custom Title"` for custom notification title
+  - `--notify` CLI flag enables notifications for all tasks globally
+  - macOS: uses `osascript display notification` API
+  - Linux: uses `notify-send` command
+- **Task Directory Filter** — Filter tasks by working directory with `--dir=PATH`
+  - Skip tasks whose `cwd` doesn't match the given directory prefix
+  - Useful in monorepos for running only tasks in a specific subdirectory
+- **Task Skip Flag** — Skip specific tasks during multi-task runs with `--skip=TASK`
+  - Skip one or more tasks: `--skip=lint --skip=format` or `--skip=lint,format`
+  - Skipped tasks are marked successful with exit code 0
+
+### Fixed
+- Use-after-free bug in multi-task glob run loop with runtime_params
+- `--help` flag for `zr cd` command
+- `--format=json` option for `zr estimate` command
+
+### Changed
+- Standardized all user-facing error message prefixes to `[Context]: message` format
+
 ## [1.82.0] - 2026-05-04
 
 ### Added
