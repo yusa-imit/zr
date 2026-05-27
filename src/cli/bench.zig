@@ -6,7 +6,9 @@ const formatter = @import("../bench/formatter.zig");
 const BenchmarkConfig = types.BenchmarkConfig;
 
 /// Parse and execute the bench command.
-pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
+/// `inherit_json` carries the global --format=json flag (which the main dispatcher
+/// consumes before subcommand args are parsed).
+pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.Writer, ew: *std.Io.Writer, inherit_json: bool) !u8 {
     if (args.len == 0) {
         try printHelp(ew);
         return 1;
@@ -22,6 +24,7 @@ pub fn cmdBench(allocator: std.mem.Allocator, args: []const []const u8, w: *std.
 
     var config = BenchmarkConfig{
         .task_name = args[0],
+        .format = if (inherit_json) .json else .text,
     };
 
     // Parse flags
@@ -172,7 +175,7 @@ test "cmdBench help" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
     const args = &[_][]const u8{"--help"};
-    const exit_code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface);
+    const exit_code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), exit_code);
 }
 
@@ -188,7 +191,7 @@ test "cmdBench writes help to writer when --help provided" {
     const args = &[_][]const u8{"--help"};
 
     // This should FAIL until cmdBench is refactored to accept writers
-    const code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface);
+    const code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -204,6 +207,6 @@ test "cmdBench writes error to ew when unknown flag provided" {
     const args = &[_][]const u8{ "mytask", "--unknown-flag" };
 
     // This should FAIL until cmdBench is refactored to accept writers
-    const code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface);
+    const code = try cmdBench(allocator, args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
 }

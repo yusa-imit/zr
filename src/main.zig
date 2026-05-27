@@ -1504,7 +1504,7 @@ fn run(
         return conformance_cmd.cmdConformance(allocator, conformance_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "bench")) {
         const bench_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return bench_cmd.cmdBench(allocator, bench_args, effective_w, ew);
+        return bench_cmd.cmdBench(allocator, bench_args, effective_w, ew, json_output);
     } else if (std.mem.eql(u8, cmd, "doctor")) {
         const doctor_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = doctor_cmd.DoctorOptions{};
