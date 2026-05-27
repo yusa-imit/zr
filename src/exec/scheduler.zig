@@ -1443,12 +1443,16 @@ fn workerFn(ctx: WorkerCtx) void {
     // Record cache entry on success
     if (proc_result.success and ctx.cache) {
         if (ctx.cache_key) |key| {
-            // Write to local cache
+            // Write to global cache (hit marker)
             var store = cache_store.CacheStore.init(task_allocator) catch null;
             if (store) |*s| {
                 defer s.deinit();
                 s.recordHit(key) catch {};
             }
+            // Write to local project cache (.zr/cache/<key>/manifest.json)
+            var local_store = cache_storage.CacheStore.init(task_allocator);
+            defer local_store.deinit();
+            local_store.store(key, ctx.task_name, proc_result.exit_code, proc_result.duration_ms, "", "") catch {};
             // Push to remote cache (Phase 7)
             if (ctx.cache_remote_config) |remote_cfg| {
                 var remote_cache = cache_remote.RemoteCache.init(task_allocator, remote_cfg.*);

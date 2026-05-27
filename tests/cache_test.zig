@@ -1120,12 +1120,14 @@ test "880: cache with no subcommand shows usage" {
     var result = try runZr(allocator, &.{"cache"}, tmp_path);
     defer result.deinit();
 
-    // Should fail and show usage
+    // Should fail and show a hint about available subcommands
     try std.testing.expect(result.exit_code != 0);
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(std.mem.indexOf(u8, output, "Usage") != null or
         std.mem.indexOf(u8, output, "Commands") != null or
-        std.mem.indexOf(u8, output, "error") != null);
+        std.mem.indexOf(u8, output, "Hint") != null or
+        std.mem.indexOf(u8, output, "missing") != null or
+        std.mem.indexOf(u8, output, "subcommand") != null);
 }
 
 test "881: cache restore displays cached stdout on cache hit" {

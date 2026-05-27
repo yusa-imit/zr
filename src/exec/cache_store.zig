@@ -161,11 +161,80 @@ pub const CacheStore = struct {
     }
 
     /// Clear all cache entries (removes entire .zr/cache directory).
-    pub fn clearAll(_: *CacheStore) !void {
-        std.fs.cwd().deleteTree(".zr/cache") catch |err| {
-            if (err != error.FileNotFound) {
-                return err;
+    /// Returns number of entries cleared.
+    pub fn clearAll(self: *CacheStore) !usize {
+        var count: usize = 0;
+        var dir = std.fs.cwd().openDir(".zr/cache", .{ .iterate = true }) catch |err| {
+            if (err == error.FileNotFound) return 0;
+            return err;
+        };
+        defer dir.close();
+        var it = dir.iterate();
+        var names = std.ArrayList([]u8){};
+        defer names.deinit(self.allocator);
+        while (try it.next()) |entry| {
+            if (entry.kind != .directory) continue;
+            const name_copy = try self.allocator.dupe(u8, entry.name);
+            try names.append(self.allocator, name_copy);
+        }
+        for (names.items) |name| {
+            defer self.allocator.free(name);
+            dir.deleteTree(name) catch continue;
+            count += 1;
+        }
+        return count;
+    }
+
+    pub const LocalStats = struct {
+        cache_dir: []const u8, // owned by allocator
+        total_entries: usize,
+        total_size_bytes: u64,
+        allocator: std.mem.Allocator,
+
+        pub fn deinit(self: *const LocalStats) void {
+            self.allocator.free(self.cache_dir);
+        }
+    };
+
+    /// Collect statistics about the local .zr/cache directory.
+    pub fn getLocalStats(self: *const CacheStore) !LocalStats {
+        const cwd_path = try std.fs.cwd().realpathAlloc(self.allocator, ".");
+        defer self.allocator.free(cwd_path);
+        const cache_dir_path = try std.fs.path.join(self.allocator, &[_][]const u8{ cwd_path, ".zr", "cache" });
+
+        var total_entries: usize = 0;
+        var total_size: u64 = 0;
+
+        var cache_dir = std.fs.cwd().openDir(".zr/cache", .{ .iterate = true }) catch {
+            return LocalStats{
+                .cache_dir = cache_dir_path,
+                .total_entries = 0,
+                .total_size_bytes = 0,
+                .allocator = self.allocator,
+            };
+        };
+        defer cache_dir.close();
+
+        var it = cache_dir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .directory) continue;
+            total_entries += 1;
+            // Walk the entry subdirectory to sum file sizes
+            var sub_dir = cache_dir.openDir(entry.name, .{ .iterate = true }) catch continue;
+            defer sub_dir.close();
+            var sub_it = sub_dir.iterate();
+            while (try sub_it.next()) |sub_entry| {
+                if (sub_entry.kind != .file) continue;
+                const stat = sub_dir.statFile(sub_entry.name) catch continue;
+                total_size += stat.size;
             }
+        }
+
+        return LocalStats{
+            .cache_dir = cache_dir_path,
+            .total_entries = total_entries,
+            .total_size_bytes = total_size,
+            .allocator = self.allocator,
         };
     }
 

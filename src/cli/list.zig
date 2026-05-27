@@ -5,6 +5,7 @@ const common = @import("common.zig");
 const cycle_detect = @import("../graph/cycle_detect.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
 const cache_store = @import("../cache/store.zig");
+const exec_cache_store = @import("../exec/cache_store.zig");
 const cache_key_mod = @import("../exec/cache_key.zig");
 const graph_ascii = @import("../graph/ascii.zig");
 const loader = @import("../config/loader.zig");
@@ -1090,35 +1091,30 @@ pub fn cmdCache(
             try color.printSuccess(w, use_color, "Cleared {d} cached task result(s) from {d} workspace member(s)\n", .{ total_removed, members.len });
             return 0;
         }
-        var store = cache_store.CacheStore.init(allocator) catch |err| {
-            try color.printError(ew, use_color,
-                "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
-                .{err});
-            return 1;
-        };
-        defer store.deinit();
+        var local_store = exec_cache_store.CacheStore.init(allocator);
+        defer local_store.deinit();
 
-        const removed = store.clearAll() catch |err| {
+        const removed = local_store.clearAll() catch |err| {
             try color.printError(ew, use_color,
                 "cache: error while clearing cache: {}\n", .{err});
             return 1;
         };
-        try color.printSuccess(w, use_color, "Cleared {d} cached task result(s)\n", .{removed});
+        if (removed == 0) {
+            try color.printDim(w, use_color, "No cached entries found.\n", .{});
+        } else {
+            try color.printSuccess(w, use_color, "Cleared {d} cached task result(s)\n", .{removed});
+        }
         return 0;
     } else if (std.mem.eql(u8, sub, "status")) {
-        var store = cache_store.CacheStore.init(allocator) catch |err| {
-            try color.printError(ew, use_color,
-                "cache: failed to open cache directory: {}\n\n  Hint: Check permissions on ~/.zr/cache/\n",
-                .{err});
-            return 1;
-        };
-        defer store.deinit();
+        var local_store = exec_cache_store.CacheStore.init(allocator);
+        defer local_store.deinit();
 
-        const stats = store.getStats() catch |err| {
+        const stats = local_store.getLocalStats() catch |err| {
             try color.printError(ew, use_color,
                 "cache: error reading cache statistics: {}\n", .{err});
             return 1;
         };
+        defer stats.deinit();
 
         try color.printBold(w, use_color, "Cache Statistics\n", .{});
         try w.writeAll("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
@@ -1127,11 +1123,11 @@ pub fn cmdCache(
         try w.print("{s}\n", .{stats.cache_dir});
 
         try color.printDim(w, use_color, "  Entries:      ", .{});
-        try color.printSuccess(w, use_color, "{d}\n", .{stats.total_entries});
+        try w.print("{d}\n", .{stats.total_entries});
 
         try color.printDim(w, use_color, "  Total Size:   ", .{});
         const size_str = formatBytes(stats.total_size_bytes);
-        try color.printSuccess(w, use_color, "{s}\n", .{std.mem.sliceTo(&size_str, 0)});
+        try w.print("{s}\n", .{std.mem.sliceTo(&size_str, 0)});
 
         if (stats.total_entries > 0) {
             const avg_size = stats.total_size_bytes / stats.total_entries;
