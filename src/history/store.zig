@@ -124,6 +124,16 @@ pub const Store = struct {
         // all.items will be freed by errdefer/defer above (they still own their copies)
         return records;
     }
+
+    /// Delete all history records by removing the history file.
+    /// Returns true if the file existed and was removed; false if there was nothing to clear.
+    pub fn clear(self: *const Store) !bool {
+        std.fs.cwd().deleteFile(self.path) catch |err| {
+            if (err == error.FileNotFound) return false;
+            return err;
+        };
+        return true;
+    }
 };
 
 /// Parse a single history line.
@@ -322,4 +332,91 @@ test "Store: loadLast on missing file returns empty list" {
     defer loaded.deinit(allocator);
 
     try std.testing.expectEqual(@as(usize, 0), loaded.items.len);
+}
+
+test "Store.clear: removes existing history file and returns true" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const hist_path = try std.fmt.allocPrint(allocator, "{s}/test_history_clear.log", .{tmp_path});
+    defer allocator.free(hist_path);
+
+    var store = try Store.init(allocator, hist_path);
+    defer store.deinit();
+
+    // Write a record so the file exists
+    try store.append(Record{
+        .timestamp = 1000,
+        .task_name = "build",
+        .success = true,
+        .duration_ms = 100,
+        .task_count = 1,
+        .retry_count = 0,
+    });
+
+    // Verify file exists
+    {
+        var loaded = try store.loadLast(allocator, 10);
+        defer {
+            for (loaded.items) |r| r.deinit(allocator);
+            loaded.deinit(allocator);
+        }
+        try std.testing.expectEqual(@as(usize, 1), loaded.items.len);
+    }
+
+    // Clear should return true (file existed and was removed)
+    const cleared = try store.clear();
+    try std.testing.expect(cleared);
+
+    // After clear, loadLast should return empty list
+    var after = try store.loadLast(allocator, 10);
+    defer after.deinit(allocator);
+    try std.testing.expectEqual(@as(usize, 0), after.items.len);
+}
+
+test "Store.clear: returns false when no history file exists" {
+    const allocator = std.testing.allocator;
+
+    var store = try Store.init(allocator, "/tmp/zr_test_nonexistent_clear_12345.log");
+    defer store.deinit();
+
+    // Clear on non-existent file returns false
+    const cleared = try store.clear();
+    try std.testing.expect(!cleared);
+}
+
+test "Store.clear: double clear returns false on second call" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const hist_path = try std.fmt.allocPrint(allocator, "{s}/test_history_double_clear.log", .{tmp_path});
+    defer allocator.free(hist_path);
+
+    var store = try Store.init(allocator, hist_path);
+    defer store.deinit();
+
+    // Write a record so the file exists
+    try store.append(Record{
+        .timestamp = 5000,
+        .task_name = "test",
+        .success = false,
+        .duration_ms = 50,
+        .task_count = 1,
+        .retry_count = 0,
+    });
+
+    // First clear: file exists
+    try std.testing.expect(try store.clear());
+    // Second clear: file already gone
+    try std.testing.expect(!(try store.clear()));
 }

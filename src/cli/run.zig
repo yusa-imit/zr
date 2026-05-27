@@ -1011,15 +1011,17 @@ pub fn cmdHistory(
 ) !u8 {
     _ = err_writer;
 
-    // Parse flags
+    // Parse flags and subcommands
     var limit: usize = 20;
     var show_stats = false;
+    var do_clear = false;
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try w.writeAll("Usage: zr history [options] [stats]\n\n");
+            try w.writeAll("Usage: zr history [options] [subcommand]\n\n");
             try w.writeAll("Show recent task run history or aggregated statistics.\n\n");
             try w.writeAll("Subcommands:\n");
-            try w.writeAll("  stats               Show per-task aggregated statistics\n\n");
+            try w.writeAll("  stats               Show per-task aggregated statistics\n");
+            try w.writeAll("  clear               Delete all history records\n\n");
             try w.writeAll("Options:\n");
             try w.writeAll("  --limit=N           Number of recent runs to show (default: 20)\n");
             try w.writeAll("  --json              Output as JSON\n");
@@ -1028,9 +1030,12 @@ pub fn cmdHistory(
             try w.writeAll("  zr history              # Show last 20 runs\n");
             try w.writeAll("  zr history --limit=50   # Show last 50 runs\n");
             try w.writeAll("  zr history stats        # Show per-task statistics\n");
+            try w.writeAll("  zr history clear        # Clear all history\n");
             return 0;
         } else if (std.mem.eql(u8, arg, "stats")) {
             show_stats = true;
+        } else if (std.mem.eql(u8, arg, "clear")) {
+            do_clear = true;
         } else if (std.mem.startsWith(u8, arg, "--limit=")) {
             const n = std.fmt.parseInt(usize, arg["--limit=".len..], 10) catch 20;
             limit = n;
@@ -1042,6 +1047,16 @@ pub fn cmdHistory(
 
     var store = try history.Store.init(allocator, hist_path);
     defer store.deinit();
+
+    if (do_clear) {
+        const cleared = try store.clear();
+        if (cleared) {
+            try color.printSuccess(w, use_color, "✓ History cleared.\n", .{});
+        } else {
+            try color.printDim(w, use_color, "No history to clear.\n", .{});
+        }
+        return 0;
+    }
 
     if (show_stats) {
         return cmdHistoryStats(allocator, &store, w, use_color);

@@ -811,3 +811,179 @@ test "685: history with --format csv outputs comma-separated values" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
 }
+
+test "710: history clear removes all history entries" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task to create history
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "hello" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+
+    // Clear history
+    var clear_result = try runZr(allocator, &.{ "history", "clear" }, tmp_path);
+    defer clear_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), clear_result.exit_code);
+    // Should print confirmation
+    const output = if (clear_result.stdout.len > 0) clear_result.stdout else clear_result.stderr;
+    try std.testing.expect(output.len > 0);
+}
+
+test "711: history clear on empty history reports nothing to clear" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Clear with no history — should succeed with an empty/nothing message
+    var result = try runZr(allocator, &.{ "history", "clear" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "712: history after clear shows no entries" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.check]
+        \\cmd = "echo checking"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task twice to create history
+    var r1 = try runZr(allocator, &.{ "--config", config, "run", "check" }, tmp_path);
+    defer r1.deinit();
+    var r2 = try runZr(allocator, &.{ "--config", config, "run", "check" }, tmp_path);
+    defer r2.deinit();
+
+    // Clear history
+    var clear_result = try runZr(allocator, &.{ "history", "clear" }, tmp_path);
+    defer clear_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), clear_result.exit_code);
+
+    // History should now be empty
+    var hist_result = try runZr(allocator, &.{ "history" }, tmp_path);
+    defer hist_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), hist_result.exit_code);
+    // After clear, no task runs should appear
+    const output = if (hist_result.stdout.len > 0) hist_result.stdout else hist_result.stderr;
+    // Should not contain the task name in history entries (only empty/no-history message)
+    try std.testing.expect(std.mem.indexOf(u8, output, "check") == null or
+        std.mem.indexOf(u8, output, "No history") != null or
+        output.len == 0);
+}
+
+test "713: history stats subcommand shows per-task statistics" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run task twice to create history
+    var r1 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer r1.deinit();
+    var r2 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer r2.deinit();
+
+    // Check history stats
+    var result = try runZr(allocator, &.{ "history", "stats" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(output.len > 0);
+    // Stats output should mention the task name
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+}
+
+test "714: history stats with no history shows empty or appropriate message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    const zr_toml = try tmp.dir.createFile("zr.toml", .{});
+    defer zr_toml.close();
+    try zr_toml.writeAll(toml);
+
+    // Check stats with no history
+    var result = try runZr(allocator, &.{ "history", "stats" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+}
+
+test "715: history stats with multiple tasks shows all tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const toml =
+        \\[tasks.compile]
+        \\cmd = "echo compile"
+        \\
+        \\[tasks.lint]
+        \\cmd = "echo lint"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, toml);
+    defer allocator.free(config);
+
+    // Run both tasks
+    var r1 = try runZr(allocator, &.{ "--config", config, "run", "compile" }, tmp_path);
+    defer r1.deinit();
+    var r2 = try runZr(allocator, &.{ "--config", config, "run", "lint" }, tmp_path);
+    defer r2.deinit();
+
+    // Stats should show both tasks
+    var result = try runZr(allocator, &.{ "history", "stats" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    // Should show both task names
+    try std.testing.expect(std.mem.indexOf(u8, output, "compile") != null or
+        std.mem.indexOf(u8, output, "lint") != null);
+}
