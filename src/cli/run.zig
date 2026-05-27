@@ -170,6 +170,7 @@ pub fn cmdRun(
     show_env: bool,
     runtime_params: std.StringHashMap([]const u8),
     skip_tasks: []const []const u8,
+    notify_override: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -343,6 +344,7 @@ pub fn cmdRun(
         .force_run = force_run,
         .runtime_params = &resolved_params,
         .skip_tasks = skip_tasks,
+        .notify_override = notify_override,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -1405,6 +1407,7 @@ test "cmdRun: missing config returns error" {
         false, // show_env
         empty_params,
         &.{},
+        false, // notify_override
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1452,6 +1455,7 @@ test "cmdRun: unknown task returns error" {
         false, // show_env
         empty_params,
         &.{},
+        false, // notify_override
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1499,6 +1503,7 @@ test "cmdRun: dry run shows plan without executing" {
         false, // show_env
         empty_params,
         &.{},
+        false, // notify_override
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1546,6 +1551,7 @@ test "cmdRun: successful task returns 0" {
         false, // show_env
         empty_params,
         &.{},
+        false, // notify_override
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1593,6 +1599,7 @@ test "cmdRun: failing task returns 1" {
         false, // show_env
         empty_params,
         &.{},
+        false, // notify_override
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

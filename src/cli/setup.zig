@@ -110,6 +110,7 @@ pub fn cmdSetup(
             false, // show_env
             empty_params,
             &.{},
+            false, // notify_override
         );
 
         if (exit_code != 0) {

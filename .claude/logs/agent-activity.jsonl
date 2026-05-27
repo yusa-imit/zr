@@ -34,3 +34,5 @@
 {"timestamp":"2026-05-26T00:05:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement zr run --skip flag in scheduler, run.zig, and main.zig","project":"zr"}
 {"timestamp":"2026-05-26T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for --fail-fast flag in zr run","project":"zr"}
 {"timestamp":"2026-05-26T00:00:00Z","action":"subagent","agent_type":"code-reviewer","task":"Test quality audit - find weak/tautological assertions in fail_fast_test.zig, skip_test.zig, task_filtering_test.zig","project":"zr"}
+{"timestamp":"2026-05-27T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement desktop notification feature (notify, notify_on, notify_title fields)","project":"zr"}
+{"timestamp":"2026-05-27T00:00:00Z","action":"subagent","agent_type":"notification-feature-completion","task":"Complete desktop notification feature for zr tasks (v1.83.1)","project":"zr"}

@@ -25,6 +25,7 @@ const uptodate = @import("uptodate.zig");
 const env_loader = @import("../config/env_loader.zig");
 const artifacts = @import("artifacts.zig");
 const cache_storage = @import("cache_store.zig");
+const notification = @import("notification.zig");
 
 pub const SchedulerError = error{
     TaskNotFound,
@@ -77,6 +78,8 @@ pub const SchedulerConfig = struct {
     /// Tasks in this list are marked as skipped (success=true, skipped=true, exit_code=0)
     /// instead of being executed.
     skip_tasks: []const []const u8 = &.{},
+    /// Global notify override — if true, enable notifications for all tasks (v1.83.1).
+    notify_override: bool = false,
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
@@ -534,6 +537,12 @@ const WorkerCtx = struct {
     artifact_retention: ?types.ArtifactRetention,
     /// Whether to compress collected artifacts (v1.80.0).
     compress_artifacts: bool,
+    /// Whether to send desktop notification after task completion (v1.83.1).
+    notify: bool,
+    /// Notification trigger condition (v1.83.1).
+    notify_on: ?[]const u8,
+    /// Custom notification title (v1.83.1).
+    notify_title: ?[]const u8,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -1322,6 +1331,26 @@ fn workerFn(ctx: WorkerCtx) void {
         _ = executeHooks(task_allocator, ctx.task_hooks, .success, after_ctx);
     } else {
         _ = executeHooks(task_allocator, ctx.task_hooks, .failure, after_ctx);
+    }
+
+    // Send desktop notification if configured (v1.83.1)
+    if (ctx.notify) {
+        const should_notify = notification.shouldNotify(
+            if (ctx.notify_on) |no|
+                if (std.mem.eql(u8, no, "success")) notification.NotifyOn.success
+                else if (std.mem.eql(u8, no, "failure")) notification.NotifyOn.failure
+                else notification.NotifyOn.always
+            else notification.NotifyOn.always,
+            proc_result.success,
+        );
+        if (should_notify) {
+            const msg = notification.buildMessage(task_allocator, ctx.task_name, proc_result.success, proc_result.duration_ms) catch null;
+            if (msg) |m| {
+                defer task_allocator.free(m);
+                const title = ctx.notify_title orelse "zr";
+                notification.send(task_allocator, title, m, proc_result.success);
+            }
+        }
     }
 
     // Handle silent mode: if task failed, dump buffered output to stderr (v1.73.0)
@@ -2305,6 +2334,9 @@ pub fn run(
                 .artifacts = task.artifacts,
                 .artifact_retention = task.artifact_retention,
                 .compress_artifacts = task.compress_artifacts,
+                .notify = sched_config.notify_override or task.notify,
+                .notify_on = task.notify_on,
+                .notify_title = task.notify_title,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

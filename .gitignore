@@ -7,6 +7,7 @@ zig-out
 # Build artifacts
 main
 *.wasm
+*.a
 docs/*.html
 docs/*.js
 docs/*.tar

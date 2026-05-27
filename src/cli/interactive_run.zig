@@ -196,6 +196,7 @@ pub fn cmdInteractiveRun(
             false, // show_env
             empty_params,
             &.{},
+            false, // notify_override
         );
     }
 
@@ -225,6 +226,7 @@ pub fn cmdInteractiveRun(
             false, // show_env
             empty_params,
             &.{},
+            false, // notify_override
         );
     };
     defer leaveRawMode(original_termios);
@@ -261,6 +263,7 @@ pub fn cmdInteractiveRun(
         false, // show_env
         empty_params,
         &.{},
+        false, // notify_override
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

@@ -12,6 +12,7 @@ const graph_ascii = @import("graph/ascii.zig");
 const scheduler = @import("exec/scheduler.zig");
 const process = @import("exec/process.zig");
 const remote = @import("exec/remote.zig");
+const notification = @import("exec/notification.zig");
 const timeline = @import("exec/timeline.zig");
 const replay = @import("exec/replay.zig");
 const checkpoint = @import("exec/checkpoint.zig");
@@ -470,7 +471,7 @@ fn run(
             // Run default task
             var empty_params = std.StringHashMap([]const u8).init(allocator);
             defer empty_params.deinit();
-            return run_cmd.cmdRun(allocator, "default", null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{});
+            return run_cmd.cmdRun(allocator, "default", null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{}, false);
         }
 
         // Count tasks
@@ -485,7 +486,7 @@ fn run(
             const single_task = task_it.next().?;
             var empty_params2 = std.StringHashMap([]const u8).init(allocator);
             defer empty_params2.deinit();
-            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params2, &.{});
+            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params2, &.{}, false);
         } else {
             // Multiple tasks → interactive picker
             if (!std.fs.File.stdout().isTty()) {
@@ -516,7 +517,7 @@ fn run(
             if (picker_result.kind == .task) {
                 var empty_params = std.StringHashMap([]const u8).init(allocator);
                 defer empty_params.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{});
+                return run_cmd.cmdRun(allocator, picker_result.name, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{}, false);
             } else {
                 return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color, .{}, false, &.{});
             }
@@ -866,7 +867,7 @@ fn run(
         // Re-run the task (use 'run' command with the task name)
         var empty_params = std.StringHashMap([]const u8).init(allocator);
         defer empty_params.deinit();
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{});
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false);
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
@@ -908,7 +909,7 @@ fn run(
                 // Picker mode doesn't support params (empty map)
                 var empty_params = std.StringHashMap([]const u8).init(allocator);
                 defer empty_params.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{});
+                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false);
             } else {
                 // Workflow selected — delegate to workflow command
                 config.deinit();
@@ -930,6 +931,7 @@ fn run(
         }
         var run_dir_filter: ?[]const u8 = null;
         var fail_fast = false;
+        var notify_override = false;
 
         // Parse --skip flags (v1.83.0)
         var skip_tasks_list = std.ArrayList([]const u8){};
@@ -1030,6 +1032,8 @@ fn run(
                 }
             } else if (std.mem.eql(u8, arg, "--fail-fast")) {
                 fail_fast = true;
+            } else if (std.mem.eql(u8, arg, "--notify")) {
+                notify_override = true;
             } else if (std.mem.indexOf(u8, arg, "=")) |eq_pos| {
                 // Named key=value syntax
                 const key = arg[0..eq_pos];
@@ -1120,6 +1124,7 @@ fn run(
                     show_env,
                     runtime_params,
                     skip_tasks_list.items,
+                    notify_override,
                 );
                 if (exit_code != 0) {
                     all_success = false;
@@ -1134,7 +1139,7 @@ fn run(
         }
 
         // No filtering — run single task directly (existing behavior)
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
@@ -1891,6 +1896,7 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("    --exclude-tag=TAG    Exclude tasks with tag (repeatable)\n", .{});
     try w.print("    --dir=PATH           Filter tasks by working directory prefix\n", .{});
     try w.print("    --skip=TASK          Skip specific tasks (repeatable, comma-separated)\n", .{});
+    try w.print("    --notify             Enable desktop notifications for all tasks\n", .{});
     try w.print("    --fail-fast          Stop on first task failure (default: continue)\n", .{});
     try w.print("  watch <task> [path...] Watch files and auto-run task on changes\n", .{});
     try w.print("  workflow <name>        Run a workflow by name\n", .{});
@@ -2251,5 +2257,6 @@ comptime {
     _ = remote.RemoteExecutor;
     _ = tui_profiler.TuiProfiler;
     _ = cache_key.CacheKeyGenerator;
+    _ = notification.NotifyOn;
 }
 
