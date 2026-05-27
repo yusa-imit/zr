@@ -1904,14 +1904,13 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  list [pattern] [--tree] [--tags=TAG,...]  List tasks (filters: pattern, tags; --tree for dependency tree)\n", .{});
     try w.print("  which <task>           Show where a task is defined\n", .{});
     try w.print("  graph [--ascii]        Show task dependency graph (--ascii for tree view)\n", .{});
-    try w.print("  history                Show recent run history\n", .{});
+    try w.print("  history [stats|clear]  Show recent run history; stats for aggregates, clear to delete\n", .{});
     try w.print("  workspace list         List workspace member directories\n", .{});
     try w.print("  workspace run <task>   Run a task across all workspace members\n", .{});
     try w.print("  workspace sync         Build synthetic workspace from multi-repo\n", .{});
     try w.print("  affected <task>        Run task on affected workspace members\n", .{});
-    try w.print("  cache clean            Clear all cached task results\n", .{});
+    try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  cache status           Show cache statistics\n", .{});
-    try w.print("  cache clear <task>     Clear cache for specific task\n", .{});
     try w.print("  deps check             Verify all dependencies satisfy constraints\n", .{});
     try w.print("  deps install           List or install missing dependencies\n", .{});
     try w.print("  deps outdated          Show available updates for dependencies\n", .{});
