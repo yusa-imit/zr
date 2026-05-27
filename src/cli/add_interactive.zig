@@ -81,7 +81,7 @@ pub fn addTaskInteractive(
     // Check if config file exists
     const config_file = std.fs.cwd().openFile(config_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "✗ Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
+            try color.printError(ew, use_color, "Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
             return 1;
         }
         return err;
@@ -90,13 +90,13 @@ pub fn addTaskInteractive(
 
     // Try to parse config to validate it's not corrupted
     const config_content = config_file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
-        try color.printError(ew, use_color, "✗ Failed to read config file: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Failed to read config file: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer allocator.free(config_content);
 
     var config = parser.parseToml(allocator, config_content) catch |err| {
-        try color.printError(ew, use_color, "✗ Config file is corrupted or has syntax errors: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Config file is corrupted or has syntax errors: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer config.deinit();
@@ -123,14 +123,14 @@ pub fn addTaskInteractive(
         };
 
         if (name.len == 0) {
-            try color.printError(ew, use_color, "✗ Task name must not be empty\n", .{});
+            try color.printError(ew, use_color, "Task name must not be empty\n", .{});
             allocator.free(name);
             continue;
         }
 
         // Check if task name already exists
         if (config.tasks.get(name)) |_| {
-            try color.printError(ew, use_color, "✗ Task '{s}' already exists\n", .{name});
+            try color.printError(ew, use_color, "Task '{s}' already exists\n", .{name});
             allocator.free(name);
             continue;
         }
@@ -148,7 +148,7 @@ pub fn addTaskInteractive(
     while (cmd_loop) {
         const c = try prompt(allocator, w, ew, use_color, "Command");
         if (c == null or c.?.len == 0) {
-            try color.printError(ew, use_color, "✗ Command is required\n", .{});
+            try color.printError(ew, use_color, "Command is required\n", .{});
             if (c) |cmd_ptr| allocator.free(cmd_ptr);
             continue;
         }
@@ -174,7 +174,7 @@ pub fn addTaskInteractive(
                 while (it.next()) |dep| {
                     const trimmed = std.mem.trim(u8, dep, " \t\r\n");
                     if (trimmed.len > 0 and config.tasks.get(trimmed) == null) {
-                        try color.printError(ew, use_color, "✗ Dependency '{s}' does not exist\n", .{trimmed});
+                        try color.printError(ew, use_color, "Dependency '{s}' does not exist\n", .{trimmed});
                         all_valid = false;
                         break;
                     }
@@ -204,7 +204,7 @@ pub fn addTaskInteractive(
         } else {
             // Try to validate expression syntax - basic check
             if (std.mem.indexOf(u8, c.?, "{{") != null and std.mem.indexOf(u8, c.?, "}}") == null) {
-                try color.printError(ew, use_color, "✗ Invalid expression syntax: unmatched {{\n", .{});
+                try color.printError(ew, use_color, "Invalid expression syntax: unmatched {{\n", .{});
                 allocator.free(c.?);
             } else {
                 condition = c;
@@ -256,7 +256,7 @@ pub fn addTaskInteractive(
     // Ask for confirmation
     const should_save = try promptBool(allocator, w, ew, use_color, "Save task?");
     if (!should_save) {
-        try color.printError(ew, use_color, "✗ Task not saved\n", .{});
+        try color.printError(ew, use_color, "Task not saved\n", .{});
         return 1;
     }
 
@@ -270,7 +270,7 @@ pub fn addTaskInteractive(
 
     // Append to config file
     const cfg_file = std.fs.cwd().openFile(config_path, .{ .mode = .read_write }) catch |err| {
-        try color.printError(ew, use_color, "✗ Failed to open config file: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Failed to open config file: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer cfg_file.close();
@@ -280,17 +280,17 @@ pub fn addTaskInteractive(
 
     // Re-parse to validate
     const updated_content = cfg_file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
-        try color.printError(ew, use_color, "✗ Failed to re-read config: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Failed to re-read config: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer allocator.free(updated_content);
 
     _ = parser.parseToml(allocator, updated_content) catch |err| {
-        try color.printError(ew, use_color, "✗ Validation failed after save: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Validation failed after save: {s}\n", .{@errorName(err)});
         return 1;
     };
 
-    try color.printSuccess(w, use_color, "✓ Task '{s}' added successfully\n", .{task_name});
+    try color.printSuccess(w, use_color, "Task '{s}' added successfully\n", .{task_name});
 
     return 0;
 }
@@ -320,7 +320,7 @@ pub fn addWorkflowInteractive(
     // Check if config file exists
     const config_file = std.fs.cwd().openFile(config_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "✗ Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
+            try color.printError(ew, use_color, "Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
             return 1;
         }
         return err;
@@ -329,13 +329,13 @@ pub fn addWorkflowInteractive(
 
     // Try to parse config to validate it's not corrupted
     const config_content = config_file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
-        try color.printError(ew, use_color, "✗ Failed to read config file: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Failed to read config file: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer allocator.free(config_content);
 
     var config = parser.parseToml(allocator, config_content) catch |err| {
-        try color.printError(ew, use_color, "✗ Config file is corrupted or has syntax errors: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Config file is corrupted or has syntax errors: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer config.deinit();
@@ -362,7 +362,7 @@ pub fn addWorkflowInteractive(
         };
 
         if (name.len == 0) {
-            try color.printError(ew, use_color, "✗ Workflow name must not be empty\n", .{});
+            try color.printError(ew, use_color, "Workflow name must not be empty\n", .{});
             allocator.free(name);
             continue;
         }
@@ -479,11 +479,11 @@ pub fn addWorkflowInteractive(
     defer allocator.free(updated_content);
 
     _ = parser.parseToml(allocator, updated_content) catch |err| {
-        try color.printError(ew, use_color, "✗ Validation failed after save: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Validation failed after save: {s}\n", .{@errorName(err)});
         return 1;
     };
 
-    try color.printSuccess(w, use_color, "✓ Workflow '{s}' added successfully\n", .{workflow_name});
+    try color.printSuccess(w, use_color, "Workflow '{s}' added successfully\n", .{workflow_name});
 
     return 0;
 }

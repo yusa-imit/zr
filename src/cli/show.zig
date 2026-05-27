@@ -755,7 +755,7 @@ pub fn cmdShow(
     // Cache
     if (task.cache) {
         try color.printBold(w, use_color, "Caching:\n", .{});
-        try color.printSuccess(w, use_color, "  Enabled ✓\n\n", .{});
+        try color.printSuccess(w, use_color, "  Enabled\n\n", .{});
     }
 
     // Toolchain

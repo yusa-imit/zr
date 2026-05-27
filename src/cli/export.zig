@@ -26,7 +26,7 @@ pub fn cmdExport(
                 task_name = args[i + 1];
                 i += 1;
             } else {
-                try color.printError(ew, use_color, "✗ [Export]: --task requires a task name\n\n  Hint: zr export --task TASK_NAME\n", .{});
+                try color.printError(ew, use_color, "[Export]: --task requires a task name\n\n  Hint: zr export --task TASK_NAME\n", .{});
                 return 1;
             }
         } else if (std.mem.eql(u8, arg, "--shell")) {
@@ -41,7 +41,7 @@ pub fn cmdExport(
                 } else if (std.mem.eql(u8, shell_str, "powershell")) {
                     shell_format = .powershell;
                 } else {
-                    try color.printError(ew, use_color, "✗ [Export]: unknown shell '{s}'\n\n  Hint: supported shells: bash, zsh, fish, powershell\n", .{shell_str});
+                    try color.printError(ew, use_color, "[Export]: unknown shell '{s}'\n\n  Hint: supported shells: bash, zsh, fish, powershell\n", .{shell_str});
                     return 1;
                 }
                 i += 1;

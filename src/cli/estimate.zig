@@ -343,11 +343,11 @@ fn printEstimation(
     // Success rate
     try color.printBold(w, use_color, "\n  Reliability:\n", .{});
     if (success_rate >= 95.0) {
-        try color.printSuccess(w, use_color, "    Success Rate:  {d:.1}% ✓\n", .{success_rate});
+        try color.printSuccess(w, use_color, "    Success Rate:  {d:.1}%\n", .{success_rate});
     } else if (success_rate >= 80.0) {
-        try color.printWarning(w, use_color, "    Success Rate:  {d:.1}% ⚠\n", .{success_rate});
+        try color.printWarning(w, use_color, "    Success Rate:  {d:.1}%\n", .{success_rate});
     } else {
-        try color.printError(w, use_color, "    Success Rate:  {d:.1}% ✗\n", .{success_rate});
+        try color.printError(w, use_color, "    Success Rate:  {d:.1}%\n", .{success_rate});
     }
 
     // Anomaly threshold hint

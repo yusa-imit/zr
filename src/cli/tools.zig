@@ -292,7 +292,7 @@ fn cmdToolsOutdated(
             try color.printSuccess(w, use_color, "{s: <12}", .{latest_str});
             try color.printDim(w, use_color, " (update available)\n", .{});
         } else {
-            try color.printSuccess(w, use_color, "✓ ", .{});
+            try color.printSuccess(w, use_color, "", .{});
             try color.printDim(w, use_color, "{s: <10} {s: <12}", .{ kind.toString(), curr_str });
             try color.printDim(w, use_color, " (up to date)\n", .{});
         }
@@ -312,7 +312,7 @@ fn cmdToolsOutdated(
         return 1; // Exit code 1 to indicate updates available
     } else {
         try w.writeAll("\n");
-        try color.printSuccess(w, use_color, "  All installed toolchains are up to date!\n", .{});
+        try color.printSuccess(w, use_color, "All installed toolchains are up to date!\n", .{});
         return 0;
     }
 }
@@ -420,7 +420,7 @@ fn cmdToolsUpgrade(
                 };
 
                 try w.print(" ", .{});
-                try color.printSuccess(w, use_color, "✓", .{});
+                try color.printSuccess(w, use_color, "", .{});
 
                 // Cleanup old versions if requested
                 if (cleanup_old) {
@@ -436,7 +436,7 @@ fn cmdToolsUpgrade(
                 try color.printDim(w, use_color, " (update available)\n", .{});
             }
         } else {
-            try color.printSuccess(w, use_color, "✓ ", .{});
+            try color.printSuccess(w, use_color, "", .{});
             try color.printDim(w, use_color, "{s: <10} {s: <12}", .{ kind.toString(), curr_str });
             try color.printDim(w, use_color, " (up to date)\n", .{});
         }
@@ -452,9 +452,9 @@ fn cmdToolsUpgrade(
 
     if (check_updates) {
         if (upgraded_count > 0) {
-            try color.printSuccess(w, use_color, "  ✓ Successfully upgraded {d} toolchain(s)!\n", .{upgraded_count});
+            try color.printSuccess(w, use_color, "  Successfully upgraded {d} toolchain(s)!\n", .{upgraded_count});
         } else if (has_outdated) {
-            try color.printError(ew, use_color, "  ✗ No toolchains were upgraded (all upgrades failed).\n", .{});
+            try color.printError(ew, use_color, "  No toolchains were upgraded (all upgrades failed).\n", .{});
             return 1;
         } else {
             try color.printSuccess(w, use_color, "  All installed toolchains are up to date!\n", .{});
