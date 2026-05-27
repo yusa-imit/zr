@@ -53,7 +53,7 @@ pub fn send(allocator: std.mem.Allocator, title: []const u8, message: []const u8
     } else if (builtin.os.tag == .linux) {
         // Linux: notify-send
         var proc = std.process.Child.init(&[_][]const u8{ "notify-send", title, message }, allocator);
-        _ = proc.run() catch return;
+        _ = proc.spawnAndWait() catch return;
     }
     // Windows or unsupported platform: no-op
 }
