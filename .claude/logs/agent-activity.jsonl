@@ -36,3 +36,6 @@
 {"timestamp":"2026-05-26T00:00:00Z","action":"subagent","agent_type":"code-reviewer","task":"Test quality audit - find weak/tautological assertions in fail_fast_test.zig, skip_test.zig, task_filtering_test.zig","project":"zr"}
 {"timestamp":"2026-05-27T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement desktop notification feature (notify, notify_on, notify_title fields)","project":"zr"}
 {"timestamp":"2026-05-27T00:00:00Z","action":"subagent","agent_type":"notification-feature-completion","task":"Complete desktop notification feature for zr tasks (v1.83.1)","project":"zr"}
+{"timestamp":"2026-05-27T10:38:10Z","action":"subagent","agent_type":"test-writer","task":"Write failing tests for formatRelativeTime and cmdHistory signature update","project":"zr"}
+{"timestamp":"2026-05-27T16:14:06Z","action":"subagent","agent_type":"test-writer","task":"Write unit and integration tests for history clear subcommand","project":"zr"}
+{"timestamp":"2026-05-28T07:30:00Z","action":"subagent","agent_type":"Explore","task":"Investigate CI failures on main branch","project":"zr"}
