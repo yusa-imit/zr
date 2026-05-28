@@ -1051,7 +1051,7 @@ pub fn cmdHistory(
     if (do_clear) {
         const cleared = try store.clear();
         if (cleared) {
-            try color.printSuccess(w, use_color, "✓ History cleared.\n", .{});
+            try color.printSuccess(w, use_color, "History cleared.\n", .{});
         } else {
             try color.printDim(w, use_color, "No history to clear.\n", .{});
         }

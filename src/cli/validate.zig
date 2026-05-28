@@ -39,11 +39,11 @@ pub fn cmdValidate(
         use_color,
     ) catch {
         // Loading failed - error already printed by loadConfig
-        try color.printError(err_writer, use_color, "\n✗ Configuration validation failed\n", .{});
+        try color.printError(err_writer, use_color, "\nConfiguration validation failed\n", .{});
         return 1;
     } orelse {
         // loadConfig returned null - error already printed
-        try color.printError(err_writer, use_color, "\n✗ Configuration validation failed\n", .{});
+        try color.printError(err_writer, use_color, "\nConfiguration validation failed\n", .{});
         return 1;
     };
     defer config.deinit();
@@ -474,7 +474,7 @@ pub fn cmdValidate(
     try w.writeAll("\n");
 
     if (error_count == 0 and warning_count == 0) {
-        try color.printSuccess(w, use_color, "✓ Configuration valid\n\n", .{});
+        try color.printSuccess(w, use_color, "Configuration valid\n\n", .{});
 
         const task_count_summary = config.tasks.count();
         const workflow_count = config.workflows.count();
@@ -491,7 +491,7 @@ pub fn cmdValidate(
     } else if (error_count == 0) {
         // Only warnings - in strict mode, treat warnings as errors
         if (options.strict) {
-            try color.printError(w, use_color, "✗ Configuration validation failed (--strict mode)\n\n", .{});
+            try color.printError(w, use_color, "Configuration validation failed (--strict mode)\n\n", .{});
             if (use_color) try w.writeAll(color.Code.bright_yellow);
             try w.print("  Warnings: {d} (treated as errors)\n", .{warning_count});
             if (use_color) try w.writeAll(color.Code.reset);
@@ -506,7 +506,7 @@ pub fn cmdValidate(
         }
     } else {
         // Has errors
-        try color.printError(w, use_color, "✗ Configuration validation failed\n\n", .{});
+        try color.printError(w, use_color, "Configuration validation failed\n\n", .{});
         try color.printError(w, use_color, "  Errors:   {d}\n", .{error_count});
 
         if (warning_count > 0) {

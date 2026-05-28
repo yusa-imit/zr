@@ -450,9 +450,13 @@ pub fn cmdWorkspaceRun(
             json_emitted += 1;
         } else {
             if (result.total_success) {
-                try color.printSuccess(w, use_color, "  ✓ {s}\n", .{member_path});
+                if (use_color) try w.writeAll(color.Code.bright_green);
+                try w.print("  ✓ {s}\n", .{member_path});
+                if (use_color) try w.writeAll(color.Code.reset);
             } else {
-                try color.printError(ew, use_color, "  ✗ {s}: task failed\n", .{member_path});
+                if (use_color) try ew.writeAll(color.Code.bright_red);
+                try ew.print("  ✗ {s}: task failed\n", .{member_path});
+                if (use_color) try ew.writeAll(color.Code.reset);
             }
         }
     }
@@ -603,9 +607,13 @@ pub fn cmdWorkspaceRunFiltered(
             json_emitted += 1;
         } else {
             if (result.total_success) {
-                try color.printSuccess(w, use_color, "  ✓ {s}\n", .{member_path});
+                if (use_color) try w.writeAll(color.Code.bright_green);
+                try w.print("  ✓ {s}\n", .{member_path});
+                if (use_color) try w.writeAll(color.Code.reset);
             } else {
-                try color.printError(ew, use_color, "  ✗ {s}: task failed\n", .{member_path});
+                if (use_color) try ew.writeAll(color.Code.bright_red);
+                try ew.print("  ✗ {s}: task failed\n", .{member_path});
+                if (use_color) try ew.writeAll(color.Code.reset);
             }
         }
     }
@@ -862,7 +870,7 @@ pub fn cmdWorkspaceSync(
         return 1;
     };
 
-    try color.printSuccess(w, use_color, "\n✓ Synthetic workspace '{s}' created successfully\n", .{workspace.name});
+    try color.printSuccess(w, use_color, "\nSynthetic workspace '{s}' created successfully\n", .{workspace.name});
     try w.print("  Root: {s}\n", .{workspace.root_path});
     try w.print("  Members: {d}\n", .{workspace.members.len});
 

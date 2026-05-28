@@ -259,9 +259,9 @@ fn cmdRepoStatus(
 
     for (statuses) |s| {
         if (!s.exists) {
-            try color.printError(ew, use_color, "  ✗ ", .{});
-            try color.printBold(w, use_color, "{s:<20}", .{s.name});
-            try color.printError(ew, use_color, " not found\n", .{});
+            if (use_color) try w.writeAll(color.Code.red);
+            try w.print("  ✗ {s:<20} not found\n", .{s.name});
+            if (use_color) try w.writeAll(color.Code.reset);
             has_issues = true;
             continue;
         }

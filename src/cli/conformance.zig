@@ -78,7 +78,7 @@ pub fn cmdConformance(
     // Print results
     if (result.violations.len == 0) {
         try w.print("\n", .{});
-        try output.printSuccess(w, use_color, "✓ All conformance checks passed!\n", .{});
+        try output.printSuccess(w, use_color, "All conformance checks passed!\n", .{});
         return 0;
     }
 
@@ -130,7 +130,7 @@ pub fn cmdConformance(
 
         if (fix_result.fixed_count > 0) {
             try w.print("\n", .{});
-            try output.printSuccess(w, use_color, "✓ Successfully fixed {d} violation(s).\n", .{fix_result.fixed_count});
+            try output.printSuccess(w, use_color, "Successfully fixed {d} violation(s).\n", .{fix_result.fixed_count});
             return 0;
         }
     }

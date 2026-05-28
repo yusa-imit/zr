@@ -451,14 +451,14 @@ pub fn cmdMonitor(
     // Load config
     const resolved_path = config_path orelse "zr.toml";
     var config = loader.loadFromFile(allocator, resolved_path) catch |err| {
-        try color_mod.printError(ew, use_color, "✗ monitor: Failed to load config: {}\n", .{err});
+        try color_mod.printError(ew, use_color, "monitor: Failed to load config: {}\n", .{err});
         return 1;
     };
     defer config.deinit();
 
     // Find workflow
     const workflow = config.workflows.get(workflow_name) orelse {
-        try color_mod.printError(ew, use_color, "✗ monitor: Workflow '{s}' not found\n", .{workflow_name});
+        try color_mod.printError(ew, use_color, "monitor: Workflow '{s}' not found\n", .{workflow_name});
         return 1;
     };
 
@@ -501,7 +501,7 @@ pub fn cmdMonitor(
         ) catch |err| {
             done.store(true, .release);
             monitor_thread.join();
-            try color_mod.printError(ew, use_color, "✗ monitor: Stage '{s}' failed: {}\n", .{ stage.name, err });
+            try color_mod.printError(ew, use_color, "monitor: Stage '{s}' failed: {}\n", .{ stage.name, err });
             return 1;
         };
         defer result.deinit(allocator);
@@ -519,9 +519,9 @@ pub fn cmdMonitor(
 
     // Show final summary
     if (all_success) {
-        try color_mod.printSuccess(ew, use_color, "\n✓ Workflow completed successfully\n", .{});
+        try color_mod.printSuccess(ew, use_color, "\nWorkflow completed successfully\n", .{});
     } else {
-        try color_mod.printError(ew, use_color, "\n✗ Workflow failed\n", .{});
+        try color_mod.printError(ew, use_color, "\nWorkflow failed\n", .{});
     }
 
     return if (all_success) 0 else 1;

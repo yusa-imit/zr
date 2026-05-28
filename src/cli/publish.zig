@@ -27,38 +27,38 @@ pub fn cmdPublish(
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--bump")) {
             if (i + 1 >= args.len) {
-                try output.printError(ew, use_color, "✗ [Publish]: --bump requires a value\n\n  Hint: Use --bump major, --bump minor, or --bump patch\n", .{});
+                try output.printError(ew, use_color, "[Publish]: --bump requires a value\n\n  Hint: Use --bump major, --bump minor, or --bump patch\n", .{});
                 return 1;
             }
             i += 1;
             bump_type = types.BumpType.fromString(args[i]) orelse {
-                try output.printError(ew, use_color, "✗ [Publish]: Invalid bump type '{s}'\n\n  Hint: Use major, minor, or patch\n", .{args[i]});
+                try output.printError(ew, use_color, "[Publish]: Invalid bump type '{s}'\n\n  Hint: Use major, minor, or patch\n", .{args[i]});
                 return 1;
             };
         } else if (std.mem.eql(u8, arg, "--package")) {
             if (i + 1 >= args.len) {
-                try output.printError(ew, use_color, "✗ [Publish]: --package requires a value\n\n  Hint: zr publish --package my-package\n", .{});
+                try output.printError(ew, use_color, "[Publish]: --package requires a value\n\n  Hint: zr publish --package my-package\n", .{});
                 return 1;
             }
             i += 1;
             package_name = args[i];
         } else if (std.mem.eql(u8, arg, "--config")) {
             if (i + 1 >= args.len) {
-                try output.printError(ew, use_color, "✗ [Publish]: --config requires a path argument\n\n  Hint: zr publish --config path/to/zr.toml\n", .{});
+                try output.printError(ew, use_color, "[Publish]: --config requires a path argument\n\n  Hint: zr publish --config path/to/zr.toml\n", .{});
                 return 1;
             }
             i += 1;
             config_path = args[i];
         } else if (std.mem.eql(u8, arg, "--changelog")) {
             if (i + 1 >= args.len) {
-                try output.printError(ew, use_color, "✗ [Publish]: --changelog requires a path argument\n\n  Hint: zr publish --changelog CHANGELOG.md\n", .{});
+                try output.printError(ew, use_color, "[Publish]: --changelog requires a path argument\n\n  Hint: zr publish --changelog CHANGELOG.md\n", .{});
                 return 1;
             }
             i += 1;
             changelog_path = args[i];
         } else if (std.mem.eql(u8, arg, "--since")) {
             if (i + 1 >= args.len) {
-                try output.printError(ew, use_color, "✗ [Publish]: --since requires a git reference\n\n  Hint: zr publish --since v1.0.0\n", .{});
+                try output.printError(ew, use_color, "[Publish]: --since requires a git reference\n\n  Hint: zr publish --since v1.0.0\n", .{});
                 return 1;
             }
             i += 1;
@@ -69,14 +69,14 @@ pub fn cmdPublish(
             try printPublishHelp(w, ew, use_color);
             return 0;
         } else {
-            try output.printError(ew, use_color, "✗ [Publish]: Unknown option '{s}'\n\n  Hint: zr publish --help\n", .{arg});
+            try output.printError(ew, use_color, "[Publish]: Unknown option '{s}'\n\n  Hint: zr publish --help\n", .{arg});
             return 1;
         }
     }
 
     // Load config
     const cfg = loader.loadFromFile(allocator, config_path) catch |err| {
-        try output.printError(ew, use_color, "✗ [Publish]: Failed to load config from {s}\n\n  Error: {s}\n  Hint: Check that {s} exists and is valid TOML\n", .{ config_path, @errorName(err), config_path });
+        try output.printError(ew, use_color, "[Publish]: Failed to load config from {s}\n\n  Error: {s}\n  Hint: Check that {s} exists and is valid TOML\n", .{ config_path, @errorName(err), config_path });
         return 1;
     };
     defer {
@@ -86,7 +86,7 @@ pub fn cmdPublish(
 
     // Get versioning config
     const versioning_cfg = cfg.versioning orelse {
-        try output.printError(ew, use_color, "✗ [Publish]: No [versioning] section found in config\n\n", .{});
+        try output.printError(ew, use_color, "[Publish]: No [versioning] section found in config\n\n", .{});
         try ew.print("  Add a [versioning] section to your zr.toml:\n", .{});
         try ew.print("  [versioning]\n", .{});
         try ew.print("  mode = \"independent\"  # or \"fixed\"\n", .{});
@@ -103,7 +103,7 @@ pub fn cmdPublish(
 
     // Read current version
     const current_version = bump.readPackageJsonVersion(allocator, pkg_json_path) catch |err| {
-        try output.printError(ew, use_color, "✗ [Publish]: Failed to read {s}\n\n  Error: {s}\n  Hint: Ensure {s} exists and contains a valid version field\n", .{ pkg_json_path, @errorName(err), pkg_json_path });
+        try output.printError(ew, use_color, "[Publish]: Failed to read {s}\n\n  Error: {s}\n  Hint: Ensure {s} exists and contains a valid version field\n", .{ pkg_json_path, @errorName(err), pkg_json_path });
         return 1;
     };
     defer allocator.free(current_version);
@@ -126,14 +126,14 @@ pub fn cmdPublish(
             }
 
             if (commits.items.len == 0) {
-                try output.printError(ew, use_color, "✗ [Publish]: No commits found since {s}\n\n  Hint: Ensure there are new commits to release\n", .{ref});
+                try output.printError(ew, use_color, "[Publish]: No commits found since {s}\n\n  Hint: Ensure there are new commits to release\n", .{ref});
                 return 1;
             }
 
             try output.printInfo(w, use_color, "Found {d} commits since {s}\n", .{ commits.items.len, ref });
             break :blk conventional.determineBumpType(commits.items);
         } else {
-            try output.printError(ew, use_color, "✗ [Publish]: --bump is required when convention is 'manual'\n\n  Hint: zr publish --bump patch\n", .{});
+            try output.printError(ew, use_color, "[Publish]: --bump is required when convention is 'manual'\n\n  Hint: zr publish --bump patch\n", .{});
             return 1;
         }
     };
@@ -157,7 +157,7 @@ pub fn cmdPublish(
 
     // Update package.json
     try bump.writePackageJsonVersion(allocator, pkg_json_path, new_version);
-    try output.printSuccess(w, use_color, "✓ Updated {s}\n", .{pkg_json_path});
+    try output.printSuccess(w, use_color, "Updated {s}\n", .{pkg_json_path});
 
     // Generate and update CHANGELOG.md
     if (versioning_cfg.convention == .conventional) {
@@ -175,7 +175,7 @@ pub fn cmdPublish(
             defer allocator.free(changelog_section);
 
             try changelog.prependToChangelog(allocator, changelog_path, changelog_section);
-            try output.printSuccess(w, use_color, "✓ Updated {s}\n", .{changelog_path});
+            try output.printSuccess(w, use_color, "Updated {s}\n", .{changelog_path});
         }
     }
 
@@ -187,7 +187,7 @@ pub fn cmdPublish(
         .allocator = allocator,
         .argv = &[_][]const u8{ "git", "tag", tag_name },
     }) catch |err| {
-        try output.printError(ew, use_color, "✗ [Publish]: Failed to create git tag\n\n  Error: {s}\n", .{@errorName(err)});
+        try output.printError(ew, use_color, "[Publish]: Failed to create git tag\n\n  Error: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer {
@@ -196,9 +196,9 @@ pub fn cmdPublish(
     }
 
     if (tag_result.term.Exited != 0) {
-        try output.printWarning(w, use_color, "⚠ Failed to create git tag: {s}\n", .{tag_result.stderr});
+        try output.printWarning(w, use_color, "Failed to create git tag: {s}\n", .{tag_result.stderr});
     } else {
-        try output.printSuccess(w, use_color, "✓ Created git tag {s}\n", .{tag_name});
+        try output.printSuccess(w, use_color, "Created git tag {s}\n", .{tag_name});
     }
 
     try w.print("\n", .{});
