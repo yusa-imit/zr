@@ -1383,6 +1383,29 @@ fn workerFn(ctx: WorkerCtx) void {
         _ = executeHooks(task_allocator, ctx.task_hooks, .timeout, after_ctx);
     } else if (proc_result.success) {
         _ = executeHooks(task_allocator, ctx.task_hooks, .success, after_ctx);
+
+        // Collect artifacts after successful task execution (v1.80.0)
+        if (ctx.artifacts) |artifact_patterns| {
+            if (artifact_patterns.len > 0) {
+                const artifact_task = loader.Task{
+                    .name = ctx.task_name,
+                    .cmd = ctx.cmd,
+                    .cwd = ctx.cwd,
+                    .deps = &.{},
+                    .deps_serial = &.{},
+                    .env = &.{},
+                    .artifacts = @constCast(artifact_patterns),
+                    .artifact_retention = ctx.artifact_retention,
+                    .compress_artifacts = ctx.compress_artifacts,
+                };
+                artifacts.collectArtifacts(task_allocator, artifact_task, proc_result.exit_code, proc_result.duration_ms) catch |err| {
+                    std.debug.print("Warning: Failed to collect artifacts for task '{s}': {}\n", .{ ctx.task_name, err });
+                };
+                artifacts.enforceRetentionPolicy(task_allocator, artifact_task) catch |err| {
+                    std.debug.print("Warning: Failed to enforce retention policy for task '{s}': {}\n", .{ ctx.task_name, err });
+                };
+            }
+        }
     } else {
         _ = executeHooks(task_allocator, ctx.task_hooks, .failure, after_ctx);
     }

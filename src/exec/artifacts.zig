@@ -277,16 +277,16 @@ fn getGitCommit(allocator: std.mem.Allocator) ![]const u8 {
     try child.spawn();
 
     const stdout = try child.stdout.?.readToEndAlloc(allocator, 1024);
-    errdefer allocator.free(stdout);
+    defer allocator.free(stdout);
 
     const term = try child.wait();
     if (term != .Exited or term.Exited != 0) {
-        allocator.free(stdout);
         return error.NotInGitRepo;
     }
 
-    // Trim newline
-    return std.mem.trim(u8, stdout, &std.ascii.whitespace);
+    // Dupe the trimmed string so the caller can free it independently
+    const trimmed = std.mem.trim(u8, stdout, &std.ascii.whitespace);
+    return try allocator.dupe(u8, trimmed);
 }
 
 /// Write manifest to JSON file
