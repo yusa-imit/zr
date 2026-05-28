@@ -401,7 +401,7 @@ pub fn addWorkflowInteractive(
         while (it.next()) |task_name| {
             const trimmed = std.mem.trim(u8, task_name, " \t\r\n");
             if (trimmed.len > 0 and config.tasks.get(trimmed) == null) {
-                try color.printError(ew, use_color, "✗ Task '{s}' does not exist\n", .{trimmed});
+                try color.printError(ew, use_color, "Task '{s}' does not exist\n", .{trimmed});
                 all_valid = false;
                 break;
             }
@@ -416,7 +416,7 @@ pub fn addWorkflowInteractive(
     }
 
     if (stages.items.len == 0) {
-        try color.printError(ew, use_color, "✗ Workflow must have at least one stage\n", .{});
+        try color.printError(ew, use_color, "Workflow must have at least one stage\n", .{});
         return 1;
     }
 
@@ -449,7 +449,7 @@ pub fn addWorkflowInteractive(
     // Ask for confirmation
     const should_save = try promptBool(allocator, w, ew, use_color, "Save workflow?");
     if (!should_save) {
-        try color.printError(ew, use_color, "✗ Workflow not saved\n", .{});
+        try color.printError(ew, use_color, "Workflow not saved\n", .{});
         return 1;
     }
 
@@ -463,7 +463,7 @@ pub fn addWorkflowInteractive(
 
     // Append to config file
     const cfg_file = std.fs.cwd().openFile(config_path, .{ .mode = .read_write }) catch |err| {
-        try color.printError(ew, use_color, "✗ Failed to open config file: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Failed to open config file: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer cfg_file.close();
@@ -473,7 +473,7 @@ pub fn addWorkflowInteractive(
 
     // Re-parse to validate
     const updated_content = cfg_file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
-        try color.printError(ew, use_color, "✗ Failed to re-read config: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "Failed to re-read config: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer allocator.free(updated_content);

@@ -47,7 +47,7 @@ pub fn cmdClean(
             try printHelp(w, use_color);
             return 0;
         } else {
-            try color.printError(ew, use_color, "✗ clean: Unknown option: {s}\n\n", .{arg});
+            try color.printError(ew, use_color, "clean: Unknown option: {s}\n\n", .{arg});
             try printHelp(w, use_color);
             return 1;
         }
@@ -81,13 +81,13 @@ pub fn cmdClean(
 
         if (opts.dry_run) {
             var store = cache_store.CacheStore.init(allocator) catch |err| {
-                try color.printError(ew, use_color, "✗ clean: Failed to access cache: {}\n", .{err});
+                try color.printError(ew, use_color, "clean: Failed to access cache: {}\n", .{err});
                 return 1;
             };
             defer store.deinit();
 
             const stats = store.getStats() catch |err| {
-                try color.printError(ew, use_color, "✗ clean: Failed to read cache stats: {}\n", .{err});
+                try color.printError(ew, use_color, "clean: Failed to read cache stats: {}\n", .{err});
                 return 1;
             };
 
@@ -96,13 +96,13 @@ pub fn cmdClean(
             total_size += stats.total_size_bytes;
         } else {
             var store = cache_store.CacheStore.init(allocator) catch |err| {
-                try color.printError(ew, use_color, "✗ clean: Failed to open cache: {}\n", .{err});
+                try color.printError(ew, use_color, "clean: Failed to open cache: {}\n", .{err});
                 return 1;
             };
             defer store.deinit();
 
             const removed = store.clearAll() catch |err| {
-                try color.printError(ew, use_color, "✗ clean: Error clearing cache: {}\n", .{err});
+                try color.printError(ew, use_color, "clean: Error clearing cache: {}\n", .{err});
                 return 1;
             };
 
@@ -116,7 +116,7 @@ pub fn cmdClean(
         try color.printBold(w, use_color, "Cleaning execution history...\n", .{});
 
         const home = platform.getenv("HOME") orelse platform.getenv("USERPROFILE") orelse {
-            try color.printError(ew, use_color, "✗ clean: Failed to get home directory\n", .{});
+            try color.printError(ew, use_color, "clean: Failed to get home directory\n", .{});
             return 1;
         };
 
@@ -141,7 +141,7 @@ pub fn cmdClean(
                     try color.printDim(w, use_color, "  No history file found\n", .{});
                 },
                 else => {
-                    try color.printError(ew, use_color, "✗ clean: Failed to delete history: {}\n", .{err});
+                    try color.printError(ew, use_color, "clean: Failed to delete history: {}\n", .{err});
                     return 1;
                 },
             };
@@ -155,7 +155,7 @@ pub fn cmdClean(
         try color.printBold(w, use_color, "Cleaning toolchains...\n", .{});
 
         const home = platform.getenv("HOME") orelse platform.getenv("USERPROFILE") orelse {
-            try color.printError(ew, use_color, "✗ clean: Failed to get home directory\n", .{});
+            try color.printError(ew, use_color, "clean: Failed to get home directory\n", .{});
             return 1;
         };
 
@@ -186,7 +186,7 @@ pub fn cmdClean(
             total_size += size_total;
         } else {
             std.fs.cwd().deleteTree(toolchains_path) catch |err| {
-                try color.printError(ew, use_color, "✗ clean: Failed to delete toolchains: {}\n", .{err});
+                try color.printError(ew, use_color, "clean: Failed to delete toolchains: {}\n", .{err});
                 return 1;
             };
 
@@ -199,7 +199,7 @@ pub fn cmdClean(
         try color.printBold(w, use_color, "Cleaning plugins...\n", .{});
 
         const home = platform.getenv("HOME") orelse platform.getenv("USERPROFILE") orelse {
-            try color.printError(ew, use_color, "✗ clean: Failed to get home directory\n", .{});
+            try color.printError(ew, use_color, "clean: Failed to get home directory\n", .{});
             return 1;
         };
 
@@ -229,7 +229,7 @@ pub fn cmdClean(
             total_size += size_total;
         } else {
             std.fs.cwd().deleteTree(plugins_path) catch |err| {
-                try color.printError(ew, use_color, "✗ clean: Failed to delete plugins: {}\n", .{err});
+                try color.printError(ew, use_color, "clean: Failed to delete plugins: {}\n", .{err});
                 return 1;
             };
 
@@ -250,7 +250,7 @@ pub fn cmdClean(
         } else {
             if (try multirepo_synthetic.isSyntheticWorkspaceActive(allocator)) {
                 multirepo_synthetic.clearSyntheticWorkspace(allocator) catch |err| {
-                    try color.printError(ew, use_color, "✗ clean: Failed to clear synthetic workspace: {}\n", .{err});
+                    try color.printError(ew, use_color, "clean: Failed to clear synthetic workspace: {}\n", .{err});
                     return 1;
                 };
                 try color.printSuccess(w, use_color, "  Cleared synthetic workspace metadata\n", .{});

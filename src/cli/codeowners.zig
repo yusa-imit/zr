@@ -139,7 +139,7 @@ fn cmdCodeownersGenerate(
         return 1;
     };
 
-    try color.printSuccess(w, use_color, "✓ Generated {s}\n", .{final_output_path});
+    try color.printSuccess(w, use_color, "Generated {s}\n", .{final_output_path});
 
     return 0;
 }

@@ -188,7 +188,7 @@ pub const ConfigEditor = struct {
         try file.writeAll(toml);
         try file.writeAll("\n");
 
-        try color_mod.printSuccess(w, use_color, "✓ Added to zr.toml\n", .{});
+        try color_mod.printSuccess(w, use_color, "Added to zr.toml\n", .{});
         return 0;
     }
 
