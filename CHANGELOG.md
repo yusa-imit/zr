@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Removed doubled status symbols (`✗ ✗`, `✓ ✓`) from all CLI error/success messages — `printError`/`printSuccess` already prepend the symbol, format strings should not include it
+- Added `help`, `man`, `artifacts`, `template`, and `ci` commands to `--help` output (they existed but were undocumented)
+
+### Changed
+- Updated README version badge and documentation to v1.83.0
+- Added desktop notification (`notify`/`notify_on`/`notify_title`) and `--skip`/`--dir`/`--notify` flag examples to README
+
 ## [1.83.0] - 2026-05-27
 
 ### Added
