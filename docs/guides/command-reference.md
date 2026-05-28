@@ -105,6 +105,11 @@ zr run build --monitor
 - `--profile, -p <name>` — Activate profile
 - `--jobs, -j <N>` — Max parallel tasks
 - `--monitor, -m` — Live resource monitoring
+- `--skip=TASK` — Skip specific task(s) (repeatable, or comma-separated: `--skip=lint,format`)
+- `--dir=PATH` — Filter to tasks whose `cwd` matches the given directory prefix
+- `--notify` — Enable desktop notifications for all tasks in this run
+- `--tag=TAG` — Filter tasks by tag (repeatable, AND logic)
+- `--exclude-tag=TAG` — Exclude tasks with tag (repeatable)
 - `--grep <pattern>` — Filter output lines matching pattern
 - `--grep-v <pattern>` — Exclude output lines matching pattern
 - `--highlight <pattern>` — Highlight matching lines
