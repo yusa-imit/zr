@@ -78,7 +78,7 @@ export https_proxy=http://proxy.company.com:8080
 curl -fsSL https://raw.githubusercontent.com/yusa-imit/zr/main/install.sh | sh
 
 # Option 3: Download manually
-wget https://github.com/yusa-imit/zr/releases/download/v1.82.0/zr-x86_64-linux
+wget https://github.com/yusa-imit/zr/releases/download/v1.83.0/zr-x86_64-linux
 chmod +x zr-x86_64-linux
 sudo mv zr-x86_64-linux /usr/local/bin/zr
 ```

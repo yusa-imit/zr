@@ -1,6 +1,6 @@
 # Task Result Caching & Memoization
 
-> **Feature Status**: Available in zr v1.82.0+
+> **Feature Status**: Available in zr v1.82.0+ (metadata caching); v1.83.0+ (desktop notifications)
 >
 > Cache task execution results to skip redundant computations across runs and machines.
 
@@ -258,7 +258,7 @@ Cache entries are stored in `.zr/cache/<cache_key>/`:
 }
 ```
 
-**Note**: Current version (v1.82.0) stores metadata only. Future versions will include stdout/stderr capture.
+**Note**: Current version (v1.83.0) stores metadata only. Future versions will include stdout/stderr capture.
 
 ---
 

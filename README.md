@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.82.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.82.0)
+[![Version](https://img.shields.io/badge/version-1.83.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.83.0)
 
 ---
 
@@ -149,17 +149,27 @@ matrix = { target = ["x86_64-linux", "aarch64-darwin"] }
 [tasks.flaky-api-test]
 cmd = "curl https://api.example.com/health"
 retry = { max = 3, delay = "5s", backoff = "exponential" }
+
+# Desktop notifications (v1.83.0+)
+[tasks.long-build]
+cmd = "cargo build --release"
+notify = true              # Notify on completion
+notify_on = "always"       # "success" | "failure" | "always"
+notify_title = "Build done"
 ```
 
 **Commands**:
 ```bash
 zr run <task>              # Execute a task
+zr run <task> --skip dep   # Skip specific dependency tasks
+zr run --dir packages/app  # Run tasks in matching directories
 zr list                    # Show all tasks
 zr graph <task>            # Visualize dependency graph
 zr watch <task> [paths]    # Re-run on file changes
 zr interactive             # TUI task picker
 zr failures [list|clear]   # View/clear task failure reports (v1.14.0+)
 zr --dry-run run <task>    # Preview execution plan
+zr --notify run <task>     # Enable desktop notifications globally
 ```
 
 ### Workflows (Phase 2)
@@ -464,8 +474,8 @@ zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 
 ### Test Status
 
-- **Unit tests**: 845/853 passing (8 skipped, 0 failures)
-- **Integration tests**: 957/958 passing (1 skipped, 0 failures)
+- **Unit tests**: 1714/1722 passing (8 skipped, 0 failures)
+- **Integration tests**: 108 test files, comprehensive CLI coverage
 - **CI targets**: 6 (x86_64/aarch64 × linux-gnu/macos-none/windows-msvc)
 - **Memory leaks**: 0
 

@@ -23,7 +23,7 @@
 Polish code quality, improve documentation, and enhance user experience with small but impactful improvements. Focus on developer experience, code maintainability, and documentation accuracy. This milestone addresses technical debt and ensures the codebase is ready for long-term maintenance. Includes:
 - **Code comment accuracy**: Review and update comments that reference old version numbers or outdated behavior
 - **Error message clarity**: Review all user-facing error messages for consistency and helpfulness
-- **Documentation updates**: Update README and guides to reflect current feature set and version (v1.82.0)
+- **Documentation updates**: Update README and guides to reflect current feature set and version (v1.83.0)
 - **Example improvements**: Ensure all examples in `examples/` are tested and up-to-date
 - **Test documentation**: Add test docstrings to clarify what each test validates
 - **Performance annotations**: Add performance characteristics comments to hot-path functions
