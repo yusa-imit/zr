@@ -537,14 +537,26 @@ fn run(
             const arg = args[i];
             if (isGlobalFlag(arg)) |flag_info| {
                 if (flag_info.takes_value) {
-                    // Emit long form for sailor (normalize short to long)
-                    try global_flag_tokens.append(allocator, flag_info.long_name);
                     if (i + 1 < args.len) {
-                        try global_flag_tokens.append(allocator, args[i + 1]);
-                        i += 1;
+                        const value = args[i + 1];
+                        // --format is a global flag but subcommands (bench, etc.) have their
+                        // own extended format support (csv, xml, ...). Only consume it globally
+                        // when the value is a known global format; otherwise let the subcommand handle it.
+                        if (std.mem.eql(u8, flag_info.long_name, "--format") and
+                            !std.mem.eql(u8, value, "text") and
+                            !std.mem.eql(u8, value, "json"))
+                        {
+                            try remaining_args.append(allocator, arg);
+                            try remaining_args.append(allocator, value);
+                            i += 1;
+                        } else {
+                            // Emit long form for sailor (normalize short to long)
+                            try global_flag_tokens.append(allocator, flag_info.long_name);
+                            try global_flag_tokens.append(allocator, value);
+                            i += 1;
+                        }
                     } else {
-                        // Missing value — let sailor report MissingValue
-                        // But we need custom error messages, so handle here
+                        // Missing value — use custom error messages
                         const hints = globalFlagHint(flag_info.long_name);
                         try color.printError(ew, use_color, "{s}\n", .{hints});
                         return 1;
