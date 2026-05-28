@@ -1911,6 +1911,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  affected <task>        Run task on affected workspace members\n", .{});
     try w.print("  cache clear            Clear all cached task results\n", .{});
     try w.print("  cache status           Show cache statistics\n", .{});
+    try w.print("  artifacts get <task>   List/retrieve stored task output artifacts\n", .{});
+    try w.print("  artifacts clean        Remove old artifacts based on retention policy\n", .{});
     try w.print("  deps check             Verify all dependencies satisfy constraints\n", .{});
     try w.print("  deps install           List or install missing dependencies\n", .{});
     try w.print("  deps outdated          Show available updates for dependencies\n", .{});
@@ -1936,6 +1938,10 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("    --from-just          Migrate from justfile\n", .{});
     try w.print("    --from-task          Migrate from Taskfile.yml\n", .{});
     try w.print("    --dry-run            Preview migration without creating files\n", .{});
+    try w.print("  template list          List available task/workflow templates\n", .{});
+    try w.print("  template add <name>    Apply a template to current project\n", .{});
+    try w.print("  ci list                List available CI/CD integration templates\n", .{});
+    try w.print("  ci generate <provider> Generate CI pipeline config (github|gitlab|circleci)\n", .{});
     try w.print("  add <type> [name]      Interactively add a task, workflow, or profile\n", .{});
     try w.print("  edit <type>            TUI editor for creating tasks, workflows, or profiles\n", .{});
     try w.print("  setup                  Set up project (install tools, run setup tasks)\n", .{});
@@ -1962,6 +1968,8 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
     try w.print("  estimate <task|workflow> Estimate task/workflow duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
+    try w.print("  help <task>            Show rich formatted help for a task\n", .{});
+    try w.print("  man <task>             Show man-page style documentation for a task\n", .{});
     try w.print("  failures [list|clear]  View or clear captured task failure reports\n", .{});
     try w.print("  schedule <subcommand>  Schedule tasks to run at specific times (add|list|remove|show)\n", .{});
     try w.print("  monitor <workflow>     Execute workflow with real-time resource monitoring dashboard\n", .{});
