@@ -2910,8 +2910,29 @@ test "RetryBudgetTracker: exhausted budget prevents retry" {
 
 // Task-level resource attribution tests
 test "TaskResult: resource metrics fields exist in struct" {
-    // Verify that TaskResult has the required resource tracking fields
-    const result = TaskResult{
+    // Verify that TaskResult has the required resource tracking fields using comptime checks
+    comptime {
+        try std.testing.expect(@hasField(TaskResult, "peak_memory_bytes"));
+        try std.testing.expect(@hasField(TaskResult, "avg_cpu_percent"));
+        try std.testing.expect(@hasField(TaskResult, "task_name"));
+        try std.testing.expect(@hasField(TaskResult, "success"));
+        try std.testing.expect(@hasField(TaskResult, "exit_code"));
+        try std.testing.expect(@hasField(TaskResult, "duration_ms"));
+    }
+
+    // Verify default values (0 for metrics not yet captured)
+    const result_default = TaskResult{
+        .task_name = "test",
+        .success = true,
+        .exit_code = 0,
+        .duration_ms = 100,
+    };
+
+    try std.testing.expectEqual(@as(u64, 0), result_default.peak_memory_bytes);
+    try std.testing.expectEqual(@as(f64, 0.0), result_default.avg_cpu_percent);
+
+    // Verify that explicit values override defaults
+    const result_with_metrics = TaskResult{
         .task_name = "test",
         .success = true,
         .exit_code = 0,
@@ -2920,6 +2941,6 @@ test "TaskResult: resource metrics fields exist in struct" {
         .avg_cpu_percent = 25.5,
     };
 
-    try std.testing.expectEqual(@as(u64, 1024 * 1024), result.peak_memory_bytes);
-    try std.testing.expectEqual(@as(f64, 25.5), result.avg_cpu_percent);
+    try std.testing.expectEqual(@as(u64, 1024 * 1024), result_with_metrics.peak_memory_bytes);
+    try std.testing.expectEqual(@as(f64, 25.5), result_with_metrics.avg_cpu_percent);
 }

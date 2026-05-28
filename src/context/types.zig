@@ -204,9 +204,40 @@ test "ProjectContext init/deinit" {
     var ctx = ProjectContext.init(allocator);
     defer ctx.deinit();
 
-    try std.testing.expect(ctx.task_catalog.items.len == 0);
-    try std.testing.expect(ctx.ownership_mapping.items.len == 0);
-    try std.testing.expect(ctx.toolchains.items.len == 0);
+    // Verify initial state is empty
+    try std.testing.expectEqual(@as(usize, 0), ctx.task_catalog.items.len);
+    try std.testing.expectEqual(@as(usize, 0), ctx.ownership_mapping.items.len);
+    try std.testing.expectEqual(@as(usize, 0), ctx.toolchains.items.len);
+
+    // Add a task to the catalog and verify it's stored
+    var task_info = try PackageTaskInfo.init(allocator, "mypackage");
+    const task = try TaskInfo.init(allocator, "build", "npm run build", "Build task");
+    try task_info.tasks.append(allocator, task);
+    try ctx.task_catalog.append(allocator, task_info);
+
+    try std.testing.expectEqual(@as(usize, 1), ctx.task_catalog.items.len);
+    try std.testing.expectEqualStrings("mypackage", ctx.task_catalog.items[0].package_name);
+
+    // Add ownership entry and verify
+    var owners = std.ArrayList([]const u8){};
+    try owners.append(allocator, try allocator.dupe(u8, "alice"));
+    try ctx.ownership_mapping.append(allocator, .{
+        .path = try allocator.dupe(u8, "src/main.ts"),
+        .owners = owners,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), ctx.ownership_mapping.items.len);
+    try std.testing.expectEqualStrings("src/main.ts", ctx.ownership_mapping.items[0].path);
+
+    // Add toolchain and verify (using allocated strings)
+    try ctx.toolchains.append(allocator, .{
+        .name = try allocator.dupe(u8, "node"),
+        .version = try allocator.dupe(u8, "20.10.0"),
+        .install_path = null,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), ctx.toolchains.items.len);
+    try std.testing.expectEqualStrings("node", ctx.toolchains.items[0].name);
 }
 
 test "PackageNode init/deinit" {

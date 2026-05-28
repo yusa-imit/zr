@@ -39,3 +39,5 @@
 {"timestamp":"2026-05-27T10:38:10Z","action":"subagent","agent_type":"test-writer","task":"Write failing tests for formatRelativeTime and cmdHistory signature update","project":"zr"}
 {"timestamp":"2026-05-27T16:14:06Z","action":"subagent","agent_type":"test-writer","task":"Write unit and integration tests for history clear subcommand","project":"zr"}
 {"timestamp":"2026-05-28T07:30:00Z","action":"subagent","agent_type":"Explore","task":"Investigate CI failures on main branch","project":"zr"}
+{"timestamp":"2026-05-28T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Remove redundant status symbols from CLI error/success message format strings in 8 files","project":"zr"}
+{"timestamp":"2026-05-28T01:00:00Z","action":"subagent","agent_type":"test-writer","task":"Improve 5 meaningless unit tests: BenchmarkRun size, TaskResult resource metrics, hashString circular, killProcess no-assertion, ProjectContext tautological","project":"zr"}

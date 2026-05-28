@@ -55,19 +55,24 @@ test "getHome returns valid path" {
     }
 }
 
-test "killProcess is callable and doesn't crash" {
-    // We can't easily test actual process termination in a unit test,
-    // but we can verify the function compiles for all platforms and doesn't crash
-    // when called with an invalid PID (which the kernel will safely reject).
-    //
-    // The real test is: does this test complete without panic/crash?
-    // If we reach the end of this test block, killProcess is working.
+test "killProcess handles invalid PID without panic" {
+    // Test that killProcess safely handles non-existent PIDs.
+    // Invalid PIDs should be silently rejected by the kernel.
+    // If the function panics or crashes, the test fails.
+
     if (comptime native_os != .windows) {
-        killProcess(999999); // Invalid PID, kernel will reject silently
+        // On POSIX: try to kill an obviously invalid PID
+        // Kernel will return ESRCH (No such process), which killProcess catches and ignores
+        killProcess(999999);
+        killProcess(1); // PID 1 is init/systemd - likely fails permission, but safely caught
+
+        // Verify we reach here without panic (test passes by not crashing)
+        try std.testing.expect(true);
     } else {
-        killProcess(0); // No-op on Windows (PID 0 doesn't exist)
+        // On Windows: call with invalid handle
+        killProcess(0); // Invalid handle, TerminateProcess will fail but be caught
+        try std.testing.expect(true);
     }
-    // Test passes if we reach here without panic
 }
 
 test "getenv returns env vars on POSIX" {

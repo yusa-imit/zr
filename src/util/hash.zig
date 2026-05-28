@@ -43,6 +43,11 @@ test "hashString - basic" {
     const h2 = hashString("hello");
     const h3 = hashString("world");
 
+    // Verify against known hardcoded hash for "hello"
+    // This catches if the hash algorithm changes unexpectedly
+    const expected_hello = 0xe24bbd9f93f532d;
+    try std.testing.expectEqual(expected_hello, h1);
+
     // Same input produces same hash
     try std.testing.expectEqual(h1, h2);
 
