@@ -16,14 +16,14 @@ pub fn cmdCd(
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const config_path = std.fs.cwd().realpath(common.CONFIG_FILE, &path_buf) catch |err| {
         try color.printError(err_writer, use_color,
-            "✗ [CD]: Failed to find {s}: {s}\n\n  Hint: Run this command from a directory with {s}\n",
+            "[CD]: Failed to find {s}: {s}\n\n  Hint: Run this command from a directory with {s}\n",
             .{ common.CONFIG_FILE, @errorName(err), common.CONFIG_FILE });
         return 1;
     };
 
     var cfg = loader.loadFromFile(allocator, config_path) catch |err| {
         try color.printError(err_writer, use_color,
-            "✗ [CD]: Failed to load config: {s}\n\n  Hint: Check {s} for syntax errors\n",
+            "[CD]: Failed to load config: {s}\n\n  Hint: Check {s} for syntax errors\n",
             .{ @errorName(err), common.CONFIG_FILE });
         return 1;
     };
@@ -32,7 +32,7 @@ pub fn cmdCd(
     // Check if workspace is configured
     if (cfg.workspace == null) {
         try color.printError(err_writer, use_color,
-            "✗ [CD]: No workspace configured\n\n  Hint: Add [workspace] section to {s} with 'members' patterns\n",
+            "[CD]: No workspace configured\n\n  Hint: Add [workspace] section to {s} with 'members' patterns\n",
             .{common.CONFIG_FILE});
         return 1;
     }
@@ -73,7 +73,7 @@ pub fn cmdCd(
 
     if (members.items.len == 0) {
         try color.printError(err_writer, use_color,
-            "✗ [CD]: No workspace members found\n\n  Hint: Check 'members' patterns in [workspace] section\n", .{});
+            "[CD]: No workspace members found\n\n  Hint: Check 'members' patterns in [workspace] section\n", .{});
         return 1;
     }
 
@@ -103,7 +103,7 @@ pub fn cmdCd(
         }
 
         try color.printError(err_writer, use_color,
-            "✗ [CD]: Workspace member '{s}' not found\n\n", .{member_name});
+            "[CD]: Workspace member '{s}' not found\n\n", .{member_name});
 
         if (suggestions.items.len > 0) {
             try color.printInfo(err_writer, use_color, "Did you mean?\n", .{});
