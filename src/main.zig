@@ -1529,7 +1529,7 @@ fn run(
                 try effective_w.writeAll("Note: Use with eval: eval $(zr cd frontend)\n");
                 return 0;
             }
-            try color.printError(ew, effective_color, "✗ [CD]: missing workspace member name\n\n  Hint: zr cd <member-name>\n", .{});
+            try color.printError(ew, effective_color, "[CD]: missing workspace member name\n\n  Hint: zr cd <member-name>\n", .{});
             return 1;
         }
         const member_name = effective_args[2];
@@ -1593,31 +1593,31 @@ fn run(
             if (std.mem.eql(u8, arg, "--limit")) {
                 i += 1;
                 if (i >= effective_args.len) {
-                    try color.printError(ew, effective_color, "✗ [Estimate]: --limit requires a number\n", .{});
+                    try color.printError(ew, effective_color, "[Estimate]: --limit requires a number\n", .{});
                     return 1;
                 }
                 limit = std.fmt.parseInt(usize, effective_args[i], 10) catch {
-                    try color.printError(ew, effective_color, "✗ [Estimate]: invalid limit value: {s}\n", .{effective_args[i]});
+                    try color.printError(ew, effective_color, "[Estimate]: invalid limit value: {s}\n", .{effective_args[i]});
                     return 1;
                 };
                 if (limit == 0) {
-                    try color.printError(ew, effective_color, "✗ [Estimate]: --limit must be greater than 0\n", .{});
+                    try color.printError(ew, effective_color, "[Estimate]: --limit must be greater than 0\n", .{});
                     return 1;
                 }
             } else if (std.mem.startsWith(u8, arg, "--limit=")) {
                 const val = arg["--limit=".len..];
                 limit = std.fmt.parseInt(usize, val, 10) catch {
-                    try color.printError(ew, effective_color, "✗ [Estimate]: invalid limit value: {s}\n", .{val});
+                    try color.printError(ew, effective_color, "[Estimate]: invalid limit value: {s}\n", .{val});
                     return 1;
                 };
                 if (limit == 0) {
-                    try color.printError(ew, effective_color, "✗ [Estimate]: --limit must be greater than 0\n", .{});
+                    try color.printError(ew, effective_color, "[Estimate]: --limit must be greater than 0\n", .{});
                     return 1;
                 }
             } else if (std.mem.eql(u8, arg, "--format")) {
                 i += 1;
                 if (i >= effective_args.len) {
-                    try color.printError(ew, effective_color, "✗ [Estimate]: --format requires a value (text|json)\n", .{});
+                    try color.printError(ew, effective_color, "[Estimate]: --format requires a value (text|json)\n", .{});
                     return 1;
                 }
                 if (std.mem.eql(u8, effective_args[i], "json")) {
