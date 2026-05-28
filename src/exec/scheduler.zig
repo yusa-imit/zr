@@ -543,6 +543,8 @@ const WorkerCtx = struct {
     notify_on: ?[]const u8,
     /// Custom notification title (v1.83.1).
     notify_title: ?[]const u8,
+    /// Required environment variable names (v1.84.0).
+    required_env: []const []const u8,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -839,9 +841,61 @@ fn workerFn(ctx: WorkerCtx) void {
     const env_with_files = loadAndMergeEnvFiles(task_allocator, ctx.env_file, ctx.env, null, ctx.task_cwd);
     defer if (env_with_files) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
 
+    // Check required environment variables (v1.84.0)
+    if (ctx.required_env.len > 0) {
+        var missing = std.ArrayList([]const u8){};
+        defer missing.deinit(task_allocator);
+
+        for (ctx.required_env) |var_name| {
+            const found_in_task = blk: {
+                // Check task env (including env_file merged vars)
+                if (env_with_files) |env| {
+                    for (env) |kv| {
+                        if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
+                    }
+                } else {
+                    for (ctx.env orelse &.{}) |kv| {
+                        if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
+                    }
+                }
+                // Check system env
+                if (std.process.getEnvVarOwned(task_allocator, var_name)) |val| {
+                    task_allocator.free(val);
+                    break :blk true;
+                } else |_| {}
+                break :blk false;
+            };
+            if (!found_in_task) {
+                missing.append(task_allocator, var_name) catch {};
+            }
+        }
+
+        if (missing.items.len > 0) {
+            std.debug.print("\n✗ [{s}]: Missing required environment variables:\n", .{ctx.task_name});
+            for (missing.items) |var_name| {
+                std.debug.print("  - {s}\n", .{var_name});
+            }
+            std.debug.print("\n  Hint: Set them in your shell or add to .env file\n\n", .{});
+
+            const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
+            ctx.results_mutex.lock();
+            defer ctx.results_mutex.unlock();
+            ctx.results.append(task_allocator, .{
+                .task_name = owned_name,
+                .success = false,
+                .exit_code = 1,
+                .duration_ms = 0,
+            }) catch task_allocator.free(owned_name);
+            if (!ctx.allow_failure) ctx.failed.store(true, .release);
+            return;
+        }
+    }
+
     // Build environment with toolchain PATH injection and extra_env
-    // Use env_with_files (which includes .env vars) instead of ctx.env
-    const merged_env = buildEnvWithToolchains(task_allocator, env_with_files, ctx.toolchains, ctx.extra_env);
+    // Use env_with_files (merged .env + task env) if available, otherwise fall back to task env.
+    // Without env_file, env_with_files is null, so we fall back to ctx.env to ensure task
+    // env vars from TOML reach the subprocess.
+    const merged_env = buildEnvWithToolchains(task_allocator, env_with_files orelse ctx.env, ctx.toolchains, ctx.extra_env);
     defer if (merged_env) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
 
     // Load checkpoint if enabled (v1.31.0)
@@ -2341,6 +2395,7 @@ pub fn run(
                 .notify = sched_config.notify_override or task.notify,
                 .notify_on = task.notify_on,
                 .notify_title = task.notify_title,
+                .required_env = task.required_env orelse &[_][]const u8{},
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

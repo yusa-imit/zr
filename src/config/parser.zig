@@ -519,6 +519,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Task env_file (v1.78.0) — non-owning slices for file paths
     var task_env_file = std.ArrayList([]const u8){};
     defer task_env_file.deinit(allocator);
+    // Task required_env (v1.84.0) — non-owning slices for required var names
+    var task_required_env = std.ArrayList([]const u8){};
+    defer task_required_env.deinit(allocator);
     // Task artifacts (v1.80.0) — non-owning slices for artifact patterns
     var task_artifacts = std.ArrayList([]const u8){};
     defer task_artifacts.deinit(allocator);
@@ -897,7 +900,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -935,6 +938,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_notify = false;
                 task_notify_on = null;
                 task_notify_title = null;
+                task_required_env.clearRetainingCapacity();
                 current_task = null;
             }
             // Parse new workflow name from "[workflows.X]"
@@ -1039,7 +1043,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -1056,6 +1060,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 task_notify = false; task_notify_on = null; task_notify_title = null;
+                task_required_env.clearRetainingCapacity();
                 current_task = null;
             }
             // Flush pending workflow (if any)
@@ -1103,7 +1108,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1113,6 +1118,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 task_notify = false; task_notify_on = null; task_notify_title = null;
+                task_required_env.clearRetainingCapacity();
                 current_task = null;
             }
             if (current_profile) |pname| {
@@ -1175,7 +1181,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1185,6 +1191,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 task_notify = false; task_notify_on = null; task_notify_title = null;
+                task_required_env.clearRetainingCapacity();
                 current_task = null;
             }
             if (current_workflow) |wf_name_slice| {
@@ -1378,7 +1385,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1388,6 +1395,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
                 task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
                 task_notify = false; task_notify_on = null; task_notify_title = null;
+                task_required_env.clearRetainingCapacity();
                 current_task = null;
             }
             // Flush pending plugin (if any)
@@ -1807,7 +1815,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (task_matrix_raw) |mraw| {
                     try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
                 } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
                 }
             }
 
@@ -1819,6 +1827,22 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_env.clearRetainingCapacity();
             task_toolchain.clearRetainingCapacity();
             task_tags.clearRetainingCapacity();
+            task_params.clearRetainingCapacity();
+            task_mixins.clearRetainingCapacity();
+            task_aliases.clearRetainingCapacity();
+            task_sources.clearRetainingCapacity();
+            task_generates.clearRetainingCapacity();
+            task_env_file.clearRetainingCapacity();
+            task_artifacts.clearRetainingCapacity();
+            task_required_env.clearRetainingCapacity();
+            for (task_task_params.items) |*p| p.deinit(allocator);
+            task_task_params.clearRetainingCapacity();
+            task_remote_env.clearRetainingCapacity();
+            task_retry_on_codes.clearRetainingCapacity();
+            task_retry_on_patterns.clearRetainingCapacity();
+            task_cpu_affinity.clearRetainingCapacity();
+            task_watch_patterns.clearRetainingCapacity();
+            task_watch_exclude_patterns.clearRetainingCapacity();
             task_cmd = null;
             task_cwd = null;
             task_desc = null;
@@ -1830,8 +1854,6 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_retry_backoff_multiplier = null;
             task_retry_jitter = false;
             task_max_backoff_ms = null;
-            task_retry_on_codes.clearRetainingCapacity();
-            task_retry_on_patterns.clearRetainingCapacity();
             task_condition = null;
             task_skip_if = null;
             task_output_if = null;
@@ -1840,11 +1862,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_max_cpu = null;
             task_max_memory = null;
             task_matrix_raw = null;
-            task_cpu_affinity.clearRetainingCapacity();
+            task_template = null;
+            task_output_file = null;
+            task_output_mode = null;
+            task_remote = null;
+            task_remote_cwd = null;
+            task_concurrency_group = null;
+            task_silent = false;
+            task_artifact_retention = null;
+            task_compress_artifacts = true;
+            task_notify = false;
+            task_notify_on = null;
+            task_notify_title = null;
             task_numa_node = null;
             task_watch_debounce_ms = null;
-            task_watch_patterns.clearRetainingCapacity();
-            task_watch_exclude_patterns.clearRetainingCapacity();
             task_watch_mode = null;
 
             in_workspace = false;
@@ -2992,6 +3023,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             try task_env_file.append(allocator, unquoted);
                         }
                     }
+                } else if (std.mem.eql(u8, key, "required_env")) {
+                    // Required environment variables (v1.84.0)
+                    // Parse array: required_env = ["VAR1", "VAR2"]
+                    const trimmed_req_env = std.mem.trim(u8, value, " \t");
+                    if (trimmed_req_env.len > 2 and trimmed_req_env[0] == '[' and trimmed_req_env[trimmed_req_env.len - 1] == ']') {
+                        const inner = trimmed_req_env[1 .. trimmed_req_env.len - 1];
+                        var it = std.mem.splitScalar(u8, inner, ',');
+                        while (it.next()) |item| {
+                            const var_name = std.mem.trim(u8, item, " \t\"'");
+                            if (var_name.len > 0) {
+                                try task_required_env.append(allocator, var_name);
+                            }
+                        }
+                    }
                 } else if (std.mem.eql(u8, key, "sources")) {
                     // Source file patterns for up-to-date detection (v1.74.0)
                     // Parse array: ["src/**/*.ts", "config.json"]
@@ -3631,7 +3676,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         if (task_matrix_raw) |mraw| {
             try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
         } else {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title);
+            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items);
         }
     }
 
