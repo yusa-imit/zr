@@ -189,6 +189,42 @@ remote_cwd = "/var/www/app"
 remote_env = { DEPLOY_ENV = "production" }
 ```
 
+### Desktop Notifications
+
+> **Since**: v1.83.0
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `notify` | boolean | `false` | Send desktop notification when task completes |
+| `notify_on` | string | `"always"` | When to notify: `"success"`, `"failure"`, or `"always"` |
+| `notify_title` | string | task name | Custom notification title |
+
+Example:
+```toml
+[tasks.long-build]
+cmd = "cargo build --release"
+notify = true
+notify_on = "always"
+notify_title = "Release Build"
+```
+
+See [Desktop Notifications Guide](./desktop-notifications.md) for platform setup and usage patterns.
+
+### Artifact Persistence
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `artifacts` | array of strings | `[]` | Glob patterns of files to preserve after task success |
+| `artifact_retention` | string or table | null | Retention policy: `"7d"` or `{ count = 10 }` |
+
+Example:
+```toml
+[tasks.build]
+cmd = "cargo build --release"
+artifacts = ["target/release/myapp", "dist/**/*"]
+artifact_retention = { count = 5 }  # keep last 5 artifacts
+```
+
 ### Metadata
 
 | Field | Type | Default | Description |
