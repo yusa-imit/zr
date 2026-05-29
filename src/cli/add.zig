@@ -19,6 +19,21 @@ pub fn cmdAdd(
         return 1;
     }
 
+    if (std.mem.eql(u8, args[0], "--help") or std.mem.eql(u8, args[0], "-h")) {
+        try w.writeAll("Usage: zr add <task|workflow|profile> [name] [--interactive]\n\n");
+        try w.writeAll("Add a new task, workflow, or profile to the configuration.\n\n");
+        try w.writeAll("Types:\n");
+        try w.writeAll("  task        Add a new task\n");
+        try w.writeAll("  workflow    Add a new workflow\n");
+        try w.writeAll("  profile     Add a new profile\n\n");
+        try w.writeAll("Options:\n");
+        try w.writeAll("  --interactive    Use interactive mode (requires TTY)\n\n");
+        try w.writeAll("Examples:\n");
+        try w.writeAll("  zr add task build\n");
+        try w.writeAll("  zr add workflow ci --interactive\n");
+        return 0;
+    }
+
     // Check for --interactive flag
     var is_interactive = false;
     var name: ?[]const u8 = null;

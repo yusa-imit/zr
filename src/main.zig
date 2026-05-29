@@ -1774,6 +1774,10 @@ fn run(
             try color.printError(ew, effective_color, "Usage: zr edit <task|workflow|profile>\n", .{});
             return 1;
         }
+        if (std.mem.eql(u8, edit_args[0], "--help") or std.mem.eql(u8, edit_args[0], "-h")) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         const entity_type = edit_args[0];
         return config_editor.cmdEdit(allocator, entity_type, edit_args[1..], effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "failures")) {
