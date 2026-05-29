@@ -1824,6 +1824,11 @@ fn run(
             try color.printError(ew, effective_color, "Usage: zr template <list|show|add> [--builtin] [args...]\n", .{});
             return 1;
         }
+        if (std.mem.eql(u8, template_args[0], "--help") or std.mem.eql(u8, template_args[0], "-h")) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
+
         const subcommand = template_args[0];
         const sub_args = if (template_args.len > 1) template_args[1..] else &[_][]const u8{};
 
