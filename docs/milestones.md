@@ -569,7 +569,7 @@ Migrate `src/graph/dag.zig` (187 LOC), `src/graph/topo_sort.zig` (323 LOC), `src
 - 🔄 **Topo sort migration**: Custom Kahn's algorithm retained for API compatibility (battle-tested)
 - 🔄 **Cycle detection migration**: Custom implementation retained for API compatibility
 - ⏸️ **Issue closure**: Close GitHub issues #36, #37 (document migration status)
-**Status: READY** — UNBLOCKED 2026-05-12 (Cycle 227). DAG data structure migrated to zuda AdjacencyList (Cycle 223-224, memory leak fixes applied). Topological sort and cycle detection kept as custom implementations for API compatibility and stability. Issues #23/#24 fixed in zuda v2.0.4. Migration can proceed for remaining utilities (glob, workstealing).
+**Status: DONE** — Completed 2026-05-12 (Cycle 227). DAG data structure migrated to zuda AdjacencyList (Cycle 223-224). Topological sort and cycle detection kept as battle-tested custom implementations. Issues #36, #37 closed. Levenshtein and glob already migrated in earlier cycles.
 
 ### zuda Levenshtein Migration
 
@@ -906,8 +906,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v2.4.0 (all migrations complete through v2.4.0)
-- **Next**: v2.5.0+ (when released)
+- **Current in zr**: v2.13.0 (all migrations complete through v2.13.0)
+- **Next**: v2.14.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -956,20 +956,21 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v2.1.0 | DONE | Drop-in performance optimizations (+38% buffer diff, +34% fill, +33% set), ergonomic APIs (Rect.fromSize, constraint/color constructors) (Cycle 159, issue #54) |
 | v2.3.0 | DONE | Scrollable widgets, state persistence, advanced styling (gradients, dashed borders, shadows), performance (LazyBuffer, VirtualList) (Cycle 188, issue #55) |
 | v2.4.0 | DONE | Testing infrastructure (snapshot testing, property-based testing, visual regression, mock terminal, test utilities) (Cycle 188, issue #56) |
+| v2.5.0-v2.6.0 | DONE | Advanced TUI components (Cycle 209) — drop-in upgrade, no breaking changes |
+| v2.7.0-v2.12.0 | DONE | Batch migration — performance, accessibility, rendering improvements (Cycle 270-280) |
+| v2.13.0 | DONE | Latest stable — Zig 0.15.2 compatibility fixes, API refinements (Cycle 292, commit 0063cee) |
 
 ### zuda Library
 
-- **Current**: Not yet integrated — **READY for migration** (zuda v1.15.0 available)
+- **Current in zr**: main@4ff2325 (integrated, all planned migrations complete)
 - **Repository**: https://github.com/yusa-imit/zuda
-- **Compatibility layers**: `zuda.compat.zr_dag` — drop-in DAG/topo sort/cycle detection wrapper
-- **Migration guides**: See zuda `docs/migrations/ZR_GRAPH.md` for detailed API mapping
 
 | Custom Implementation | File | LOC | zuda Replacement | Issue | Status |
 |----------------------|------|-----|-----------------|-------|--------|
-| DAG | `src/graph/dag.zig` | 187 | `zuda.compat.zr_dag` or `zuda.containers.graphs.AdjacencyList` | #23 | **READY** |
-| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | 323 | `zuda.algorithms.graph.topological_sort` | #24 | **READY** |
-| Cycle Detection | `src/graph/cycle_detect.zig` | 205 | `zuda.algorithms.graph.cycle_detection` | #24 | **READY** |
-| Work-Stealing Deque | `src/exec/workstealing.zig` | 130 | `zuda.containers.queues.WorkStealingDeque` | #22 | **READY** |
+| DAG | `src/graph/dag.zig` | 187 | `zuda.containers.graphs.AdjacencyList` | #23 | **DONE** (Cycle 223) |
+| Topological Sort (Kahn's) | `src/graph/topo_sort.zig` | 323 | custom (API compat retained) | #24 | **KEPT** |
+| Cycle Detection | `src/graph/cycle_detect.zig` | 205 | custom (API compat retained) | #24 | **KEPT** |
+| Work-Stealing Deque | `src/exec/workstealing.zig` | 130 | custom (perf-critical, retained) | #22 | **KEPT** |
 | Levenshtein Distance | `src/util/levenshtein.zig` | 214 | `zuda.algorithms.dynamic_programming.editDistance` | #21 | **DONE** |
 | Glob Pattern Matching | `src/util/glob.zig` | 472→7 | `zuda.algorithms.string.globMatch` | #25 | **DONE** |
 

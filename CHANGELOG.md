@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--only` flag for `zr run`** — Run only the specified task(s) without executing their dependencies
+  - `zr run --only build` executes `build` even if it declares `deps = ["setup"]`
+  - Useful when dependencies are already satisfied and you want to iterate on a specific task
+  - Works with `--dry-run`, `--format json`, and other run flags
+  - 7 integration tests covering core behaviour, edge cases, and flag combinations
+- **`required_env` task field** — Declare mandatory environment variables that must be set before a task runs
+  - `required_env = ["DATABASE_URL", "API_KEY"]` — task fails with clear error if any var is missing
+  - Checked before task execution (no partial execution on missing vars)
+  - Variables can be sourced from system env, task `env`, or `env_file`
+  - 10 integration tests covering validation, error messages, and env-source combinations
+
 ### Fixed
-- Removed doubled status symbols (`✗ ✗`, `✓ ✓`) from all CLI error/success messages — `printError`/`printSuccess` already prepend the symbol, format strings should not include it
-- Added `help`, `man`, `artifacts`, `template`, and `ci` commands to `--help` output (they existed but were undocumented)
+- Integration test panic on Linux: `Dir.openDirAbsolute` calls in `artifact_management_test.zig` and `cache_storage_test.zig` now use `.{ .iterate = true }` as required by Zig 0.15.2 on Linux for directory iteration
 
 ### Changed
 - Updated README version badge and documentation to v1.83.0
