@@ -384,11 +384,11 @@ The `--only` flag runs a task without executing its declared dependencies. This 
 
 ```bash
 # Run only 'build' even if it has deps = ["setup", "generate"]
-zr run --only build
+zr run build --only
 
 # Compare: normal run executes all dependencies first
 zr run build       # runs: setup → generate → build
-zr run --only build  # runs: build (only)
+zr run build --only  # runs: build (only)
 ```
 
 ### When to Use --only
@@ -407,10 +407,10 @@ deps = ["generate"]    # Depends on generate
 zr run build
 
 # Subsequent iterations: skip slow codegen (already done)
-zr run --only build
+zr run build --only
 
 # Combination with dry-run to preview
-zr run --only build --dry-run
+zr run build --only --dry-run
 ```
 
 ### Note: --only Skips ALL Dependencies
@@ -419,10 +419,10 @@ zr run --only build --dry-run
 
 ```bash
 # ✅ Good use: re-run build after editing source (codegen output unchanged)
-zr run --only build
+zr run build --only
 
 # ❌ Bad use: skipping a genuinely required setup step
-zr run --only test  # may fail if test fixtures were never built
+zr run test --only  # may fail if test fixtures were never built
 ```
 
 ---
