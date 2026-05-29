@@ -96,7 +96,7 @@ test "artifact: artifact storage uses .zr/artifacts/<task>/<timestamp>/ structur
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/compile", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var dir = std.fs.openDirAbsolute(base_dir, .{}) catch {
+    var dir = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch {
         // If directory doesn't exist, test will fail at verify step
         try std.testing.expect(false);
         return;
@@ -144,7 +144,7 @@ test "artifact: manifest.json stores artifact metadata" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/package", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch {
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch {
         return; // Directory should exist
     };
     defer base.close();
@@ -344,13 +344,13 @@ test "artifact: metadata includes timestamp field" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/build_meta", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             const manifest_content = ts_dir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -389,13 +389,13 @@ test "artifact: metadata includes exit code field" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/finish", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             const manifest_content = ts_dir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -434,13 +434,13 @@ test "artifact: metadata includes duration field" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/slow_task", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             const manifest_content = ts_dir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -650,13 +650,13 @@ test "artifact: compression creates .gz files when compress_artifacts = true" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/compress_test", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             var inner_iter = ts_dir.iterate();
@@ -701,13 +701,13 @@ test "artifact: compression disabled with compress_artifacts = false" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/no_compress", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             var inner_iter = ts_dir.iterate();
@@ -755,7 +755,7 @@ test "artifact: retention policy count_based keeps only N latest artifacts" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/retention_count", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var artifact_count: usize = 0;
@@ -802,7 +802,7 @@ test "artifact: retention policy time_based = \"manual\" does not auto-delete" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/manual_retention", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var artifact_count: usize = 0;
@@ -845,13 +845,13 @@ test "artifact: compression enabled by default for artifact storage" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/large_build", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             // Look for .gz files or compressed artifacts
@@ -1043,13 +1043,13 @@ test "artifact: metadata captures task parameters used" {
     const base_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/artifacts/param_build", .{tmp_path});
     defer allocator.free(base_dir);
 
-    var base = std.fs.openDirAbsolute(base_dir, .{}) catch return;
+    var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
     var iter = base.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var ts_dir = base.openDir(entry.name, .{}) catch return;
+            var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             const manifest = ts_dir.readFileAlloc(allocator, "manifest.json", 8192) catch return;

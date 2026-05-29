@@ -33,7 +33,7 @@ test "cache: task execution creates cache directory structure .zr/cache/" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch {
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch {
         try std.testing.expect(false); // Cache directory should exist
         return;
     };
@@ -67,7 +67,7 @@ test "cache: task execution stores output in cache" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 }
 
@@ -98,14 +98,14 @@ test "cache: cached entry includes manifest.json with metadata" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     var found_manifest = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch continue;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch continue;
             defer subdir.close();
 
             _ = subdir.openFile("manifest.json", .{}) catch continue;
@@ -145,13 +145,13 @@ test "cache: manifest contains timestamp field" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -188,13 +188,13 @@ test "cache: manifest contains exit_code field" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -231,13 +231,13 @@ test "cache: manifest contains duration_ms field" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -275,13 +275,13 @@ test "cache: manifest contains cache_key field" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -330,7 +330,7 @@ test "cache: multiple tasks can coexist in cache" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var task_count: usize = 0;
@@ -374,14 +374,14 @@ test "cache: stores stdout from task execution" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     var found_stdout = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch continue;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch continue;
             defer subdir.close();
 
             _ = subdir.openFile("stdout", .{}) catch continue;
@@ -420,14 +420,14 @@ test "cache: stores stderr from task execution" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     var found_stderr = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch continue;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch continue;
             defer subdir.close();
 
             _ = subdir.openFile("stderr", .{}) catch continue;
@@ -604,13 +604,13 @@ test "cache: corrupted cache file handled gracefully" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             _ = subdir.writeFile(.{ .sub_path = "manifest.json", .data = "corrupted{invalid json" }) catch return;
@@ -676,13 +676,13 @@ test "cache: successful task output cached with exit code 0" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -719,13 +719,13 @@ test "cache: failed task output cached with exit code 1" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -764,13 +764,13 @@ test "cache: metadata JSON is valid JSON format" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
@@ -809,13 +809,13 @@ test "cache: metadata JSON contains task_name field" {
     const cache_dir = try std.fmt.allocPrint(allocator, "{s}/.zr/cache", .{tmp_path});
     defer allocator.free(cache_dir);
 
-    var dir = std.fs.openDirAbsolute(cache_dir, .{}) catch return;
+    var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
     var iter = dir.iterate();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
-            var subdir = dir.openDir(entry.name, .{}) catch return;
+            var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
             defer subdir.close();
 
             const manifest = subdir.readFileAlloc(allocator, "manifest.json", 8192) catch return;
