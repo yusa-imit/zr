@@ -550,6 +550,7 @@ fn cmdInteractiveInner(
                     empty_params,
                     &.{},
                     false, // notify_override
+                    false, // only_mode
                 ) catch {};
 
                 _ = enterRawMode() catch {};

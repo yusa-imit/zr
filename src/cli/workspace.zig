@@ -398,7 +398,7 @@ pub fn cmdWorkspaceRun(
 
         if (dry_run) {
             try color.printBold(w, use_color, "\n── {s} (dry-run) ──\n", .{member_path});
-            var plan = try scheduler.planDryRun(allocator, &member_config, &[_][]const u8{task_name});
+            var plan = try scheduler.planDryRun(allocator, &member_config, &[_][]const u8{task_name}, false);
             defer plan.deinit();
             for (plan.levels, 0..) |level, li| {
                 try w.print("  Level {d}: ", .{li});
@@ -555,7 +555,7 @@ pub fn cmdWorkspaceRunFiltered(
 
         if (dry_run) {
             try color.printBold(w, use_color, "\n── {s} (dry-run) ──\n", .{member_path});
-            var plan = try scheduler.planDryRun(allocator, &member_config, &[_][]const u8{task_name});
+            var plan = try scheduler.planDryRun(allocator, &member_config, &[_][]const u8{task_name}, false);
             defer plan.deinit();
             for (plan.levels, 0..) |level, li| {
                 try w.print("  Level {d}: ", .{li});

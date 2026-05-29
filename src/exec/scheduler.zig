@@ -80,6 +80,9 @@ pub const SchedulerConfig = struct {
     skip_tasks: []const []const u8 = &.{},
     /// Global notify override — if true, enable notifications for all tasks (v1.83.1).
     notify_override: bool = false,
+    /// If true, run ONLY the explicitly requested tasks without executing their dependencies (v1.85.0).
+    /// Useful for iterating on a specific task when dependencies are already satisfied.
+    only_mode: bool = false,
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
@@ -270,12 +273,22 @@ pub const DryRunPlan = struct {
 /// Compute the execution plan (what would run, in what order) without running anything.
 /// Returns an ordered slice of levels, each containing the task names that would
 /// execute in parallel at that level.
+/// If only_mode is true, only the explicitly requested tasks are included (no dependencies).
 pub fn planDryRun(
     allocator: std.mem.Allocator,
     config: *const loader.Config,
     task_names: []const []const u8,
+    only_mode: bool,
 ) SchedulerError!DryRunPlan {
-    var needed = try collectDeps(allocator, config, task_names);
+    var needed = if (only_mode) blk: {
+        var n = std.StringHashMap(void).init(allocator);
+        errdefer n.deinit();
+        for (task_names) |name| {
+            if (config.tasks.get(name) == null) return error.TaskNotFound;
+            try n.put(name, {});
+        }
+        break :blk n;
+    } else try collectDeps(allocator, config, task_names);
     defer needed.deinit();
 
     var subdag = try buildSubgraph(allocator, config, &needed);
@@ -2001,8 +2014,16 @@ pub fn run(
         results.deinit(allocator);
     }
 
-    // Collect transitive deps
-    var needed = try collectDeps(allocator, config, task_names);
+    // Collect transitive deps (or just the requested tasks in only_mode)
+    var needed = if (sched_config.only_mode) blk: {
+        var n = std.StringHashMap(void).init(allocator);
+        errdefer n.deinit();
+        for (task_names) |name| {
+            if (config.tasks.get(name) == null) return error.TaskNotFound;
+            try n.put(name, {});
+        }
+        break :blk n;
+    } else try collectDeps(allocator, config, task_names);
     defer needed.deinit();
 
     // Build subgraph
@@ -2761,7 +2782,7 @@ test "planDryRun: single task returns one level" {
     try config.addTask("build", "zig build", null, null, &[_][]const u8{});
 
     const task_names = [_][]const u8{"build"};
-    var plan = try planDryRun(allocator, &config, &task_names);
+    var plan = try planDryRun(allocator, &config, &task_names, false);
     defer plan.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), plan.levels.len);
@@ -2779,7 +2800,7 @@ test "planDryRun: dependency chain produces ordered levels" {
     try config.addTask("top", "true", null, null, &[_][]const u8{"mid"});
 
     const task_names = [_][]const u8{"top"};
-    var plan = try planDryRun(allocator, &config, &task_names);
+    var plan = try planDryRun(allocator, &config, &task_names, false);
     defer plan.deinit();
 
     // 3 levels: base → mid → top
@@ -2800,7 +2821,7 @@ test "planDryRun: parallel tasks appear in same level" {
     try config.addTask("b", "true", null, null, &[_][]const u8{});
 
     const task_names = [_][]const u8{ "a", "b" };
-    var plan = try planDryRun(allocator, &config, &task_names);
+    var plan = try planDryRun(allocator, &config, &task_names, false);
     defer plan.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), plan.levels.len);
@@ -2816,7 +2837,7 @@ test "planDryRun: cycle returns error" {
     try config.addTask("y", "true", null, null, &[_][]const u8{"x"});
 
     const task_names = [_][]const u8{"x"};
-    const result = planDryRun(allocator, &config, &task_names);
+    const result = planDryRun(allocator, &config, &task_names, false);
     try std.testing.expectError(error.CycleDetected, result);
 }
 

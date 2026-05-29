@@ -171,6 +171,7 @@ pub fn cmdRun(
     runtime_params: std.StringHashMap([]const u8),
     skip_tasks: []const []const u8,
     notify_override: bool,
+    only_mode: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -316,7 +317,7 @@ pub fn cmdRun(
 
     // Dry-run: show the execution plan without running tasks.
     if (dry_run) {
-        var plan = scheduler.planDryRun(allocator, &config, &task_names) catch |err| {
+        var plan = scheduler.planDryRun(allocator, &config, &task_names, only_mode) catch |err| {
             switch (err) {
                 error.TaskNotFound => try color.printError(err_writer, use_color,
                     "run: A dependency task was not found in config\n", .{}),
@@ -345,6 +346,7 @@ pub fn cmdRun(
         .runtime_params = &resolved_params,
         .skip_tasks = skip_tasks,
         .notify_override = notify_override,
+        .only_mode = only_mode,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -764,7 +766,7 @@ pub fn cmdWorkflow(
                 try color.printDim(w, use_color, "  (no tasks)\n", .{});
                 continue;
             }
-            var plan = scheduler.planDryRun(allocator, &config, stage.tasks) catch |err| {
+            var plan = scheduler.planDryRun(allocator, &config, stage.tasks, false) catch |err| {
                 switch (err) {
                     error.TaskNotFound => try color.printError(err_writer, use_color,
                         "workflow: A task in stage '{s}' was not found\n", .{stage.name}),
@@ -1554,6 +1556,7 @@ test "cmdRun: missing config returns error" {
         empty_params,
         &.{},
         false, // notify_override
+        false, // only_mode
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1602,6 +1605,7 @@ test "cmdRun: unknown task returns error" {
         empty_params,
         &.{},
         false, // notify_override
+        false, // only_mode
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1650,6 +1654,7 @@ test "cmdRun: dry run shows plan without executing" {
         empty_params,
         &.{},
         false, // notify_override
+        false, // only_mode
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1698,6 +1703,7 @@ test "cmdRun: successful task returns 0" {
         empty_params,
         &.{},
         false, // notify_override
+        false, // only_mode
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1746,6 +1752,7 @@ test "cmdRun: failing task returns 1" {
         empty_params,
         &.{},
         false, // notify_override
+        false, // only_mode
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

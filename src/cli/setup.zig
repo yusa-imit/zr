@@ -111,6 +111,7 @@ pub fn cmdSetup(
             empty_params,
             &.{},
             false, // notify_override
+            false, // only_mode
         );
 
         if (exit_code != 0) {
