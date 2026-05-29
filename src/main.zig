@@ -1374,6 +1374,19 @@ fn run(
         }, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "completion")) {
         const shell = if (effective_args.len >= 3) effective_args[2] else "";
+        if (std.mem.eql(u8, shell, "--help") or std.mem.eql(u8, shell, "-h")) {
+            try effective_w.writeAll("Usage: zr completion <shell>\n\n");
+            try effective_w.writeAll("Generate shell completion scripts.\n\n");
+            try effective_w.writeAll("Shells:\n");
+            try effective_w.writeAll("  bash        Generate bash completion script\n");
+            try effective_w.writeAll("  zsh         Generate zsh completion script\n");
+            try effective_w.writeAll("  fish        Generate fish completion script\n");
+            try effective_w.writeAll("  powershell  Generate PowerShell completion script\n\n");
+            try effective_w.writeAll("Examples:\n");
+            try effective_w.writeAll("  zr completion bash >> ~/.bashrc\n");
+            try effective_w.writeAll("  zr completion zsh >> ~/.zshrc\n");
+            return 0;
+        }
         return completion.cmdCompletion(shell, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "workspace")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
@@ -1486,6 +1499,10 @@ fn run(
             return 1;
         }
         const subcmd = effective_args[2];
+        if (std.mem.eql(u8, subcmd, "--help") or std.mem.eql(u8, subcmd, "-h")) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (std.mem.eql(u8, subcmd, "serve")) {
             // Check for --help flag
             const mcp_args = if (effective_args.len >= 4) effective_args[3..] else &[_][]const u8{};
