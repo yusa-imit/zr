@@ -883,6 +883,10 @@ fn run(
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
+        if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (effective_args.len < 3) {
             // No task name provided — launch interactive picker
             if (!std.fs.File.stdout().isTty()) {
