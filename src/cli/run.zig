@@ -329,6 +329,9 @@ pub fn cmdRun(
             return 1;
         };
         defer plan.deinit();
+        if (only_mode) {
+            try color.printDim(w, use_color, "(--only mode: dependencies skipped)\n", .{});
+        }
         try printDryRunPlan(allocator, w, use_color, plan, &config);
         return 0;
     }
