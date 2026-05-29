@@ -54,9 +54,26 @@ deps_optional = ["format"]  # skip if doesn't exist
 |-------|------|---------|-------------|
 | `dir` | string | null | Working directory (alias: `cwd`) |
 | `env` | table | `{}` | Environment variable overrides |
+| `env_file` | string or array | null | Load env vars from `.env` file(s) |
+| `required_env` | array of strings | `[]` | Env vars that must be set before task runs |
 | `condition` | string | null | Expression to evaluate before running |
 | `allow_failure` | boolean | `false` | Continue if task fails |
 | `timeout_ms` | integer | null | Timeout in milliseconds |
+
+**`required_env` example** (since v1.84.0):
+```toml
+[tasks.deploy]
+cmd = "kubectl apply -f k8s/"
+required_env = ["KUBECONFIG", "DEPLOY_ENV", "IMAGE_TAG"]
+# Fails immediately with clear error if any of these are not set
+```
+
+Output when a required variable is missing:
+```
+✗ deploy: required environment variable 'KUBECONFIG' is not set
+
+  Hint: Set KUBECONFIG before running this task
+```
 
 ### Retry Configuration
 

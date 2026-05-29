@@ -1,6 +1,6 @@
 # Task Selection & Filtering
 
-> **Since**: v1.77.0
+> **Since**: v1.77.0 | `--only` since v1.85.0 | `--dir` since v1.83.0
 
 zr provides powerful task selection patterns for efficiently targeting tasks in large monorepos and complex workflows. Instead of running tasks one-by-one by exact name, you can use glob patterns, tag-based filters, and combinations to select multiple tasks at once.
 
@@ -12,6 +12,8 @@ zr provides powerful task selection patterns for efficiently targeting tasks in 
 - [Combining Filters](#combining-filters)
 - [Multiple Task Execution](#multiple-task-execution)
 - [Dry-Run Preview](#dry-run-preview)
+- [Skip Dependencies with --only](#skip-dependencies-with---only)
+- [Directory Filtering with --dir](#directory-filtering-with---dir)
 - [Real-World Examples](#real-world-examples)
 - [Comparison with Other Tools](#comparison-with-other-tools)
 - [Best Practices](#best-practices)
@@ -370,6 +372,94 @@ zr run 'backend:**' --tag=api --exclude-tag=deprecated --dry-run
 [dry-run] Filtered out 2 tasks:
   - test:stress (excluded by --exclude-tag=slow)
   - test:flaky (excluded by --exclude-tag=flaky)
+```
+
+---
+
+## Skip Dependencies with --only
+
+> **Since**: v1.85.0
+
+The `--only` flag runs a task without executing its declared dependencies. This is useful when dependencies are already satisfied and you want to iterate on a specific task quickly.
+
+```bash
+# Run only 'build' even if it has deps = ["setup", "generate"]
+zr run --only build
+
+# Compare: normal run executes all dependencies first
+zr run build       # runs: setup → generate → build
+zr run --only build  # runs: build (only)
+```
+
+### When to Use --only
+
+```toml
+[tasks.generate]
+cmd = "codegen --all"  # Slow step, rarely changes
+
+[tasks.build]
+cmd = "zig build"
+deps = ["generate"]    # Depends on generate
+```
+
+```bash
+# First run: build everything including codegen
+zr run build
+
+# Subsequent iterations: skip slow codegen (already done)
+zr run --only build
+
+# Combination with dry-run to preview
+zr run --only build --dry-run
+```
+
+### Note: --only Skips ALL Dependencies
+
+`--only` skips every declared dependency, even required ones. Use it only when you know the dependency outputs are already up to date.
+
+```bash
+# ✅ Good use: re-run build after editing source (codegen output unchanged)
+zr run --only build
+
+# ❌ Bad use: skipping a genuinely required setup step
+zr run --only test  # may fail if test fixtures were never built
+```
+
+---
+
+## Directory Filtering with --dir
+
+> **Since**: v1.83.0
+
+The `--dir` flag restricts task execution to tasks whose `cwd` (working directory) matches a given prefix. This is especially useful in monorepos where tasks are organized by directory.
+
+```bash
+# Run only tasks whose cwd is under packages/api
+zr run 'test:*' --dir=packages/api
+
+# Run only tasks in the frontend directory
+zr run build --dir=packages/frontend
+```
+
+```toml
+[tasks.test:api]
+cmd = "pytest"
+cwd = "packages/api"       # ✅ matches --dir=packages/api
+
+[tasks.test:frontend]
+cmd = "vitest"
+cwd = "packages/frontend"  # ❌ skipped with --dir=packages/api
+
+[tasks.test:shared]
+cmd = "zig build test"
+# cwd not set (uses root)  # ❌ skipped with --dir=packages/api
+```
+
+### Combining with Skip
+
+```bash
+# Run backend tests, skipping slow integration tests
+zr run 'test:*' --dir=packages/api --skip=test:integration
 ```
 
 ---
@@ -742,9 +832,7 @@ description = "Tagging taxonomy: [category, environment, priority, performance]"
 
 Planned for future releases:
 
-- **Directory scoping**: `zr run --dir=packages/api` (select tasks by location)
 - **OR logic for tags**: `--tags-any=critical,urgent` (match ANY tag)
-- **Affected detection**: `zr run --affected` (git diff integration)
 - **Regex patterns**: `zr run --pattern='test:.*-api$'` (regex matching)
 - **Inverse patterns**: `zr run '!test:slow*'` (exclude patterns)
 

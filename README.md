@@ -150,6 +150,11 @@ matrix = { target = ["x86_64-linux", "aarch64-darwin"] }
 cmd = "curl https://api.example.com/health"
 retry = { max = 3, delay = "5s", backoff = "exponential" }
 
+# Required environment variables (v1.84.0+)
+[tasks.deploy]
+cmd = "kubectl apply -f k8s/"
+required_env = ["KUBECONFIG", "DEPLOY_ENV"]  # Fail with clear error if missing
+
 # Desktop notifications (v1.83.0+)
 [tasks.long-build]
 cmd = "cargo build --release"
@@ -162,7 +167,8 @@ notify_title = "Build done"
 ```bash
 zr run <task>              # Execute a task
 zr run <task> --skip dep   # Skip specific dependency tasks
-zr run --dir packages/app  # Run tasks in matching directories
+zr run --only <task>       # Run only this task, skip its dependencies (v1.85.0+)
+zr run --dir packages/app  # Run tasks in matching directories (v1.83.0+)
 zr list                    # Show all tasks
 zr graph <task>            # Visualize dependency graph
 zr watch <task> [paths]    # Re-run on file changes
