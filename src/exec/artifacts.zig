@@ -361,7 +361,7 @@ test "collectArtifacts: early return when no artifacts configured" {
     const allocator = std.testing.allocator;
 
     const task = loader.Task{
-        .name = "test",
+        .name = "no-artifacts-unit-test-task",
         .cmd = "echo hello",
         .cwd = null,
         .env = &[_][2][]const u8{},
@@ -381,18 +381,19 @@ test "collectArtifacts: early return when no artifacts configured" {
         .compress_artifacts = false,
     };
 
-    // Should complete without error and without creating any directories
+    // Should complete without error
     try collectArtifacts(allocator, task, 0, 100);
 
-    // Verify .zr/artifacts directory was NOT created (early return in collectArtifacts)
+    // Verify task-specific artifact directory was NOT created (early return in collectArtifacts).
+    // Check for the task directory, not the base .zr/artifacts dir (which may exist from other tasks).
     var cwd = std.fs.cwd();
-    var artifact_dir = cwd.openDir(".zr/artifacts", .{}) catch |err| {
-        // Expected: directory should not exist since no artifacts were collected
+    var task_dir = cwd.openDir(".zr/artifacts/no-artifacts-unit-test-task", .{}) catch |err| {
+        // Expected: task directory should not exist since no artifacts were configured
         try std.testing.expectEqual(error.FileNotFound, err);
         return;
     };
-    defer artifact_dir.close();
+    defer task_dir.close();
 
-    // If we reach here, the directory exists - this is unexpected
+    // If we reach here, the task artifact directory exists unexpectedly
     return error.TestUnexpectedBehavior;
 }

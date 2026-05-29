@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.83.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.83.0)
+[![Version](https://img.shields.io/badge/version-1.84.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.84.0)
 
 ---
 
@@ -167,10 +167,13 @@ notify_title = "Build done"
 ```bash
 zr run <task>              # Execute a task
 zr run <task> --skip dep   # Skip specific dependency tasks
-zr run <task> --only       # Run only this task, skip dependencies (v1.85.0+)
+zr run <task> --only       # Run only this task, skip dependencies (v1.84.0+)
 zr run --only <task>       # Alternate form (same effect)
 zr run --dir packages/app  # Run tasks in matching directories (v1.83.0+)
 zr list                    # Show all tasks
+zr list --sort=freq        # Sort by most frequently run (v1.84.0+)
+zr list --sort=recent      # Sort by most recently run (v1.84.0+)
+zr list --sort=time        # Sort by slowest average duration (v1.84.0+)
 zr graph <task>            # Visualize dependency graph
 zr watch <task> [paths]    # Re-run on file changes
 zr interactive             # TUI task picker

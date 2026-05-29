@@ -931,7 +931,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v1.10.0 | DONE | Mouse event handling (SGR), widget mouse interaction, gamepad/touch |
 | v1.11.0 | DONE | Particle effects, blur/transparency, Sixel/Kitty graphics, transitions |
 | v1.12.0 | DONE | Session recording, audit logging, WCAG AAA themes, screen reader |
-| v1.13.0 | READY | Syntax highlighting, code editor, autocomplete, multi-cursor, rich text |
+| v1.13.0 | DONE | Syntax highlighting, code editor, autocomplete, multi-cursor, rich text |
 | v1.13.1 | DONE | Integer overflow fix for data visualization widgets |
 | v1.14.0 | DONE | Memory pooling, render profiling, virtual widget rendering, incremental layout, buffer compression |
 | v1.15.0 | DONE | Thread safety fixes, XTGETTCAP terminal capability detection, memory leak audit, multi-platform CI |

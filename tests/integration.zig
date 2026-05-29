@@ -58,6 +58,7 @@ comptime {
     _ = @import("lang_provider_test.zig");
     _ = @import("lint_test.zig");
     _ = @import("list_test.zig");
+    _ = @import("list_sort_test.zig");
     _ = @import("live_test.zig");
     _ = @import("lsp_test.zig");
     _ = @import("mcp_test.zig");

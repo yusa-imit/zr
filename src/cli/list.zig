@@ -166,6 +166,7 @@ pub fn cmdList(
     show_cache: bool,
     show_env: bool,
     verbose: bool,
+    sort_by: ?[]const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -552,6 +553,75 @@ pub fn cmdList(
         }
         names.clearRetainingCapacity();
         try names.appendSlice(allocator, matched_names.items);
+    }
+
+    // Apply --sort=<key> sort to the final task list (v1.85.0).
+    // Supported keys: "name" (default, alphabetical), "freq" (most-run first),
+    // "time" (slowest first), "recent" (last-run first).
+    if (sort_by) |key| {
+        if (std.mem.eql(u8, key, "freq")) {
+            var exec_counts = std.StringHashMap(usize).init(allocator);
+            defer exec_counts.deinit();
+            for (records_list.items) |rec| {
+                const c = exec_counts.get(rec.task_name) orelse 0;
+                try exec_counts.put(rec.task_name, c + 1);
+            }
+            const NC = struct { name: []const u8, count: usize };
+            var nc_list = std.ArrayList(NC){};
+            defer nc_list.deinit(allocator);
+            for (names.items) |name| {
+                try nc_list.append(allocator, .{ .name = name, .count = exec_counts.get(name) orelse 0 });
+            }
+            std.mem.sort(NC, nc_list.items, {}, struct {
+                fn lessThan(_: void, a: NC, b: NC) bool {
+                    if (a.count != b.count) return a.count > b.count;
+                    return std.mem.lessThan(u8, a.name, b.name);
+                }
+            }.lessThan);
+            names.clearRetainingCapacity();
+            for (nc_list.items) |nc| try names.append(allocator, nc.name);
+        } else if (std.mem.eql(u8, key, "time")) {
+            const ND = struct { name: []const u8, avg_ms: u64 };
+            var nd_list = std.ArrayList(ND){};
+            defer nd_list.deinit(allocator);
+            for (names.items) |name| {
+                const avg_ms = if (try history_stats.calculateStats(records_list.items, name, allocator)) |stats|
+                    stats.avg_ms
+                else
+                    0;
+                try nd_list.append(allocator, .{ .name = name, .avg_ms = avg_ms });
+            }
+            std.mem.sort(ND, nd_list.items, {}, struct {
+                fn lessThan(_: void, a: ND, b: ND) bool {
+                    if (a.avg_ms != b.avg_ms) return a.avg_ms > b.avg_ms;
+                    return std.mem.lessThan(u8, a.name, b.name);
+                }
+            }.lessThan);
+            names.clearRetainingCapacity();
+            for (nd_list.items) |nd| try names.append(allocator, nd.name);
+        } else if (std.mem.eql(u8, key, "recent")) {
+            var last_run = std.StringHashMap(i64).init(allocator);
+            defer last_run.deinit();
+            for (records_list.items) |rec| {
+                const cur = last_run.get(rec.task_name) orelse 0;
+                if (rec.timestamp > cur) try last_run.put(rec.task_name, rec.timestamp);
+            }
+            const NT = struct { name: []const u8, ts: i64 };
+            var nt_list = std.ArrayList(NT){};
+            defer nt_list.deinit(allocator);
+            for (names.items) |name| {
+                try nt_list.append(allocator, .{ .name = name, .ts = last_run.get(name) orelse 0 });
+            }
+            std.mem.sort(NT, nt_list.items, {}, struct {
+                fn lessThan(_: void, a: NT, b: NT) bool {
+                    if (a.ts != b.ts) return a.ts > b.ts;
+                    return std.mem.lessThan(u8, a.name, b.name);
+                }
+            }.lessThan);
+            names.clearRetainingCapacity();
+            for (nt_list.items) |nt| try names.append(allocator, nt.name);
+        }
+        // "name" and unknown keys: already alphabetically sorted above
     }
 
     // Group by tags if requested
@@ -1251,7 +1321,7 @@ test "cmdList: text output lists tasks alphabetically" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -1275,7 +1345,7 @@ test "cmdList: json output contains tasks array" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1292,7 +1362,7 @@ test "cmdList: missing config file returns error" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, "/nonexistent/path/zr.toml", false, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, "/nonexistent/path/zr.toml", false, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
 }
 
@@ -1427,7 +1497,7 @@ test "cmdList: tree mode renders dependency graph" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -1453,7 +1523,7 @@ test "cmdList: tree mode with no tasks shows empty message" {
     const stderr_f = std.fs.File.stderr();
     var err_w = stderr_f.writer(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, true, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 }
 
@@ -1486,7 +1556,7 @@ test "cmdList: filter pattern matches subset of tasks" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, "test", null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, "test", null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1522,7 +1592,7 @@ test "cmdList: filter pattern with no matches returns empty list" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, true, false, "nonexistent", null, null, false, false, false, false, null, null, null, null, false, false, false, false, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, true, false, "nonexistent", null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1558,7 +1628,7 @@ test "cmdList: --profiles flag lists profile names" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, false, false, false, false, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, false, false, false, false, null, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];
@@ -1589,7 +1659,7 @@ test "cmdList: --profiles flag with no profiles returns empty" {
     var err_buf: [4096]u8 = undefined;
     var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, false, false, false, false, &out_w, &err_w, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, true, false, false, false, null, null, null, null, false, false, false, false, null, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
 
     const written = out_buf[0..out_w.end];

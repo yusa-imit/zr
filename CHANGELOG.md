@@ -7,24 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.84.0] - 2026-05-30
+
 ### Added
 - **`--only` flag for `zr run`** — Run only the specified task(s) without executing their dependencies
-  - `zr run --only build` executes `build` even if it declares `deps = ["setup"]`
+  - `zr run build --only` or `zr run --only build` — both forms accepted
   - Useful when dependencies are already satisfied and you want to iterate on a specific task
   - Works with `--dry-run`, `--format json`, and other run flags
+  - Dry-run output shows `(--only mode: dependencies skipped)` note
   - 7 integration tests covering core behaviour, edge cases, and flag combinations
 - **`required_env` task field** — Declare mandatory environment variables that must be set before a task runs
   - `required_env = ["DATABASE_URL", "API_KEY"]` — task fails with clear error if any var is missing
   - Checked before task execution (no partial execution on missing vars)
   - Variables can be sourced from system env, task `env`, or `env_file`
   - 10 integration tests covering validation, error messages, and env-source combinations
+- **`--sort=<key>` flag for `zr list`** — Sort the task list by different criteria
+  - `--sort=name` — alphabetical order (default behaviour, unchanged)
+  - `--sort=freq` — most-executed tasks appear first (uses execution history)
+  - `--sort=time` — slowest tasks (highest average duration) appear first
+  - `--sort=recent` — most-recently-run tasks appear first
+  - Falls back to alphabetical order when no history data is available
+  - Composable with existing filters: `zr list build --sort=freq` shows only `build*` tasks sorted by frequency
+  - 9 integration tests covering all sort modes, history-based ordering, and filter combinations
 
 ### Fixed
-- Integration test panic on Linux: `Dir.openDirAbsolute` calls in `artifact_management_test.zig` and `cache_storage_test.zig` now use `.{ .iterate = true }` as required by Zig 0.15.2 on Linux for directory iteration
+- `--help` flag now works for all CLI commands: `run`, `watch`, `workflow`, `live`, `monitor`, `irun`, `add`, `edit`, `template`, `completion`, `mcp` — previously treated as task/subcommand name
+- `zr run --only <task>` pre-task-name form now supported (previously only `zr run <task> --only` worked)
+- Integration test panic on Linux: `Dir.openDirAbsolute` calls in artifact and cache tests now use `.{ .iterate = true }` as required by Zig 0.15.2
+- `completion` test: `powershell` is now a supported shell; test uses `tcsh` as unsupported shell example
+- GitHub Actions: opt into Node.js 24 to prevent CI breakage on June 2, 2026
 
 ### Changed
-- Updated README version badge and documentation to v1.83.0
-- Added desktop notification (`notify`/`notify_on`/`notify_title`) and `--skip`/`--dir`/`--notify` flag examples to README
+- Updated README with `--only`, `required_env`, `--dir` examples
+- Documentation: added `--only` and `--dir` sections to `task-selection.md`; added `required_env` and `env_file` to `config-reference.md`
+- Migrated to sailor v2.13.0
 
 ## [1.83.0] - 2026-05-27
 

@@ -105,9 +105,34 @@ fn handleGet(allocator: std.mem.Allocator, args: []const []const u8, w: *std.Io.
             return;
         }
 
-        try w.print("Artifacts for task '{s}' ({d} total):\n", .{ task_name, artifact_list.items.len });
+        try w.print("Artifacts for task '{s}' ({d} artifact run(s)):\n", .{ task_name, artifact_list.items.len });
         for (artifact_list.items) |item| {
-            try w.print("  - {s}\n", .{item.name});
+            try w.print("  [{s}]\n", .{item.name});
+            // Show files from manifest if available
+            const manifest_path = try std.fmt.allocPrint(allocator, "{s}/{s}/manifest.json", .{ artifacts_base, item.name });
+            defer allocator.free(manifest_path);
+            if (std.fs.cwd().readFileAlloc(allocator, manifest_path, 1024 * 1024)) |manifest_data| {
+                defer allocator.free(manifest_data);
+                // Extract "files" array from manifest JSON to show filenames
+                if (std.mem.indexOf(u8, manifest_data, "\"files\"")) |_| {
+                    var line_it = std.mem.splitScalar(u8, manifest_data, '\n');
+                    var in_files = false;
+                    while (line_it.next()) |line| {
+                        const trimmed = std.mem.trim(u8, line, " \t\r");
+                        if (std.mem.indexOf(u8, trimmed, "\"files\"") != null) {
+                            in_files = true;
+                            continue;
+                        }
+                        if (in_files) {
+                            if (std.mem.startsWith(u8, trimmed, "]")) break;
+                            if (std.mem.startsWith(u8, trimmed, "\"") and trimmed.len > 2) {
+                                const fname = std.mem.trim(u8, trimmed, "\",");
+                                if (fname.len > 0) try w.print("      • {s}\n", .{fname});
+                            }
+                        }
+                    }
+                }
+            } else |_| {}
         }
     }
 }

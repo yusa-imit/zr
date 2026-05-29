@@ -1223,6 +1223,36 @@ fn run(
         var show_status = false;
         var show_cache = false;
         var list_verbose = false;
+        var sort_by: ?[]const u8 = null;
+        // Quick --help check before full arg parsing
+        for (effective_args[2..]) |a| {
+            if (std.mem.eql(u8, a, "--help") or std.mem.eql(u8, a, "-h")) {
+                try color.printInfo(effective_w, effective_color,
+                    "Usage: zr list [OPTIONS] [PATTERN]\n\n" ++
+                    "List all available tasks and workflows.\n\n" ++
+                    "OPTIONS:\n" ++
+                    "  --tree               Show dependency tree\n" ++
+                    "  --sort=<key>         Sort by: name (default), freq, time, recent\n" ++
+                    "  --group-by-tags      Group tasks by their tags\n" ++
+                    "  --tags=<tags>        Filter tasks by tags (comma-separated)\n" ++
+                    "  --exclude-tags=<t>   Exclude tasks with these tags\n" ++
+                    "  --search=<text>      Full-text search in name, description, command\n" ++
+                    "  --fuzzy              Fuzzy-match PATTERN against task names\n" ++
+                    "  --recent[=N]         Show N most recently run tasks (default: 10)\n" ++
+                    "  --frequent[=N]       Show N most frequently run tasks (default: 10)\n" ++
+                    "  --slow[=MS]          Show tasks slower than threshold (default: 30s)\n" ++
+                    "  --status             Show up-to-date status for each task\n" ++
+                    "  --show-cache         Show cache status for each task\n" ++
+                    "  --show-env           Show effective environment variables\n" ++
+                    "  --verbose            Show detailed task metadata\n" ++
+                    "  --format json        Output as JSON\n" ++
+                    "  --members            List workspace members only\n" ++
+                    "  -h, --help           Show this help\n",
+                    .{},
+                );
+                return 0;
+            }
+        }
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
@@ -1290,12 +1320,19 @@ fn run(
                     i += 1;
                     exclude_tags = effective_args[i];
                 }
+            } else if (std.mem.startsWith(u8, arg, "--sort=")) {
+                sort_by = arg["--sort=".len..];
+            } else if (std.mem.eql(u8, arg, "--sort")) {
+                if (i + 1 < effective_args.len) {
+                    i += 1;
+                    sort_by = effective_args[i];
+                }
             } else if (!std.mem.startsWith(u8, arg, "--")) {
                 // First non-flag argument is the filter pattern
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "help")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "help: missing task name\n\n  Usage: zr help <task-name>\n", .{});
