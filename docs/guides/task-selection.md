@@ -384,7 +384,8 @@ The `--only` flag runs a task without executing its declared dependencies. This 
 
 ```bash
 # Run only 'build' even if it has deps = ["setup", "generate"]
-zr run build --only
+zr run build --only   # flag after task name
+zr run --only build   # flag before task name (same effect)
 
 # Compare: normal run executes all dependencies first
 zr run build       # runs: setup → generate → build

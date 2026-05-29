@@ -932,7 +932,18 @@ fn run(
                 return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent, &.{});
             }
         }
-        const task_name = effective_args[2];
+        // Support `zr run --only <task>` in addition to `zr run <task> --only`
+        var only_mode_pre = false;
+        var task_name_idx: usize = 2;
+        if (std.mem.eql(u8, effective_args[2], "--only")) {
+            if (effective_args.len < 4) {
+                try color.printError(ew, effective_color, "run: --only requires a task name\n\n  Hint: zr run <task-name> --only\n", .{});
+                return 1;
+            }
+            only_mode_pre = true;
+            task_name_idx = 3;
+        }
+        const task_name = effective_args[task_name_idx];
 
         // Parse filtering flags (v1.77.0 — Enhanced Task Filtering)
         var include_tags = std.ArrayList([]const u8){};
@@ -956,8 +967,8 @@ fn run(
             skip_tasks_list.deinit(allocator);
         }
 
-        // Parse --only flag (v1.85.0)
-        var only_mode: bool = false;
+        // Parse --only flag (v1.85.0); initialized from pre-scan if `zr run --only <task>` form
+        var only_mode: bool = only_mode_pre;
 
         // Parse runtime task parameters (v1.75.0)
         // Supports 3 syntaxes:

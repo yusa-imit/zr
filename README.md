@@ -167,7 +167,8 @@ notify_title = "Build done"
 ```bash
 zr run <task>              # Execute a task
 zr run <task> --skip dep   # Skip specific dependency tasks
-zr run <task> --only       # Run only this task, skip its dependencies (v1.85.0+)
+zr run <task> --only       # Run only this task, skip dependencies (v1.85.0+)
+zr run --only <task>       # Alternate form (same effect)
 zr run --dir packages/app  # Run tasks in matching directories (v1.83.0+)
 zr list                    # Show all tasks
 zr graph <task>            # Visualize dependency graph
