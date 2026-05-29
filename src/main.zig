@@ -1419,6 +1419,10 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "interactive") or std.mem.eql(u8, cmd, "i")) {
         return tui.cmdInteractive(allocator, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "live")) {
+        if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "live: missing task name\n\n  Hint: zr live <task-name> [task-name...]\n", .{});
             return 1;
@@ -1426,6 +1430,10 @@ fn run(
         const task_names = effective_args[2..];
         return live_cmd.cmdLive(allocator, task_names, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "monitor")) {
+        if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "monitor: missing workflow name\n\n  Hint: zr monitor <workflow-name>\n", .{});
             return 1;
@@ -1433,6 +1441,10 @@ fn run(
         const workflow_name = effective_args[2];
         return monitor_dashboard.cmdMonitor(allocator, workflow_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "interactive-run") or std.mem.eql(u8, cmd, "irun")) {
+        if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "interactive-run: missing task name\n\n  Hint: zr interactive-run <task-name>\n", .{});
             return 1;
@@ -2289,6 +2301,54 @@ test "workspace command: run missing task name returns error" {
     const fake_args = [_][]const u8{ "zr", "workspace", "run" };
     const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
     try std.testing.expectEqual(@as(u8, 1), code);
+}
+
+test "live --help shows help instead of treating flag as task name" {
+    const allocator = std.testing.allocator;
+
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
+
+    const fake_args = [_][]const u8{ "zr", "live", "--help" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "monitor --help shows help instead of treating flag as workflow name" {
+    const allocator = std.testing.allocator;
+
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
+
+    const fake_args = [_][]const u8{ "zr", "monitor", "--help" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+}
+
+test "irun --help shows help instead of treating flag as task name" {
+    const allocator = std.testing.allocator;
+
+    const null_file = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+    defer null_file.close();
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = null_file.writer(&out_buf);
+    var err_w = null_file.writer(&err_buf);
+
+    const fake_args = [_][]const u8{ "zr", "irun", "--help" };
+    const code = try run(allocator, &fake_args, &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
 }
 
 // Force remote module test discovery by referencing it

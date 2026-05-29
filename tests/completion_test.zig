@@ -39,15 +39,24 @@ test "completion: fish generates valid fish completion script" {
 }
 
 test "completion: unsupported shell returns error" {
-    var result = try helpers.runZr(std.testing.allocator, &.{ "completion", "powershell" }, null);
+    var result = try helpers.runZr(std.testing.allocator, &.{ "completion", "tcsh" }, null);
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "unknown shell") != null);
 }
 
+test "completion: powershell generates valid powershell completion script" {
+    var result = try helpers.runZr(std.testing.allocator, &.{ "completion", "powershell" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Register-ArgumentCompleter") != null);
+    try std.testing.expect(result.stdout.len > 100);
+}
+
 test "completion: all shells generate non-empty output" {
-    const shells = [_][]const u8{ "bash", "zsh", "fish" };
+    const shells = [_][]const u8{ "bash", "zsh", "fish", "powershell" };
     for (shells) |shell| {
         var result = try helpers.runZr(std.testing.allocator, &.{ "completion", shell }, null);
         defer result.deinit();
