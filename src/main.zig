@@ -1163,6 +1163,10 @@ fn run(
         // No filtering — run single task directly (existing behavior)
         return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode);
     } else if (std.mem.eql(u8, cmd, "watch")) {
+        if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "watch: missing task name\n\n  Hint: zr watch <task-name> [path...]\n", .{});
             return 1;
@@ -1171,6 +1175,10 @@ fn run(
         const watch_paths: []const []const u8 = if (effective_args.len > 3) effective_args[3..] else &[_][]const u8{"."};
         return run_cmd.cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color, filter_options, silent, &.{});
     } else if (std.mem.eql(u8, cmd, "workflow")) {
+        if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+            try printHelp(effective_w, effective_color);
+            return 0;
+        }
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "workflow: missing workflow name\n\n  Hint: zr workflow <name>\n", .{});
             return 1;
