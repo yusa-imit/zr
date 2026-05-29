@@ -44,3 +44,5 @@
 {"timestamp":"2026-05-28T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for required_env feature","project":"zr"}
 {"timestamp":"2026-05-28T00:05:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement required_env feature in types.zig, parser.zig, scheduler.zig","project":"zr"}
 {"timestamp":"2026-05-29T00:00:00Z","action":"subagent","agent_type":"stabilization","task":"STABILIZATION session 290: fix required_env parser clear bug, commit pending required_env v1.84.0 feature","project":"zr"}
+{"timestamp":"2026-05-29T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for --only flag (run_only_test.zig)","project":"zr"}
+{"timestamp":"2026-05-29T10:20:00Z","action":"subagent","agent_type":"Explore","task":"Analyze CI failure in artifact_management_test.zig:109","project":"zr"}
