@@ -652,6 +652,8 @@ test "1022: save handles write errors gracefully" {
 
 test "1023: save creates backup before modifying config" {
     // Expected: zr.toml.bak created as safety measure
+    // Skip in non-TTY environments (--interactive requires TTY)
+    if (!isTty()) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
