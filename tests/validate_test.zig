@@ -1535,3 +1535,28 @@ test "3906: validate warns about malformed plugin source" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "protocol or path") != null);
 }
+
+test "validate --help: exits 0 and shows focused validate usage" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{ "validate", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show validate-specific usage, not run validation
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr validate [OPTIONS]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--strict") != null);
+    // Must not show "Configuration valid" (validation output)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Configuration valid") == null);
+}
+
+test "which --help: exits 0 and shows focused which usage" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{ "which", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show which-specific usage, not try to find a task named "--help"
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr which <TASK>") != null);
+    // Must not show task-not-found error
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") == null);
+}

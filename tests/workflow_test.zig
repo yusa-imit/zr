@@ -1124,7 +1124,7 @@ test "inline stages with all stage options" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Testing...") != null);
 }
 
-test "workflow --help: exits 0 and shows usage" {
+test "workflow --help: exits 0 and shows focused workflow usage" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1136,6 +1136,9 @@ test "workflow --help: exits 0 and shows usage" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(result.stdout.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "workflow") != null);
+    // Must show workflow-specific usage, not the global help
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr workflow <NAME>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--matrix-show") != null);
+    // Must not show unrelated command descriptions
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cache clear") == null);
 }

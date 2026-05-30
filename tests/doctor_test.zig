@@ -131,3 +131,15 @@ test "730: doctor succeeds with passing checks" {
     // Should show completion message
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "checks passed") != null or std.mem.indexOf(u8, result.stderr, "issue") != null);
 }
+
+test "doctor --help: exits 0 and shows focused doctor usage" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{ "doctor", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr doctor [OPTIONS]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--verbose") != null);
+    // Must not run actual diagnostics
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "git") == null);
+}

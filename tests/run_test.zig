@@ -3958,3 +3958,26 @@ test "3811: run --dir with no matching tasks reports error" {
         std.mem.indexOf(u8, result.stderr, "filter") != null or
         std.mem.indexOf(u8, result.stdout, "match") != null);
 }
+
+test "run --help: exits 0 and shows focused run-specific usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "run", "--help" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show run-specific usage with task argument and flags
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr run [TASK|PATTERN]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--tag=TAG") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--skip=TASK") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--only") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--notify") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "--fail-fast") != null);
+    // Must not show the global command listing (proves it's focused help)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cache clear") == null);
+}

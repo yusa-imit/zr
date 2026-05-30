@@ -30,6 +30,10 @@ cmd = "echo 'Deploying to $ENV...'"
 description = "Deploy to environment"
 deps = ["test"]
 env = { ENV = "production" }
+# Desktop notification when deployment completes
+notify = true
+notify_on = "always"
+notify_title = "Deployment"
 
 # Task with working directory
 [tasks.backend-test]
@@ -48,3 +52,16 @@ matrix.lang = ["javascript", "python", "rust"]
 cmd = "date"
 description = "Show current timestamp"
 cache = false
+
+# Task with required environment variables (fails fast if missing)
+[tasks.release]
+cmd = "echo 'Releasing to $REGISTRY...'"
+description = "Push release to registry"
+required_env = ["REGISTRY", "API_TOKEN"]
+deps = ["build", "test"]
+
+# Task with aliases for convenience
+[tasks.fmt]
+cmd = "echo 'Formatting code...'"
+description = "Format source code"
+aliases = ["format", "f"]

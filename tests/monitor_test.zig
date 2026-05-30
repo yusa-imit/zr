@@ -149,7 +149,7 @@ test "920: run with --monitor on failing task still monitors" {
     try std.testing.expect(result.exit_code != 0);
 }
 
-test "monitor --help: exits 0 and shows usage" {
+test "monitor --help: exits 0 and shows focused monitor usage" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -161,6 +161,9 @@ test "monitor --help: exits 0 and shows usage" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(result.stdout.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "monitor") != null);
+    // Must show monitor-specific usage, not the global help
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr monitor <WORKFLOW>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "resource monitoring dashboard") != null);
+    // Must not show unrelated command descriptions
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr run <task>") == null);
 }

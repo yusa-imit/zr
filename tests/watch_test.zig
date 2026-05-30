@@ -346,7 +346,7 @@ test "watch: WatchConfig defaults (adaptive_debounce = false, live_reload = fals
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
-test "watch --help: exits 0 and shows usage" {
+test "watch --help: exits 0 and shows focused watch usage" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -358,6 +358,9 @@ test "watch --help: exits 0 and shows usage" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(result.stdout.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "watch") != null);
+    // Must show watch-specific usage, not the global help
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr watch <TASK>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Watch files for changes") != null);
+    // Must not show unrelated command descriptions
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr run <task>") == null);
 }

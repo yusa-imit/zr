@@ -1820,10 +1820,6 @@ test "566: publish with --since flag filters commits by date" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    // Initialize git repo
-    var dummy = try runZr(allocator, &.{ "run", "--help" }, tmp_path);
-    defer dummy.deinit();
-
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--since=2024-01-01", "--dry-run" }, tmp_path);
     defer result.deinit();
     // Should succeed or report no git repo (depending on test env)

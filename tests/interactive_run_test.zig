@@ -108,7 +108,7 @@ test "interactive-run: unknown task shows error" {
         std.mem.indexOf(u8, result.stderr, "unknown") != null);
 }
 
-test "interactive-run --help: exits 0 and shows usage" {
+test "interactive-run --help: exits 0 and shows focused irun usage" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -120,7 +120,9 @@ test "interactive-run --help: exits 0 and shows usage" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(result.stdout.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "interactive") != null or
-        std.mem.indexOf(u8, result.stdout, "run") != null);
+    // Must show irun-specific usage, not the global help
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr irun <TASK>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cancel/retry") != null);
+    // Must not show unrelated command descriptions
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cache clear") == null);
 }

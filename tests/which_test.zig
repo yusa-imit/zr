@@ -178,3 +178,14 @@ test "3934: which works with minimal task definition" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Dependencies:") == null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tags:") == null);
 }
+
+test "which --help: exits 0 and shows focused which usage" {
+    const allocator = std.testing.allocator;
+    var result = try runZr(allocator, &.{ "which", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr which <TASK>") != null);
+    // Must not try to find a task named "--help"
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") == null);
+}

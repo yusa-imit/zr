@@ -131,7 +131,7 @@ test "live: with output_mode=buffer captures in memory" {
     try std.testing.expect(has_tty_error);
 }
 
-test "live --help: exits 0 and shows usage" {
+test "live --help: exits 0 and shows focused live usage" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -143,6 +143,9 @@ test "live --help: exits 0 and shows usage" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(result.stdout.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "live") != null);
+    // Must show live-specific usage, not the global help
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr live <TASK...>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "live TUI log streaming") != null);
+    // Must not show unrelated command descriptions
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zr run <task>") == null);
 }

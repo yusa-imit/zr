@@ -884,7 +884,42 @@ fn run(
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr run [TASK|PATTERN] [OPTIONS] [PARAMS...]\n\n" ++
+                "Run a task and all its dependencies in topological order.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  <task>                Task name to run (or glob pattern to run multiple)\n" ++
+                "  [key=value...]        Named task parameters\n" ++
+                "  [value...]            Positional task parameters (in declaration order)\n\n" ++
+                "TASK OPTIONS:\n" ++
+                "  --tag=TAG             Filter tasks by tag (repeatable, AND logic)\n" ++
+                "  --exclude-tag=TAG     Exclude tasks with tag (repeatable)\n" ++
+                "  --dir=PATH            Filter tasks by working directory prefix\n" ++
+                "  --skip=TASK           Skip specific tasks (repeatable, comma-separated)\n" ++
+                "  --only                Run only this task without its dependencies\n" ++
+                "  --notify              Enable desktop notifications for all tasks\n" ++
+                "  --fail-fast           Stop on first task failure (default: continue)\n" ++
+                "  --param key=value     Set a named task parameter\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --dry-run, -n         Preview what would run without executing\n" ++
+                "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
+                "  --profile, -p NAME    Activate a named profile\n" ++
+                "  --force               Force re-run even if task outputs are up-to-date\n" ++
+                "  --show-env            Show effective environment variables\n" ++
+                "  --monitor, -m         Display live resource usage during execution\n" ++
+                "  --quiet, -q           Suppress non-error output\n" ++
+                "  --verbose, -v         Verbose output\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr run build                    # Run build task with all its dependencies\n" ++
+                "  zr run test --only              # Run test without running its dependencies\n" ++
+                "  zr run build --dry-run          # Preview what would run without executing\n" ++
+                "  zr run --tag=backend            # Run all tasks tagged 'backend'\n" ++
+                "  zr run deploy --skip=test,lint  # Deploy but skip test and lint tasks\n" ++
+                "  zr run build --jobs=4           # Limit parallel execution to 4 jobs\n" ++
+                "  zr run deploy env=production    # Pass 'env=production' as a task parameter\n",
+                .{},
+            );
             return 0;
         }
         if (effective_args.len < 3) {
@@ -1175,7 +1210,24 @@ fn run(
         return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr watch <TASK> [PATH...] [OPTIONS]\n\n" ++
+                "Watch files for changes and automatically re-run a task.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  <task>                Task to run on file changes (required)\n" ++
+                "  [path...]             Paths to watch for changes (default: \".\")\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
+                "  --profile, -p NAME    Activate a named profile\n" ++
+                "  --quiet, -q           Suppress non-error output\n" ++
+                "  --verbose, -v         Verbose output\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr watch build                  # Watch \".\" and re-run build on changes\n" ++
+                "  zr watch test src/ tests/       # Watch specific directories\n" ++
+                "  zr watch lint src/              # Watch src/ and re-run lint\n",
+                .{},
+            );
             return 0;
         }
         if (effective_args.len < 3) {
@@ -1187,7 +1239,26 @@ fn run(
         return run_cmd.cmdWatch(allocator, task_name, watch_paths, profile_name, max_jobs, config_path, effective_w, ew, effective_color, filter_options, silent, &.{});
     } else if (std.mem.eql(u8, cmd, "workflow")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr workflow <NAME> [OPTIONS]\n\n" ++
+                "Run a named workflow defined in zr.toml.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  <name>                Workflow name to run (required)\n\n" ++
+                "OPTIONS:\n" ++
+                "  --matrix-show         Show matrix expansion steps before running\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --dry-run, -n         Preview what would run without executing\n" ++
+                "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
+                "  --profile, -p NAME    Activate a named profile\n" ++
+                "  --quiet, -q           Suppress non-error output\n" ++
+                "  --verbose, -v         Verbose output\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr workflow deploy             # Run the deploy workflow\n" ++
+                "  zr workflow build --dry-run    # Preview the build workflow\n" ++
+                "  zr workflow release --matrix-show  # Show matrix expansion\n",
+                .{},
+            );
             return 0;
         }
         if (effective_args.len < 3) {
@@ -1410,7 +1481,23 @@ fn run(
         var strict = false;
         var show_schema = false;
         for (effective_args[2..]) |arg| {
-            if (std.mem.eql(u8, arg, "--strict")) {
+            if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                try color.printInfo(effective_w, effective_color,
+                    "Usage: zr validate [OPTIONS]\n\n" ++
+                    "Validate the zr.toml configuration file for syntax and schema errors.\n\n" ++
+                    "OPTIONS:\n" ++
+                    "  --strict              Treat warnings as errors\n" ++
+                    "  --schema              Show the configuration schema\n" ++
+                    "  --config <path>       Config file path (default: zr.toml)\n" ++
+                    "  -h, --help            Show this help\n\n" ++
+                    "EXAMPLES:\n" ++
+                    "  zr validate                     # Validate zr.toml in current directory\n" ++
+                    "  zr validate --strict            # Fail on warnings too\n" ++
+                    "  zr validate --config other.toml # Validate a specific file\n",
+                    .{},
+                );
+                return 0;
+            } else if (std.mem.eql(u8, arg, "--strict")) {
                 strict = true;
             } else if (std.mem.eql(u8, arg, "--schema")) {
                 show_schema = true;
@@ -1481,7 +1568,20 @@ fn run(
         return tui.cmdInteractive(allocator, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "live")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr live <TASK...> [OPTIONS]\n\n" ++
+                "Run tasks with live TUI log streaming.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  <task...>             One or more task names to run (required)\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
+                "  --profile, -p NAME    Activate a named profile\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr live build                   # Run build with live log streaming\n" ++
+                "  zr live test lint               # Stream logs for test and lint in parallel\n",
+                .{},
+            );
             return 0;
         }
         if (effective_args.len < 3) {
@@ -1492,7 +1592,20 @@ fn run(
         return live_cmd.cmdLive(allocator, task_names, profile_name, max_jobs, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "monitor")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr monitor <WORKFLOW> [OPTIONS]\n\n" ++
+                "Run a workflow with a real-time resource monitoring dashboard.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  <workflow>            Workflow name to monitor (required)\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
+                "  --profile, -p NAME    Activate a named profile\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr monitor deploy               # Monitor deploy workflow resource usage\n" ++
+                "  zr monitor build                # Show CPU/memory during build workflow\n",
+                .{},
+            );
             return 0;
         }
         if (effective_args.len < 3) {
@@ -1503,7 +1616,21 @@ fn run(
         return monitor_dashboard.cmdMonitor(allocator, workflow_name, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "interactive-run") or std.mem.eql(u8, cmd, "irun")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr irun <TASK> [OPTIONS]\n\n" ++
+                "Run a task with interactive cancel/retry controls.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  <task>                Task name to run (required)\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --dry-run, -n         Preview what would run without executing\n" ++
+                "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
+                "  --profile, -p NAME    Activate a named profile\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr irun build                   # Run build with interactive controls\n" ++
+                "  zr irun deploy                  # Deploy with cancel/retry on failure\n",
+                .{},
+            );
             return 0;
         }
         if (effective_args.len < 3) {
@@ -1548,7 +1675,17 @@ fn run(
         }
         const subcmd = effective_args[2];
         if (std.mem.eql(u8, subcmd, "--help") or std.mem.eql(u8, subcmd, "-h")) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr mcp <SUBCOMMAND>\n\n" ++
+                "MCP (Model Context Protocol) server for AI agent integration.\n\n" ++
+                "SUBCOMMANDS:\n" ++
+                "  serve                 Start MCP server (stdio transport for Claude/Cursor)\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr mcp serve                    # Start MCP server on stdio\n",
+                .{},
+            );
             return 0;
         }
         if (std.mem.eql(u8, subcmd, "serve")) {
@@ -1616,7 +1753,21 @@ fn run(
         const doctor_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = doctor_cmd.DoctorOptions{};
         for (doctor_args) |arg| {
-            if (std.mem.startsWith(u8, arg, "--config=")) {
+            if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                try color.printInfo(effective_w, effective_color,
+                    "Usage: zr doctor [OPTIONS]\n\n" ++
+                    "Diagnose environment and toolchain setup issues.\n\n" ++
+                    "OPTIONS:\n" ++
+                    "  --verbose, -v         Show detailed diagnostic output\n" ++
+                    "  --config=<path>       Config file path (default: zr.toml)\n" ++
+                    "  -h, --help            Show this help\n\n" ++
+                    "EXAMPLES:\n" ++
+                    "  zr doctor                       # Check environment setup\n" ++
+                    "  zr doctor --verbose             # Detailed diagnostics\n",
+                    .{},
+                );
+                return 0;
+            } else if (std.mem.startsWith(u8, arg, "--config=")) {
                 opts.config_path = arg["--config=".len..];
             } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
                 opts.verbose = true;
@@ -1840,7 +1991,21 @@ fn run(
             return 1;
         }
         if (std.mem.eql(u8, edit_args[0], "--help") or std.mem.eql(u8, edit_args[0], "-h")) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr edit <task|workflow|profile> [OPTIONS]\n\n" ++
+                "Open a TUI editor to create or modify a task, workflow, or profile.\n\n" ++
+                "ARGUMENTS:\n" ++
+                "  task                  Edit a task definition\n" ++
+                "  workflow              Edit a workflow definition\n" ++
+                "  profile               Edit a profile definition\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --config <path>       Config file path (default: zr.toml)\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr edit task                    # Open TUI to edit a task\n" ++
+                "  zr edit workflow                # Open TUI to edit a workflow\n",
+                .{},
+            );
             return 0;
         }
         const entity_type = edit_args[0];
@@ -1890,7 +2055,24 @@ fn run(
             return 1;
         }
         if (std.mem.eql(u8, template_args[0], "--help") or std.mem.eql(u8, template_args[0], "-h")) {
-            try printHelp(effective_w, effective_color);
+            try color.printInfo(effective_w, effective_color,
+                "Usage: zr template <SUBCOMMAND> [OPTIONS]\n\n" ++
+                "Manage and apply task/workflow templates.\n\n" ++
+                "SUBCOMMANDS:\n" ++
+                "  list                  List available templates\n" ++
+                "  show <name>           Show template details\n" ++
+                "  add <name>            Apply a template to the current project\n\n" ++
+                "OPTIONS:\n" ++
+                "  --builtin             Show/use built-in templates only\n\n" ++
+                "GLOBAL OPTIONS:\n" ++
+                "  --config <path>       Config file path (default: zr.toml)\n" ++
+                "  -h, --help            Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr template list                # List all available templates\n" ++
+                "  zr template list --builtin      # List built-in templates only\n" ++
+                "  zr template add ci-github       # Apply the GitHub CI template\n",
+                .{},
+            );
             return 0;
         }
 
@@ -1976,7 +2158,23 @@ fn run(
             return 1;
         }
     } else if (std.mem.eql(u8, cmd, "which")) {
-        if (effective_args.len < 3) {
+        if (effective_args.len < 3 or std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h")) {
+            if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
+                try color.printInfo(effective_w, effective_color,
+                    "Usage: zr which <TASK>\n\n" ++
+                    "Show where a task is defined in the configuration.\n\n" ++
+                    "ARGUMENTS:\n" ++
+                    "  <task>                Task name to locate (required)\n\n" ++
+                    "GLOBAL OPTIONS:\n" ++
+                    "  --config <path>       Config file path (default: zr.toml)\n" ++
+                    "  -h, --help            Show this help\n\n" ++
+                    "EXAMPLES:\n" ++
+                    "  zr which build                  # Show where 'build' task is defined\n" ++
+                    "  zr which test                   # Show config file and line for 'test'\n",
+                    .{},
+                );
+                return 0;
+            }
             try color.printError(ew, effective_color, "which: missing task name\n\n  Hint: zr which <task>\n", .{});
             return 1;
         }
