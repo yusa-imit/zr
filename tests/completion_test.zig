@@ -76,3 +76,12 @@ test "completion: bash completion includes common commands" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "list") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "graph") != null);
 }
+
+test "completion --help: exits 0 and shows usage" {
+    var result = try helpers.runZr(std.testing.allocator, &.{ "completion", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "completion") != null);
+}

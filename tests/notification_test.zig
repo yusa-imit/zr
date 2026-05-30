@@ -142,3 +142,68 @@ test "12004: notify_title parses correctly" {
     // Parser now supports notify_title field, so this should succeed
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
+
+test "12005: task with notify = true executes its command successfully" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, BASIC_NOTIFICATION_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run the task (not just validate) — the notification flag should not prevent execution
+    var result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Command output should be present regardless of notification setting
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "building") != null);
+}
+
+test "12006: failing task with notify_on = 'failure' still propagates exit code" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const failing_notify_toml =
+        \\[tasks.fail-notified]
+        \\cmd = "exit 1"
+        \\notify = true
+        \\notify_on = "failure"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, failing_notify_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // A failing task with notification enabled should still fail (exit code != 0)
+    var result = try runZr(allocator, &.{ "--config", config, "run", "fail-notified" }, tmp_path);
+    defer result.deinit();
+
+    // Notification should NOT swallow the task failure
+    try std.testing.expect(result.exit_code != 0);
+}
+
+test "12007: --notify flag does not change task exit code" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, BASIC_NOTIFICATION_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // With --notify flag, successful task still succeeds
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--notify", "build" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "building") != null);
+}

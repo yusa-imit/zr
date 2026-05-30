@@ -124,3 +124,26 @@ test "mcp serve: run_task tool executes task" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"result\"") != null or
         std.mem.indexOf(u8, result.stdout, "content") != null);
 }
+
+test "mcp --help: exits 0 and shows usage" {
+    const allocator = std.testing.allocator;
+
+    var result = try runZr(allocator, &.{ "mcp", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "mcp") != null);
+}
+
+test "mcp serve --help: exits 0 and shows usage" {
+    const allocator = std.testing.allocator;
+
+    var result = try runZr(allocator, &.{ "mcp", "serve", "--help" }, null);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "serve") != null or
+        std.mem.indexOf(u8, result.stdout, "mcp") != null);
+}

@@ -348,3 +348,19 @@ test "932: template apply creates task with parameter substitution" {
     try std.testing.expect(std.mem.indexOf(u8, content, "template = \"server\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "params = { port = \"3000\" }") != null);
 }
+
+test "template --help: exits 0 and shows usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "template", "--help" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "template") != null);
+}

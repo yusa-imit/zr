@@ -156,6 +156,8 @@ test "run --only with --dry-run: shows dry-run output without executing" {
     // Verify output indicates dry-run and only shows build task (not setup)
     const output = result.stdout;
     try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+    // setup should NOT appear — --only skips deps, --dry-run should not plan them either
+    try std.testing.expect(std.mem.indexOf(u8, output, "setup") == null);
 }
 
 test "run: normal run without --only executes dependencies" {
@@ -281,6 +283,9 @@ test "run --only: with --format json includes only specified task" {
     var result = try runZr(allocator, &.{ "--config", config, "run", "--only", "main", "--format", "json" }, tmp_path);
     defer result.deinit();
 
-    // Should succeed (or output valid JSON)
-    try std.testing.expect(result.exit_code == 0 or std.mem.indexOf(u8, result.stdout, "{") != null);
+    // Should succeed — --only skips the "dep" dependency and runs only "main"
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // JSON output lists only the tasks that ran; dep was skipped so it won't appear
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"name\":\"main\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"name\":\"dep\"") == null);
 }
