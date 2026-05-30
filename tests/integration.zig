@@ -100,6 +100,7 @@ comptime {
     _ = @import("upgrade_test.zig");
     _ = @import("uptodate_test.zig");
     _ = @import("validate_test.zig");
+    _ = @import("vars_test.zig");
     _ = @import("version_test.zig");
     _ = @import("watch_test.zig");
     _ = @import("which_test.zig");

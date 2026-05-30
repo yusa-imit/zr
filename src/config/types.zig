@@ -352,6 +352,8 @@ pub const Config = struct {
     templates: std.StringHashMap(TaskTemplate),
     /// Task mixins from [mixins.NAME] sections (v1.67.0).
     mixins: std.StringHashMap(Mixin) = undefined,
+    /// Task variables from [vars] section for substitution in task fields.
+    vars: std.StringHashMap([]const u8) = undefined,
     /// Workspace config from [workspace] section, or null if not present.
     workspace: ?Workspace = null,
     /// Plugin configs from [plugins.NAME] sections (owned).
@@ -385,6 +387,7 @@ pub const Config = struct {
             .profiles = std.StringHashMap(Profile).init(allocator),
             .templates = std.StringHashMap(TaskTemplate).init(allocator),
             .mixins = std.StringHashMap(Mixin).init(allocator),
+            .vars = std.StringHashMap([]const u8).init(allocator),
             .concurrency_groups = std.StringHashMap(ConcurrencyGroup).init(allocator),
             .workspace = null,
             .plugins = &.{},
@@ -423,6 +426,12 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.mixins.deinit();
+        var vit = self.vars.iterator();
+        while (vit.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.vars.deinit();
         var cgit = self.concurrency_groups.iterator();
         while (cgit.next()) |entry| {
             entry.value_ptr.deinit(self.allocator);

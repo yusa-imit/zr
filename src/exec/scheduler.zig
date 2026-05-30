@@ -86,14 +86,15 @@ pub const SchedulerConfig = struct {
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
-/// Replaces {{param_name}} with the corresponding value from runtime_params.
+/// Replaces {{param_name}} with the corresponding value from runtime_params, falling back to config_vars.
 /// Returns an allocated string that the caller must free.
 fn interpolateParams(
     allocator: std.mem.Allocator,
     input: []const u8,
     runtime_params: ?*const std.StringHashMap([]const u8),
+    config_vars: ?*const std.StringHashMap([]const u8),
 ) ![]const u8 {
-    if (runtime_params == null or input.len == 0) {
+    if (input.len == 0) {
         return try allocator.dupe(u8, input);
     }
 
@@ -116,10 +117,29 @@ fn interpolateParams(
 
             if (end) |e| {
                 const param_name = input[start..e];
-                if (runtime_params.?.get(param_name)) |value| {
-                    try result.appendSlice(allocator, value);
+                if (runtime_params) |rp| {
+                    if (rp.get(param_name)) |value| {
+                        try result.appendSlice(allocator, value);
+                    } else if (config_vars) |cv| {
+                        if (cv.get(param_name)) |var_val| {
+                            try result.appendSlice(allocator, var_val);
+                        } else {
+                            // Param not found - leave placeholder as-is
+                            try result.appendSlice(allocator, input[i..e + 2]);
+                        }
+                    } else {
+                        // No config vars, param not found - leave placeholder as-is
+                        try result.appendSlice(allocator, input[i..e + 2]);
+                    }
+                } else if (config_vars) |cv| {
+                    if (cv.get(param_name)) |var_val| {
+                        try result.appendSlice(allocator, var_val);
+                    } else {
+                        // Param not found - leave placeholder as-is
+                        try result.appendSlice(allocator, input[i..e + 2]);
+                    }
                 } else {
-                    // Param not found - leave placeholder as-is
+                    // No runtime params or config vars - leave placeholder as-is
                     try result.appendSlice(allocator, input[i..e + 2]);
                 }
                 i = e + 2;
@@ -1786,6 +1806,7 @@ fn runTaskSync(
     results: *std.ArrayList(TaskResult),
     results_mutex: *std.Thread.Mutex,
     runtime_params: ?*const std.StringHashMap([]const u8),
+    config_vars: ?*const std.StringHashMap([]const u8),
 ) !bool {
     // Auto-install any missing toolchains specified in task.toolchain
     try ensureToolchainsInstalled(allocator, task);
@@ -1834,15 +1855,47 @@ fn runTaskSync(
 
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
 
-    // Interpolate runtime parameters in command (v1.75.0)
-    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params);
+    // Interpolate runtime parameters in command and cwd (v1.75.0 + vars), falling back to config vars
+    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params, config_vars);
     defer allocator.free(interpolated_cmd);
+
+    const interpolated_cwd = if (task.cwd) |cwd|
+        if (cwd.len > 0)
+            try interpolateParams(allocator, cwd, runtime_params, config_vars)
+        else
+            null
+    else
+        null;
+    defer if (interpolated_cwd) |cwd| allocator.free(cwd);
+
+    // Interpolate env values (not keys)
+    var interpolated_env_pairs = std.ArrayList([2][]const u8){};
+    defer {
+        for (interpolated_env_pairs.items) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        interpolated_env_pairs.deinit(allocator);
+    }
+    if (proc_env) |env_pairs| {
+        for (env_pairs) |pair| {
+            const key = try allocator.dupe(u8, pair[0]);
+            errdefer allocator.free(key);
+            const val = try interpolateParams(allocator, pair[1], runtime_params, config_vars);
+            errdefer allocator.free(val);
+            try interpolated_env_pairs.append(allocator, .{ key, val });
+        }
+    }
+    const final_env: ?[]const [2][]const u8 = if (interpolated_env_pairs.items.len > 0)
+        interpolated_env_pairs.items
+    else
+        null;
 
     const task_start = std.time.milliTimestamp();
     var proc_result = process.run(allocator, .{
         .cmd = interpolated_cmd,
-        .cwd = task.cwd,
-        .env = proc_env,
+        .cwd = interpolated_cwd orelse task.cwd,
+        .env = final_env,
         .inherit_stdio = inherit_stdio,
         .timeout_ms = task.timeout_ms,
     }) catch process.ProcessResult{
@@ -1864,9 +1917,9 @@ fn runTaskSync(
                 std.Thread.sleep(delay_ms * std.time.ns_per_ms);
             }
             proc_result = process.run(allocator, .{
-                .cmd = task.cmd,
-                .cwd = task.cwd,
-                .env = proc_env,
+                .cmd = interpolated_cmd,
+                .cwd = interpolated_cwd orelse task.cwd,
+                .env = final_env,
                 .inherit_stdio = inherit_stdio,
                 .timeout_ms = task.timeout_ms,
             }) catch process.ProcessResult{
@@ -1966,6 +2019,8 @@ fn runSerialChain(
     completed: *std.StringHashMap(bool),
     runtime_params: ?*const std.StringHashMap([]const u8),
 ) !bool {
+    // Convenient reference to config.vars for interpolation
+    const config_vars: ?*const std.StringHashMap([]const u8) = if (config.vars.count() > 0) &config.vars else null;
     for (serial_deps) |dep_name| {
         if (completed.contains(dep_name)) {
             // Already ran (or is currently being visited as a cycle sentinel).
@@ -1989,7 +2044,7 @@ fn runSerialChain(
         }
 
         const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
-        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params);
+        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params, config_vars);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
