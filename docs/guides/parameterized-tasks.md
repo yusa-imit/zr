@@ -753,6 +753,49 @@ Or use safer file naming conventions (underscores instead of hyphens).
 
 ---
 
+## Static Project Variables
+
+> **Since**: v1.84.0
+
+For values that don't change at runtime (shared paths, version strings, base URLs), the `[vars]` section provides simpler, project-wide substitution without requiring `params` declarations.
+
+```toml
+[vars]
+build_dir = "dist"
+registry = "registry.example.com"
+node_version = "20"
+
+[tasks.build]
+cmd = "npm run build --outdir={{build_dir}}"
+# No params array needed — {{build_dir}} is always "dist"
+
+[tasks.docker-push]
+cmd = "docker push {{registry}}/myapp:{{node_version}}"
+```
+
+**When to use `[vars]` vs `params`**:
+
+| | `[vars]` | `params` |
+|-|----------|----------|
+| Set at | Config file | CLI at runtime |
+| Default overridable | Yes (`--param key=val`) | Yes (default value) |
+| Per-call variation | No | Yes |
+| Use case | Shared constants | Variable inputs |
+
+When both a `[vars]` entry and a runtime `--param` have the same name, the `--param` value wins.
+
+```toml
+[vars]
+env = "dev"   # default for all tasks
+
+[tasks.deploy]
+cmd = "kubectl apply -f k8s-{{env}}.yaml"
+# zr run deploy                   → uses env=dev from [vars]
+# zr run deploy --param env=prod  → overrides to env=prod
+```
+
+---
+
 ## Roadmap
 
 Future enhancements planned for parameterized tasks:
@@ -770,7 +813,7 @@ See `docs/milestones.md` for tracking and timelines.
 
 ## See Also
 
-- [Configuration Guide](configuration.md) — Full TOML schema reference
+- [Configuration Guide](configuration.md) — Full TOML schema reference (includes `[vars]` section)
 - [Workflow Integration](commands.md#workflow) — Using params in workflows
 - [Migration Guide](migration.md) — Migrating from just/make/Task
 - [Best Practices](best-practices.md) — Task design patterns

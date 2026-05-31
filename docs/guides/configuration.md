@@ -9,6 +9,7 @@ This document describes the complete `zr.toml` configuration schema.
   - [Remote Execution](#remote-execution-v1460)
 - [Workflows](#workflows)
 - [Profiles](#profiles)
+- [Variables](#variables-v1840)
 - [Matrix Expansion](#matrix-expansion)
 - [Cache](#cache)
 - [Workspace](#workspace)
@@ -1483,6 +1484,49 @@ cmd = "npm run build:prod"
 ```
 
 Use with `zr run --profile dev build`.
+
+---
+
+## Variables (v1.84.0)
+
+The `[vars]` section defines static key-value variables shared across tasks. Variables use `{{KEY}}` placeholder syntax and are substituted in task `cmd`, `cwd`/`dir`, and `env` values.
+
+```toml
+[vars]
+build_dir = "dist"
+node_version = "20"
+registry = "registry.example.com"
+
+[tasks.build]
+cmd = "npm run build --outdir={{build_dir}}"
+
+[tasks.docker-push]
+cmd = "docker push {{registry}}/myapp:{{node_version}}"
+
+[tasks.deploy]
+cwd = "{{build_dir}}"
+cmd = "./deploy.sh"
+deps = ["build"]
+
+[tasks.test]
+env = { NODE_VERSION = "{{node_version}}", OUTPUT_DIR = "{{build_dir}}/test" }
+cmd = "npm test"
+```
+
+**Key behaviors**:
+- Substitution applies to `cmd`, `cwd`/`dir`, and `env` values (not env keys)
+- Runtime parameters with the same name override `[vars]` values: `zr run build --param build_dir=release`
+- Undefined placeholders (no matching key in `[vars]`) are left as-is — no error
+- Variables are **static** (no expressions); for dynamic values, use [Expressions](#expressions) with `${env.VAR}`
+
+**Comparison with other reuse mechanisms**:
+
+| Mechanism | Scope | Use When |
+|-----------|-------|----------|
+| `[vars]` | Project-wide | Static shared constants (paths, versions, URLs) |
+| `[mixins]` | Multi-task | Reusable task config blocks (env, hooks, retry) |
+| `[templates]` | Parameterized | Generating task families with different params |
+| `[profiles]` | Per-environment | Environment-specific overrides (dev/prod) |
 
 ---
 

@@ -161,6 +161,17 @@ cmd = "cargo build --release"
 notify = true              # Notify on completion
 notify_on = "always"       # "success" | "failure" | "always"
 notify_title = "Build done"
+
+# Static project variables (v1.84.0+)
+[vars]
+build_dir = "dist"
+registry = "registry.example.com"
+
+[tasks.build]
+cmd = "npm run build --outdir={{build_dir}}"  # {{build_dir}} → "dist"
+
+[tasks.push]
+cmd = "docker push {{registry}}/myapp"        # Override: zr run push --param registry=other.io
 ```
 
 **Commands**:

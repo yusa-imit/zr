@@ -103,6 +103,51 @@ mixins = ["docker-task", "k8s-deploy"]
 
 ---
 
+### Use `[vars]` for Project Constants
+
+> **Since**: v1.84.0
+
+Define shared strings (paths, versions, registry URLs) once in `[vars]` instead of duplicating them across tasks.
+
+**Good**:
+```toml
+[vars]
+build_dir = "dist"
+registry = "registry.example.com"
+node_version = "20"
+
+[tasks.build]
+cmd = "npm run build --outdir={{build_dir}}"
+
+[tasks.docker-push]
+cmd = "docker push {{registry}}/app:{{node_version}}"
+
+[tasks.deploy]
+cwd = "{{build_dir}}"
+cmd = "./k8s-deploy.sh"
+deps = ["build"]
+```
+
+**Bad** — duplicated strings:
+```toml
+[tasks.build]
+cmd = "npm run build --outdir=dist"
+
+[tasks.docker-push]
+cmd = "docker push registry.example.com/app:20"
+
+[tasks.deploy]
+cwd = "dist"
+cmd = "./k8s-deploy.sh"
+deps = ["build"]
+```
+
+**When to use `[vars]` vs `[profiles]`**:
+- `[vars]`: Same value everywhere, just avoiding repetition (use `[vars]`)
+- `[profiles]`: Value changes per environment — dev/staging/prod (use `[profiles]`)
+
+---
+
 ### Use Workspace Shared Tasks
 
 For monorepos, define common tasks once in the root.

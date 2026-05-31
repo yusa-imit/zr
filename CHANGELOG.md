@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Composable with existing filters: `zr list build --sort=freq` shows only `build*` tasks sorted by frequency
   - 9 integration tests covering all sort modes, history-based ordering, and filter combinations
 
+- **`[vars]` section** — Static project-level key-value substitution
+  - Define shared constants once: `[vars]` with `build_dir = "dist"`, `registry = "registry.example.com"`, etc.
+  - Use `{{KEY}}` placeholders in task `cmd`, `cwd`/`dir`, and `env` values
+  - Runtime `--param key=val` overrides `[vars]` values; undefined placeholders left as-is (no error)
+  - 8 integration tests covering substitution in cmd/env/cwd, runtime override, undefined vars, and empty section
+
 ### Fixed
 - `--help` flag now works for all CLI commands: `run`, `watch`, `workflow`, `live`, `monitor`, `irun`, `add`, `edit`, `template`, `completion`, `mcp` — previously treated as task/subcommand name
 - `zr run --only <task>` pre-task-name form now supported (previously only `zr run <task> --only` worked)

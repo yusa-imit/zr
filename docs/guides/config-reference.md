@@ -7,6 +7,7 @@ Quick reference for all `zr.toml` configuration fields. For detailed examples an
 - [Tasks](#tasks)
 - [Workflows](#workflows)
 - [Profiles](#profiles)
+- [Variables](#variables)
 - [Workspace](#workspace)
 - [Cache](#cache)
 - [Resource Limits](#resource-limits)
@@ -309,6 +310,52 @@ Usage:
 ```bash
 zr run build --profile production
 ```
+
+---
+
+## Variables
+
+> **Since**: v1.84.0
+
+Defined in `[vars]` section. Static key-value pairs substituted into task `cmd`, `cwd`, and `env` values using `{{KEY}}` syntax.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `<name>` | string | Variable value (e.g., `build_dir = "dist"`) |
+
+Variables are substituted with `{{KEY}}` placeholders in:
+- `cmd` — shell command string
+- `cwd` / `dir` — working directory
+- `env` values (not keys)
+
+**Runtime parameters override vars** — if a task parameter has the same name, it takes precedence over the `[vars]` value. Undefined placeholders (no matching key in `[vars]`) are left as-is.
+
+Example:
+```toml
+[vars]
+build_dir = "dist"
+node_version = "20"
+api_base = "https://api.example.com"
+
+[tasks.build]
+cmd = "npm run build --outdir={{build_dir}}"
+
+[tasks.publish]
+env = { VERSION = "{{node_version}}", API_URL = "{{api_base}}/v1" }
+cmd = "npm publish"
+
+[tasks.deploy]
+cwd = "{{build_dir}}"
+cmd = "./deploy.sh"
+deps = ["build"]
+```
+
+**Override at runtime**:
+```bash
+zr run build --param build_dir=release   # overrides vars.build_dir
+```
+
+See [Parameterized Tasks Guide](./parameterized-tasks.md) for runtime parameter details.
 
 ---
 
