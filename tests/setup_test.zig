@@ -91,3 +91,21 @@ test "setup: works without setup task" {
     try std.testing.expect(result.stderr.len == 0 or
         std.mem.indexOf(u8, result.stderr, "error") == null);
 }
+
+test "setup: --help shows usage without running setup" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // No zr.toml — if --help incorrectly runs setup, it would fail with config error
+    var result = try runZr(allocator, &.{ "setup", "--help" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "setup") != null);
+}

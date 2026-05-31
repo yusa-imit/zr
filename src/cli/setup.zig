@@ -10,7 +10,20 @@ pub fn cmdSetup(
     ew: *std.Io.Writer,
     use_color: bool,
 ) !u8 {
-    _ = args; // --help could be added later
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try w.writeAll(
+                "Usage: zr setup [OPTIONS]\n\n" ++
+                "Set up the project by installing all required toolchains and\n" ++
+                "running the setup task if defined in zr.toml.\n\n" ++
+                "OPTIONS:\n" ++
+                "  -h, --help    Show this help\n\n" ++
+                "EXAMPLES:\n" ++
+                "  zr setup      # Install toolchains and run setup task\n",
+            );
+            return 0;
+        }
+    }
 
     // Step 1: Load config
     try w.print("\n🔧 Starting project setup...\n\n", .{});
