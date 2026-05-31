@@ -1459,6 +1459,31 @@ fn run(
         const history_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return run_cmd.cmdHistory(allocator, history_args, json_output, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "init")) {
+        // Quick --help check before running init
+        for (effective_args[2..]) |arg| {
+            if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                try color.printInfo(effective_w, effective_color,
+                    "Usage: zr init [OPTIONS]\n\n" ++
+                    "Initialize a new zr.toml configuration file in the current directory.\n\n" ++
+                    "OPTIONS:\n" ++
+                    "  --detect              Auto-detect project type and generate tasks\n" ++
+                    "  --from-npm            Migrate scripts from package.json\n" ++
+                    "  --from-make           Migrate targets from Makefile\n" ++
+                    "  --from-just           Migrate recipes from Justfile\n" ++
+                    "  --from-task           Migrate tasks from Taskfile.yml\n" ++
+                    "  --dry-run             Preview what would be generated without creating files\n" ++
+                    "  -h, --help            Show this help\n\n" ++
+                    "EXAMPLES:\n" ++
+                    "  zr init                    # Create a minimal zr.toml\n" ++
+                    "  zr init --detect           # Auto-detect project and generate tasks\n" ++
+                    "  zr init --from-make        # Convert Makefile to zr.toml\n" ++
+                    "  zr init --from-npm         # Convert package.json scripts to tasks\n" ++
+                    "  zr init --dry-run          # Preview without creating files\n",
+                    .{},
+                );
+                return 0;
+            }
+        }
         // Parse init options
         var detect_mode = false;
         var migrate_mode = init.MigrateMode.none;

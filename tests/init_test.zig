@@ -668,3 +668,31 @@ test "10107: init --from-just --dry-run shows preview with report" {
     };
     try std.testing.expect(false);
 }
+
+test "init: --help shows usage without running init" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // No zr.toml exists — if --help incorrectly runs init, it would create one
+    var result = try runZr(allocator, &.{ "init", "--help" }, tmp_path);
+    defer result.deinit();
+
+    // Should succeed with exit code 0
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Should show usage information
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "Usage") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "init") != null);
+
+    // Must NOT create zr.toml
+    tmp.dir.access("zr.toml", .{}) catch |err| {
+        try std.testing.expectEqual(error.FileNotFound, err);
+        return;
+    };
+    try std.testing.expect(false); // zr.toml was unexpectedly created
+}
