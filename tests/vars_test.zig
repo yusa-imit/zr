@@ -244,3 +244,33 @@ test "14007: vars: var with no tasks uses no {{}} placeholders" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "simple task") != null);
 }
+
+test "14008: vars: validate works when [vars] precedes [tasks]" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[vars]
+        \\build_dir = "dist"
+        \\
+        \\[tasks.build]
+        \\cmd = "echo building to {{build_dir}}"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Bug regression: parser was not resetting in_vars when entering [tasks.X],
+    // causing cmd field to be parsed as a vars entry instead of a task field.
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "valid") != null);
+    // Must NOT report "must have cmd or deps" error
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "must have") == null);
+}

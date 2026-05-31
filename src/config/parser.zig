@@ -1938,6 +1938,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
             in_workspace = false;
             in_cache = false;
+            in_vars = false;
             in_task_watch = false;
             in_task_matrix = false;
             in_task_env = false;
