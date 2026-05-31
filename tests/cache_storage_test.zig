@@ -15,6 +15,7 @@ test "cache: task execution creates cache directory structure .zr/cache/" {
         \\[tasks.build]
         \\description = "Build project"
         \\cmd = "echo 'cache test' > /dev/null"
+        \\cache = true
         \\
     ;
 
@@ -49,6 +50,7 @@ test "cache: task execution stores output in cache" {
         \\[tasks.hello]
         \\description = "Hello task"
         \\cmd = "echo 'Hello, World!'"
+        \\cache = true
         \\
     ;
 
@@ -80,6 +82,7 @@ test "cache: cached entry includes manifest.json with metadata" {
         \\[tasks.test]
         \\description = "Test task"
         \\cmd = "echo 'test output'"
+        \\cache = true
         \\
     ;
 
@@ -128,6 +131,7 @@ test "cache: manifest contains timestamp field" {
         \\[tasks.stamped]
         \\description = "Task with timestamp"
         \\cmd = "echo 'stamped'"
+        \\cache = true
         \\
     ;
 
@@ -171,6 +175,7 @@ test "cache: manifest contains exit_code field" {
         \\[tasks.succeed]
         \\description = "Task that succeeds"
         \\cmd = "echo 'success'"
+        \\cache = true
         \\
     ;
 
@@ -214,6 +219,7 @@ test "cache: manifest contains duration_ms field" {
         \\[tasks.timed]
         \\description = "Task to measure duration"
         \\cmd = "echo 'timed execution'"
+        \\cache = true
         \\
     ;
 
@@ -258,6 +264,7 @@ test "cache: manifest contains cache_key field" {
         \\[tasks.keyed]
         \\description = "Task with cache key"
         \\cmd = "echo 'keyed output'"
+        \\cache = true
         \\
     ;
 
@@ -304,10 +311,12 @@ test "cache: multiple tasks can coexist in cache" {
         \\[tasks.task_a]
         \\description = "Task A"
         \\cmd = "echo 'output A'"
+        \\cache = true
         \\
         \\[tasks.task_b]
         \\description = "Task B"
         \\cmd = "echo 'output B'"
+        \\cache = true
         \\
     ;
 
@@ -356,6 +365,7 @@ test "cache: stores stdout from task execution" {
         \\[tasks.echo_test]
         \\description = "Echo test"
         \\cmd = "echo 'cached output'"
+        \\cache = true
         \\
     ;
 
@@ -402,6 +412,7 @@ test "cache: stores stderr from task execution" {
         \\[tasks.echo_stderr]
         \\description = "Stderr test"
         \\cmd = "echo 'error output' >&2"
+        \\cache = true
         \\
     ;
 
@@ -450,6 +461,7 @@ test "cache: cache hit when identical task runs twice" {
         \\[tasks.deterministic]
         \\description = "Deterministic task"
         \\cmd = "echo 'same output'"
+        \\cache = true
         \\
     ;
 
@@ -483,6 +495,7 @@ test "cache: miss when task inputs change" {
         \\description = "Parameterized task"
         \\cmd = "echo 'output: {{param}}'"
         \\params = [{ name = "param", required = true }]
+        \\cache = true
         \\
     ;
 
@@ -516,6 +529,7 @@ test "cache: cache invalidation removes specific task entry" {
         \\[tasks.clearable]
         \\description = "Task to clear from cache"
         \\cmd = "echo 'clearable'"
+        \\cache = true
         \\
     ;
 
@@ -546,6 +560,7 @@ test "cache: cache directory auto-created if missing" {
         \\[tasks.auto_create]
         \\description = "Auto-create cache"
         \\cmd = "echo 'auto created cache'"
+        \\cache = true
         \\
     ;
 
@@ -586,6 +601,7 @@ test "cache: corrupted cache file handled gracefully" {
         \\[tasks.recover]
         \\description = "Recover from bad cache"
         \\cmd = "echo 'recovery test'"
+        \\cache = true
         \\
     ;
 
@@ -633,6 +649,7 @@ test "cache: missing manifest file handled gracefully" {
         \\[tasks.missing_manifest]
         \\description = "Task with missing manifest"
         \\cmd = "echo 'test'"
+        \\cache = true
         \\
     ;
 
@@ -659,6 +676,7 @@ test "cache: successful task output cached with exit code 0" {
         \\[tasks.success]
         \\description = "Successful task"
         \\cmd = "echo 'success output' && exit 0"
+        \\cache = true
         \\
     ;
 
@@ -702,6 +720,7 @@ test "cache: failed task output cached with exit code 1" {
         \\[tasks.failing]
         \\description = "Failing task"
         \\cmd = "echo 'error' >&2 && exit 1"
+        \\cache = true
         \\
     ;
 
@@ -747,6 +766,7 @@ test "cache: metadata JSON is valid JSON format" {
         \\[tasks.json_test]
         \\description = "JSON format test"
         \\cmd = "echo 'json test'"
+        \\cache = true
         \\
     ;
 
@@ -792,6 +812,7 @@ test "cache: metadata JSON contains task_name field" {
         \\[tasks.named_task]
         \\description = "Named task"
         \\cmd = "echo 'named'"
+        \\cache = true
         \\
     ;
 
