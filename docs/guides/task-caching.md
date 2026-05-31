@@ -258,7 +258,7 @@ Cache entries are stored in `.zr/cache/<cache_key>/`:
 }
 ```
 
-**Note**: Current version (v1.83.0) stores metadata only. Future versions will include stdout/stderr capture.
+**Note**: Current version stores task metadata (cmd hash, env hash, exit code, duration). stdout/stderr capture is planned for a future release.
 
 ---
 
@@ -483,21 +483,10 @@ zr list --show-cache  # Explicitly enable cache status display
 
 Planned features for upcoming releases:
 
-### Output Capture (v1.83.0)
-- Capture stdout/stderr in cache
-- Restore outputs on cache hit
-- Display cached task output without re-execution
-
-### Remote Cache Backends (v1.84.0)
-- S3 remote cache support
-- GCS remote cache support
-- HTTP remote cache support
-- Team-wide cache sharing
-
-### Content-Based Keys (v1.85.0)
-- Include file content hashes in cache keys
-- Automatic invalidation on source changes
-- Integration with `sources` pattern
+### Output Capture
+- Capture stdout/stderr in cache alongside metadata
+- Restore and replay task output on cache hit without re-execution
+- Stream cached output to terminal in real time
 
 ---
 
@@ -589,8 +578,8 @@ Task result caching in zr provides:
 - ✅ **Hit detection**: Skip execution when inputs unchanged
 - ✅ **CLI management**: `cache clean/status/clear` commands
 - ✅ **List integration**: `--show-cache` flag shows cache status
-- 🚧 **Output capture**: Planned for v1.83.0
-- 🚧 **Remote backends**: Planned for v1.84.0
+- ✅ **Remote backends**: S3, GCS, Azure, HTTP remote cache support
+- 🚧 **Output capture**: stdout/stderr replay on cache hit (planned)
 
 **Quick start**:
 1. Add `cache = true` to expensive tasks

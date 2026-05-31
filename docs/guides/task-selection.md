@@ -1,6 +1,6 @@
 # Task Selection & Filtering
 
-> **Since**: v1.77.0 | `--only` since v1.85.0 | `--dir` since v1.83.0
+> **Since**: v1.77.0 | `--only` since v1.84.0 | `--dir` since v1.83.0
 
 zr provides powerful task selection patterns for efficiently targeting tasks in large monorepos and complex workflows. Instead of running tasks one-by-one by exact name, you can use glob patterns, tag-based filters, and combinations to select multiple tasks at once.
 
