@@ -50,14 +50,12 @@ test "clean: --cache cleans cache directory" {
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
-    // Verify cache was cleaned (or at least command succeeded)
-    const stat = tmp.dir.statFile(".zr/cache/dummy.txt") catch |err| {
-        if (err == error.FileNotFound) {
-            return; // Expected - cache was cleaned
-        }
+    // Verify cache was actually cleaned
+    tmp.dir.statFile(".zr/cache/dummy.txt") catch |err| {
+        if (err == error.FileNotFound) return; // Expected
         return err;
     };
-    _ = stat;
+    try std.testing.expect(false); // File still exists — clean did not work
 }
 
 test "clean: --history cleans history" {
@@ -80,13 +78,11 @@ test "clean: --history cleans history" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
     // Verify history was actually cleaned
-    const stat = tmp.dir.statFile(".zr/history/dummy.log") catch |err| {
-        if (err == error.FileNotFound) {
-            return; // Expected - history was cleaned
-        }
+    tmp.dir.statFile(".zr/history/dummy.log") catch |err| {
+        if (err == error.FileNotFound) return; // Expected
         return err;
     };
-    _ = stat;
+    try std.testing.expect(false); // File still exists — clean did not work
 }
 
 test "clean: unknown option returns error" {
