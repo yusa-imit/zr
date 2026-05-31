@@ -51,7 +51,7 @@ test "clean: --cache cleans cache directory" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
     // Verify cache was actually cleaned
-    tmp.dir.statFile(".zr/cache/dummy.txt") catch |err| {
+    _ = tmp.dir.statFile(".zr/cache/dummy.txt") catch |err| {
         if (err == error.FileNotFound) return; // Expected
         return err;
     };
@@ -78,7 +78,7 @@ test "clean: --history cleans history" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 
     // Verify history was actually cleaned
-    tmp.dir.statFile(".zr/history/dummy.log") catch |err| {
+    _ = tmp.dir.statFile(".zr/history/dummy.log") catch |err| {
         if (err == error.FileNotFound) return; // Expected
         return err;
     };
