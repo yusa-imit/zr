@@ -952,7 +952,7 @@ test "873: cache clear --workspace without workspace config returns error" {
 
 // New cache CLI tests (Cycle 196)
 
-test "874: cache clean removes all cache entries" {
+test "874: cache clear removes all cache entries" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -972,15 +972,15 @@ test "874: cache clean removes all cache entries" {
     defer manifest2.close();
     try manifest2.writeAll("{\"task_name\":\"build\"}");
 
-    // Run cache clean
-    var result = try runZr(allocator, &.{ "cache", "clean" }, tmp_path);
+    // Run cache clear (not "clean" — the subcommand is "clear")
+    var result = try runZr(allocator, &.{ "cache", "clear" }, tmp_path);
     defer result.deinit();
 
     // Should succeed
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(std.mem.indexOf(u8, output, "cleaned") != null or
-        std.mem.indexOf(u8, output, "Cache cleaned") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Cleared") != null or
+        std.mem.indexOf(u8, output, "cleared") != null);
 }
 
 test "875: cache status shows empty cache when no entries exist" {

@@ -274,3 +274,95 @@ test "14008: vars: validate works when [vars] precedes [tasks]" {
     // Must NOT report "must have cmd or deps" error
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "must have") == null);
 }
+
+test "14009: vars: validate works when [vars] precedes [workspace.shared_tasks.NAME]" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[vars]
+        \\greeting = "hello"
+        \\
+        \\[workspace]
+        \\members = []
+        \\
+        \\[workspace.shared_tasks.greet]
+        \\cmd = "echo {{greeting}}"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Bug regression: parser was not resetting in_vars when entering [workspace.shared_tasks.NAME],
+    // causing cmd field to be parsed as a vars entry and the shared task to appear cmd-less.
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "valid") != null);
+    // Must NOT report "must have cmd or deps" error
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "must have") == null);
+}
+
+test "14010: vars: validate works when [vars] precedes [templates.NAME]" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[vars]
+        \\env = "prod"
+        \\
+        \\[templates.deploy]
+        \\cmd = "echo deploying to {{env}}"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Bug regression: parser was not resetting in_vars when entering [templates.NAME],
+    // causing cmd field to be parsed as a vars entry instead of a template field.
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "valid") != null);
+}
+
+test "14011: vars: validate works when [vars] precedes [mixins.NAME]" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[vars]
+        \\greeting = "hello"
+        \\
+        \\[mixins.log]
+        \\cmd = "echo {{greeting}}"
+        \\
+        \\[tasks.greet]
+        \\mixins = ["log"]
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Bug regression: parser was not resetting in_vars when entering [mixins.NAME],
+    // causing cmd field to be parsed as a vars entry instead of a mixin field.
+    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "valid") != null);
+}

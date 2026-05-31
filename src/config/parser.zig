@@ -1139,6 +1139,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
                 profile_env.clearRetainingCapacity(); current_profile = null;
             }
+            in_vars = false;
             in_workspace = true;
         } else if (std.mem.startsWith(u8, trimmed, "[workspace.shared_tasks.")) {
             // Flush pending workspace shared task before starting new one (v1.63.0)
@@ -1176,6 +1177,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return err;
             };
             in_workspace = false; // Not parsing workspace top-level fields
+            in_vars = false;
         } else if (std.mem.eql(u8, trimmed, "[tools]")) {
             // Flush pending sections
             if (current_task) |task_name| {
@@ -2124,6 +2126,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_cache = false;
             template_max_cpu = null;
             template_max_memory = null;
+            in_vars = false;
 
             current_template = validateSectionHeader(trimmed, "[templates.") catch |err| {
                 if (err == error.MalformedSectionHeader) return err;
@@ -2293,6 +2296,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             mixin_mixins.clearRetainingCapacity();
             in_mixin_env = false;
             in_mixin_hooks = false;
+            in_vars = false;
 
             current_mixin = validateSectionHeader(trimmed, "[mixins.") catch |err| {
                 if (err == error.MalformedSectionHeader) return err;
