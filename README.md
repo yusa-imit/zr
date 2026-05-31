@@ -495,8 +495,8 @@ zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 
 ### Test Status
 
-- **Unit tests**: 1714/1722 passing (8 skipped, 0 failures)
-- **Integration tests**: 108 test files, comprehensive CLI coverage
+- **Unit tests**: 1717/1725 passing (8 skipped, 0 failures)
+- **Integration tests**: 115 test files, comprehensive CLI coverage
 - **CI targets**: 6 (x86_64/aarch64 × linux-gnu/macos-none/windows-msvc)
 - **Memory leaks**: 0
 
