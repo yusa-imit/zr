@@ -104,7 +104,7 @@ test "artifact: artifact storage uses .zr/artifacts/<task>/<timestamp>/ structur
     defer dir.close();
 
     // Should have at least one timestamp directory
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     var found_timestamp = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
@@ -149,7 +149,7 @@ test "artifact: manifest.json stores artifact metadata" {
     };
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     var manifest_found = false;
     var first_timestamp: []const u8 = undefined;
 
@@ -347,7 +347,7 @@ test "artifact: metadata includes timestamp field" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -392,7 +392,7 @@ test "artifact: metadata includes exit code field" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -437,7 +437,7 @@ test "artifact: metadata includes duration field" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -653,7 +653,7 @@ test "artifact: compression creates .gz files when compress_artifacts = true" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             // Check manifest.json for .gz filenames — artifacts are stored in their
@@ -699,7 +699,7 @@ test "artifact: compression disabled with compress_artifacts = false" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             // Check manifest.json for uncompressed filenames (no .gz extension).
@@ -751,7 +751,7 @@ test "artifact: retention policy count_based keeps only N latest artifacts" {
     defer base.close();
 
     var artifact_count: usize = 0;
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             artifact_count += 1;
@@ -798,7 +798,7 @@ test "artifact: retention policy time_based = \"manual\" does not auto-delete" {
     defer base.close();
 
     var artifact_count: usize = 0;
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             artifact_count += 1;
@@ -840,14 +840,14 @@ test "artifact: compression enabled by default for artifact storage" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;
             defer ts_dir.close();
 
             // Look for .gz files or compressed artifacts
-            var inner_iter = ts_dir.iterate();
+            var inner_iter = ts_dir.iterateAssumeFirstIteration();
             var found_compressed = false;
             while (inner_iter.next() catch null) |inner_entry| {
                 if (std.mem.endsWith(u8, inner_entry.name, ".gz")) {
@@ -1038,7 +1038,7 @@ test "artifact: metadata captures task parameters used" {
     var base = std.fs.openDirAbsolute(base_dir, .{ .iterate = true }) catch return;
     defer base.close();
 
-    var iter = base.iterate();
+    var iter = base.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var ts_dir = base.openDir(entry.name, .{ .iterate = true }) catch return;

@@ -101,7 +101,7 @@ test "cache: cached entry includes manifest.json with metadata" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     var found_manifest = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
@@ -148,7 +148,7 @@ test "cache: manifest contains timestamp field" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -191,7 +191,7 @@ test "cache: manifest contains exit_code field" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -234,7 +234,7 @@ test "cache: manifest contains duration_ms field" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -278,7 +278,7 @@ test "cache: manifest contains cache_key field" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -334,7 +334,7 @@ test "cache: multiple tasks can coexist in cache" {
     defer dir.close();
 
     var task_count: usize = 0;
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             task_count += 1;
@@ -377,7 +377,7 @@ test "cache: stores stdout from task execution" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     var found_stdout = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
@@ -423,7 +423,7 @@ test "cache: stores stderr from task execution" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     var found_stderr = false;
     while (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
@@ -607,7 +607,7 @@ test "cache: corrupted cache file handled gracefully" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -679,7 +679,7 @@ test "cache: successful task output cached with exit code 0" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -722,7 +722,7 @@ test "cache: failed task output cached with exit code 1" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -767,7 +767,7 @@ test "cache: metadata JSON is valid JSON format" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
@@ -812,7 +812,7 @@ test "cache: metadata JSON contains task_name field" {
     var dir = std.fs.openDirAbsolute(cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
-    var iter = dir.iterate();
+    var iter = dir.iterateAssumeFirstIteration();
     if (iter.next() catch null) |entry| {
         if (entry.kind == .directory) {
             var subdir = dir.openDir(entry.name, .{ .iterate = true }) catch return;
