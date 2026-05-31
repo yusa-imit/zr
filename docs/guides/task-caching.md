@@ -1,6 +1,6 @@
 # Task Result Caching & Memoization
 
-> **Feature Status**: Available in zr v1.82.0+ (metadata caching); v1.83.0+ (desktop notifications)
+> **Feature Status**: Available in zr v1.82.0+ (metadata caching and remote backends); desktop notifications in v1.83.0+
 >
 > Cache task execution results to skip redundant computations across runs and machines.
 
