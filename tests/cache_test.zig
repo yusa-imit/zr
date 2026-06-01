@@ -1037,7 +1037,8 @@ test "876: cache status shows statistics with existing entries" {
     // Should succeed and show statistics
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(std.mem.indexOf(u8, output, "Total entries") != null or
+    // Output has "Entries:" (capital E) and shows the count
+    try std.testing.expect(std.mem.indexOf(u8, output, "Entries") != null or
         std.mem.indexOf(u8, output, "entries") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "2") != null); // 2 entries
 }

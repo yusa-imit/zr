@@ -59,12 +59,11 @@ test "15000: zr explain with no args prints error and returns 1" {
     var result = try runZr(allocator, &.{ "--config", config, "explain" }, tmp_path);
     defer result.deinit();
 
-    // Should fail with exit code 1 when no task name provided
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
-    // Error message should indicate missing task name
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "task") != null or
-        std.mem.indexOf(u8, result.stderr, "required") != null or
-        std.mem.indexOf(u8, result.stderr, "specify") != null);
+    // Must mention "required" — the exact phrase from the error message
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "required") != null);
+    // Must not print a successful plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Execution plan") == null);
 }
 
 test "15001: zr explain unknown-task for nonexistent task returns 1 with not found message" {
@@ -81,12 +80,12 @@ test "15001: zr explain unknown-task for nonexistent task returns 1 with not fou
     var result = try runZr(allocator, &.{ "--config", config, "explain", "nonexistent" }, tmp_path);
     defer result.deinit();
 
-    // Should fail when task doesn't exist
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
-    // Error message should mention task not found or nonexistent
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null or
-        std.mem.indexOf(u8, result.stderr, "unknown") != null or
-        std.mem.indexOf(u8, result.stderr, "nonexistent") != null);
+    // Must say "not found" and mention the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "nonexistent") != null);
+    // Must not print a successful plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Execution plan") == null);
 }
 
 test "15002: zr explain simple-task shows task command in output" {
@@ -125,18 +124,19 @@ test "15003: zr explain task-with-deps shows all deps in execution order" {
     var result = try runZr(allocator, &.{ "--config", config, "explain", "build" }, tmp_path);
     defer result.deinit();
 
-    // Should succeed
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Output should contain all three tasks
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "setup") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "generate") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
-    // Output should show execution order: setup before generate before build
-    const setup_idx = std.mem.indexOf(u8, result.stdout, "setup").?;
-    const generate_idx = std.mem.indexOf(u8, result.stdout, "generate").?;
-    const build_idx = std.mem.indexOf(u8, result.stdout, "build").?;
-    try std.testing.expect(setup_idx < generate_idx);
-    try std.testing.expect(generate_idx < build_idx);
+    // Check task count in header
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tasks to run (3)") != null);
+    // Verify each task appears at its numbered step — setup first, build last
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[1] setup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[2] generate") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[3] build") != null);
+    // Step markers must appear in ascending order
+    const s1 = std.mem.indexOf(u8, result.stdout, "[1]").?;
+    const s2 = std.mem.indexOf(u8, result.stdout, "[2]").?;
+    const s3 = std.mem.indexOf(u8, result.stdout, "[3]").?;
+    try std.testing.expect(s1 < s2);
+    try std.testing.expect(s2 < s3);
 }
 
 test "15004: zr explain task-with-deps --tree shows tree format" {
@@ -180,15 +180,16 @@ test "15005: zr explain task-with-deps --json produces valid JSON with tasks arr
     var result = try runZr(allocator, &.{ "--config", config, "explain", "build", "--json" }, tmp_path);
     defer result.deinit();
 
-    // Should succeed
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Output should be valid JSON with tasks array
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "{") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "}") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "tasks") != null or
-        std.mem.indexOf(u8, result.stdout, "[") != null);
-    // Should contain task names in JSON format
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    // Must contain JSON structure keys
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"tasks\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"total\"") != null);
+    // Must contain all three task names as JSON string literals
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"setup\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"generate\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"build\"") != null);
+    // Must show total=3
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"total\":3") != null);
 }
 
 test "15006: zr explain --help returns 0 with usage info" {
@@ -228,21 +229,46 @@ test "15007: zr explain multi-level-deps shows correct execution order" {
     var result = try runZr(allocator, &.{ "--config", config, "explain", "package" }, tmp_path);
     defer result.deinit();
 
-    // Should succeed
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // All tasks should be present
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "install") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "configure") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "compile") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "package") != null);
-    // Topological order: install must come before configure (which depends on it)
-    // configure must come before compile (which depends on it)
-    // compile and install must come before package
-    const install_idx = std.mem.indexOf(u8, result.stdout, "install").?;
-    const configure_idx = std.mem.indexOf(u8, result.stdout, "configure").?;
-    const compile_idx = std.mem.indexOf(u8, result.stdout, "compile").?;
-    const package_idx = std.mem.indexOf(u8, result.stdout, "package").?;
-    try std.testing.expect(install_idx < configure_idx);
-    try std.testing.expect(configure_idx < compile_idx);
-    try std.testing.expect(compile_idx < package_idx);
+    // Verify task count
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tasks to run (4)") != null);
+    // Topological order via section headers: install first, package last
+    // install has no deps → [1]; configure depends on install → [2]; compile → [3]; package → [4]
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[1] install") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[2] configure") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[3] compile") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[4] package") != null);
+    // Step markers must be in order
+    const s1 = std.mem.indexOf(u8, result.stdout, "[1]").?;
+    const s2 = std.mem.indexOf(u8, result.stdout, "[2]").?;
+    const s3 = std.mem.indexOf(u8, result.stdout, "[3]").?;
+    const s4 = std.mem.indexOf(u8, result.stdout, "[4]").?;
+    try std.testing.expect(s1 < s2);
+    try std.testing.expect(s2 < s3);
+    try std.testing.expect(s3 < s4);
+}
+
+test "15008: zr explain task-with-deps --tree shows recursive dependency structure" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_DEPS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "build", "--tree" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Root task at top level (no connector prefix)
+    try std.testing.expect(std.mem.startsWith(u8, result.stdout, "build\n"));
+    // Direct deps of build shown with tree connectors
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "├── setup") != null or
+        std.mem.indexOf(u8, result.stdout, "└── setup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "└── generate") != null);
+    // generate's transitive dep on setup shown recursively
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "already shown") != null);
 }

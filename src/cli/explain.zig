@@ -88,40 +88,63 @@ fn printTaskText(
 }
 
 /// Print tree visualization of dependencies
+fn printDependencyTreeRecursive(
+    allocator: Allocator,
+    w: *std.Io.Writer,
+    config: *const types.Config,
+    task_name: []const u8,
+    prefix: []const u8,
+    is_root: bool,
+    seen: *std.StringHashMap(void),
+) !void {
+    if (!is_root) {
+        try w.print("{s}", .{task_name});
+    } else {
+        try w.print("{s}\n", .{task_name});
+    }
+
+    const already_seen = seen.get(task_name) != null;
+    if (already_seen) {
+        try w.print(" (already shown)\n", .{});
+        return;
+    }
+    if (!is_root) try w.print("\n", .{});
+    try seen.put(task_name, {});
+
+    const task = config.tasks.get(task_name) orelse return;
+
+    var all_deps = std.ArrayList([]const u8){};
+    defer all_deps.deinit(allocator);
+
+    for (task.deps) |dep| try all_deps.append(allocator, dep);
+    for (task.deps_serial) |dep| try all_deps.append(allocator, dep);
+    for (task.deps_if) |dep_if| try all_deps.append(allocator, dep_if.task);
+    for (task.deps_optional) |dep| try all_deps.append(allocator, dep);
+
+    for (all_deps.items, 0..) |dep, i| {
+        const dep_is_last = (i == all_deps.items.len - 1);
+        const connector = if (dep_is_last) "└── " else "├── ";
+        const child_prefix = if (dep_is_last)
+            try std.fmt.allocPrint(allocator, "{s}    ", .{prefix})
+        else
+            try std.fmt.allocPrint(allocator, "{s}│   ", .{prefix});
+        defer allocator.free(child_prefix);
+
+        try w.print("{s}{s}", .{ prefix, connector });
+        try printDependencyTreeRecursive(allocator, w, config, dep, child_prefix, false, seen);
+    }
+}
+
+/// Print tree visualization of dependencies (recursive, full DAG)
 fn printDependencyTree(
     allocator: Allocator,
     w: *std.Io.Writer,
     config: *const types.Config,
     task_name: []const u8,
 ) !void {
-    const task = config.tasks.get(task_name).?;
-
-    try w.print("{s}\n", .{task_name});
-
-    var all_deps = std.ArrayList([]const u8){};
-    defer all_deps.deinit(allocator);
-
-    for (task.deps) |dep| {
-        try all_deps.append(allocator, dep);
-    }
-    for (task.deps_serial) |dep| {
-        try all_deps.append(allocator, dep);
-    }
-    for (task.deps_if) |dep_if| {
-        try all_deps.append(allocator, dep_if.task);
-    }
-    for (task.deps_optional) |dep| {
-        try all_deps.append(allocator, dep);
-    }
-
-    for (all_deps.items, 0..) |dep, i| {
-        const is_last = (i == all_deps.items.len - 1);
-        if (is_last) {
-            try w.print("└── {s}\n", .{dep});
-        } else {
-            try w.print("├── {s}\n", .{dep});
-        }
-    }
+    var seen = std.StringHashMap(void).init(allocator);
+    defer seen.deinit();
+    try printDependencyTreeRecursive(allocator, w, config, task_name, "", true, &seen);
 }
 
 /// Print task execution plan in JSON format
