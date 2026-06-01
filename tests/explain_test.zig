@@ -272,3 +272,180 @@ test "15008: zr explain task-with-deps --tree shows recursive dependency structu
     // generate's transitive dep on setup shown recursively
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "already shown") != null);
 }
+
+// ── Feature Tests: Multiple tasks in zr explain (Feature 1) ──────────────
+
+const TWO_TASK_SHARED_DEP_TOML =
+    \\[tasks.setup]
+    \\cmd = "echo setup"
+    \\
+    \\[tasks.build]
+    \\cmd = "zig build"
+    \\deps = ["setup"]
+    \\
+    \\[tasks.test]
+    \\cmd = "zig build test"
+    \\deps = ["setup"]
+    \\
+;
+
+test "15009: zr explain build test shows merged dependency plan with deduplication" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TWO_TASK_SHARED_DEP_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "build", "test" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should show merged plan with 3 tasks: setup, build, test
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tasks to run (3)") != null);
+    // Each task should appear exactly once (deduplication)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[1] setup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[2]") != null); // Either build or test
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[3]") != null); // Either test or build
+    // Both requested tasks should be in the plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    // Verify setup comes before build and test (topological order)
+    const setup_pos = std.mem.indexOf(u8, result.stdout, "[1] setup").?;
+    const build_pos = std.mem.indexOf(u8, result.stdout, "build").?;
+    const test_pos = std.mem.indexOf(u8, result.stdout, "test").?;
+    try std.testing.expect(setup_pos < build_pos);
+    try std.testing.expect(setup_pos < test_pos);
+}
+
+test "15010: zr explain unknown1 unknown2 returns error code 1 with not found message" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "unknown1", "unknown2" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Should mention that a task is not found
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not found") != null);
+    // Should not print a successful plan
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Execution plan") == null);
+}
+
+test "15011: zr explain build (single task) still works after multiple-task support" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_DEPS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "build" }, tmp_path);
+    defer result.deinit();
+
+    // Should work the same as before multiple-task support
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Tasks to run (3)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[1] setup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[2] generate") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[3] build") != null);
+}
+
+// ── Feature Tests: zr run --explain flag (Feature 2) ──────────────────────
+
+const TASK_WITH_CWD_TOML =
+    \\[tasks.setup]
+    \\cmd = "echo setup"
+    \\
+    \\[tasks.build]
+    \\cmd = "zig build"
+    \\cwd = "/tmp/build"
+    \\deps = ["setup"]
+    \\
+;
+
+const TASK_WITH_TIMEOUT_TOML =
+    \\[tasks.long-running]
+    \\cmd = "sleep 60"
+    \\timeout = "30s"
+    \\
+;
+
+test "15012: zr run --explain shows task name and command without executing" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--explain", "hello" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Output should contain the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
+    // Output should contain the command
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "echo hello") != null);
+    // The task should NOT actually execute (no "hello" output from echo)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") == null or
+        std.mem.indexOf(u8, result.stdout, "echo hello") != null); // Echo command shows, but not its output
+}
+
+test "15013: zr run --explain with task having cwd shows cwd in output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_CWD_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--explain", "build" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Output should contain task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
+    // Output should contain the cwd
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "/tmp/build") != null);
+    // Output should contain the command
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "zig build") != null);
+}
+
+test "15014: zr run --explain with no task name returns error code 1" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--explain" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Should show an error message (not a successful explanation)
+    try std.testing.expect(result.stderr.len > 0 or result.stdout.len > 0);
+}

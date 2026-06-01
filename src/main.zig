@@ -899,6 +899,7 @@ fn run(
                 "  --dir=PATH            Filter tasks by working directory prefix\n" ++
                 "  --skip=TASK           Skip specific tasks (repeatable, comma-separated)\n" ++
                 "  --only                Run only this task without its dependencies\n" ++
+                "  --explain             Show execution plan without running\n" ++
                 "  --notify              Enable desktop notifications for all tasks\n" ++
                 "  --fail-fast           Stop on first task failure (default: continue)\n" ++
                 "  --param key=value     Set a named task parameter\n\n" ++
@@ -924,8 +925,22 @@ fn run(
             );
             return 0;
         }
-        if (effective_args.len < 3) {
-            // No task name provided — launch interactive picker
+        // Check for --explain flag early (before task name is required)
+        var explain_mode = false;
+        for (effective_args[2..]) |arg| {
+            if (std.mem.eql(u8, arg, "--explain")) {
+                explain_mode = true;
+                break;
+            }
+        }
+
+        if (effective_args.len < 3 or (effective_args.len == 3 and explain_mode)) {
+            // No task name provided — launch interactive picker (unless --explain is only flag)
+            if (explain_mode and effective_args.len == 3) {
+                // `zr run --explain` with no task name
+                try color.printError(ew, effective_color, "run: --explain requires a task name\n\n  Hint: zr run <task-name> --explain\n", .{});
+                return 1;
+            }
             if (!std.fs.File.stdout().isTty()) {
                 try color.printError(ew, effective_color, "run: missing task name (no TTY for interactive picker)\n\n  Hint: zr run <task-name>\n", .{});
                 return 1;
@@ -969,7 +984,7 @@ fn run(
                 return run_cmd.cmdWorkflow(allocator, picker_result.name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent, &.{});
             }
         }
-        // Support `zr run --only <task>` in addition to `zr run <task> --only`
+        // Support `zr run --only <task>` and `zr run --explain <task>` in addition to `zr run <task> --only`
         var only_mode_pre = false;
         var task_name_idx: usize = 2;
         if (std.mem.eql(u8, effective_args[2], "--only")) {
@@ -978,6 +993,12 @@ fn run(
                 return 1;
             }
             only_mode_pre = true;
+            task_name_idx = 3;
+        } else if (std.mem.eql(u8, effective_args[2], "--explain")) {
+            if (effective_args.len < 4) {
+                try color.printError(ew, effective_color, "run: --explain requires a task name\n\n  Hint: zr run <task-name> --explain\n", .{});
+                return 1;
+            }
             task_name_idx = 3;
         }
         const task_name = effective_args[task_name_idx];
@@ -1103,6 +1124,9 @@ fn run(
                 notify_override = true;
             } else if (std.mem.eql(u8, arg, "--only")) {
                 only_mode = true;
+            } else if (std.mem.eql(u8, arg, "--explain")) {
+                // --explain flag is handled separately below
+                continue;
             } else if (std.mem.indexOf(u8, arg, "=")) |eq_pos| {
                 // Named key=value syntax
                 const key = arg[0..eq_pos];
@@ -1114,6 +1138,12 @@ fn run(
                 try runtime_params.put(pos_key, try allocator.dupe(u8, arg));
                 positional_index += 1;
             }
+        }
+
+        // If --explain mode, dispatch to cmdExplain instead of cmdRun
+        if (explain_mode) {
+            const explain_args = [_][]const u8{task_name};
+            return explain_cmd.cmdExplain(allocator, &explain_args, config_path, effective_w, ew, effective_color);
         }
 
         // Check if task filtering is requested (glob pattern, tags, or dir)

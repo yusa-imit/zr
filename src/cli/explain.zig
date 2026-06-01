@@ -55,6 +55,11 @@ fn printTaskText(
     try color.printBold(w, use_color, "{s}", .{task_name});
     try w.print("\n      Command: {s}\n", .{task.cmd});
 
+    // Print working directory if set
+    if (task.cwd) |cwd| {
+        try w.print("      Dir: {s}\n", .{cwd});
+    }
+
     // Print dependencies
     try w.print("      Dependencies: ", .{});
     const total_deps = task.deps.len + task.deps_serial.len + task.deps_if.len + task.deps_optional.len;
@@ -190,12 +195,13 @@ pub fn cmdExplain(
 ) !u8 {
     // Parse arguments
     var format = ExplainOutputFormat.text;
-    var task_name: ?[]const u8 = null;
+    var task_names = std.ArrayList([]const u8){};
+    defer task_names.deinit(allocator);
 
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try w.print("Usage: zr explain <task> [options]\n\n", .{});
-            try w.print("Show execution plan for a task, including all dependencies in topological order.\n\n", .{});
+            try w.print("Usage: zr explain <task> [<task>...] [options]\n\n", .{});
+            try w.print("Show execution plan for one or more tasks, including all dependencies in topological order.\n\n", .{});
             try w.print("Options:\n", .{});
             try w.print("  --tree              Display dependencies as a tree\n", .{});
             try w.print("  --json              Output in JSON format\n", .{});
@@ -206,14 +212,12 @@ pub fn cmdExplain(
         } else if (std.mem.eql(u8, arg, "--json")) {
             format = .json;
         } else if (!std.mem.startsWith(u8, arg, "--")) {
-            if (task_name == null) {
-                task_name = arg;
-            }
+            try task_names.append(allocator, arg);
         }
     }
 
-    // Require a task name
-    if (task_name == null) {
+    // Require at least one task name
+    if (task_names.items.len == 0) {
         try color.printError(err_writer, use_color,
             "explain: A task name is required\n\n  Usage: zr explain <task> [--tree] [--json]\n",
             .{},
@@ -228,28 +232,42 @@ pub fn cmdExplain(
     };
     defer config.deinit();
 
-    // Check that the task exists
-    if (config.tasks.get(task_name.?) == null) {
-        try color.printError(err_writer, use_color,
-            "explain: Task '{s}' not found\n",
-            .{task_name.?},
-        );
-        return 1;
+    // Validate all task names exist
+    for (task_names.items) |task_name| {
+        if (config.tasks.get(task_name) == null) {
+            try color.printError(err_writer, use_color,
+                "explain: Task '{s}' not found\n",
+                .{task_name},
+            );
+            return 1;
+        }
     }
 
-    // Collect all dependencies in topological order
+    // Collect all dependencies in topological order for all tasks
+    // Use a shared visited map to deduplicate across all named tasks
     var visited = std.StringHashMap(bool).init(allocator);
     defer visited.deinit();
 
     var ordered_tasks = std.ArrayList([]const u8){};
     defer ordered_tasks.deinit(allocator);
 
-    try collectTaskDeps(allocator, &config, task_name.?, &visited, &ordered_tasks);
+    for (task_names.items) |task_name| {
+        try collectTaskDeps(allocator, &config, task_name, &visited, &ordered_tasks);
+    }
 
     // Output based on format
     switch (format) {
         .text => {
-            try w.print("Execution plan for: {s}\n", .{task_name.?});
+            if (task_names.items.len == 1) {
+                try w.print("Execution plan for: {s}\n", .{task_names.items[0]});
+            } else {
+                try w.print("Execution plan for: ", .{});
+                for (task_names.items, 0..) |name, idx| {
+                    if (idx > 0) try w.print(", ", .{});
+                    try w.print("{s}", .{name});
+                }
+                try w.print("\n", .{});
+            }
             try w.print("Tasks to run ({d}):\n", .{ordered_tasks.items.len});
 
             for (ordered_tasks.items, 1..) |name, idx| {
@@ -259,10 +277,16 @@ pub fn cmdExplain(
             try w.print("\nEstimated total: {d} tasks\n", .{ordered_tasks.items.len});
         },
         .tree => {
-            try printDependencyTree(allocator, w, &config, task_name.?);
+            // For tree format with multiple tasks, print each task's tree
+            for (task_names.items) |task_name| {
+                if (task_names.items.len > 1) {
+                    try w.print("\nDependency tree for: {s}\n", .{task_name});
+                }
+                try printDependencyTree(allocator, w, &config, task_name);
+            }
         },
         .json => {
-            try printTaskJson(allocator, w, &config, task_name.?, ordered_tasks.items);
+            try printTaskJson(allocator, w, &config, "", ordered_tasks.items);
         },
     }
 
