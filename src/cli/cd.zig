@@ -7,6 +7,7 @@ const types = @import("../config/types.zig");
 /// Handle `zr cd <member>` command — print path to workspace member for shell integration
 pub fn cmdCd(
     allocator: std.mem.Allocator,
+    dir: std.fs.Dir,
     member_name: []const u8,
     w: anytype,
     err_writer: anytype,
@@ -14,7 +15,7 @@ pub fn cmdCd(
 ) !u8 {
     // Load config to get workspace members
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const config_path = std.fs.cwd().realpath(common.CONFIG_FILE, &path_buf) catch |err| {
+    const config_path = dir.realpath(common.CONFIG_FILE, &path_buf) catch |err| {
         try color.printError(err_writer, use_color,
             "[CD]: Failed to find {s}: {s}\n\n  Hint: Run this command from a directory with {s}\n",
             .{ common.CONFIG_FILE, @errorName(err), common.CONFIG_FILE });
@@ -46,13 +47,13 @@ pub fn cmdCd(
         members.deinit(allocator);
     }
 
-    const cwd_path = try std.fs.cwd().realpathAlloc(allocator, ".");
+    const cwd_path = try dir.realpathAlloc(allocator, ".");
     defer allocator.free(cwd_path);
 
     for (workspace.members) |pattern| {
         // Use glob to expand patterns (e.g., "packages/*")
         const Glob = @import("../util/glob.zig");
-        const matches = try Glob.findDirs(allocator, std.fs.cwd(), pattern);
+        const matches = try Glob.findDirs(allocator, dir, pattern);
         defer {
             for (matches) |match| allocator.free(match);
             allocator.free(matches);
@@ -60,7 +61,7 @@ pub fn cmdCd(
 
         for (matches) |match| {
             // Check if this is a directory with zr.toml
-            var match_dir = std.fs.cwd().openDir(match, .{}) catch continue;
+            var match_dir = dir.openDir(match, .{}) catch continue;
             defer match_dir.close();
 
             match_dir.access(common.CONFIG_FILE, .{}) catch continue;
@@ -127,4 +128,137 @@ pub fn cmdCd(
     try w.print("{s}\n", .{target_path.?});
 
     return 0;
+}
+
+test "cmdCd: no config file returns 1 with error message" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdCd(allocator, tmp.dir, "frontend", &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const err_output = err_buf[0..];
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "Failed to find") != null);
+}
+
+test "cmdCd: no workspace configured returns 1" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create zr.toml without [workspace] section
+    const toml = "[tasks.build]\ncmd = \"echo build\"\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdCd(allocator, tmp.dir, "frontend", &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const err_output = err_buf[0..];
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "No workspace configured") != null);
+}
+
+test "cmdCd: no workspace members found returns 1" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create zr.toml with [workspace] but pattern matches no directories
+    const toml = "[workspace]\nmembers = [\"nonexistent/*\"]\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdCd(allocator, tmp.dir, "frontend", &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const err_output = err_buf[0..];
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "No workspace members found") != null);
+}
+
+test "cmdCd: member found prints absolute path" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create workspace structure
+    try tmp.dir.makePath("packages/frontend");
+    try tmp.dir.makePath("packages/backend");
+
+    // Create zr.toml in root
+    const toml = "[workspace]\nmembers = [\"packages/*\"]\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    // Create zr.toml in each member
+    try tmp.dir.writeFile(.{ .sub_path = "packages/frontend/zr.toml", .data = "[tasks.dev]\ncmd = \"npm run dev\"\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "packages/backend/zr.toml", .data = "[tasks.dev]\ncmd = \"npm run dev\"\n" });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdCd(allocator, tmp.dir, "frontend", &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..];
+    try std.testing.expect(std.mem.indexOf(u8, written, "packages/frontend") != null);
+}
+
+test "cmdCd: member not found returns 1 with available members" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create workspace structure
+    try tmp.dir.makePath("packages/frontend");
+    try tmp.dir.makePath("packages/backend");
+
+    // Create zr.toml in root
+    const toml = "[workspace]\nmembers = [\"packages/*\"]\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    // Create zr.toml in each member
+    try tmp.dir.writeFile(.{ .sub_path = "packages/frontend/zr.toml", .data = "[tasks.dev]\ncmd = \"npm run dev\"\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "packages/backend/zr.toml", .data = "[tasks.dev]\ncmd = \"npm run dev\"\n" });
+
+    var out_buf: [4096]u8 = undefined;
+    const stdout = std.fs.File.stdout();
+    var out_w = stdout.writer(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    const stderr_f = std.fs.File.stderr();
+    var err_w = stderr_f.writer(&err_buf);
+
+    const code = try cmdCd(allocator, tmp.dir, "nonexistent", &out_w.interface, &err_w.interface, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const err_output = err_buf[0..];
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "not found") != null);
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "Available members") != null);
 }

@@ -1816,7 +1816,7 @@ fn run(
             return 1;
         }
         const member_name = effective_args[2];
-        return cd_cmd.cmdCd(allocator, member_name, effective_w, ew, effective_color);
+        return cd_cmd.cmdCd(allocator, std.fs.cwd(), member_name, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "shell-hook")) {
         const shell_name = if (effective_args.len >= 3) effective_args[2] else "";
         return shell_hook_cmd.cmdShellHook(allocator, shell_name, effective_w, ew, effective_color);

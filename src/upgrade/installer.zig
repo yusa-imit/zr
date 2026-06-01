@@ -128,6 +128,80 @@ fn replaceBinary(current_path: []const u8, new_path: []const u8) !void {
     }
 }
 
-// NOTE: replaceBinary() and downloadBinary() require integration tests
-// with actual filesystem operations. These should be added to tests/upgrade_test.zig
-// covering: successful upgrade, backup creation, permission preservation, error handling
+test "replaceBinary copies file content" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a source file with content
+    const source_file = "source.bin";
+    const source_content = "original binary data";
+    try tmp.dir.writeFile(.{ .sub_path = source_file, .data = source_content });
+
+    // Create a target file with different content
+    const target_file = "target.bin";
+    const old_content = "old binary data";
+    try tmp.dir.writeFile(.{ .sub_path = target_file, .data = old_content });
+
+    // Get absolute paths
+    const source_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_path, source_file });
+    defer allocator.free(source_path);
+    const target_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_path, target_file });
+    defer allocator.free(target_path);
+
+    // Replace binary
+    try replaceBinary(target_path, source_path);
+
+    // Verify target now contains source content
+    const target_file_obj = try tmp.dir.openFile(target_file, .{});
+    defer target_file_obj.close();
+
+    var buf: [256]u8 = undefined;
+    const bytes_read = try target_file_obj.readAll(&buf);
+    const actual_content = buf[0..bytes_read];
+
+    try std.testing.expectEqualStrings(source_content, actual_content);
+}
+
+test "replaceBinary makes file executable on Unix" {
+    if (builtin.os.tag == .windows) return; // Skip on Windows
+
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a source file
+    const source_file = "source.bin";
+    try tmp.dir.writeFile(.{ .sub_path = source_file, .data = "binary" });
+
+    // Create a target file
+    const target_file = "target.bin";
+    try tmp.dir.writeFile(.{ .sub_path = target_file, .data = "old" });
+
+    // Get absolute paths
+    const source_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_path, source_file });
+    defer allocator.free(source_path);
+    const target_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_path, target_file });
+    defer allocator.free(target_path);
+
+    // Replace binary
+    try replaceBinary(target_path, source_path);
+
+    // Verify target is executable (chmod 0o755)
+    const target_file_obj = try tmp.dir.openFile(target_file, .{});
+    defer target_file_obj.close();
+
+    const stat = try target_file_obj.stat();
+    const mode = stat.mode & 0o777;
+
+    // Check for execute permission (at least user execute bit should be set)
+    try std.testing.expect((mode & 0o100) != 0);
+}
