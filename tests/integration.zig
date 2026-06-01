@@ -29,6 +29,7 @@ comptime {
     _ = @import("context_test.zig");
     _ = @import("doctor_test.zig");
     _ = @import("edit_test.zig");
+    _ = @import("explain_test.zig");
     _ = @import("enhanced_discovery_test.zig");
     _ = @import("env_test.zig");
     _ = @import("env_file_test.zig");

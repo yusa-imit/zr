@@ -73,6 +73,7 @@ const abbreviations = @import("cli/abbreviations.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
 const export_cmd = @import("cli/export.zig");
+const explain_cmd = @import("cli/explain.zig");
 const affected_cmd = @import("cli/affected.zig");
 const clean_cmd = @import("cli/clean.zig");
 const upgrade_cmd = @import("cli/upgrade.zig");
@@ -230,6 +231,7 @@ comptime {
     _ = @import("context/types.zig");
     _ = @import("context/generator.zig");
     _ = @import("context/json.zig");
+    _ = explain_cmd;
     _ = @import("context/yaml.zig");
     _ = conformance_cmd;
     _ = @import("conformance/types.zig");
@@ -711,7 +713,7 @@ fn run(
         "doctor",     "cd",         "shell-hook", "setup",      "env",        "export",
         "affected",   "clean",      "upgrade",    "alias",
         "estimate",   "show",       "schedule",   "mcp",
-        "lsp",        "add",        "edit",       "failures",
+        "explain",    "lsp",        "add",        "edit",       "failures",
         "template",   "which",      "ci",         "deps",       "artifacts",
     };
     var is_builtin = false;
@@ -2035,6 +2037,9 @@ fn run(
         }
         const entity_type = edit_args[0];
         return config_editor.cmdEdit(allocator, entity_type, edit_args[1..], effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "explain")) {
+        const explain_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return explain_cmd.cmdExplain(allocator, explain_args, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "failures")) {
         const failures_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = failures_cmd.FailuresOptions{
@@ -2308,6 +2313,9 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  alias <subcommand>     Manage command aliases (add|list|remove|show)\n", .{});
     try w.print("  estimate <task|workflow> Estimate task/workflow duration based on execution history\n", .{});
     try w.print("  show <task>            Display detailed information about a task\n", .{});
+    try w.print("  explain <task>         Show execution plan and dependency chain for a task\n", .{});
+    try w.print("    --tree               Display dependency tree visually\n", .{});
+    try w.print("    --json               Output execution plan as JSON\n", .{});
     try w.print("  help <task>            Show rich formatted help for a task\n", .{});
     try w.print("  man <task>             Show man-page style documentation for a task\n", .{});
     try w.print("  failures [list|clear]  View or clear captured task failure reports\n", .{});

@@ -31,6 +31,21 @@ Polish code quality, improve documentation, and enhance user experience with sma
 - **CLI help text**: Ensure all commands have consistent, helpful --help output
 **Status: ACTIVE** — Started 2026-05-17 (Cycle 243 FEATURE). This is a continuous improvement milestone with no fixed end date. Work items completed incrementally as time permits.
 
+### Task Explain & Execution Preview
+
+Add a `zr explain <task>` command (and `zr run --explain` flag) that shows exactly what would happen before running — which tasks will execute, in what order, with what commands, and estimated durations from history. Currently users must reason through dependency graphs manually; this command makes the execution plan transparent. Includes:
+- **`zr explain <task>`**: Show the full dependency chain for a task in execution order
+  - For each task in the plan: command, working directory, timeout, skip conditions, env vars
+  - Indicate which tasks are cache-skippable (up-to-date detection)
+  - Show estimated total duration from history stats
+- **`zr run --explain`**: Same output but before actually running (dry-run with full detail)
+- **Tree view**: `zr explain <task> --tree` shows dependency hierarchy visually
+- **JSON output**: `zr explain <task> --json` for machine-readable plan
+- **Multiple tasks**: `zr explain build test deploy` shows merged plan for a workflow
+- **Integration with cache**: Flag tasks that would be skipped due to cache hits
+- **Integration tests**: Comprehensive tests covering all output formats and edge cases
+**Status: ACTIVE** — Started 2026-06-01 (Cycle 304 FEATURE). Second active milestone alongside Code Quality & Documentation Polish.
+
 ### Enhanced Environment Variable Management
 
 Improve environment variable handling with .env file support, variable interpolation, and flexible merging strategies. Currently tasks can only specify env vars in TOML, requiring duplication for shared environments. This milestone adds .env file loading, variable expansion, and inheritance patterns similar to docker-compose and direnv. Includes:
