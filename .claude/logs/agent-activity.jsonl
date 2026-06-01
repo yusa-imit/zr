@@ -51,3 +51,5 @@
 {"timestamp":"2026-05-30T22:18:58Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for [vars] section in zr.toml (TOML-level task variables)","project":"zr"}
 {"timestamp":"2026-05-30T22:25:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement [vars] section in zr.toml (TOML-level task variables with {{KEY}} substitution)","project":"zr"}
 {"timestamp":"2026-06-01T07:15:00Z","action":"subagent","agent_type":"Explore","task":"Survey CLI error message consistency for Code Quality milestone","project":"zr"}
+{"timestamp":"2026-06-01T00:30:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for zr explain command","project":"zr"}
+{"timestamp":"2026-06-01T00:35:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement zr explain command (Task Explain & Execution Preview)","project":"zr"}
