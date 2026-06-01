@@ -2039,7 +2039,7 @@ fn run(
         return config_editor.cmdEdit(allocator, entity_type, edit_args[1..], effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "explain")) {
         const explain_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        return explain_cmd.cmdExplain(allocator, explain_args, effective_w, ew, effective_color);
+        return explain_cmd.cmdExplain(allocator, explain_args, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "failures")) {
         const failures_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = failures_cmd.FailuresOptions{

@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const color = @import("../output/color.zig");
-const common = @import("common.zig");
 const loader = @import("../config/loader.zig");
 const types = @import("../config/types.zig");
 
@@ -184,6 +183,7 @@ fn printTaskJson(
 pub fn cmdExplain(
     allocator: Allocator,
     args: []const []const u8,
+    config_path: []const u8,
     w: *std.Io.Writer,
     err_writer: *std.Io.Writer,
     use_color: bool,
@@ -222,12 +222,6 @@ pub fn cmdExplain(
     }
 
     // Load config
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const config_path = std.fs.cwd().realpath(common.CONFIG_FILE, &path_buf) catch {
-        try color.printError(err_writer, use_color, "explain: No {s} found\n", .{common.CONFIG_FILE});
-        return 1;
-    };
-
     var config = loader.loadFromFile(allocator, config_path) catch |err| {
         try color.printError(err_writer, use_color, "explain: Failed to load config: {s}\n", .{@errorName(err)});
         return 1;
