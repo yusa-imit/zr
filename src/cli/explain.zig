@@ -268,3 +268,129 @@ pub fn cmdExplain(
 
     return 0;
 }
+
+const parser = @import("../config/parser.zig");
+
+// Note: printTaskText, printDependencyTree, printTaskJson use *std.Io.Writer
+// which requires a live file handle — covered by integration tests (15000-15008).
+
+test "collectTaskDeps single task with no deps returns only that task" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.build]
+        \\cmd = "zig build"
+    );
+    defer config.deinit();
+
+    var visited = std.StringHashMap(bool).init(allocator);
+    defer visited.deinit();
+
+    var order = std.ArrayList([]const u8){};
+    defer order.deinit(allocator);
+
+    try collectTaskDeps(allocator, &config, "build", &visited, &order);
+
+    try std.testing.expectEqual(@as(usize, 1), order.items.len);
+    try std.testing.expectEqualStrings("build", order.items[0]);
+}
+
+test "collectTaskDeps with linear chain returns tasks in dependency-first order" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.a]
+        \\cmd = "echo a"
+        \\[tasks.b]
+        \\cmd = "echo b"
+        \\deps = ["a"]
+        \\[tasks.c]
+        \\cmd = "echo c"
+        \\deps = ["b"]
+    );
+    defer config.deinit();
+
+    var visited = std.StringHashMap(bool).init(allocator);
+    defer visited.deinit();
+
+    var order = std.ArrayList([]const u8){};
+    defer order.deinit(allocator);
+
+    try collectTaskDeps(allocator, &config, "c", &visited, &order);
+
+    // a must come before b, b must come before c
+    try std.testing.expectEqual(@as(usize, 3), order.items.len);
+    try std.testing.expectEqualStrings("a", order.items[0]);
+    try std.testing.expectEqualStrings("b", order.items[1]);
+    try std.testing.expectEqualStrings("c", order.items[2]);
+}
+
+test "collectTaskDeps deduplicates shared dependencies" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.setup]
+        \\cmd = "echo setup"
+        \\[tasks.left]
+        \\cmd = "echo left"
+        \\deps = ["setup"]
+        \\[tasks.right]
+        \\cmd = "echo right"
+        \\deps = ["setup"]
+        \\[tasks.merge]
+        \\cmd = "echo merge"
+        \\deps = ["left", "right"]
+    );
+    defer config.deinit();
+
+    var visited = std.StringHashMap(bool).init(allocator);
+    defer visited.deinit();
+
+    var order = std.ArrayList([]const u8){};
+    defer order.deinit(allocator);
+
+    try collectTaskDeps(allocator, &config, "merge", &visited, &order);
+
+    // setup should appear exactly once even though both left and right depend on it
+    var setup_count: usize = 0;
+    for (order.items) |name| {
+        if (std.mem.eql(u8, name, "setup")) setup_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), setup_count);
+    try std.testing.expectEqual(@as(usize, 4), order.items.len);
+}
+
+test "collectTaskDeps with self-cycle does not infinite-loop" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.loop]
+        \\cmd = "echo loop"
+        \\deps = ["loop"]
+    );
+    defer config.deinit();
+
+    var visited = std.StringHashMap(bool).init(allocator);
+    defer visited.deinit();
+
+    var order = std.ArrayList([]const u8){};
+    defer order.deinit(allocator);
+
+    // Should not stack-overflow; visited map prevents re-entering "loop"
+    try collectTaskDeps(allocator, &config, "loop", &visited, &order);
+    try std.testing.expectEqual(@as(usize, 1), order.items.len);
+}
+
+test "collectTaskDeps nonexistent task returns error" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.build]
+        \\cmd = "zig build"
+    );
+    defer config.deinit();
+
+    var visited = std.StringHashMap(bool).init(allocator);
+    defer visited.deinit();
+
+    var order = std.ArrayList([]const u8){};
+    defer order.deinit(allocator);
+
+    const result = collectTaskDeps(allocator, &config, "nonexistent", &visited, &order);
+    try std.testing.expectError(error.TaskNotFound, result);
+}
