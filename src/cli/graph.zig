@@ -696,7 +696,7 @@ pub fn graphCommand(
             try printGraphHelp(w);
             return 0;
         } else {
-            try color.printError(ew, use_color, "graph: unknown argument '{s}'\n", .{arg});
+            try color.printError(ew, use_color, "✗ [graph]: unknown argument '{s}'\n\n  Hint: Run 'zr graph --help' to see available options\n", .{arg});
             return 1;
         }
     }

@@ -451,7 +451,7 @@ pub fn cmdMonitor(
     // Load config
     const resolved_path = config_path orelse "zr.toml";
     var config = loader.loadFromFile(allocator, resolved_path) catch |err| {
-        try color_mod.printError(ew, use_color, "monitor: Failed to load config: {}\n", .{err});
+        try color_mod.printError(ew, use_color, "✗ [monitor]: Failed to load config: {}\n\n  Hint: Ensure a valid zr.toml exists in the current directory\n", .{err});
         return 1;
     };
     defer config.deinit();

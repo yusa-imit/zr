@@ -398,7 +398,7 @@ fn cmdRepoGraph(
 
     // Build graph
     var graph = repo_graph.buildRepoGraph(allocator, &config) catch |err| {
-        try color.printError(ew, use_color, "Failed to build graph: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "✗ [repo]: Failed to build graph: {s}\n", .{@errorName(err)});
         return 1;
     };
     defer graph.deinit();
@@ -410,10 +410,11 @@ fn cmdRepoGraph(
             for (cycle_path) |name| allocator.free(name);
             allocator.free(cycle_path);
         }
-        try color.printError(ew, use_color, "Cycle detected in dependency graph:\n", .{});
+        try color.printError(ew, use_color, "✗ [repo]: Cycle detected in dependency graph:\n\n", .{});
         for (cycle_path) |name| {
             try ew.print("  → {s}\n", .{name});
         }
+        try ew.print("\n  Hint: Remove circular dependencies between repositories\n", .{});
         return 1;
     }
 

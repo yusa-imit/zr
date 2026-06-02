@@ -47,8 +47,7 @@ pub fn cmdClean(
             try printHelp(w, use_color);
             return 0;
         } else {
-            try color.printError(ew, use_color, "clean: Unknown option: {s}\n\n", .{arg});
-            try printHelp(w, use_color);
+            try color.printError(ew, use_color, "✗ [clean]: Unknown option: {s}\n\n  Hint: Run 'zr clean --help' to see available options\n", .{arg});
             return 1;
         }
     }
