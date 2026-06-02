@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.85.0] - 2026-06-02
+
+### Added
+- **`zr explain <task>`** — Show the full execution plan before running a task
+  - Displays all tasks in topological order (dependencies first), with command, working directory, timeout, env vars, required_env, skip_if, cache flag, and sources patterns
+  - Shows per-task duration estimate (~Xs) from execution history when available
+  - Shows estimated total duration when all tasks in the plan have history data
+  - `--tree` flag: dependency hierarchy as an ASCII tree (recursive, cycle-safe with "already shown" markers)
+  - `--json` flag: machine-readable plan with task names, commands, and deps array
+  - Supports multiple tasks: `zr explain build test deploy` shows merged plan for a workflow (deduped)
+  - `--help` flag for usage information
+  - 21 integration tests (15000–15020) covering all output formats, multi-task plans, per-field display (timeout, env, required_env, skip_if, cache, sources), error handling, and edge cases
+- **`zr run --explain`** — Print the execution plan and exit without running; equivalent to `zr explain <task>`
+
 ## [1.84.0] - 2026-05-30
 
 ### Added
