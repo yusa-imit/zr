@@ -67,8 +67,7 @@ pub fn cmdGenerate(
             if (Platform.fromString(p_str)) |p| {
                 break :blk p;
             } else {
-                try color.printError(stderr, use_color, "Unknown platform: {s}\n", .{p_str});
-                try color.printDim(stderr, use_color, "Valid platforms: github-actions, gitlab, circleci\n", .{});
+                try color.printError(stderr, use_color, "✗ [ci]: Unknown platform: {s}\n\n  Hint: Valid platforms: github-actions, gitlab, circleci\n", .{p_str});
                 return error.InvalidPlatform;
             }
         }
@@ -90,8 +89,7 @@ pub fn cmdGenerate(
             if (TemplateType.fromString(t_str)) |t| {
                 break :blk t;
             } else {
-                try color.printError(stderr, use_color, "Unknown template type: {s}\n", .{t_str});
-                try color.printDim(stderr, use_color, "Valid types: basic, monorepo, release\n", .{});
+                try color.printError(stderr, use_color, "✗ [ci]: Unknown template type: {s}\n\n  Hint: Valid types: basic, monorepo, release\n", .{t_str});
                 return error.InvalidTemplateType;
             }
         }

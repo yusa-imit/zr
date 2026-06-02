@@ -24,8 +24,7 @@ pub fn cmdCodeowners(
         try printHelp(w, use_color);
         return 0;
     } else {
-        try color.printError(ew, use_color, "Unknown subcommand: {s}\n", .{subcommand});
-        try printHelp(w, use_color);
+        try color.printError(ew, use_color, "✗ [codeowners]: Unknown subcommand: {s}\n\n  Hint: Run 'zr codeowners --help' to see available subcommands\n", .{subcommand});
         return 1;
     }
 }
@@ -64,14 +63,14 @@ fn cmdCodeownersGenerate(
             try printGenerateHelp(w, use_color);
             return 0;
         } else {
-            try color.printError(ew, use_color, "Unknown option: {s}\n", .{arg});
+            try color.printError(ew, use_color, "✗ [codeowners]: Unknown option: {s}\n\n  Hint: Run 'zr codeowners --help' to see available options\n", .{arg});
             return 1;
         }
     }
 
     // Load config
     var config = config_loader.loadFromFile(allocator, config_path) catch |err| {
-        try color.printError(ew, use_color, "Failed to load config: {s}\n", .{@errorName(err)});
+        try color.printError(ew, use_color, "✗ [codeowners]: Failed to load config: {s}\n\n  Hint: Ensure a valid zr.toml exists or use --config <path>\n", .{@errorName(err)});
         return 1;
     };
     defer config.deinit();
