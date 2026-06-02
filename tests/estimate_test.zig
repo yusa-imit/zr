@@ -351,11 +351,10 @@ test "592: estimate with --format csv shows unsupported format error or fallback
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    // CSV format not supported for estimate
+    // CSV format not recognized by estimate — silently falls back to text output
     var result = try runZr(allocator, &.{ "--config", config, "estimate", "build", "--format", "csv" }, tmp_path);
     defer result.deinit();
-    // Should error gracefully or fallback
-    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
 test "597: estimate with --limit flag restricts history sample size" {

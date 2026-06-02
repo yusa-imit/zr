@@ -70,7 +70,7 @@ test "130: analytics with --limit flag restricts history range" {
 
 // ── Advanced Multi-Feature Integration Tests ─────────────────────────
 
-test "318: analytics with --format=json outputs structured metrics" {
+test "318: analytics with --format=json and no history reports no data" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -82,13 +82,11 @@ test "318: analytics with --format=json outputs structured metrics" {
     defer zr_toml.close();
     try zr_toml.writeAll(HELLO_TOML);
 
+    // No prior runs — analytics should report no execution history
     var result = try runZr(allocator, &.{ "analytics", "--format=json" }, tmp_path);
     defer result.deinit();
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    // Should output JSON or fail gracefully
-    try std.testing.expect(std.mem.indexOf(u8, output, "{") != null or
-                          std.mem.indexOf(u8, output, "analytics") != null or
-                          result.exit_code == 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "No execution history") != null);
 }
 
 test "353: analytics with --limit 0 handles edge case gracefully" {
@@ -154,12 +152,11 @@ test "363: analytics --json outputs structured data" {
     var run_result = try runZr(allocator, &.{ "run", "hello" }, tmp_path);
     defer run_result.deinit();
 
-    // Get JSON analytics
+    // Get JSON analytics — should produce structured JSON with total_executions
     var result = try runZr(allocator, &.{ "analytics", "--json" }, tmp_path);
     defer result.deinit();
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    // Should contain JSON structure
-    try std.testing.expect(output.len > 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "total_executions") != null);
 }
 
 test "368: analytics with combined --json and --limit flags" {
