@@ -508,12 +508,11 @@ test "338: affected with --base pointing to nonexistent git ref reports error" {
     defer allocator.free(git_commit.stdout);
     defer allocator.free(git_commit.stderr);
 
-    // Try affected with nonexistent ref - should produce error
+    // Try affected with nonexistent ref — should fail with a non-zero exit code and error output
     var result = try runZr(allocator, &.{ "affected", "test", "--base", "nonexistent-ref" }, tmp_path);
     defer result.deinit();
-    // Just verify it produces output (error message) - implementation may vary
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(output.len > 0);
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(result.stderr.len > 0);
 }
 
 test "400: affected with --base and --exclude-self flags on git repo" {
