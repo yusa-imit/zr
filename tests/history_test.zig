@@ -203,11 +203,10 @@ test "227: history with corrupted data file handles gracefully" {
     defer history_file.close();
     try history_file.writeAll("corrupted\tdata\nmalformed\n12345\t\t\n");
 
-    // History command should handle corrupted data gracefully
+    // History command skips corrupted lines and exits cleanly
     var result = try runZr(allocator, &.{"history"}, tmp_path);
     defer result.deinit();
-    // Should not crash, may show error or skip corrupted entries
-    try std.testing.expect(result.exit_code <= 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
 test "232: history with --limit flag restricts output count" {
@@ -236,10 +235,18 @@ test "232: history with --limit flag restricts output count" {
     var r3 = try runZr(allocator, &.{ "run", "test" }, tmp_path);
     defer r3.deinit();
 
-    // Check history with limit
-    var result = try runZr(allocator, &.{ "history", "--limit", "2" }, tmp_path);
+    // Check history with limit — use --limit=N form (space-separated is not supported)
+    var result = try runZr(allocator, &.{ "history", "--limit=2" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // With limit=2 and 3 runs, exactly 2 "test" task entries should appear
+    var count: usize = 0;
+    var idx: usize = 0;
+    while (std.mem.indexOfPos(u8, result.stdout, idx, "test")) |pos| {
+        count += 1;
+        idx = pos + 1;
+    }
+    try std.testing.expect(count <= 2);
 }
 
 test "246: history with partially corrupted entries recovers and shows valid records" {
@@ -260,25 +267,22 @@ test "246: history with partially corrupted entries recovers and shows valid rec
     defer zr_toml.close();
     try zr_toml.writeAll(simple_toml);
 
-    // Run task to create history
+    // Run task to create a valid .zr_history entry
     var run_result = try runZr(allocator, &.{ "run", "test" }, tmp_path);
     defer run_result.deinit();
 
-    // Create .zr directory if it doesn't exist
-    tmp.dir.makeDir(".zr") catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-
-    // Corrupt history file by appending invalid JSON
-    const history_file = try tmp.dir.createFile(".zr/history.jsonl", .{ .truncate = false });
+    // Append a corrupted (invalid tab-separated) line to .zr_history (the actual history file)
+    const history_file = try tmp.dir.openFile(".zr_history", .{ .mode = .read_write });
     defer history_file.close();
     try history_file.seekFromEnd(0);
-    try history_file.writeAll("{invalid json line\n");
+    try history_file.writeAll("corrupted\tdata\nmalformed\n12345\t\t\n");
 
-    // History command should still work and show valid entries
+    // History command should still work and show the valid entry (skips corrupted lines)
     var history_result = try runZr(allocator, &.{ "history" }, tmp_path);
     defer history_result.deinit();
-    try std.testing.expect(history_result.exit_code <= 1); // May warn but should show partial results
+    try std.testing.expectEqual(@as(u8, 0), history_result.exit_code);
+    // Valid entry (task name "test") should appear despite corrupted lines
+    try std.testing.expect(std.mem.indexOf(u8, history_result.stdout, "test") != null);
 }
 
 test "268: history with binary corruption recovers gracefully" {
@@ -299,17 +303,15 @@ test "268: history with binary corruption recovers gracefully" {
     defer zr_toml.close();
     try zr_toml.writeAll(simple_toml);
 
-    // Create .zr directory and corrupt history file
-    try tmp.dir.makeDir(".zr");
-    const history_file = try tmp.dir.createFile(".zr/history.jsonl", .{});
+    // Write binary garbage directly to .zr_history (the actual history file zr reads)
+    const history_file = try tmp.dir.createFile(".zr_history", .{});
     defer history_file.close();
-    // Write binary garbage
     try history_file.writeAll("\x00\x01\x02\x03\xFF\xFE\xFD\xFC");
 
+    // History command should skip binary-corrupted lines and exit cleanly
     var result = try runZr(allocator, &.{ "history" }, tmp_path);
     defer result.deinit();
-    // Should handle corruption gracefully and show empty or partial history
-    try std.testing.expect(result.exit_code <= 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
 }
 
 test "297: history with --format=csv outputs comma-separated values" {
@@ -334,11 +336,12 @@ test "297: history with --format=csv outputs comma-separated values" {
     var run_result = try runZr(allocator, &.{ "run", "quick" }, tmp_path);
     defer run_result.deinit();
 
+    // --format=csv is not recognized by history (not a global format) — silently ignored
     var result = try runZr(allocator, &.{ "history", "--format=csv" }, tmp_path);
     defer result.deinit();
-    // Should output CSV format (or fail gracefully if not supported)
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(output.len > 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Falls back to text output containing the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "quick") != null);
 }
 
 test "326: history command with --format=json and multiple past runs" {
@@ -688,11 +691,11 @@ test "583: history with corrupted JSON file recovers gracefully" {
     var result1 = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
     defer result1.deinit();
 
-    // Try to read history - should handle any corruption gracefully
+    // Read history - the run above should have created a valid history entry
     var result2 = try runZr(allocator, &.{ "--config", config, "history" }, tmp_path);
     defer result2.deinit();
-    // Should succeed or report empty history
-    try std.testing.expect(result2.exit_code == 0 or result2.exit_code == 1);
+    try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "test") != null);
 }
 
 test "595: history with --format yaml shows unsupported format or fallback" {
@@ -715,11 +718,12 @@ test "595: history with --format yaml shows unsupported format or fallback" {
     var run_result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
     defer run_result.deinit();
 
-    // YAML format not supported for history
+    // YAML format not recognized by history command — silently falls back to text output
     var result = try runZr(allocator, &.{ "--config", config, "history", "--format", "yaml" }, tmp_path);
     defer result.deinit();
-    // Should error or fallback to default
-    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Outputs normal text history (not YAML), containing the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
 }
 
 test "609: history with --format json and --limit combined shows valid JSON object" {

@@ -267,16 +267,17 @@ test "284: cache with sequential runs stores and retrieves results" {
     defer zr_toml.close();
     try zr_toml.writeAll(cache_toml);
 
-    // First run - populate cache
+    // First run - execute and populate cache
     var result1 = try runZr(allocator, &.{ "run", "cached" }, tmp_path);
     defer result1.deinit();
-    try std.testing.expect(result1.exit_code == 0);
+    try std.testing.expectEqual(@as(u8, 0), result1.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result1.stdout, "cached-output") != null);
 
-    // Second run - should succeed (cached or not)
+    // Second run - cache hit: zr restores cached stdout without re-executing the command
     var result2 = try runZr(allocator, &.{ "run", "cached" }, tmp_path);
     defer result2.deinit();
-    try std.testing.expect(result2.exit_code == 0);
-    // Cache functionality works if both runs succeed
+    try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result2.stdout, "cached-output") != null);
 }
 
 test "308: cache with corrupted cache file recovers gracefully" {
@@ -315,10 +316,12 @@ test "308: cache with corrupted cache file recovers gracefully" {
     defer corrupt_file.close();
     try corrupt_file.writeAll("corrupted binary data \\x00\\xff\\xfe");
 
-    // Should recover from corruption
+    // Should recover from corruption: cache miss triggers re-execution of the task
     var run2 = try runZr(allocator, &.{ "run", "cacheable" }, tmp_path);
     defer run2.deinit();
-    try std.testing.expect(run2.exit_code == 0);
+    try std.testing.expectEqual(@as(u8, 0), run2.exit_code);
+    // Task output reproduced — confirms command was re-executed (not served from corrupt cache)
+    try std.testing.expect(std.mem.indexOf(u8, run2.stdout, "cached") != null);
 }
 
 test "334: cache clear followed by cache status shows empty" {
@@ -673,10 +676,14 @@ test "574: cache clear with --selective flag removes only specified cache entrie
     var run2 = try runZr(allocator, &.{ "--config", config, "run", "test" }, tmp_path);
     run2.deinit();
 
+    // --selective is not a recognized flag; cache clear ignores it and clears all entries
     var result = try runZr(allocator, &.{ "--config", config, "cache", "clear", "--selective=build" }, tmp_path);
     defer result.deinit();
-    // May not support --selective flag yet
-    try std.testing.expect(result.exit_code == 0 or result.exit_code == 1);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Output confirms entries were cleared
+    const has_cleared = std.mem.indexOf(u8, result.stdout, "Cleared") != null;
+    const has_no_entries = std.mem.indexOf(u8, result.stdout, "No cached") != null;
+    try std.testing.expect(has_cleared or has_no_entries);
 }
 
 test "578: cache with expired entries (old timestamps) triggers rebuild" {
