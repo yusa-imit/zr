@@ -60,6 +60,55 @@ fn printTaskText(
         try w.print("      Dir: {s}\n", .{cwd});
     }
 
+    // Print timeout if set
+    if (task.timeout_ms) |ms| {
+        if (ms % 60_000 == 0) {
+            try w.print("      Timeout: {d}m\n", .{ms / 60_000});
+        } else if (ms % 1_000 == 0) {
+            try w.print("      Timeout: {d}s\n", .{ms / 1_000});
+        } else {
+            try w.print("      Timeout: {d}ms\n", .{ms});
+        }
+    }
+
+    // Print cache flag
+    if (task.cache) {
+        try w.print("      Cache: enabled\n", .{});
+    }
+
+    // Print skip_if condition
+    if (task.skip_if) |cond| {
+        try w.print("      Skip if: {s}\n", .{cond});
+    }
+
+    // Print env vars if set
+    if (task.env.len > 0) {
+        try w.print("      Env:\n", .{});
+        for (task.env) |pair| {
+            try w.print("        {s}={s}\n", .{ pair[0], pair[1] });
+        }
+    }
+
+    // Print required_env if set
+    if (task.required_env) |req| {
+        if (req.len > 0) {
+            try w.print("      Required env:", .{});
+            for (req) |name| {
+                try w.print(" {s}", .{name});
+            }
+            try w.print("\n", .{});
+        }
+    }
+
+    // Print sources if set
+    if (task.sources.len > 0) {
+        try w.print("      Sources:", .{});
+        for (task.sources) |src| {
+            try w.print(" {s}", .{src});
+        }
+        try w.print("\n", .{});
+    }
+
     // Print dependencies
     try w.print("      Dependencies: ", .{});
     const total_deps = task.deps.len + task.deps_serial.len + task.deps_if.len + task.deps_optional.len;
