@@ -991,3 +991,16 @@ test "715: history stats with multiple tasks shows all tasks" {
     try std.testing.expect(std.mem.indexOf(u8, output, "compile") != null or
         std.mem.indexOf(u8, output, "lint") != null);
 }
+
+test "history --help: exits 0 and shows usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "history", "--help" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "history") != null);
+}

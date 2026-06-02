@@ -466,3 +466,16 @@ test "958: analytics with --tui flag invokes TUI mode" {
 
     try std.testing.expect(result.exit_code == 0 or is_tty_error);
 }
+
+test "analytics --help: exits 0 and shows usage" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "analytics", "--help" }, tmp_path);
+    defer result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "analytics") != null);
+}
