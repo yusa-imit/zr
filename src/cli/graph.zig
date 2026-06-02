@@ -685,7 +685,7 @@ pub fn graphCommand(
             config_path = arg["--config=".len..];
         } else if (std.mem.eql(u8, arg, "--affected")) {
             if (i + 1 >= args.len) {
-                try color.printError(ew, use_color, "graph: --affected requires a git reference\n", .{});
+                try color.printError(ew, use_color, "✗ [graph]: --affected requires a git reference\n\n  Hint: zr graph --affected origin/main\n", .{});
                 return 1;
             }
             i += 1;
@@ -743,11 +743,11 @@ pub fn graphCommand(
             .json => try renderTasksJson(w, &config, use_color),
             .interactive => unreachable, // Already handled above
             .html => {
-                try color.printError(ew, use_color, "graph: HTML format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
+                try color.printError(ew, use_color, "✗ [graph]: HTML format is only for workspace graphs\n\n  Hint: Use --format=interactive for task graphs, or run from a workspace\n", .{});
                 return 1;
             },
             .tui => {
-                try color.printError(ew, use_color, "graph: TUI format is only for workspace graphs (use --format=interactive for task graphs)\n", .{});
+                try color.printError(ew, use_color, "✗ [graph]: TUI format is only for workspace graphs\n\n  Hint: Use --format=interactive for task graphs, or run from a workspace\n", .{});
                 return 1;
             },
         }

@@ -65,14 +65,14 @@ pub fn cmdExport(
     // If task specified, load config and merge task env
     if (task_name) |task| {
         var cfg = loader.loadFromFile(allocator, config_path) catch |err| {
-            try color.printError(ew, use_color, "export: failed to load config: {}\n", .{err});
+            try color.printError(ew, use_color, "✗ [export]: failed to load config: {}\n\n  Hint: Ensure a valid zr.toml exists or use --config <path>\n", .{err});
             return 1;
         };
         defer cfg.deinit();
 
         // Find task
         const task_def = cfg.tasks.get(task) orelse {
-            try color.printError(ew, use_color, "export: task '{s}' not found\n", .{task});
+            try color.printError(ew, use_color, "✗ [export]: task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n", .{task});
             return 1;
         };
 
@@ -90,7 +90,7 @@ pub fn cmdExport(
             for (task_def.toolchain) |toolchain_str| {
                 // Parse toolchain string (format: "tool@version")
                 const at_index = std.mem.indexOf(u8, toolchain_str, "@") orelse {
-                    try color.printError(ew, use_color, "export: invalid toolchain format '{s}' (expected tool@version)\n", .{toolchain_str});
+                    try color.printError(ew, use_color, "✗ [export]: invalid toolchain format '{s}'\n\n  Hint: Expected format is tool@version (e.g., node@18)\n", .{toolchain_str});
                     return 1;
                 };
                 const tool_name = toolchain_str[0..at_index];
@@ -98,13 +98,13 @@ pub fn cmdExport(
 
                 // Parse tool kind
                 const tool_kind = toolchain_types.ToolKind.fromString(tool_name) orelse {
-                    try color.printError(ew, use_color, "export: unknown toolchain '{s}'\n", .{tool_name});
+                    try color.printError(ew, use_color, "✗ [export]: unknown toolchain '{s}'\n\n  Hint: Supported tools: node, python, go, rust, java, ruby, php, dotnet\n", .{tool_name});
                     return 1;
                 };
 
                 // Parse version
                 const tool_version = toolchain_types.ToolVersion.parse(version_str) catch |err| {
-                    try color.printError(ew, use_color, "export: invalid version '{s}': {}\n", .{ version_str, err });
+                    try color.printError(ew, use_color, "✗ [export]: invalid version '{s}': {}\n\n  Hint: Use semver format e.g. 18.0.0 or 18\n", .{ version_str, err });
                     return 1;
                 };
 

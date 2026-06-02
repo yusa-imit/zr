@@ -288,7 +288,7 @@ pub fn cmdExplain(
 
     // Load config
     var config = loader.loadFromFile(allocator, config_path) catch |err| {
-        try color.printError(err_writer, use_color, "explain: Failed to load config: {s}\n", .{@errorName(err)});
+        try color.printError(err_writer, use_color, "✗ [explain]: Failed to load config: {s}\n\n  Hint: Ensure a valid zr.toml exists or use --config <path>\n", .{@errorName(err)});
         return 1;
     };
     defer config.deinit();
