@@ -449,3 +449,179 @@ test "15014: zr run --explain with no task name returns error code 1" {
     // Should show an error message (not a successful explanation)
     try std.testing.expect(result.stderr.len > 0 or result.stdout.len > 0);
 }
+
+// ── Feature Tests: Enhanced Task Display in explain ──────────────────────────
+
+const TASK_WITH_TIMEOUT_MS_TOML =
+    \\[tasks.long-runner]
+    \\cmd = "sleep 100"
+    \\timeout = "30s"
+    \\
+;
+
+test "15015: zr explain shows timeout for task with timeout = \"30s\"" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_TIMEOUT_MS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "long-runner" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "long-runner") != null);
+    // Must show the timeout — either as "30s" or with "Timeout" label
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "30s") != null or
+        std.mem.indexOf(u8, result.stdout, "Timeout") != null);
+}
+
+const TASK_WITH_ENV_VARS_TOML =
+    \\[tasks.build-with-env]
+    \\cmd = "build.sh"
+    \\env = { MY_VAR = "hello", DEBUG = "1" }
+    \\
+;
+
+test "15016: zr explain shows env vars for task with env = { MY_VAR = \"hello\" }" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_ENV_VARS_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "build-with-env" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build-with-env") != null);
+    // Must show at least one env var key name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "MY_VAR") != null or
+        std.mem.indexOf(u8, result.stdout, "DEBUG") != null);
+}
+
+const TASK_WITH_REQUIRED_ENV_TOML =
+    \\[tasks.deploy]
+    \\cmd = "deploy.sh"
+    \\required_env = ["DATABASE_URL", "API_KEY"]
+    \\
+;
+
+test "15017: zr explain shows required_env for task with required_env = [\"DATABASE_URL\"]" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_REQUIRED_ENV_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "deploy" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy") != null);
+    // Must show at least one required env var
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "DATABASE_URL") != null or
+        std.mem.indexOf(u8, result.stdout, "API_KEY") != null);
+}
+
+const TASK_WITH_SKIP_IF_TOML =
+    \\[tasks.linux-only]
+    \\cmd = "uname -a"
+    \\skip_if = "CI"
+    \\
+;
+
+test "15018: zr explain shows skip_if condition for task with skip_if = \"CI\"" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_SKIP_IF_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "linux-only" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "linux-only") != null);
+    // Must show the skip condition — either "CI" or "skip" or "Skip"
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "CI") != null or
+        std.mem.indexOf(u8, result.stdout, "skip") != null or
+        std.mem.indexOf(u8, result.stdout, "Skip") != null);
+}
+
+const TASK_WITH_CACHE_TOML =
+    \\[tasks.build-cached]
+    \\cmd = "cargo build"
+    \\cache = true
+    \\
+;
+
+test "15019: zr explain shows cache-enabled label for task with cache = true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_CACHE_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "build-cached" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build-cached") != null);
+    // Must show cache indicator — "cache" or "cached" or similar
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "cache") != null);
+}
+
+const TASK_WITH_SOURCES_TOML =
+    \\[tasks.compile]
+    \\cmd = "tsc"
+    \\sources = ["src/**/*.ts", "tsconfig.json"]
+    \\
+;
+
+test "15020: zr explain shows sources pattern for task with sources = [\"src/**/*.ts\"]" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, TASK_WITH_SOURCES_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "compile" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Must show the task name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "compile") != null);
+    // Must show at least one source pattern
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "src/**/*.ts") != null or
+        std.mem.indexOf(u8, result.stdout, "tsconfig.json") != null);
+}

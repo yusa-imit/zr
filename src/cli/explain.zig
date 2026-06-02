@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 const color = @import("../output/color.zig");
 const loader = @import("../config/loader.zig");
 const types = @import("../config/types.zig");
+const history_store = @import("../history/store.zig");
+const stats_mod = @import("../history/stats.zig");
 
 const ExplainOutputFormat = enum {
     text,
@@ -48,11 +50,21 @@ fn printTaskText(
     task_name: []const u8,
     idx: usize,
     use_color: bool,
+    est_ms: ?u64,
 ) !void {
     const task = config.tasks.get(task_name).?;
 
     try w.print("\n  [{d}] ", .{idx});
     try color.printBold(w, use_color, "{s}", .{task_name});
+    if (est_ms) |ms| {
+        if (ms >= 60_000) {
+            try w.print(" (~{d}m estimated)", .{ms / 60_000});
+        } else if (ms >= 1_000) {
+            try w.print(" (~{d}s estimated)", .{ms / 1_000});
+        } else {
+            try w.print(" (~{d}ms estimated)", .{ms});
+        }
+    }
     try w.print("\n      Command: {s}\n", .{task.cmd});
 
     // Print working directory if set
@@ -304,6 +316,22 @@ pub fn cmdExplain(
         try collectTaskDeps(allocator, &config, task_name, &visited, &ordered_tasks);
     }
 
+    // Load history for duration estimates (best-effort; ignore errors)
+    var history_records: ?std.ArrayList(history_store.Record) = null;
+    defer if (history_records) |*recs| {
+        for (recs.items) |r| r.deinit(allocator);
+        recs.deinit(allocator);
+    };
+    if (history_store.defaultHistoryPath(allocator)) |hist_path| {
+        defer allocator.free(hist_path);
+        if (history_store.Store.init(allocator, hist_path)) |store| {
+            defer store.deinit();
+            if (store.loadLast(allocator, 1000)) |recs| {
+                history_records = recs;
+            } else |_| {}
+        } else |_| {}
+    } else |_| {}
+
     // Output based on format
     switch (format) {
         .text => {
@@ -319,11 +347,41 @@ pub fn cmdExplain(
             }
             try w.print("Tasks to run ({d}):\n", .{ordered_tasks.items.len});
 
+            var total_est_ms: u64 = 0;
+            var all_have_history = true;
+
             for (ordered_tasks.items, 1..) |name, idx| {
-                try printTaskText(w, &config, name, idx, use_color);
+                var est_ms: ?u64 = null;
+                if (history_records) |recs| {
+                    if (stats_mod.calculateStats(recs.items, name, allocator)) |maybe_stats| {
+                        if (maybe_stats) |task_stats| {
+                            est_ms = task_stats.avg_ms;
+                            total_est_ms += task_stats.avg_ms;
+                        } else {
+                            all_have_history = false;
+                        }
+                    } else |_| {
+                        all_have_history = false;
+                    }
+                } else {
+                    all_have_history = false;
+                }
+                try printTaskText(w, &config, name, idx, use_color, est_ms);
             }
 
-            try w.print("\nEstimated total: {d} tasks\n", .{ordered_tasks.items.len});
+            if (all_have_history and history_records != null and ordered_tasks.items.len > 0) {
+                if (total_est_ms >= 60_000) {
+                    try w.print("\nEstimated total: {d} tasks (~{d}m)\n", .{ ordered_tasks.items.len, total_est_ms / 60_000 });
+                } else if (total_est_ms >= 1_000) {
+                    try w.print("\nEstimated total: {d} tasks (~{d}s)\n", .{ ordered_tasks.items.len, total_est_ms / 1_000 });
+                } else if (total_est_ms > 0) {
+                    try w.print("\nEstimated total: {d} tasks (~{d}ms)\n", .{ ordered_tasks.items.len, total_est_ms });
+                } else {
+                    try w.print("\nEstimated total: {d} tasks\n", .{ordered_tasks.items.len});
+                }
+            } else {
+                try w.print("\nEstimated total: {d} tasks\n", .{ordered_tasks.items.len});
+            }
         },
         .tree => {
             // For tree format with multiple tasks, print each task's tree

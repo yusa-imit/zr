@@ -34,3 +34,6 @@ Thumbs.db
 *~
 *.swp
 *.swo
+
+# Test artifacts
+test_check
