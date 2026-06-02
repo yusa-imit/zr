@@ -81,7 +81,7 @@ pub fn addTaskInteractive(
     // Check if config file exists
     const config_file = std.fs.cwd().openFile(config_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
+            try color.printError(ew, use_color, "✗ [add]: Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
             return 1;
         }
         return err;
@@ -320,7 +320,7 @@ pub fn addWorkflowInteractive(
     // Check if config file exists
     const config_file = std.fs.cwd().openFile(config_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
-            try color.printError(ew, use_color, "Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
+            try color.printError(ew, use_color, "✗ [add]: Config file not found: {s}\n\n  Hint: Run 'zr init' to create a new configuration\n", .{config_path});
             return 1;
         }
         return err;
