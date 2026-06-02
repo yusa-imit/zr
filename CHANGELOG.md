@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.86.0] - 2026-06-03
+
+### Added
+- **`zr tags`** — List all unique tags across all tasks with task counts, sorted alphabetically
+- **`zr tags <tagname>`** — Show all tasks that have a specific tag (with command/description)
+- **`zr tags --sort=count`** — Sort tags by number of tasks (descending)
+- **`zr tags --json`** — JSON output for programmatic use (`[{tag, count, tasks}]`)
+- **`zr tags <tag> --json`** — JSON list of tasks for a specific tag
+- 11 integration tests for `zr tags` (IDs 15100-15110)
+
+### Fixed
+- Error messages in `add` command now use `✗ [add]:` prefix for consistency
+- Error messages in `alias`, `ci`, `codeowners`, `explain`, `export`, `graph` commands standardized with `✗ [Context]` format
+
 ## [1.85.0] - 2026-06-02
 
 ### Added
