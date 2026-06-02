@@ -21,19 +21,19 @@ pub fn cmdAlias(
         return try cmdAliasList(allocator, w, ew, use_color);
     } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "set")) {
         if (args.len < 3) {
-            try color.printError(ew, use_color, "Usage: zr alias add <name> <command>\n", .{});
+            try color.printError(ew, use_color, "✗ [alias]: Missing arguments\n\n  Hint: zr alias add <name> <command>\n", .{});
             return 1;
         }
         return try cmdAliasAdd(allocator, args[1], args[2], w, ew, use_color);
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm") or std.mem.eql(u8, subcmd, "delete")) {
         if (args.len < 2) {
-            try color.printError(ew, use_color, "Usage: zr alias remove <name>\n", .{});
+            try color.printError(ew, use_color, "✗ [alias]: Missing alias name\n\n  Hint: zr alias remove <name>\n", .{});
             return 1;
         }
         return try cmdAliasRemove(allocator, args[1], w, ew, use_color);
     } else if (std.mem.eql(u8, subcmd, "show") or std.mem.eql(u8, subcmd, "get")) {
         if (args.len < 2) {
-            try color.printError(ew, use_color, "Usage: zr alias show <name>\n", .{});
+            try color.printError(ew, use_color, "✗ [alias]: Missing alias name\n\n  Hint: zr alias show <name>\n", .{});
             return 1;
         }
         return try cmdAliasShow(allocator, args[1], w, ew, use_color);
