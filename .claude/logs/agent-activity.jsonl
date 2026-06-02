@@ -56,3 +56,5 @@
 {"timestamp":"2026-06-02T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write failing tests for: (1) multiple task names in zr explain, (2) zr run --explain flag","project":"zr"}
 {"timestamp":"2026-06-02T00:10:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement: (1) multiple task names in zr explain, (2) zr run --explain flag","project":"zr"}
 {"timestamp":"2026-06-02T07:21:00Z","action":"subagent","agent_type":"zig-developer","task":"Enhance explain.zig: multiple tasks, cwd display, run --explain flag","project":"zr"}
+{"timestamp":"2026-06-02T07:35:00Z","action":"subagent","agent_type":"test-writer","task":"Write failing integration tests 15015-15020 for explain: timeout/env/required_env/skip_if/cache/sources display","project":"zr"}
+{"timestamp":"2026-06-02T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Fix cache output capture in scheduler.zig - enable buffer mode when cache=true, relay to stdout, store in cache","project":"zr"}
