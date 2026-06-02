@@ -93,6 +93,7 @@ const monitor_cmd = @import("cli/monitor.zig");
 const registry_cmd = @import("cli/registry.zig");
 const artifacts_cmd = @import("cli/artifacts.zig");
 const deps_cmd = @import("cli/deps.zig");
+const tags_cmd = @import("cli/tags.zig");
 const platform = @import("util/platform.zig");
 const semver = @import("util/semver.zig");
 const hash_util = @import("util/hash.zig");
@@ -715,6 +716,7 @@ fn run(
         "estimate",   "show",       "schedule",   "mcp",
         "explain",    "lsp",        "add",        "edit",       "failures",
         "template",   "which",      "ci",         "deps",       "artifacts",
+        "tags",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -2070,6 +2072,9 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "explain")) {
         const explain_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return explain_cmd.cmdExplain(allocator, explain_args, config_path, effective_w, ew, effective_color);
+    } else if (std.mem.eql(u8, cmd, "tags")) {
+        const tags_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        return tags_cmd.cmdTags(allocator, tags_args, config_path, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "failures")) {
         const failures_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         var opts = failures_cmd.FailuresOptions{
@@ -2346,6 +2351,9 @@ fn printHelp(w: *std.Io.Writer, use_color: bool) !void {
     try w.print("  explain <task>         Show execution plan and dependency chain for a task\n", .{});
     try w.print("    --tree               Display dependency tree visually\n", .{});
     try w.print("    --json               Output execution plan as JSON\n", .{});
+    try w.print("  tags [<tag>]           List all tags (or tasks for a specific tag)\n", .{});
+    try w.print("    --sort=count         Sort by task count (default: alphabetical)\n", .{});
+    try w.print("    --json               Output as JSON\n", .{});
     try w.print("  help <task>            Show rich formatted help for a task\n", .{});
     try w.print("  man <task>             Show man-page style documentation for a task\n", .{});
     try w.print("  failures [list|clear]  View or clear captured task failure reports\n", .{});
