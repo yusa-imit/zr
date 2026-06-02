@@ -949,11 +949,13 @@ fn workerFn(ctx: WorkerCtx) void {
     var output_cap: ?output_capture.OutputCapture = null;
     defer if (output_cap) |*oc| oc.deinit();
 
-    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, or (3) silent mode
-    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent;
+    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, or (4) cache enabled
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache;
+    // Track whether buffer mode was enabled purely for caching (need to relay output to user after completion)
+    const capture_for_cache = ctx.cache and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null;
     if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
-            .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent
+            .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent/cache
             .output_file = ctx.output_file,
             .max_buffer_size = 1024 * 1024, // 1MB default
             .filter_options = ctx.filter_options,
@@ -1475,6 +1477,20 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // If we captured output for caching purposes, relay it to stdout so user sees it
+    if (capture_for_cache) {
+        if (output_cap) |*oc| {
+            if (oc.config.mode == .buffer) {
+                if (oc.getBuffer()) |buffered_output| {
+                    defer task_allocator.free(buffered_output);
+                    if (buffered_output.len > 0) {
+                        std.fs.File.stdout().writeAll(buffered_output) catch {};
+                    }
+                } else |_| {}
+            }
+        }
+    }
+
     // Allocate an owned copy of the name for TaskResult
     const owned_name = task_allocator.dupe(u8, ctx.task_name) catch {
         if (!proc_result.success and !ctx.allow_failure) ctx.failed.store(true, .release);
@@ -1562,7 +1578,16 @@ fn workerFn(ctx: WorkerCtx) void {
             // Write to local project cache (.zr/cache/<key>/manifest.json)
             var local_store = cache_storage.CacheStore.init(task_allocator);
             defer local_store.deinit();
-            local_store.store(key, ctx.task_name, proc_result.exit_code, proc_result.duration_ms, "", "") catch {};
+            var cached_stdout: []const u8 = &[_]u8{};
+            var cached_stdout_needs_free = false;
+            defer if (cached_stdout_needs_free) task_allocator.free(cached_stdout);
+            if (output_cap) |*oc| {
+                if (oc.getBuffer()) |buf| {
+                    cached_stdout = buf;
+                    cached_stdout_needs_free = true;
+                } else |_| {}
+            }
+            local_store.store(key, ctx.task_name, proc_result.exit_code, proc_result.duration_ms, cached_stdout, "") catch {};
             // Push to remote cache (Phase 7)
             if (ctx.cache_remote_config) |remote_cfg| {
                 var remote_cache = cache_remote.RemoteCache.init(task_allocator, remote_cfg.*);
