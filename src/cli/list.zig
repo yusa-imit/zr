@@ -177,23 +177,39 @@ pub fn cmdList(
 
     // List profiles only (for shell completion)
     if (profiles_only) {
-        var profile_names = std.ArrayList([]const u8){};
-        defer profile_names.deinit(allocator);
+        var profile_list = std.ArrayList(struct {
+            name: []const u8,
+            description: ?[]const u8,
+        }){};
+        defer profile_list.deinit(allocator);
 
         var it = config.profiles.iterator();
         while (it.next()) |entry| {
-            try profile_names.append(allocator, entry.key_ptr.*);
+            const profile = entry.value_ptr;
+            try profile_list.append(allocator, .{
+                .name = entry.key_ptr.*,
+                .description = profile.description,
+            });
         }
 
         // Sort for deterministic output
-        std.mem.sort([]const u8, profile_names.items, {}, struct {
-            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.lessThan);
+        std.mem.sort(
+            @TypeOf(profile_list.items[0]),
+            profile_list.items,
+            {},
+            struct {
+                fn lessThan(_: void, a: @TypeOf(profile_list.items[0]), b: @TypeOf(profile_list.items[0])) bool {
+                    return std.mem.lessThan(u8, a.name, b.name);
+                }
+            }.lessThan,
+        );
 
-        for (profile_names.items) |name| {
-            try w.print("{s}\n", .{name});
+        for (profile_list.items) |profile| {
+            if (profile.description) |desc| {
+                try w.print("{s}  {s}\n", .{ profile.name, desc });
+            } else {
+                try w.print("{s}\n", .{profile.name});
+            }
         }
         return 0;
     }

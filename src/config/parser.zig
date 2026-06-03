@@ -692,6 +692,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // profile_env: accumulated non-owning env pairs for the current profile's global env
     var profile_env = std.ArrayList([2][]const u8){};
     defer profile_env.deinit(allocator);
+    // profile_vars: accumulated vars pairs for the current profile's vars section (v1.86.0)
+    var profile_vars = std.ArrayList([2][]const u8){};
+    defer profile_vars.deinit(allocator);
+    // profile_description: description for the current profile (v1.86.0, non-owning)
+    var profile_description: ?[]const u8 = null;
+    // in_profile_vars: true if currently inside [profiles.X.vars] section (v1.86.0)
+    var in_profile_vars: bool = false;
     // current_profile_task: if inside [profiles.X.tasks.Y], this is Y (non-owning)
     var current_profile_task: ?[]const u8 = null;
     // profile_task_env: env pairs for current profile task override (non-owning)
@@ -950,8 +957,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return err;
             };
             workflow_desc = null; workflow_retry_budget = null;
+        } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.endsWith(u8, trimmed, ".vars]") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            in_workspace = false;
+            // Section: [profiles.X.vars] — vars override section within profile X (v1.86.0)
+            // Entering vars section; we'll parse key=value pairs into profile_vars
+            in_profile_vars = true;
+            // current_profile is already set from [profiles.X]
+            // Reset task and workflow contexts
+            current_task = null;
+            current_workflow = null;
         } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.indexOf(u8, trimmed, ".tasks.") != null) {
             in_workspace = false;
+            // Section: [profiles.X.tasks.Y] — per-task override within profile X
+            // Exiting vars context if we were in it
+            in_profile_vars = false;
             // Section: [profiles.X.tasks.Y] — per-task override within profile X
             // Flush pending profile task override (if any)
             if (current_profile_task) |ptask| {
@@ -1035,8 +1054,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending profile (if any)
             if (current_profile) |pname| {
-                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
                 profile_env.clearRetainingCapacity();
+                profile_vars.clearRetainingCapacity();
+                profile_description = null;
+                in_profile_vars = false;
                 // profile_task_overrides already cleared by flushProfile
             }
             // Flush pending task (if any)
@@ -1136,8 +1158,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     try profile_task_overrides.put(pto_key, pto);
                     current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
                 }
-                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
-                profile_env.clearRetainingCapacity(); current_profile = null;
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
+                profile_env.clearRetainingCapacity();
+                profile_vars.clearRetainingCapacity();
+                profile_description = null;
+                in_profile_vars = false;
+                current_profile = null;
             }
             in_vars = false;
             in_workspace = true;
@@ -1216,8 +1242,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     try profile_task_overrides.put(pto_key, pto);
                     current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
                 }
-                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
-                profile_env.clearRetainingCapacity(); current_profile = null;
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
+                profile_env.clearRetainingCapacity();
+                profile_vars.clearRetainingCapacity();
+                profile_description = null;
+                in_profile_vars = false;
+                current_profile = null;
             }
             in_workspace = false;
             in_tools = true;
@@ -1261,8 +1291,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     try profile_task_overrides.put(pto_key, pto);
                     current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
                 }
-                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
-                profile_env.clearRetainingCapacity(); current_profile = null;
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
+                profile_env.clearRetainingCapacity();
+                profile_vars.clearRetainingCapacity();
+                profile_description = null;
+                in_profile_vars = false;
+                current_profile = null;
             }
             in_workspace = false;
             in_tools = false;
@@ -1841,8 +1875,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     profile_task_cmd = null;
                     profile_task_cwd = null;
                 }
-                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
                 profile_env.clearRetainingCapacity();
+                profile_vars.clearRetainingCapacity();
+                profile_description = null;
+                in_profile_vars = false;
                 current_profile = null;
             }
             // Flush pending plugin (if any)
@@ -2310,7 +2347,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 value = value[1 .. value.len - 1];
             }
 
-            if (current_profile_task != null) {
+            if (in_profile_vars) {
+                // Inside [profiles.X.vars] — parse key = "value" pairs into profile vars (v1.86.0)
+                // Store non-owning slices (ownership transferred in flushProfile, same as profile_env)
+                try profile_vars.append(allocator, .{ key, value });
+            } else if (current_profile_task != null) {
                 // Inside [profiles.X.tasks.Y] — parse task override fields
                 if (std.mem.eql(u8, key, "cmd")) {
                     profile_task_cmd = value;
@@ -2330,7 +2371,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     }
                 }
             } else if (current_profile != null and current_task == null and current_workflow == null) {
-                // Inside [profiles.X] (global profile level) — parse global env
+                // Inside [profiles.X] (global profile level) — parse global env and description (v1.86.0)
                 if (std.mem.eql(u8, key, "env")) {
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
@@ -2343,6 +2384,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             if (env_key.len > 0) try profile_env.append(allocator, .{ env_key, env_val });
                         }
                     }
+                } else if (std.mem.eql(u8, key, "description")) {
+                    // Profile description field (v1.86.0)
+                    profile_description = value;
                 }
             } else if (current_workflow != null and current_task == null) {
                 // We are inside a workflow or stage context
@@ -3882,8 +3926,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending profile
     if (current_profile) |pname| {
-        try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides);
+        try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
         profile_env.clearRetainingCapacity();
+        profile_vars.clearRetainingCapacity();
+        profile_description = null;
+        in_profile_vars = false;
     }
 
     // Flush final workspace shared task (v1.63.0)
@@ -4145,6 +4192,8 @@ fn flushProfile(
     pname: []const u8,
     profile_env: *std.ArrayList([2][]const u8),
     profile_task_overrides: *std.StringHashMap(ProfileTaskOverride),
+    profile_vars: *std.ArrayList([2][]const u8),
+    profile_description: ?[]const u8,
 ) !void {
     const p_name = try allocator.dupe(u8, pname);
     errdefer allocator.free(p_name);
@@ -4164,6 +4213,27 @@ fn flushProfile(
         p_env[i][1] = try allocator.dupe(u8, pair[1]);
         env_duped += 1;
     }
+
+    // Allocate and dupe vars
+    const p_vars = try allocator.alloc([2][]const u8, profile_vars.items.len);
+    var vars_duped: usize = 0;
+    errdefer {
+        for (p_vars[0..vars_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(p_vars);
+    }
+    for (profile_vars.items, 0..) |pair, i| {
+        p_vars[i][0] = try allocator.dupe(u8, pair[0]);
+        errdefer allocator.free(p_vars[i][0]);
+        p_vars[i][1] = try allocator.dupe(u8, pair[1]);
+        vars_duped += 1;
+    }
+
+    // Dupe description if present
+    const p_desc = if (profile_description) |d| try allocator.dupe(u8, d) else null;
+    errdefer if (p_desc) |d| allocator.free(d);
 
     // Transfer ownership of task_overrides map
     var new_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
@@ -4187,6 +4257,8 @@ fn flushProfile(
         .name = p_name,
         .env = p_env,
         .task_overrides = new_overrides,
+        .description = p_desc,
+        .vars = p_vars,
     };
     try config.profiles.put(p_name, profile);
 }

@@ -566,7 +566,7 @@ fn loadDotenvIntoConfig(allocator: std.mem.Allocator, config: *Config) !void {
 
 /// Apply variable substitution (${VAR} expansion) to all task fields.
 /// Expands cmd, cwd, and env value fields using task's environment + process env.
-fn applyVariableSubstitution(allocator: std.mem.Allocator, config: *Config) !void {
+pub fn applyVariableSubstitution(allocator: std.mem.Allocator, config: *Config) !void {
     const varsubst_mod = @import("varsubst.zig");
 
     var task_it = config.tasks.valueIterator();

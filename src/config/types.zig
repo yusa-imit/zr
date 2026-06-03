@@ -462,6 +462,22 @@ pub const Config = struct {
     pub fn applyProfile(self: *Config, profile_name: []const u8) !void {
         const profile = self.profiles.get(profile_name) orelse return error.ProfileNotFound;
 
+        // Override config vars with profile vars (partial merge)
+        for (profile.vars) |pair| {
+            const new_val = try self.allocator.dupe(u8, pair[1]);
+            errdefer self.allocator.free(new_val);
+            if (self.vars.getPtr(pair[0])) |old_val_ptr| {
+                // Key exists: free old value, replace with new
+                self.allocator.free(old_val_ptr.*);
+                old_val_ptr.* = new_val;
+            } else {
+                // Key doesn't exist: add key+value
+                const new_key = try self.allocator.dupe(u8, pair[0]);
+                errdefer self.allocator.free(new_key);
+                try self.vars.put(new_key, new_val);
+            }
+        }
+
         var task_it = self.tasks.iterator();
         while (task_it.next()) |entry| {
             const task = entry.value_ptr;
@@ -1481,6 +1497,10 @@ pub const Profile = struct {
     env: [][2][]const u8,
     /// Per-task overrides keyed by task name.
     task_overrides: std.StringHashMap(ProfileTaskOverride),
+    /// Optional human-readable description of the profile (v1.86.0).
+    description: ?[]const u8 = null,
+    /// Variables that override [vars] when this profile is active (v1.86.0).
+    vars: [][2][]const u8 = &.{},
 
     pub fn deinit(self: *Profile, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1497,6 +1517,14 @@ pub const Profile = struct {
             entry.value_ptr.deinit(allocator);
         }
         self.task_overrides.deinit();
+        // Free description if present
+        if (self.description) |d| allocator.free(d);
+        // Free vars
+        for (self.vars) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (self.vars.len > 0) allocator.free(self.vars);
     }
 };
 
@@ -1743,6 +1771,133 @@ test "applyProfile: task-level env override merges with global" {
     }
     try std.testing.expect(found_a);
     try std.testing.expect(found_b);
+}
+
+test "applyProfile: vars override replaces config vars" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Add a task that uses vars in its cmd
+    try config.addTask("deploy", "deploy.sh --version {{VERSION}}", null, null, &[_][]const u8{});
+
+    // Add base vars
+    const version_key = try allocator.dupe(u8, "VERSION");
+    const version_val = try allocator.dupe(u8, "1.0.0");
+    try config.vars.put(version_key, version_val);
+
+    // Build a Profile with vars override [["VERSION", "2.0.0"]]
+    const p_name = try allocator.dupe(u8, "staging");
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, 0);
+
+    // Create vars array with VERSION override
+    const p_vars = try allocator.alloc([2][]const u8, 1);
+    p_vars[0][0] = try allocator.dupe(u8, "VERSION");
+    p_vars[0][1] = try allocator.dupe(u8, "2.0.0");
+
+    const task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = task_overrides,
+        .vars = p_vars,
+    };
+
+    try config.profiles.put(p_name, profile);
+    try config.applyProfile("staging");
+
+    // Verify the override worked: VERSION should be 2.0.0
+    const new_version = config.vars.get("VERSION").?;
+    try std.testing.expectEqualStrings("2.0.0", new_version);
+}
+
+test "applyProfile: vars override is partial — unmatched keys unchanged" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Add a task
+    try config.addTask("print-vars", "echo {{A}} {{B}}", null, null, &[_][]const u8{});
+
+    // Add base vars A, B, C
+    const a_key = try allocator.dupe(u8, "A");
+    const a_val = try allocator.dupe(u8, "original-a");
+    try config.vars.put(a_key, a_val);
+
+    const b_key = try allocator.dupe(u8, "B");
+    const b_val = try allocator.dupe(u8, "original-b");
+    try config.vars.put(b_key, b_val);
+
+    const c_key = try allocator.dupe(u8, "C");
+    const c_val = try allocator.dupe(u8, "original-c");
+    try config.vars.put(c_key, c_val);
+
+    // Build a Profile with only A override
+    const p_name = try allocator.dupe(u8, "partial");
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, 0);
+
+    // Create vars array with only A override
+    const p_vars = try allocator.alloc([2][]const u8, 1);
+    p_vars[0][0] = try allocator.dupe(u8, "A");
+    p_vars[0][1] = try allocator.dupe(u8, "overridden-a");
+
+    const task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = task_overrides,
+        .vars = p_vars,
+    };
+
+    try config.profiles.put(p_name, profile);
+    try config.applyProfile("partial");
+
+    // Verify partial override: A is overridden, B and C are unchanged
+    try std.testing.expectEqualStrings("overridden-a", config.vars.get("A").?);
+    try std.testing.expectEqualStrings("original-b", config.vars.get("B").?);
+    try std.testing.expectEqualStrings("original-c", config.vars.get("C").?);
+}
+
+test "applyProfile: profile with description field stores description" {
+    const allocator = std.testing.allocator;
+
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    // Add a task
+    try config.addTask("build", "zig build", null, null, &[_][]const u8{});
+
+    // Build a Profile with a description
+    const p_name = try allocator.dupe(u8, "prod");
+    errdefer allocator.free(p_name);
+
+    const p_env = try allocator.alloc([2][]const u8, 0);
+
+    const task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+
+    const desc = try allocator.dupe(u8, "Production environment with strict settings");
+
+    const profile = Profile{
+        .name = p_name,
+        .env = p_env,
+        .task_overrides = task_overrides,
+        .description = desc,
+    };
+
+    try config.profiles.put(p_name, profile);
+
+    // Verify the profile was stored correctly
+    const stored = config.profiles.get("prod").?;
+    try std.testing.expectEqualStrings("prod", stored.name);
+    try std.testing.expectEqualStrings("Production environment with strict settings", stored.description.?);
 }
 
 test "parseMemoryBytes: various formats" {

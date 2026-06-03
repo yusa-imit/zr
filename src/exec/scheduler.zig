@@ -578,6 +578,10 @@ const WorkerCtx = struct {
     notify_title: ?[]const u8,
     /// Required environment variable names (v1.84.0).
     required_env: []const []const u8,
+    /// Runtime params for {{param}} interpolation (v1.75.0).
+    runtime_params: ?*const std.StringHashMap([]const u8) = null,
+    /// Config vars for {{var}} interpolation from [vars] section (v1.84.0).
+    config_vars: ?*const std.StringHashMap([]const u8) = null,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -1085,6 +1089,33 @@ fn workerFn(ctx: WorkerCtx) void {
     // Cast final_env to the const slice type expected by ProcessConfig
     const proc_env: ?[]const [2][]const u8 = if (final_env) |env| env else null;
 
+    // Interpolate {{param}}/{{var}} placeholders in cmd (v1.84.0)
+    const effective_cmd = if (ctx.runtime_params != null or ctx.config_vars != null) blk: {
+        break :blk interpolateParams(task_allocator, ctx.cmd, ctx.runtime_params, ctx.config_vars) catch ctx.cmd;
+    } else ctx.cmd;
+    defer if (effective_cmd.ptr != ctx.cmd.ptr) task_allocator.free(effective_cmd);
+
+    // Interpolate env values (not keys)
+    var interp_env_list = std.ArrayList([2][]const u8){};
+    defer {
+        for (interp_env_list.items) |pair| {
+            task_allocator.free(pair[0]);
+            task_allocator.free(pair[1]);
+        }
+        interp_env_list.deinit(task_allocator);
+    }
+    if ((ctx.runtime_params != null or ctx.config_vars != null) and proc_env != null) {
+        for (proc_env.?) |pair| {
+            const k = task_allocator.dupe(u8, pair[0]) catch continue;
+            const v = interpolateParams(task_allocator, pair[1], ctx.runtime_params, ctx.config_vars) catch task_allocator.dupe(u8, pair[1]) catch pair[1];
+            interp_env_list.append(task_allocator, .{ k, v }) catch {
+                task_allocator.free(k);
+                if (v.ptr != pair[1].ptr) task_allocator.free(v);
+            };
+        }
+    }
+    const effective_env: ?[]const [2][]const u8 = if (interp_env_list.items.len > 0) interp_env_list.items else proc_env;
+
     // Handle dependency-only tasks (tasks without cmd)
     if (ctx.cmd.len == 0) {
         // Skip execution for cmd-less tasks - they only run their dependencies
@@ -1194,7 +1225,7 @@ fn workerFn(ctx: WorkerCtx) void {
         const task_env: [][2][]const u8 = @constCast(combined_env);
         const remote_task = types.Task{
             .name = ctx.task_name,
-            .cmd = ctx.cmd,
+            .cmd = effective_cmd,
             .cwd = ctx.remote_cwd orelse ctx.cwd,
             .description = null,
             .deps = &.{},
@@ -1258,9 +1289,9 @@ fn workerFn(ctx: WorkerCtx) void {
             .success = remote_result.exit_code == 0,
         };
     } else process.run(task_allocator, .{
-        .cmd = ctx.cmd,
+        .cmd = effective_cmd,
         .cwd = ctx.cwd,
-        .env = proc_env,
+        .env = effective_env,
         .inherit_stdio = inherit_stdio_mode,
         .timeout_ms = ctx.timeout_ms,
         .task_control = ctx.task_control,
@@ -1350,9 +1381,9 @@ fn workerFn(ctx: WorkerCtx) void {
                     std.Thread.sleep(delay_ms * std.time.ns_per_ms);
                 }
                 proc_result = process.run(task_allocator, .{
-                    .cmd = ctx.cmd,
+                    .cmd = effective_cmd,
                     .cwd = ctx.cwd,
-                    .env = proc_env,
+                    .env = effective_env,
                     .inherit_stdio = inherit_stdio_mode,
                     .timeout_ms = ctx.timeout_ms,
                     .task_control = ctx.task_control,
@@ -1424,7 +1455,7 @@ fn workerFn(ctx: WorkerCtx) void {
             if (artifact_patterns.len > 0) {
                 const artifact_task = loader.Task{
                     .name = ctx.task_name,
-                    .cmd = ctx.cmd,
+                    .cmd = effective_cmd,
                     .cwd = ctx.cwd,
                     .deps = &.{},
                     .deps_serial = &.{},
@@ -2520,6 +2551,8 @@ pub fn run(
                 .notify_on = task.notify_on,
                 .notify_title = task.notify_title,
                 .required_env = task.required_env orelse &[_][]const u8{},
+                .runtime_params = sched_config.runtime_params,
+                .config_vars = if (config.vars.count() > 0) &config.vars else null,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

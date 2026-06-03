@@ -108,6 +108,8 @@ pub fn loadConfig(
                 return null;
             },
         };
+        // Re-apply variable substitution with updated profile vars (v1.86.0)
+        try loader.applyVariableSubstitution(allocator, &config);
     }
 
     return config;
