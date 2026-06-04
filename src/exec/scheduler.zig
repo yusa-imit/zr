@@ -37,6 +37,19 @@ pub const SchedulerError = error{
     InvalidVersionFormat,
 } || std.mem.Allocator.Error;
 
+/// Sanitize task name for use as env var suffix: uppercase, hyphens/dots → underscores (v1.87.0).
+fn sanitizeTaskNameForEnv(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    const upper = try allocator.dupe(u8, name);
+    for (upper) |*c| {
+        if (c.* == '-' or c.* == '.') {
+            c.* = '_';
+        } else {
+            c.* = std.ascii.toUpper(c.*);
+        }
+    }
+    return upper;
+}
+
 pub const SchedulerConfig = struct {
     /// Maximum number of tasks to run concurrently within a level.
     /// Default 0 means "use all CPU cores".
@@ -83,16 +96,22 @@ pub const SchedulerConfig = struct {
     /// If true, run ONLY the explicitly requested tasks without executing their dependencies (v1.85.0).
     /// Useful for iterating on a specific task when dependencies are already satisfied.
     only_mode: bool = false,
+    /// Shared map storing captured task stdout outputs (v1.87.0).
+    /// Key = task name, Value = trimmed stdout string (owned by map).
+    /// Protected by results_mutex. Tasks with share_output=true populate this.
+    task_outputs: ?*std.StringHashMap([]const u8) = null,
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
 /// Replaces {{param_name}} with the corresponding value from runtime_params, falling back to config_vars.
+/// Also handles {{output.task-name}} syntax for captured task outputs (v1.87.0).
 /// Returns an allocated string that the caller must free.
 fn interpolateParams(
     allocator: std.mem.Allocator,
     input: []const u8,
     runtime_params: ?*const std.StringHashMap([]const u8),
     config_vars: ?*const std.StringHashMap([]const u8),
+    task_outputs: ?*const std.StringHashMap([]const u8),
 ) ![]const u8 {
     if (input.len == 0) {
         return try allocator.dupe(u8, input);
@@ -117,7 +136,21 @@ fn interpolateParams(
 
             if (end) |e| {
                 const param_name = input[start..e];
-                if (runtime_params) |rp| {
+
+                // Check for {{output.task-name}} syntax first (v1.87.0)
+                if (std.mem.startsWith(u8, param_name, "output.")) {
+                    const output_task = param_name["output.".len..];
+                    if (task_outputs) |to| {
+                        if (to.get(output_task)) |output_val| {
+                            try result.appendSlice(allocator, output_val);
+                        } else {
+                            // Output not found - leave placeholder as-is
+                            try result.appendSlice(allocator, input[i..e + 2]);
+                        }
+                    } else {
+                        try result.appendSlice(allocator, input[i..e + 2]);
+                    }
+                } else if (runtime_params) |rp| {
                     if (rp.get(param_name)) |value| {
                         try result.appendSlice(allocator, value);
                     } else if (config_vars) |cv| {
@@ -582,6 +615,10 @@ const WorkerCtx = struct {
     runtime_params: ?*const std.StringHashMap([]const u8) = null,
     /// Config vars for {{var}} interpolation from [vars] section (v1.84.0).
     config_vars: ?*const std.StringHashMap([]const u8) = null,
+    /// Whether to capture this task's stdout for downstream use (v1.87.0).
+    share_output: bool = false,
+    /// Shared map for captured task outputs (v1.87.0). Protected by results_mutex.
+    task_outputs: ?*std.StringHashMap([]const u8) = null,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -1090,8 +1127,8 @@ fn workerFn(ctx: WorkerCtx) void {
     const proc_env: ?[]const [2][]const u8 = if (final_env) |env| env else null;
 
     // Interpolate {{param}}/{{var}} placeholders in cmd (v1.84.0)
-    const effective_cmd = if (ctx.runtime_params != null or ctx.config_vars != null) blk: {
-        break :blk interpolateParams(task_allocator, ctx.cmd, ctx.runtime_params, ctx.config_vars) catch ctx.cmd;
+    const effective_cmd = if (ctx.runtime_params != null or ctx.config_vars != null or ctx.task_outputs != null) blk: {
+        break :blk interpolateParams(task_allocator, ctx.cmd, ctx.runtime_params, ctx.config_vars, ctx.task_outputs) catch ctx.cmd;
     } else ctx.cmd;
     defer if (effective_cmd.ptr != ctx.cmd.ptr) task_allocator.free(effective_cmd);
 
@@ -1104,10 +1141,10 @@ fn workerFn(ctx: WorkerCtx) void {
         }
         interp_env_list.deinit(task_allocator);
     }
-    if ((ctx.runtime_params != null or ctx.config_vars != null) and proc_env != null) {
+    if ((ctx.runtime_params != null or ctx.config_vars != null or ctx.task_outputs != null) and proc_env != null) {
         for (proc_env.?) |pair| {
             const k = task_allocator.dupe(u8, pair[0]) catch continue;
-            const v = interpolateParams(task_allocator, pair[1], ctx.runtime_params, ctx.config_vars) catch task_allocator.dupe(u8, pair[1]) catch pair[1];
+            const v = interpolateParams(task_allocator, pair[1], ctx.runtime_params, ctx.config_vars, ctx.task_outputs) catch task_allocator.dupe(u8, pair[1]) catch pair[1];
             interp_env_list.append(task_allocator, .{ k, v }) catch {
                 task_allocator.free(k);
                 if (v.ptr != pair[1].ptr) task_allocator.free(v);
@@ -1912,12 +1949,12 @@ fn runTaskSync(
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
 
     // Interpolate runtime parameters in command and cwd (v1.75.0 + vars), falling back to config vars
-    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params, config_vars);
+    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params, config_vars, null);
     defer allocator.free(interpolated_cmd);
 
     const interpolated_cwd = if (task.cwd) |cwd|
         if (cwd.len > 0)
-            try interpolateParams(allocator, cwd, runtime_params, config_vars)
+            try interpolateParams(allocator, cwd, runtime_params, config_vars, null)
         else
             null
     else
@@ -1937,7 +1974,7 @@ fn runTaskSync(
         for (env_pairs) |pair| {
             const key = try allocator.dupe(u8, pair[0]);
             errdefer allocator.free(key);
-            const val = try interpolateParams(allocator, pair[1], runtime_params, config_vars);
+            const val = try interpolateParams(allocator, pair[1], runtime_params, config_vars, null);
             errdefer allocator.free(val);
             try interpolated_env_pairs.append(allocator, .{ key, val });
         }
@@ -2553,6 +2590,8 @@ pub fn run(
                 .required_env = task.required_env orelse &[_][]const u8{},
                 .runtime_params = sched_config.runtime_params,
                 .config_vars = if (config.vars.count() > 0) &config.vars else null,
+                .share_output = task.share_output,
+                .task_outputs = sched_config.task_outputs,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

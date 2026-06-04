@@ -18,6 +18,18 @@
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
 
+### Task Output Capture & Variable Passing
+
+Enable tasks to share their stdout output with downstream tasks via the `share_output` field. When enabled, a task's stdout is captured and made available to dependent tasks as both an environment variable (`ZR_OUTPUT_<TASK_NAME>`) and a template expression (`{{output.task-name}}`). This is valuable for pipelines where one task produces a value (e.g., version number, build ID, URL) that subsequent tasks need. Includes:
+- **`share_output = true`**: Task field that captures stdout after successful execution and stores it in a shared output map
+- **`ZR_OUTPUT_<TASK_NAME>` env var**: Downstream tasks automatically receive captured outputs as env vars (sanitized task names: hyphens/dots → underscores, uppercase)
+- **`{{output.task-name}}` template syntax**: Use captured output directly in `cmd`, `env`, and other task string fields of downstream tasks
+- **Trim whitespace**: Captured output is trimmed (strip trailing newlines/spaces) for clean usage in env vars and templates
+- **Integration with dep execution**: Capture only happens for tasks that actually ran (not skipped via up-to-date detection)
+- **`zr run --show-outputs`**: Optional flag to display captured task outputs after execution
+- **Integration tests**: Comprehensive tests covering basic capture, inter-task reference, env var injection, trimming, chained capture
+**Status: ACTIVE** — Started 2026-06-05 (Cycle 318 FEATURE). Implementation in progress.
+
 ### Code Quality & Documentation Polish
 
 Polish code quality, improve documentation, and enhance user experience with small but impactful improvements. Focus on developer experience, code maintainability, and documentation accuracy. This milestone addresses technical debt and ensures the codebase is ready for long-term maintenance. Includes:

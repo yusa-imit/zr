@@ -3,7 +3,462 @@ const helpers = @import("helpers.zig");
 const runZr = helpers.runZr;
 const writeTmpConfig = helpers.writeTmpConfig;
 
-// Test 951: Task execution with output_mode=stream - verify file is created and contains task output
+// ── Integration Tests for Output Capture Feature ───────────────────────────
+//
+// Tests for Task Output Capture feature:
+// When a task has `share_output = true`, its stdout is captured and made available to:
+// 1. ZR_OUTPUT_<TASK_NAME> env var (task name sanitized: uppercase, hyphens/dots → underscores)
+// 2. {{output.task-name}} template syntax in downstream task cmd/env fields
+//
+
+test "17000: share_output = true captures task stdout as ZR_OUTPUT env var" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.get-version]
+        \\cmd = "echo 1.2.3"
+        \\share_output = true
+        \\
+        \\[tasks.show]
+        \\deps = ["get-version"]
+        \\cmd = "echo got: $ZR_OUTPUT_GET_VERSION"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "show" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Downstream task should see the captured output from get-version task
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "got: 1.2.3") != null);
+}
+
+test "17001: downstream task accesses captured output via ZR_OUTPUT_ env var" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.fetch-hash]
+        \\cmd = "echo abc123def456"
+        \\share_output = true
+        \\
+        \\[tasks.verify]
+        \\deps = ["fetch-hash"]
+        \\cmd = "bash -c 'echo hash=$ZR_OUTPUT_FETCH_HASH'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "verify" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hash=abc123def456") != null);
+}
+
+test "17002: {{output.task-name}} template in downstream cmd uses captured output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.compute]
+        \\cmd = "echo 42"
+        \\share_output = true
+        \\
+        \\[tasks.use-result]
+        \\deps = ["compute"]
+        \\cmd = "echo result: {{output.compute}}"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "use-result" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "result: 42") != null);
+}
+
+test "17003: {{output.task-name}} template in downstream env value uses captured output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.get-token]
+        \\cmd = "echo secret-token-xyz"
+        \\share_output = true
+        \\
+        \\[tasks.request]
+        \\deps = ["get-token"]
+        \\env = { AUTH_TOKEN = "{{output.get-token}}" }
+        \\cmd = "echo TOKEN=$AUTH_TOKEN"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "request" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "TOKEN=secret-token-xyz") != null);
+}
+
+test "17004: captured output is trimmed (no trailing newlines in env var)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.echo-with-newline]
+        \\cmd = "printf 'output-value\\n\\n'"
+        \\share_output = true
+        \\
+        \\[tasks.consume]
+        \\deps = ["echo-with-newline"]
+        \\cmd = "bash -c 'echo length=${#ZR_OUTPUT_ECHO_WITH_NEWLINE}'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "consume" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // "output-value" without newlines is 12 chars
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "length=12") != null);
+}
+
+test "17005: share_output = false (default) does not inject ZR_OUTPUT_ env var" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.no-share]
+        \\cmd = "echo hidden-value"
+        \\
+        \\[tasks.check]
+        \\deps = ["no-share"]
+        \\cmd = "bash -c 'if [ -z \"$ZR_OUTPUT_NO_SHARE\" ]; then echo env-not-set; else echo env-set; fi'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "check" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "env-not-set") != null);
+}
+
+test "17006: chained output capture: A captures → B uses A's output and also shares → C uses B's output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.step-a]
+        \\cmd = "echo step-a-output"
+        \\share_output = true
+        \\
+        \\[tasks.step-b]
+        \\deps = ["step-a"]
+        \\cmd = "bash -c 'echo step-b-got-$ZR_OUTPUT_STEP_A'"
+        \\share_output = true
+        \\
+        \\[tasks.step-c]
+        \\deps = ["step-b"]
+        \\cmd = "bash -c 'echo step-c-got-$ZR_OUTPUT_STEP_B'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "step-c" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // step-b output should contain step-a's output
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "step-b-got-step-a-output") != null);
+    // step-c output should contain step-b's output (which contains step-a's output)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "step-c-got-step-b-got-step-a-output") != null);
+}
+
+test "17007: capture only populated for tasks that actually ran (skip_if: up-to-date)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.generate]
+        \\cmd = "bash -c 'echo generated-value > output.txt'"
+        \\generates = ["output.txt"]
+        \\share_output = true
+        \\
+        \\[tasks.use-generated]
+        \\deps = ["generate"]
+        \\sources = ["output.txt"]
+        \\cmd = "bash -c 'echo using-$ZR_OUTPUT_GENERATE'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // First run: generate task runs and output is captured
+    var result1 = try runZr(allocator, &.{ "--config", config, "run", "use-generated" }, tmp_path);
+    defer result1.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result1.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result1.stdout, "using-generated-value") != null);
+
+    // Second run: generate task should be skipped (up-to-date), so ZR_OUTPUT_GENERATE should be empty
+    // We expect the second run to also succeed, but generate task is skipped
+    var result2 = try runZr(allocator, &.{ "--config", config, "run", "use-generated" }, tmp_path);
+    defer result2.deinit();
+
+    // Both runs should succeed
+    try std.testing.expectEqual(@as(u8, 0), result2.exit_code);
+}
+
+test "17008: multi-word output (spaces) is captured verbatim in env var" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.get-message]
+        \\cmd = "echo hello world with spaces"
+        \\share_output = true
+        \\
+        \\[tasks.display]
+        \\deps = ["get-message"]
+        \\cmd = "echo message: $ZR_OUTPUT_GET_MESSAGE"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "display" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "message: hello world with spaces") != null);
+}
+
+test "17009: multiple tasks with share_output = true each get their own ZR_OUTPUT_ var" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.task-x]
+        \\cmd = "echo x-value"
+        \\share_output = true
+        \\
+        \\[tasks.task-y]
+        \\cmd = "echo y-value"
+        \\share_output = true
+        \\
+        \\[tasks.combine]
+        \\deps = ["task-x", "task-y"]
+        \\cmd = "bash -c 'echo x=$ZR_OUTPUT_TASK_X y=$ZR_OUTPUT_TASK_Y'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "combine" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "x=x-value") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "y=y-value") != null);
+}
+
+test "17010: capture works when task is a serial dependency (deps_serial)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.first]
+        \\cmd = "echo serial-output"
+        \\share_output = true
+        \\
+        \\[tasks.second]
+        \\deps_serial = ["first"]
+        \\cmd = "echo got: $ZR_OUTPUT_FIRST"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "second" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "got: serial-output") != null);
+}
+
+test "17011: empty stdout results in empty env var (ZR_OUTPUT_TASK= with no value)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.silent]
+        \\cmd = "bash -c 'true'"
+        \\share_output = true
+        \\
+        \\[tasks.check-empty]
+        \\deps = ["silent"]
+        \\cmd = "bash -c 'if [ -z \"$ZR_OUTPUT_SILENT\" ]; then echo empty; else echo not-empty; fi'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "check-empty" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "empty") != null);
+}
+
+test "17012: task name with hyphen: get-version → ZR_OUTPUT_GET_VERSION" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.get-version]
+        \\cmd = "echo 3.2.1"
+        \\share_output = true
+        \\
+        \\[tasks.check-version]
+        \\deps = ["get-version"]
+        \\cmd = "echo version: $ZR_OUTPUT_GET_VERSION"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "check-version" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "version: 3.2.1") != null);
+}
+
+test "17013: task name with dot: v1.build → ZR_OUTPUT_V1_BUILD" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks."v1.build"]
+        \\cmd = "echo 1.0.0"
+        \\share_output = true
+        \\
+        \\[tasks.check]
+        \\deps = ["v1.build"]
+        \\cmd = "echo got: $ZR_OUTPUT_V1_BUILD"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "check" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "got: 1.0.0") != null);
+}
+
+test "17014: share_output = true but task fails → output NOT captured (no ZR_OUTPUT_ var)" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.failing]
+        \\cmd = "bash -c 'echo error-output; exit 1'"
+        \\share_output = true
+        \\
+        \\[tasks.dependent]
+        \\deps = ["failing"]
+        \\cmd = "bash -c 'if [ -z \"$ZR_OUTPUT_FAILING\" ]; then echo no-output-var; else echo output-var-set; fi'"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "dependent" }, tmp_path);
+    defer result.deinit();
+
+    // The pipeline should fail because the first task failed
+    try std.testing.expect(result.exit_code != 0);
+}
+
+// ── Compatibility Tests (Old output_filtering tests - keeping for reference)
+
 test "951: output_mode=stream creates file with task output" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
