@@ -987,8 +987,10 @@ fn run(
             }
         }
         // Support `zr run --only <task>` and `zr run --explain <task>` in addition to `zr run <task> --only`
+        // Also support `zr run --tag=<tag>` (tag-filter mode without explicit task name → treat as "*")
         var only_mode_pre = false;
         var task_name_idx: usize = 2;
+        var filter_only_mode = false; // true when first arg is a flag (tag/dir filter without explicit task)
         if (std.mem.eql(u8, effective_args[2], "--only")) {
             if (effective_args.len < 4) {
                 try color.printError(ew, effective_color, "run: --only requires a task name\n\n  Hint: zr run <task-name> --only\n", .{});
@@ -1002,8 +1004,15 @@ fn run(
                 return 1;
             }
             task_name_idx = 3;
+        } else if (std.mem.startsWith(u8, effective_args[2], "--tag") or
+            std.mem.startsWith(u8, effective_args[2], "--exclude-tag") or
+            std.mem.startsWith(u8, effective_args[2], "--dir="))
+        {
+            // Tag/dir filter-only mode: no explicit task name provided.
+            // `zr run --tag=backend` is equivalent to `zr run "*" --tag=backend`
+            filter_only_mode = true;
         }
-        const task_name = effective_args[task_name_idx];
+        const task_name = if (filter_only_mode) "*" else effective_args[task_name_idx];
 
         // Parse filtering flags (v1.77.0 — Enhanced Task Filtering)
         var include_tags = std.ArrayList([]const u8){};
@@ -1046,7 +1055,7 @@ fn run(
         }
 
         var positional_index: usize = 0;
-        var i: usize = 3;
+        var i: usize = if (filter_only_mode) @as(usize, 2) else @as(usize, 3);
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
 

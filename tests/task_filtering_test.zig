@@ -818,3 +818,118 @@ test "task filtering: glob with special characters in task names" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "lint_rust") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "lint_ts") != null);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// FILTER-ONLY MODE: --tag / --exclude-tag without explicit task name
+// Regression tests for fix: `zr run --tag=X` → equivalent to `zr run "*" --tag=X`
+// ──────────────────────────────────────────────────────────────────────────
+
+test "task filtering: --tag without task name runs all matching tasks" {
+    // Regression: help text showed `zr run --tag=backend` but it failed with
+    // "Task '--tag=backend' not found". Fixed by filter-only mode detection.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.build]
+        \\cmd = "echo build_ok"
+        \\tags = ["backend"]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test_ok"
+        \\tags = ["backend", "ci"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy_ok"
+        \\tags = ["frontend"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--tag=backend" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build_ok") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test_ok") != null);
+    // deploy has only "frontend" tag — must NOT run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy_ok") == null);
+}
+
+test "task filtering: --exclude-tag without task name excludes matching tasks" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.build]
+        \\cmd = "echo build_ok"
+        \\tags = ["backend"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "echo deploy_ok"
+        \\tags = ["frontend", "slow"]
+        \\
+        \\[tasks.lint]
+        \\cmd = "echo lint_ok"
+        \\tags = ["ci"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--exclude-tag=slow" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build_ok") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "lint_ok") != null);
+    // deploy tagged "slow" must NOT run
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy_ok") == null);
+}
+
+test "task filtering: multiple --tag flags without task name apply AND logic" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.unit]
+        \\cmd = "echo unit_ok"
+        \\tags = ["test", "fast"]
+        \\
+        \\[tasks.integration]
+        \\cmd = "echo integration_ok"
+        \\tags = ["test"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build_ok"
+        \\tags = ["fast"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // AND logic: only tasks with BOTH "test" AND "fast" tags → only unit
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--tag=test", "--tag=fast" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "unit_ok") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "integration_ok") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build_ok") == null);
+}
