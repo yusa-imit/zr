@@ -366,3 +366,92 @@ test "14011: vars: validate works when [vars] precedes [mixins.NAME]" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "valid") != null);
 }
+
+test "14012: vars: {{VAR}} substitution works in parallel task execution" {
+    // Regression test for dc631a5: parallel tasks (workerFn) were not calling
+    // interpolateParams(), so {{VAR}} placeholders were left unsubstituted.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[vars]
+        \\TARGET = "world"
+        \\
+        \\[tasks.greet-a]
+        \\cmd = "echo hello-{{TARGET}}-a"
+        \\
+        \\[tasks.greet-b]
+        \\cmd = "echo hello-{{TARGET}}-b"
+        \\
+        \\[tasks.greet-c]
+        \\cmd = "echo hello-{{TARGET}}-c"
+        \\
+        \\[tasks.all]
+        \\deps = ["greet-a", "greet-b", "greet-c"]
+        \\cmd = "echo done"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "all", "--jobs", "3" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Each parallel task must have substituted {{TARGET}} with "world"
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "hello-world-a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "hello-world-b") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "hello-world-c") != null);
+    // Literal placeholder must NOT appear in output
+    try std.testing.expect(std.mem.indexOf(u8, output, "{{TARGET}}") == null);
+}
+
+test "14013: vars: runtime --param substitution works in parallel task execution" {
+    // Regression test for dc631a5: parallel tasks were also not applying CLI --param
+    // overrides, so {{PARAM}} from --param KEY=VALUE had no effect.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[vars]
+        \\ENV = "dev"
+        \\
+        \\[tasks.step-a]
+        \\cmd = "echo env-{{ENV}}-a"
+        \\
+        \\[tasks.step-b]
+        \\cmd = "echo env-{{ENV}}-b"
+        \\
+        \\[tasks.pipeline]
+        \\deps = ["step-a", "step-b"]
+        \\cmd = "echo pipeline-done"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(
+        allocator,
+        &.{ "--config", config, "run", "pipeline", "--jobs", "2", "--param", "ENV=prod" },
+        tmp_path,
+    );
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // --param ENV=prod must override [vars] ENV="dev" in parallel workers
+    const output = result.stdout;
+    try std.testing.expect(std.mem.indexOf(u8, output, "env-prod-a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "env-prod-b") != null);
+    // "dev" must NOT appear (override worked)
+    try std.testing.expect(std.mem.indexOf(u8, output, "env-dev") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "{{ENV}}") == null);
+}
