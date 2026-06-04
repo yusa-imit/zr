@@ -49,6 +49,13 @@ pub fn substitute(
                 if (var_name.len == 0) {
                     // Empty variable name ${} — keep as-is
                     try result.appendSlice(allocator, "${}");
+                } else if (!isValidEnvVarName(var_name)) {
+                    // Shell special forms like ${#VAR}, ${VAR:-default}, ${VAR:+alt} — keep as-is
+                    // so they pass through to the shell interpreter unchanged.
+                    try result.append(allocator, '$');
+                    try result.append(allocator, '{');
+                    try result.appendSlice(allocator, var_name);
+                    try result.append(allocator, '}');
                 } else {
                     // Look up in map first, then fall back to process env
                     const var_value = if (env.get(var_name)) |v|
@@ -77,6 +84,19 @@ pub fn substitute(
     }
 
     return result.toOwnedSlice(allocator);
+}
+
+/// Returns true if the name is a valid POSIX environment variable name: [A-Za-z_][A-Za-z0-9_]*
+/// Shell special forms like ${#VAR}, ${VAR:-default} are not valid env var names
+/// and should be left unexpanded so the shell can interpret them.
+fn isValidEnvVarName(name: []const u8) bool {
+    if (name.len == 0) return false;
+    const first = name[0];
+    if (!std.ascii.isAlphabetic(first) and first != '_') return false;
+    for (name[1..]) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+    }
+    return true;
 }
 
 // ============================================================================
@@ -397,7 +417,7 @@ test "varsubst only variable" {
     try std.testing.expectEqualStrings("just_value", result);
 }
 
-test "varsubst variable name with hyphen treated as part of literal" {
+test "varsubst variable name with hyphen kept as-is (not a valid POSIX env var name)" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -405,13 +425,12 @@ test "varsubst variable name with hyphen treated as part of literal" {
     var env = std.StringHashMap([]const u8).init(allocator);
     defer env.deinit();
 
-    // Hyphens in variable names are valid in the lookup
-    try env.put("VAR-NAME", "hyphen_value");
-
+    // ${VAR-NAME} contains a hyphen — not a valid POSIX env var name.
+    // Shell would interpret this as a parameter expansion (${VAR-default}), so we leave it unchanged.
     const result = try substitute(allocator, "${VAR-NAME}", &env);
     defer allocator.free(result);
 
-    try std.testing.expectEqualStrings("hyphen_value", result);
+    try std.testing.expectEqualStrings("${VAR-NAME}", result);
 }
 
 test "varsubst consecutive escape sequences" {
@@ -615,12 +634,12 @@ test "varsubst malformed patterns don't crash" {
 
     try env.put("VAR", "value");
 
-    // Malformed: ${$VAR} should be treated as variable named "$VAR"
+    // Malformed: ${$VAR} — "$VAR" is not a valid POSIX env var name (starts with $).
+    // Leave it as-is so the shell can handle or error on it.
     const result = try substitute(allocator, "${$VAR}", &env);
     defer allocator.free(result);
 
-    // Should expand to empty (undefined variable "$VAR")
-    try std.testing.expectEqualStrings("", result);
+    try std.testing.expectEqualStrings("${$VAR}", result);
 }
 
 test "varsubst whitespace preservation in values" {
