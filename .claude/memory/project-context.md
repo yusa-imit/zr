@@ -11,17 +11,17 @@
 
 ## Current Status
 
-- **Build version**: v1.85.0 (current in build.zig.zon) | Latest Release: v1.85.0 (2026-06-02)
-- **Unit tests**: ✅ Passing (1729 passed, 8 skipped, 0 failed)
-- **Integration tests**: 109 test files + explain tests 15015-15020 — comprehensive coverage
+- **Build version**: v1.86.1 (current in build.zig.zon) | Latest Release: v1.86.1 (2026-06-04)
+- **Unit tests**: ✅ Passing (1732 passed, 8 skipped, 0 failed)
+- **Integration tests**: 109 test files — comprehensive coverage
 - **Test coverage**: ~98% (202/207 files) — exceeds 80% threshold
-- **CI**: Running (pushed v1.85.0 version bump)
+- **CI**: Running (pushed v1.86.1)
 - **GitHub Issues**: 0 open, **0 bugs**, **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
 - **Sailor version**: v2.13.0 (upgraded in v1.84.0 cycle)
 - **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix)
 - **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-06-02, FEATURE Cycle 309)**: ✅ **v1.85.0 Released** — Task Explain & Execution Preview milestone complete. Added history-based duration estimates (~Xs per task, total), integration tests 15015-15020 (timeout/env/required_env/skip_if/cache/sources display). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.85.0
+- **Latest work (2026-06-04, FEATURE Cycle 317)**: ✅ **v1.86.1 Released** — Patch fix for `zr run --tag=X` filter-only mode (help showed this syntax but it failed). Added 3 integration tests. GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.86.1
 
 ## PRD Phase Status
 
@@ -49,4 +49,4 @@
 🎯 **Next Work** — Post-v1.0 Feature Development
 - **ACTIVE milestones**: 1 (Code Quality & Documentation Polish — continuous improvement)
 - **READY milestones**: 0
-- **Current priority**: Establish new milestone for next feature (v1.86.0).
+- **Current priority**: Establish new milestone for next feature (v1.87.0).

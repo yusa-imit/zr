@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.86.0 (zr tags command, error message polish) — RELEASED 2026-06-03
+- **Latest**: v1.86.1 (fix: zr run --tag filter-only mode) — RELEASED 2026-06-04
 - **Active milestones**: 1 (Code Quality & Documentation Polish — continuous improvement)
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)

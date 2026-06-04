@@ -61,3 +61,4 @@
 {"timestamp":"2026-06-03T00:00:00Z","action":"subagent","agent_type":"Explore","task":"Audit integration test quality in cache/history/explain test files","project":"zr"}
 {"timestamp":"2026-06-03T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write failing integration tests for Profile Enhancement (description + vars override)","project":"zr"}
 {"timestamp":"2026-06-03T00:01:00Z","action":"subagent","agent_type":"test-writer","task":"Write failing integration tests 16000-16007 for Profile Enhancement (description + vars override)","project":"zr"}
+{"timestamp":"2026-06-04T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Add regression tests for zr run --tag filter-only mode fix","project":"zr"}
