@@ -965,11 +965,65 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // Build combined extra_env: workflow matrix vars + ZR_OUTPUT_* captured task outputs (v1.87.0)
+    var combined_extra_env_list: std.ArrayList([2][]u8) = .{};
+    var combined_extra_env_used = false;
+    defer if (combined_extra_env_used) {
+        for (combined_extra_env_list.items) |pair| {
+            task_allocator.free(pair[0]);
+            task_allocator.free(pair[1]);
+        }
+        combined_extra_env_list.deinit(task_allocator);
+    };
+    const effective_extra_env: ?[]const [2][]const u8 = blk: {
+        if (ctx.task_outputs) |outputs| {
+            if (outputs.count() > 0) {
+                // Copy existing extra_env entries
+                if (ctx.extra_env) |extra| {
+                    for (extra) |pair| {
+                        const k = task_allocator.dupe(u8, pair[0]) catch break :blk ctx.extra_env;
+                        const v = task_allocator.dupe(u8, pair[1]) catch {
+                            task_allocator.free(k);
+                            break :blk ctx.extra_env;
+                        };
+                        combined_extra_env_list.append(task_allocator, .{ k, v }) catch {
+                            task_allocator.free(k);
+                            task_allocator.free(v);
+                            break :blk ctx.extra_env;
+                        };
+                    }
+                }
+                // Add ZR_OUTPUT_* entries
+                var it = outputs.iterator();
+                while (it.next()) |entry| {
+                    const sanitized = sanitizeTaskNameForEnv(task_allocator, entry.key_ptr.*) catch continue;
+                    const key = std.fmt.allocPrint(task_allocator, "ZR_OUTPUT_{s}", .{sanitized}) catch {
+                        task_allocator.free(sanitized);
+                        continue;
+                    };
+                    task_allocator.free(sanitized);
+                    const val = task_allocator.dupe(u8, entry.value_ptr.*) catch {
+                        task_allocator.free(key);
+                        continue;
+                    };
+                    combined_extra_env_list.append(task_allocator, .{ key, val }) catch {
+                        task_allocator.free(key);
+                        task_allocator.free(val);
+                        continue;
+                    };
+                }
+                combined_extra_env_used = true;
+                break :blk @as(?[]const [2][]const u8, combined_extra_env_list.items);
+            }
+        }
+        break :blk ctx.extra_env;
+    };
+
     // Build environment with toolchain PATH injection and extra_env
     // Use env_with_files (merged .env + task env) if available, otherwise fall back to task env.
     // Without env_file, env_with_files is null, so we fall back to ctx.env to ensure task
     // env vars from TOML reach the subprocess.
-    const merged_env = buildEnvWithToolchains(task_allocator, env_with_files orelse ctx.env, ctx.toolchains, ctx.extra_env);
+    const merged_env = buildEnvWithToolchains(task_allocator, env_with_files orelse ctx.env, ctx.toolchains, effective_extra_env);
     defer if (merged_env) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
 
     // Load checkpoint if enabled (v1.31.0)
@@ -990,10 +1044,12 @@ fn workerFn(ctx: WorkerCtx) void {
     var output_cap: ?output_capture.OutputCapture = null;
     defer if (output_cap) |*oc| oc.deinit();
 
-    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, or (4) cache enabled
-    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache;
+    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, (4) cache enabled, or (5) share_output
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output;
     // Track whether buffer mode was enabled purely for caching (need to relay output to user after completion)
     const capture_for_cache = ctx.cache and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null;
+    // Track whether buffer mode was enabled purely for share_output (need to relay output to user after completion)
+    const capture_for_share = ctx.share_output and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache;
     if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
             .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent/cache
@@ -1553,6 +1609,50 @@ fn workerFn(ctx: WorkerCtx) void {
                     defer task_allocator.free(buffered_output);
                     if (buffered_output.len > 0) {
                         std.fs.File.stdout().writeAll(buffered_output) catch {};
+                    }
+                } else |_| {}
+            }
+        }
+    }
+
+    // If share_output, relay output to stdout AND store trimmed output for downstream tasks (v1.87.0)
+    if (capture_for_share) {
+        if (output_cap) |*oc| {
+            if (oc.config.mode == .buffer) {
+                if (oc.getBuffer()) |buffered_output| {
+                    defer task_allocator.free(buffered_output);
+                    if (buffered_output.len > 0) {
+                        std.fs.File.stdout().writeAll(buffered_output) catch {};
+                    }
+                } else |_| {}
+            }
+        }
+    }
+
+    // Store captured output for downstream tasks if share_output=true and task succeeded (v1.87.0)
+    // Uses ctx.allocator (not task_allocator) so the stored strings outlive the task's arena.
+    if (ctx.share_output and proc_result.success) {
+        if (ctx.task_outputs) |outputs| {
+            if (output_cap) |*oc| {
+                if (oc.getBuffer()) |captured| {
+                    defer task_allocator.free(captured);
+                    const trimmed = std.mem.trimRight(u8, captured, " \t\r\n");
+                    const name_dupe = ctx.allocator.dupe(u8, ctx.task_name) catch null;
+                    const val_dupe = ctx.allocator.dupe(u8, trimmed) catch null;
+                    if (name_dupe != null and val_dupe != null) {
+                        ctx.results_mutex.lock();
+                        if (outputs.fetchRemove(name_dupe.?)) |old| {
+                            ctx.allocator.free(old.key);
+                            ctx.allocator.free(old.value);
+                        }
+                        outputs.put(name_dupe.?, val_dupe.?) catch {
+                            ctx.allocator.free(name_dupe.?);
+                            ctx.allocator.free(val_dupe.?);
+                        };
+                        ctx.results_mutex.unlock();
+                    } else {
+                        if (name_dupe) |n| ctx.allocator.free(n);
+                        if (val_dupe) |v| ctx.allocator.free(v);
                     }
                 } else |_| {}
             }

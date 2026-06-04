@@ -338,6 +338,16 @@ pub fn cmdRun(
 
     const start_ns = std.time.nanoTimestamp();
 
+    var task_outputs = std.StringHashMap([]const u8).init(allocator);
+    defer {
+        var it = task_outputs.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        task_outputs.deinit();
+    }
+
     var sched_result = scheduler.run(allocator, &config, &task_names, .{
         .max_jobs = max_jobs,
         .monitor = monitor,
@@ -350,6 +360,7 @@ pub fn cmdRun(
         .skip_tasks = skip_tasks,
         .notify_override = notify_override,
         .only_mode = only_mode,
+        .task_outputs = &task_outputs,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
