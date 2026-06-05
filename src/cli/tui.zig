@@ -551,6 +551,7 @@ fn cmdInteractiveInner(
                     &.{},
                     false, // notify_override
                     false, // only_mode
+                    false, // show_outputs
                 ) catch {};
 
                 _ = enterRawMode() catch {};

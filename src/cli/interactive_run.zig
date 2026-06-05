@@ -173,6 +173,7 @@ pub fn cmdInteractiveRun(
             &.{},
             false, // notify_override
             false, // only_mode
+            false, // show_outputs
         );
     }
 
@@ -200,6 +201,7 @@ pub fn cmdInteractiveRun(
             &.{},
             false, // notify_override
             false, // only_mode
+            false, // show_outputs
         );
     }
 
@@ -231,6 +233,7 @@ pub fn cmdInteractiveRun(
             &.{},
             false, // notify_override
             false, // only_mode
+            false, // show_outputs
         );
     };
     defer leaveRawMode(original_termios);
@@ -269,6 +272,7 @@ pub fn cmdInteractiveRun(
         &.{},
         false, // notify_override
         false, // only_mode
+        false, // show_outputs
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

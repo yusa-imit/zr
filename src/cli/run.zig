@@ -172,6 +172,7 @@ pub fn cmdRun(
     skip_tasks: []const []const u8,
     notify_override: bool,
     only_mode: bool,
+    show_outputs: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -434,6 +435,17 @@ pub fn cmdRun(
     // Record to history (best-effort, ignore errors)
     recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
         @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu);
+
+    // Display captured task outputs if --show-outputs requested (v1.87.0)
+    if (show_outputs and task_outputs.count() > 0) {
+        try w.print("\n", .{});
+        try color.printDim(w, use_color, "Captured outputs:\n", .{});
+        var out_it = task_outputs.iterator();
+        while (out_it.next()) |entry| {
+            try color.printDim(w, use_color, "  {s}: ", .{entry.key_ptr.*});
+            try w.print("{s}\n", .{entry.value_ptr.*});
+        }
+    }
 
     return if (sched_result.total_success) 0 else 1;
 }
@@ -1571,6 +1583,7 @@ test "cmdRun: missing config returns error" {
         &.{},
         false, // notify_override
         false, // only_mode
+        false, // show_outputs
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1620,6 +1633,7 @@ test "cmdRun: unknown task returns error" {
         &.{},
         false, // notify_override
         false, // only_mode
+        false, // show_outputs
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1669,6 +1683,7 @@ test "cmdRun: dry run shows plan without executing" {
         &.{},
         false, // notify_override
         false, // only_mode
+        false, // show_outputs
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1718,6 +1733,7 @@ test "cmdRun: successful task returns 0" {
         &.{},
         false, // notify_override
         false, // only_mode
+        false, // show_outputs
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1767,6 +1783,7 @@ test "cmdRun: failing task returns 1" {
         &.{},
         false, // notify_override
         false, // only_mode
+        false, // show_outputs
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
