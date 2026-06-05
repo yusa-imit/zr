@@ -201,3 +201,64 @@ pub fn cmdTags(
 
     return 0;
 }
+
+test "sortByName: alphabetical ordering" {
+    var entries = [_]TagEntry{
+        .{ .tag = "zebra", .count = 1 },
+        .{ .tag = "alpha", .count = 5 },
+        .{ .tag = "middle", .count = 3 },
+    };
+    std.mem.sort(TagEntry, &entries, {}, sortByName);
+
+    try std.testing.expectEqualStrings("alpha", entries[0].tag);
+    try std.testing.expectEqualStrings("middle", entries[1].tag);
+    try std.testing.expectEqualStrings("zebra", entries[2].tag);
+}
+
+test "sortByCount: descending count, then alphabetical for ties" {
+    var entries = [_]TagEntry{
+        .{ .tag = "beta", .count = 2 },
+        .{ .tag = "alpha", .count = 2 },
+        .{ .tag = "gamma", .count = 5 },
+    };
+    std.mem.sort(TagEntry, &entries, {}, sortByCount);
+
+    // gamma has highest count, then alpha before beta (alphabetical tiebreak)
+    try std.testing.expectEqualStrings("gamma", entries[0].tag);
+    try std.testing.expectEqual(@as(usize, 5), entries[0].count);
+    try std.testing.expectEqualStrings("alpha", entries[1].tag);
+    try std.testing.expectEqualStrings("beta", entries[2].tag);
+}
+
+test "sortStrings: alphabetical string ordering" {
+    const allocator = std.testing.allocator;
+    var list = std.ArrayList([]const u8){};
+    defer list.deinit(allocator);
+    try list.append(allocator, "zr-deploy");
+    try list.append(allocator, "build");
+    try list.append(allocator, "lint");
+
+    std.mem.sort([]const u8, list.items, {}, sortStrings);
+
+    try std.testing.expectEqualStrings("build", list.items[0]);
+    try std.testing.expectEqualStrings("lint", list.items[1]);
+    try std.testing.expectEqualStrings("zr-deploy", list.items[2]);
+}
+
+test "sortByName: single entry is stable" {
+    var entries = [_]TagEntry{
+        .{ .tag = "only", .count = 3 },
+    };
+    std.mem.sort(TagEntry, &entries, {}, sortByName);
+    try std.testing.expectEqualStrings("only", entries[0].tag);
+}
+
+test "sortByCount: zero-count entries sorted alphabetically" {
+    var entries = [_]TagEntry{
+        .{ .tag = "zz", .count = 0 },
+        .{ .tag = "aa", .count = 0 },
+    };
+    std.mem.sort(TagEntry, &entries, {}, sortByCount);
+    try std.testing.expectEqualStrings("aa", entries[0].tag);
+    try std.testing.expectEqualStrings("zz", entries[1].tag);
+}

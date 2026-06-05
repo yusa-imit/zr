@@ -1751,7 +1751,7 @@ test "347: run with task that uses matrix and env together expands correctly" {
     try std.testing.expect(std.mem.indexOf(u8, output, "test") != null);
 }
 
-test "356: run with --monitor flag and short-running task displays resource usage" {
+test "356: run with --monitor flag completes successfully and shows task output" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1765,9 +1765,10 @@ test "356: run with --monitor flag and short-running task displays resource usag
 
     var result = try runZr(allocator, &.{ "run", "hello", "--monitor" }, tmp_path);
     defer result.deinit();
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    // Should succeed (monitor may or may not show data for fast tasks)
-    try std.testing.expect(output.len > 0);
+    // --monitor should not break task execution
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Task should still print its output (monitor doesn't suppress task stdout)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
 }
 
 test "367: run --affected with base ref filters to changed workspace members" {

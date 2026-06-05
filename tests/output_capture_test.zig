@@ -457,6 +457,96 @@ test "17014: share_output = true but task fails → output NOT captured (no ZR_O
     try std.testing.expect(result.exit_code != 0);
 }
 
+test "17015: --show-outputs displays captured outputs after execution" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.build]
+        \\cmd = "echo v2.5.0"
+        \\share_output = true
+        \\
+        \\[tasks.deploy]
+        \\deps = ["build"]
+        \\cmd = "echo deploying"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--show-outputs", "deploy" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // --show-outputs should print "Captured outputs:" section
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Captured outputs:") != null);
+    // build task output should appear under the section
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "v2.5.0") != null);
+}
+
+test "17016: --show-outputs with no share_output tasks prints nothing extra" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.hello]
+        \\cmd = "echo hello"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--show-outputs", "hello" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // No share_output tasks → no "Captured outputs:" section
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Captured outputs:") == null);
+}
+
+test "17017: --show-outputs shows multiple captured task outputs" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.get-tag]
+        \\cmd = "echo v1.0.0"
+        \\share_output = true
+        \\
+        \\[tasks.get-sha]
+        \\cmd = "echo abc1234"
+        \\share_output = true
+        \\
+        \\[tasks.release]
+        \\deps = ["get-tag", "get-sha"]
+        \\cmd = "echo releasing"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--show-outputs", "release" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Both captured outputs should appear
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Captured outputs:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "v1.0.0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "abc1234") != null);
+}
+
 // ── Compatibility Tests (Old output_filtering tests - keeping for reference)
 
 test "951: output_mode=stream creates file with task output" {
@@ -502,9 +592,9 @@ test "951: output_mode=stream creates file with task output" {
     try std.testing.expect(std.mem.indexOf(u8, file_content, "Stream output line 2") != null);
 }
 
-// Test 952: Task execution with output_mode=buffer - verify buffer is captured
-// Note: Buffer mode stores output in memory. We verify via task stdout redirection.
-test "952: output_mode=buffer captures output in memory" {
+// Test 952: Task execution with output_mode=buffer - verify buffer captures silently
+// Buffer mode stores task stdout in memory (for caching/capture), not relayed to user stdout.
+test "952: output_mode=buffer silences task output (not relayed to user stdout)" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -514,7 +604,7 @@ test "952: output_mode=buffer captures output in memory" {
 
     const config_toml =
         \\[tasks.buffer_test]
-        \\cmd = "echo 'Buffer test output'"
+        \\cmd = "echo 'UNIQUE_BUFFER_MARKER'"
         \\output_mode = "buffer"
         \\
     ;
@@ -528,11 +618,11 @@ test "952: output_mode=buffer captures output in memory" {
 
     // Task should execute successfully
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-
-    // In buffer mode, output is captured in memory and available to the task runtime.
-    // The task itself will emit output to terminal/TUI, so we verify execution succeeded.
-    // The buffer is used internally by the scheduler for capture.
-    // This test validates that buffer mode doesn't break task execution.
+    // Buffer mode captures internally — task output is NOT relayed to user stdout
+    // (only relayed when caching or share_output is also active)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "UNIQUE_BUFFER_MARKER") == null);
+    // zr itself still prints the task completion line (e.g., "buffer_test (Nms)")
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "buffer_test") != null);
 }
 
 // Test 953: Multiple tasks with different output modes running in parallel
@@ -844,8 +934,8 @@ test "959: output_file path can include environment variables via expression" {
     try std.testing.expect(std.mem.indexOf(u8, file_content, "Output with env variable") != null);
 }
 
-// Test 960: Default output_mode should be "discard" (no file created)
-test "960: default output_mode (no config) is discard" {
+// Test 960: Default output_mode should be "discard" — task output visible on stdout, no log file
+test "960: default output_mode (no config) streams task output to terminal" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -855,21 +945,25 @@ test "960: default output_mode (no config) is discard" {
 
     const config_toml =
         \\[tasks.default_mode]
-        \\cmd = "echo 'Default mode output'"
+        \\cmd = "echo 'DEFAULT_OUTPUT_VISIBLE'"
         \\
     ;
 
     const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
     defer allocator.free(config);
 
-    // Run the task without specifying output_mode (should default to discard)
+    // Run the task without specifying output_mode (default = stream to terminal)
     var result = try runZr(allocator, &.{ "--config", config, "run", "default_mode" }, tmp_path);
     defer result.deinit();
 
     // Task should execute successfully
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-
-    // Verify no output file was created (default = discard mode)
-    // Check that we can read stdout from the zr command itself
-    try std.testing.expect(result.stdout.len > 0); // zr should emit output about task execution
+    // Default mode: task stdout IS visible to user (not buffered or discarded)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "DEFAULT_OUTPUT_VISIBLE") != null);
+    // zr prints task completion line (task name + duration)
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "default_mode") != null);
+    // No log file should be created (default is not stream-to-file)
+    const log_file_result = tmp.dir.openFile("default_mode.log", .{});
+    if (log_file_result) |_| return error.TestUnexpectedResult else |err|
+        try std.testing.expectEqual(error.FileNotFound, err);
 }
