@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.88.0] - 2026-06-06
+
+### Added
+- **`input_prompt = [{name="ENV", prompt="...", default="staging"}]`** — task-level input declarations; values available as `{{ENV}}` template variables in `cmd`, `env`, and other task string fields
+- **`--input KEY=VALUE` CLI flag** — provide input values non-interactively; multiple flags allowed; `--input` takes precedence over `--param` for the same key
+- **`--non-interactive` flag** — fail with clear error if required inputs (no default) have no `--input` value; use defaults for inputs that have them
+- **`type = "string"|"bool"|"number"` validation** — validate input values by type at run time
+- **`choices = ["prod", "staging"]` constraint** — restrict input to a predefined list of valid values
+- **`zr run --dry-run` shows input prompts** — plan viewer shows all input prompts with names, prompt text, and default/required status
+- **`zr explain` integration** — text output shows "Input prompts:" section; `--json` output includes `input_prompts` array with all fields
+- 13 integration tests covering all scenarios (tests 18000–18012)
+
 ## [1.87.0] - 2026-06-05
 
 ### Added
