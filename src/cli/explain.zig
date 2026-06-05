@@ -5,6 +5,7 @@ const loader = @import("../config/loader.zig");
 const types = @import("../config/types.zig");
 const history_store = @import("../history/store.zig");
 const stats_mod = @import("../history/stats.zig");
+const scheduler = @import("../exec/scheduler.zig");
 
 const ExplainOutputFormat = enum {
     text,
@@ -45,6 +46,7 @@ fn collectTaskDeps(
 
 /// Print task details in text format (standard output)
 fn printTaskText(
+    allocator: Allocator,
     w: *std.Io.Writer,
     config: *const types.Config,
     task_name: []const u8,
@@ -86,6 +88,15 @@ fn printTaskText(
     // Print cache flag
     if (task.cache) {
         try w.print("      Cache: enabled\n", .{});
+    }
+
+    // Print share_output env var name (v1.87.0)
+    if (task.share_output) {
+        const sanitized = scheduler.sanitizeTaskNameForEnv(allocator, task_name) catch null;
+        if (sanitized) |s| {
+            defer allocator.free(s);
+            try w.print("      Share output: ZR_OUTPUT_{s}\n", .{s});
+        }
     }
 
     // Print skip_if condition
@@ -214,7 +225,7 @@ fn printDependencyTree(
 
 /// Print task execution plan in JSON format
 fn printTaskJson(
-    _: Allocator,
+    allocator: Allocator,
     w: *std.Io.Writer,
     config: *const types.Config,
     _: []const u8,
@@ -238,6 +249,16 @@ fn printTaskJson(
         }
 
         try w.print("]", .{});
+
+        // Include share_output env var name if applicable (v1.87.0)
+        if (task.share_output) {
+            const sanitized = scheduler.sanitizeTaskNameForEnv(allocator, name) catch null;
+            if (sanitized) |s| {
+                defer allocator.free(s);
+                try w.print(",\"share_output_env_var\":\"ZR_OUTPUT_{s}\"", .{s});
+            }
+        }
+
         try w.print("}}", .{});
     }
 
@@ -366,7 +387,7 @@ pub fn cmdExplain(
                 } else {
                     all_have_history = false;
                 }
-                try printTaskText(w, &config, name, idx, use_color, est_ms);
+                try printTaskText(allocator, w, &config, name, idx, use_color, est_ms);
             }
 
             if (all_have_history and history_records != null and ordered_tasks.items.len > 0) {
@@ -524,4 +545,45 @@ test "collectTaskDeps nonexistent task returns error" {
 
     const result = collectTaskDeps(allocator, &config, "nonexistent", &visited, &order);
     try std.testing.expectError(error.TaskNotFound, result);
+}
+
+test "Task with share_output=true field is correctly parsed" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.fetch-data]
+        \\cmd = "echo data"
+        \\share_output = true
+    );
+    defer config.deinit();
+
+    const task = config.tasks.get("fetch-data").?;
+    // Verify share_output field is correctly set
+    try std.testing.expect(task.share_output == true);
+}
+
+test "Task with default (no share_output) has share_output=false" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.build]
+        \\cmd = "echo building"
+    );
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+    // Verify share_output defaults to false when not specified
+    try std.testing.expect(task.share_output == false);
+}
+
+test "Task with share_output=false is correctly parsed" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.compile]
+        \\cmd = "zig build"
+        \\share_output = false
+    );
+    defer config.deinit();
+
+    const task = config.tasks.get("compile").?;
+    // Verify explicit share_output=false is honored
+    try std.testing.expect(task.share_output == false);
 }

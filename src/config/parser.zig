@@ -1974,6 +1974,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_notify = false;
             task_notify_on = null;
             task_notify_title = null;
+            task_share_output = false;
             task_numa_node = null;
             task_watch_debounce_ms = null;
             task_watch_mode = null;

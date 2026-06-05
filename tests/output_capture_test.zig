@@ -547,6 +547,82 @@ test "17017: --show-outputs shows multiple captured task outputs" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "abc1234") != null);
 }
 
+test "17018: zr explain shows Share output env var for tasks with share_output=true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.get-version]
+        \\cmd = "echo 1.0"
+        \\share_output = true
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "get-version" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should display "Share output:" and the environment variable name
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Share output:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "ZR_OUTPUT_GET_VERSION") != null);
+}
+
+test "17019: zr explain does NOT show Share output line for tasks without share_output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.build]
+        \\cmd = "echo building"
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "build" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should NOT contain "Share output:" since share_output defaults to false
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Share output:") == null);
+}
+
+test "17020: zr explain --json includes share_output_env_var field when share_output=true" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_toml =
+        \\[tasks.fetch]
+        \\cmd = "echo data"
+        \\share_output = true
+        \\
+    ;
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "fetch", "--json" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should include JSON field for share_output_env_var and the value ZR_OUTPUT_FETCH
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"share_output_env_var\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"ZR_OUTPUT_FETCH\"") != null);
+}
+
 // ── Compatibility Tests (Old output_filtering tests - keeping for reference)
 
 test "951: output_mode=stream creates file with task output" {

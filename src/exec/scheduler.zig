@@ -38,7 +38,7 @@ pub const SchedulerError = error{
 } || std.mem.Allocator.Error;
 
 /// Sanitize task name for use as env var suffix: uppercase, hyphens/dots → underscores (v1.87.0).
-fn sanitizeTaskNameForEnv(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+pub fn sanitizeTaskNameForEnv(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     const upper = try allocator.dupe(u8, name);
     for (upper) |*c| {
         if (c.* == '-' or c.* == '.') {
