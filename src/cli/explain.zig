@@ -587,3 +587,36 @@ test "Task with share_output=false is correctly parsed" {
     // Verify explicit share_output=false is honored
     try std.testing.expect(task.share_output == false);
 }
+
+test "input_prompt shown in explain text output" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.deploy]
+        \\cmd = "deploy.sh"
+        \\input_prompt = [{name="ENV", prompt="Target environment:", default="staging"}]
+    );
+    defer config.deinit();
+
+    const task = config.tasks.get("deploy").?;
+    // Verify input_prompt field is correctly parsed
+    try std.testing.expect(task.input_prompts.len > 0);
+    const prompt = task.input_prompts[0];
+    try std.testing.expectEqualStrings("ENV", prompt.name);
+    try std.testing.expectEqualStrings("Target environment:", prompt.prompt);
+}
+
+test "input_prompt shown in explain JSON output" {
+    const allocator = std.testing.allocator;
+    var config = try parser.parseToml(allocator,
+        \\[tasks.deploy]
+        \\cmd = "deploy.sh"
+        \\input_prompt = [{name="VERSION", prompt="Version tag:", default="v1.0.0"}]
+    );
+    defer config.deinit();
+
+    const task = config.tasks.get("deploy").?;
+    // Verify input_prompts array is populated
+    try std.testing.expect(task.input_prompts.len == 1);
+    try std.testing.expectEqualStrings("VERSION", task.input_prompts[0].name);
+    try std.testing.expectEqualStrings("v1.0.0", task.input_prompts[0].default.?);
+}
