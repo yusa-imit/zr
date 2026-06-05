@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.87.0] - 2026-06-05
+
+### Added
+- **`share_output = true`** task field — captures task stdout after successful execution and stores it in a shared output map
+- **`ZR_OUTPUT_<TASK_NAME>` env vars** — downstream tasks automatically receive captured outputs as environment variables (task name uppercased, hyphens/dots → underscores)
+- **`{{output.task-name}}` template syntax** — use captured upstream task output directly in `cmd`, `env`, and other task string fields of downstream tasks
+- **`zr run --show-outputs`** — display captured task outputs after execution completes
+- **`zr explain` shows share_output** — text output shows "Share output: ZR_OUTPUT_<NAME>"; JSON output includes `share_output_env_var` field
+- 21 integration tests covering basic capture, env var injection, template syntax, trimming, chained capture, sanitized names, edge cases, --show-outputs flag
+
+### Fixed
+- Parser bug: `share_output = true` no longer bleeds into subsequent tasks defined later in the same TOML file (missing reset in large task reset block)
+
 ## [1.86.0] - 2026-06-03
 
 ### Added
