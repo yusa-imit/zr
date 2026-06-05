@@ -123,6 +123,18 @@ fn printTaskText(
         }
     }
 
+    // Print input_prompts if set (v1.88.0)
+    if (task.input_prompts.len > 0) {
+        try w.print("      Input prompts:\n", .{});
+        for (task.input_prompts) |ip| {
+            if (ip.default) |def| {
+                try w.print("        {s}: {s} [default: {s}]\n", .{ ip.name, ip.prompt, def });
+            } else {
+                try w.print("        {s}: {s} (required)\n", .{ ip.name, ip.prompt });
+            }
+        }
+    }
+
     // Print sources if set
     if (task.sources.len > 0) {
         try w.print("      Sources:", .{});
@@ -257,6 +269,27 @@ fn printTaskJson(
                 defer allocator.free(s);
                 try w.print(",\"share_output_env_var\":\"ZR_OUTPUT_{s}\"", .{s});
             }
+        }
+
+        // Include input_prompts array (v1.88.0)
+        if (task.input_prompts.len > 0) {
+            try w.print(",\"input_prompts\":[", .{});
+            for (task.input_prompts, 0..) |ip, pi| {
+                if (pi > 0) try w.print(",", .{});
+                try w.print("{{\"name\":\"{s}\",\"prompt\":\"{s}\"", .{ ip.name, ip.prompt });
+                if (ip.default) |def| try w.print(",\"default\":\"{s}\"", .{def});
+                if (!std.mem.eql(u8, ip.type, "string")) try w.print(",\"type\":\"{s}\"", .{ip.type});
+                if (ip.choices.len > 0) {
+                    try w.print(",\"choices\":[", .{});
+                    for (ip.choices, 0..) |c, ci| {
+                        if (ci > 0) try w.print(",", .{});
+                        try w.print("\"{s}\"", .{c});
+                    }
+                    try w.print("]", .{});
+                }
+                try w.print("}}", .{});
+            }
+            try w.print("]", .{});
         }
 
         try w.print("}}", .{});

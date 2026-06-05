@@ -322,13 +322,14 @@ pub fn cmdRun(
 
     // v1.88.0: Collect input_prompt values for the task dep graph.
     // Walk deps transitively and merge prompt values into resolved_params before execution.
-    {
+    // Skip collection in dry-run mode — the plan viewer shows prompt state separately.
+    if (!dry_run) {
         var ip_visited = std.StringHashMap(bool).init(allocator);
         defer ip_visited.deinit();
         var ip_stack = std.ArrayList([]const u8){};
         defer ip_stack.deinit(allocator);
         try ip_stack.append(allocator, resolved_task_name);
-        const collect_non_interactive = non_interactive or dry_run;
+        const collect_non_interactive = non_interactive;
 
         while (ip_stack.items.len > 0) {
             const tn = ip_stack.pop() orelse break;
