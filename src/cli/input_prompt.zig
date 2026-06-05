@@ -68,9 +68,7 @@ pub fn collectInputs(
     for (input_prompts) |ip| {
         // Priority 1: --input flag
         if (cli_inputs.get(ip.name)) |val| {
-            try validateInputValue(ip, val) catch |err| {
-                return err;
-            };
+            try validateInputValue(ip, val);
             try result.put(try allocator.dupe(u8, ip.name), try allocator.dupe(u8, val));
             continue;
         }
@@ -133,17 +131,11 @@ test "InputPrompt: validate bool type rejects invalid" {
 }
 
 test "InputPrompt: validate choices constraint" {
-    const allocator = std.testing.allocator;
-    const choices = try allocator.dupe([]const u8, &.{ "prod", "staging" });
-    defer {
-        for (choices) |c| allocator.free(c);
-        allocator.free(choices);
-    }
-
+    var choice_data = [_][]const u8{ "prod", "staging" };
     const ip = types.InputPrompt{
         .name = "env",
         .prompt = "Environment:",
-        .choices = choices,
+        .choices = &choice_data,
     };
 
     try validateInputValue(ip, "prod");
@@ -161,6 +153,7 @@ test "InputPrompt: collectInputs with cli_inputs" {
     input_prompts[0] = types.InputPrompt{
         .name = try allocator.dupe(u8, "ENV"),
         .prompt = try allocator.dupe(u8, "Environment:"),
+        .type = try allocator.dupe(u8, "string"),
     };
     defer {
         for (input_prompts) |*ip| ip.deinit(allocator);
@@ -190,6 +183,7 @@ test "InputPrompt: collectInputs uses default when non-interactive" {
         .name = try allocator.dupe(u8, "TAG"),
         .prompt = try allocator.dupe(u8, "Tag:"),
         .default = try allocator.dupe(u8, "v1.0.0"),
+        .type = try allocator.dupe(u8, "string"),
     };
     defer {
         for (input_prompts) |*ip| ip.deinit(allocator);
@@ -218,6 +212,7 @@ test "InputPrompt: collectInputs fails for required input when non-interactive" 
     input_prompts[0] = types.InputPrompt{
         .name = try allocator.dupe(u8, "PASSWORD"),
         .prompt = try allocator.dupe(u8, "Password:"),
+        .type = try allocator.dupe(u8, "string"),
     };
     defer {
         for (input_prompts) |*ip| ip.deinit(allocator);

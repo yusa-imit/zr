@@ -16,6 +16,7 @@ const filter_mod = @import("../output/filter.zig");
 const uptodate = @import("../exec/uptodate.zig");
 const env_loader = @import("../config/env_loader.zig");
 const types = @import("../config/types.zig");
+const input_prompt_mod = @import("input_prompt.zig");
 
 /// Display the resolved environment variables for a task
 pub fn printTaskEnvironment(
@@ -176,10 +177,6 @@ pub fn cmdRun(
     cli_inputs: std.StringHashMap([]const u8),
     non_interactive: bool,
 ) !u8 {
-    // v1.88.0: cli_inputs and non_interactive will be used for input_prompt collection (TODO: phase 2)
-    _ = cli_inputs;
-    _ = non_interactive;
-
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -291,18 +288,27 @@ pub fn cmdRun(
         }
     }
 
-    // Check for unknown params
+    // Check for unknown params (accept both task_params and input_prompt names)
     var params_it = runtime_params.iterator();
     while (params_it.next()) |entry| {
         const key = entry.key_ptr.*;
         if (std.mem.startsWith(u8, key, "__positional_")) continue; // skip internal markers
 
-        // Check if this param exists in task definition
+        // Check if this param exists in task_params definition
         var found = false;
         for (task.task_params) |param| {
             if (std.mem.eql(u8, key, param.name)) {
                 found = true;
                 break;
+            }
+        }
+        // Also accept input_prompt names (v1.88.0)
+        if (!found) {
+            for (task.input_prompts) |ip| {
+                if (std.mem.eql(u8, key, ip.name)) {
+                    found = true;
+                    break;
+                }
             }
         }
         if (!found) {
@@ -311,6 +317,115 @@ pub fn cmdRun(
                 .{ key, resolved_task_name },
             );
             return 1;
+        }
+    }
+
+    // v1.88.0: Collect input_prompt values for the task dep graph.
+    // Walk deps transitively and merge prompt values into resolved_params before execution.
+    {
+        var ip_visited = std.StringHashMap(bool).init(allocator);
+        defer ip_visited.deinit();
+        var ip_stack = std.ArrayList([]const u8){};
+        defer ip_stack.deinit(allocator);
+        try ip_stack.append(allocator, resolved_task_name);
+        const collect_non_interactive = non_interactive or dry_run;
+
+        while (ip_stack.items.len > 0) {
+            const tn = ip_stack.pop() orelse break;
+            if ((try ip_visited.fetchPut(tn, true)) != null) continue;
+            const t = config.tasks.get(tn) orelse continue;
+
+            for (t.input_prompts) |ip| {
+                // Priority 1: --input flag takes highest precedence
+                if (cli_inputs.get(ip.name)) |val| {
+                    input_prompt_mod.validateInputValue(ip, val) catch |verr| {
+                        switch (verr) {
+                            input_prompt_mod.InputError.InvalidInputType => {
+                                try color.printError(err_writer, use_color,
+                                    "✗ Input '{s}': expected {s}, got '{s}'\n\n  Hint: Use --input {s}=<value>\n",
+                                    .{ ip.name, ip.type, val, ip.name });
+                            },
+                            input_prompt_mod.InputError.InvalidInputChoice => {
+                                try color.printError(err_writer, use_color,
+                                    "✗ Input '{s}': invalid choice '{s}'\n", .{ ip.name, val });
+                                if (ip.choices.len > 0) {
+                                    try err_writer.print("  Valid choices:", .{});
+                                    for (ip.choices) |c| try err_writer.print(" {s}", .{c});
+                                    try err_writer.print("\n  Hint: Use --input {s}=<choice>\n", .{ip.name});
+                                }
+                            },
+                            else => {},
+                        }
+                        return 1;
+                    };
+                    // --input wins: replace any existing --param value
+                    if (resolved_params.fetchRemove(ip.name)) |old| {
+                        allocator.free(old.key);
+                        allocator.free(old.value);
+                    }
+                    try resolved_params.put(
+                        try allocator.dupe(u8, ip.name),
+                        try allocator.dupe(u8, val),
+                    );
+                    continue;
+                }
+
+                // Priority 2: already in resolved_params (from --param) — just validate
+                if (resolved_params.get(ip.name)) |existing_val| {
+                    input_prompt_mod.validateInputValue(ip, existing_val) catch |verr| {
+                        switch (verr) {
+                            input_prompt_mod.InputError.InvalidInputType => {
+                                try color.printError(err_writer, use_color,
+                                    "✗ Input '{s}': expected {s}, got '{s}'\n\n  Hint: Use --input {s}=<value>\n",
+                                    .{ ip.name, ip.type, existing_val, ip.name });
+                            },
+                            input_prompt_mod.InputError.InvalidInputChoice => {
+                                try color.printError(err_writer, use_color,
+                                    "✗ Input '{s}': invalid choice '{s}'\n  Hint: Use --input {s}=<choice>\n",
+                                    .{ ip.name, existing_val, ip.name });
+                            },
+                            else => {},
+                        }
+                        return 1;
+                    };
+                    continue;
+                }
+
+                // Priority 3: use default or interactive prompt
+                if (collect_non_interactive) {
+                    if (ip.default) |def| {
+                        try resolved_params.put(
+                            try allocator.dupe(u8, ip.name),
+                            try allocator.dupe(u8, def),
+                        );
+                    } else {
+                        try color.printError(err_writer, use_color,
+                            "✗ run: required input '{s}' not provided\n\n" ++
+                            "  Hint: Use --input {s}=VALUE or remove --non-interactive\n",
+                            .{ ip.name, ip.name });
+                        return 1;
+                    }
+                } else {
+                    // Interactive: prompt user via stdin (fallback to default if available)
+                    if (ip.default) |def| {
+                        try resolved_params.put(
+                            try allocator.dupe(u8, ip.name),
+                            try allocator.dupe(u8, def),
+                        );
+                    } else {
+                        try color.printError(err_writer, use_color,
+                            "✗ run: required input '{s}' not provided\n\n" ++
+                            "  Hint: Use --input {s}=VALUE\n",
+                            .{ ip.name, ip.name });
+                        return 1;
+                    }
+                }
+            }
+
+            if (!only_mode) {
+                for (t.deps) |dep| try ip_stack.append(allocator, dep);
+                for (t.deps_serial) |dep| try ip_stack.append(allocator, dep);
+            }
         }
     }
 
@@ -340,6 +455,29 @@ pub fn cmdRun(
             try color.printDim(w, use_color, "(--only mode: dependencies skipped)\n", .{});
         }
         try printDryRunPlan(allocator, w, use_color, plan, &config);
+        // Show input prompts section if any tasks have input_prompt (v1.88.0)
+        var has_input_prompts = false;
+        var dry_cfg_it = config.tasks.iterator();
+        while (dry_cfg_it.next()) |entry| {
+            if (entry.value_ptr.input_prompts.len > 0) { has_input_prompts = true; break; }
+        }
+        if (has_input_prompts) {
+            try w.print("\n", .{});
+            try color.printBold(w, use_color, "Input prompts:\n", .{});
+            var dry_it = config.tasks.iterator();
+            while (dry_it.next()) |entry| {
+                for (entry.value_ptr.input_prompts) |ip| {
+                    const val = resolved_params.get(ip.name);
+                    if (val) |v| {
+                        try w.print("  {s}: {s} (value: {s})\n", .{ ip.name, ip.prompt, v });
+                    } else if (ip.default) |def| {
+                        try w.print("  {s}: {s} [default: {s}]\n", .{ ip.name, ip.prompt, def });
+                    } else {
+                        try w.print("  {s}: {s} (required)\n", .{ ip.name, ip.prompt });
+                    }
+                }
+            }
+        }
         return 0;
     }
 
