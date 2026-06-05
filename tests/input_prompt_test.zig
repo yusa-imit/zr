@@ -325,11 +325,7 @@ test "18011: multiple input_prompt entries all collected" {
     const config_toml =
         \\[tasks.multi]
         \\cmd = "echo {{ENV}} {{TAG}} {{REGION}}"
-        \\input_prompt = [
-        \\  {name="ENV", prompt="Environment:", default="dev"},
-        \\  {name="TAG", prompt="Tag:", default="v1"},
-        \\  {name="REGION", prompt="Region:", default="us-east-1"}
-        \\]
+        \\input_prompt = [{name="ENV", prompt="Environment:", default="dev"}, {name="TAG", prompt="Tag:", default="v1"}, {name="REGION", prompt="Region:", default="us-east-1"}]
     ;
 
     const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
