@@ -173,7 +173,13 @@ pub fn cmdRun(
     notify_override: bool,
     only_mode: bool,
     show_outputs: bool,
+    cli_inputs: std.StringHashMap([]const u8),
+    non_interactive: bool,
 ) !u8 {
+    // v1.88.0: cli_inputs and non_interactive will be used for input_prompt collection (TODO: phase 2)
+    _ = cli_inputs;
+    _ = non_interactive;
+
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
@@ -1584,6 +1590,8 @@ test "cmdRun: missing config returns error" {
         false, // notify_override
         false, // only_mode
         false, // show_outputs
+        std.StringHashMap([]const u8).init(allocator),
+        false, // non_interactive
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1634,6 +1642,8 @@ test "cmdRun: unknown task returns error" {
         false, // notify_override
         false, // only_mode
         false, // show_outputs
+        std.StringHashMap([]const u8).init(allocator),
+        false, // non_interactive
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1684,6 +1694,8 @@ test "cmdRun: dry run shows plan without executing" {
         false, // notify_override
         false, // only_mode
         false, // show_outputs
+        std.StringHashMap([]const u8).init(allocator),
+        false, // non_interactive
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1734,6 +1746,8 @@ test "cmdRun: successful task returns 0" {
         false, // notify_override
         false, // only_mode
         false, // show_outputs
+        std.StringHashMap([]const u8).init(allocator),
+        false, // non_interactive
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1784,6 +1798,8 @@ test "cmdRun: failing task returns 1" {
         false, // notify_override
         false, // only_mode
         false, // show_outputs
+        std.StringHashMap([]const u8).init(allocator),
+        false, // non_interactive
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

@@ -126,6 +126,8 @@ pub fn cmdSetup(
             false, // notify_override
             false, // only_mode
             false, // show_outputs
+            std.StringHashMap([]const u8).init(allocator),
+            false, // non_interactive
         );
 
         if (exit_code != 0) {
