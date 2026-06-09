@@ -619,6 +619,8 @@ const WorkerCtx = struct {
     share_output: bool = false,
     /// Shared map for captured task outputs (v1.87.0). Protected by results_mutex.
     task_outputs: ?*std.StringHashMap([]const u8) = null,
+    /// Env var names whose values should be redacted from output (v1.89.0).
+    redact_names: []const []const u8 = &[_][]const u8{},
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -1044,12 +1046,14 @@ fn workerFn(ctx: WorkerCtx) void {
     var output_cap: ?output_capture.OutputCapture = null;
     defer if (output_cap) |*oc| oc.deinit();
 
-    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, (4) cache enabled, or (5) share_output
-    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output;
+    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, (4) cache enabled, (5) share_output, or (6) redact
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output or ctx.redact_names.len > 0;
     // Track whether buffer mode was enabled purely for caching (need to relay output to user after completion)
     const capture_for_cache = ctx.cache and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null;
     // Track whether buffer mode was enabled purely for share_output (need to relay output to user after completion)
     const capture_for_share = ctx.share_output and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache;
+    // Track whether buffer mode was enabled for output redaction (v1.89.0)
+    const capture_for_redact = ctx.redact_names.len > 0 and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache and !ctx.share_output;
     if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
             .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent/cache
@@ -1623,6 +1627,39 @@ fn workerFn(ctx: WorkerCtx) void {
                     defer task_allocator.free(buffered_output);
                     if (buffered_output.len > 0) {
                         std.fs.File.stdout().writeAll(buffered_output) catch {};
+                    }
+                } else |_| {}
+            }
+        }
+    }
+
+    // If redact is configured, relay output with sensitive values masked (v1.89.0)
+    if (capture_for_redact and should_show_output) {
+        if (output_cap) |*oc| {
+            if (oc.config.mode == .buffer) {
+                if (oc.getBuffer()) |buffered_output| {
+                    defer task_allocator.free(buffered_output);
+                    if (buffered_output.len > 0) {
+                        var redacted: []const u8 = buffered_output;
+                        var owned_redacted: ?[]u8 = null;
+                        defer if (owned_redacted) |r| task_allocator.free(r);
+                        if (effective_env) |env| {
+                            for (ctx.redact_names) |name| {
+                                for (env) |pair| {
+                                    if (std.mem.eql(u8, pair[0], name)) {
+                                        const val = pair[1];
+                                        if (val.len > 0) {
+                                            const new_output = std.mem.replaceOwned(u8, task_allocator, redacted, val, "***") catch break;
+                                            if (owned_redacted) |r| task_allocator.free(r);
+                                            owned_redacted = new_output;
+                                            redacted = new_output;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        std.fs.File.stdout().writeAll(redacted) catch {};
                     }
                 } else |_| {}
             }
@@ -2692,6 +2729,7 @@ pub fn run(
                 .config_vars = if (config.vars.count() > 0) &config.vars else null,
                 .share_output = task.share_output,
                 .task_outputs = sched_config.task_outputs,
+                .redact_names = task.redact,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

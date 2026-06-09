@@ -394,6 +394,14 @@ pub fn cmdRun(
 
                 // Priority 3: use default or interactive prompt
                 if (collect_non_interactive) {
+                    // v1.89.0: Secret inputs require explicit --input, never auto-use default
+                    if (ip.secret) {
+                        try color.printError(err_writer, use_color,
+                            "✗ run: secret input '{s}' requires explicit --input flag\n\n" ++
+                            "  Hint: Use --input {s}=VALUE (secret inputs never use defaults automatically)\n",
+                            .{ ip.name, ip.name });
+                        return 1;
+                    }
                     if (ip.default) |def| {
                         try resolved_params.put(
                             try allocator.dupe(u8, ip.name),
@@ -472,7 +480,9 @@ pub fn cmdRun(
                     if (val) |v| {
                         try w.print("  {s}: {s} (value: {s})\n", .{ ip.name, ip.prompt, v });
                     } else if (ip.default) |def| {
-                        try w.print("  {s}: {s} [default: {s}]\n", .{ ip.name, ip.prompt, def });
+                        // v1.89.0: Show [HIDDEN] for secret input defaults
+                        const display_default = if (ip.secret) "[HIDDEN]" else def;
+                        try w.print("  {s}: {s} [default: {s}]\n", .{ ip.name, ip.prompt, display_default });
                     } else {
                         try w.print("  {s}: {s} (required)\n", .{ ip.name, ip.prompt });
                     }

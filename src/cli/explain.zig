@@ -128,11 +128,23 @@ fn printTaskText(
         try w.print("      Input prompts:\n", .{});
         for (task.input_prompts) |ip| {
             if (ip.default) |def| {
-                try w.print("        {s}: {s} [default: {s}]\n", .{ ip.name, ip.prompt, def });
+                // v1.89.0: Show [HIDDEN] for secret inputs
+                const display_default = if (ip.secret) "[HIDDEN]" else def;
+                try w.print("        {s}: {s} [default: {s}]\n", .{ ip.name, ip.prompt, display_default });
             } else {
                 try w.print("        {s}: {s} (required)\n", .{ ip.name, ip.prompt });
             }
         }
+    }
+
+    // Print redact if set (v1.89.0)
+    if (task.redact.len > 0) {
+        try w.print("      Redact: [", .{});
+        for (task.redact, 0..) |r, i| {
+            if (i > 0) try w.print(", ", .{});
+            try w.print("{s}", .{r});
+        }
+        try w.print("]\n", .{});
     }
 
     // Print sources if set
@@ -277,7 +289,11 @@ fn printTaskJson(
             for (task.input_prompts, 0..) |ip, pi| {
                 if (pi > 0) try w.print(",", .{});
                 try w.print("{{\"name\":\"{s}\",\"prompt\":\"{s}\"", .{ ip.name, ip.prompt });
-                if (ip.default) |def| try w.print(",\"default\":\"{s}\"", .{def});
+                if (ip.default) |def| {
+                    // v1.89.0: Show [HIDDEN] for secret inputs
+                    const display_default = if (ip.secret) "[HIDDEN]" else def;
+                    try w.print(",\"default\":\"{s}\"", .{display_default});
+                }
                 if (!std.mem.eql(u8, ip.type, "string")) try w.print(",\"type\":\"{s}\"", .{ip.type});
                 if (ip.choices.len > 0) {
                     try w.print(",\"choices\":[", .{});
@@ -288,6 +304,16 @@ fn printTaskJson(
                     try w.print("]", .{});
                 }
                 try w.print("}}", .{});
+            }
+            try w.print("]", .{});
+        }
+
+        // Include redact array (v1.89.0)
+        if (task.redact.len > 0) {
+            try w.print(",\"redact\":[", .{});
+            for (task.redact, 0..) |r, ri| {
+                if (ri > 0) try w.print(",", .{});
+                try w.print("\"{s}\"", .{r});
             }
             try w.print("]", .{});
         }

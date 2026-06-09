@@ -380,3 +380,236 @@ test "18012: type=bool rejects non-bool value" {
         std.mem.indexOf(u8, combined, "bool") != null or
         std.mem.indexOf(u8, combined, "invalid") != null);
 }
+
+// ── Integration Tests for Task Secrets & Secure Input (v1.89.0) ──────────────
+//
+// Tests for secret input prompts and output redaction:
+// - type="secret" hides defaults in explain/dry-run output
+// - type="secret" requires explicit --input in --non-interactive mode (never uses defaults silently)
+// - redact field masks specified env var values in task output
+// - Both explain and JSON output support secret/redact features
+//
+
+test "18013: zr explain shows [HIDDEN] for type=secret default value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.login]
+        \\cmd = "echo logged in with {{TOKEN}}"
+        \\input_prompt = [{name="TOKEN", prompt="Enter API token:", default="mysecrettoken", type="secret"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "login" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Output should contain [HIDDEN] for secret default, NOT the actual secret
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[HIDDEN]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "mysecrettoken") == null);
+}
+
+test "18014: zr explain --json shows [HIDDEN] for type=secret default" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.login]
+        \\cmd = "echo logged in"
+        \\input_prompt = [{name="TOKEN", prompt="Enter API token:", default="mysecrettoken", type="secret"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "login", "--json" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // JSON output should have "[HIDDEN]" for secret default, not the actual value
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[HIDDEN]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "mysecrettoken") == null);
+}
+
+test "18015: --non-interactive with type=secret and no --input fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "deploy with {{TOKEN}}"
+        \\input_prompt = [{name="TOKEN", prompt="Enter deployment token:", default="mysecrettoken", type="secret"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Try to run with --non-interactive but NO --input; secret should FAIL even with default
+    var result = try runZr(allocator, &.{ "--config", config, "run", "deploy", "--non-interactive" }, tmp_path);
+    defer result.deinit();
+
+    // Should fail because secret input requires explicit --input, never uses default
+    try std.testing.expect(result.exit_code != 0);
+
+    const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer allocator.free(combined);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "TOKEN") != null or
+        std.mem.indexOf(u8, combined, "secret") != null or
+        std.mem.indexOf(u8, combined, "required") != null);
+}
+
+test "18016: --non-interactive with type=secret and --input succeeds" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo deploying with {{TOKEN}}"
+        \\input_prompt = [{name="TOKEN", prompt="Enter deployment token:", default="mysecrettoken", type="secret"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Provide secret via --input (overrides default)
+    var result = try runZr(allocator, &.{ "--config", config, "run", "deploy", "--non-interactive", "--input", "TOKEN=provided-secret" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Should contain the --input value, not the default
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "provided-secret") != null);
+}
+
+test "18017: zr explain shows redact field for task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "deploying with key"
+        \\env = { API_KEY = "mysecret" }
+        \\redact = ["API_KEY"]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "deploy" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Output should show redact field with API_KEY listed
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "redact") != null or
+        std.mem.indexOf(u8, result.stdout, "API_KEY") != null);
+}
+
+test "18018: zr explain --json includes redact array" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "deploying"
+        \\env = { API_KEY = "mysecret", DB_PASS = "dbpass" }
+        \\redact = ["API_KEY", "DB_PASS"]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "explain", "deploy", "--json" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // JSON should include redact array with both values
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "redact") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "API_KEY") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "DB_PASS") != null);
+}
+
+test "18019: task output with redact masks secret values" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo the-key is $API_KEY now"
+        \\env = { API_KEY = "secretvalue123" }
+        \\redact = ["API_KEY"]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "deploy", "--non-interactive" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Output should NOT contain the actual secret value
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "secretvalue123") == null);
+    // Should contain *** or [REDACTED] or similar placeholder (implementation detail)
+    // At minimum, verify the secret is not exposed
+}
+
+test "18020: zr run --dry-run shows [HIDDEN] for secret input default" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "deploy.sh"
+        \\input_prompt = [{name="PASS", prompt="Enter password:", default="defaultpass", type="secret"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "run", "deploy", "--dry-run", "--non-interactive" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // Dry-run output should show [HIDDEN] for secret default, not the actual default
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[HIDDEN]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "defaultpass") == null);
+}

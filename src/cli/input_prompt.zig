@@ -75,6 +75,10 @@ pub fn collectInputs(
 
         // Priority 2: default value (if non-interactive or not in tty)
         if (non_interactive) {
+            // v1.89.0: Secret inputs MUST use --input flag even if default is set
+            if (ip.secret) {
+                return InputError.RequiredInputMissing;
+            }
             if (ip.default) |def| {
                 try result.put(try allocator.dupe(u8, ip.name), try allocator.dupe(u8, def));
             } else {
