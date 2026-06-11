@@ -147,6 +147,17 @@ fn printTaskText(
         try w.print("]\n", .{});
     }
 
+    // Print confirm field if set (v1.90.0)
+    if (task.confirm) |msg| {
+        if (msg.len > 0) {
+            try w.print("      Confirmation: {s}\n", .{msg});
+        } else {
+            try w.print("      Confirmation: true\n", .{});
+        }
+    } else if (task.confirm_if) |cif| {
+        try w.print("      Confirmation: (if {s})\n", .{cif});
+    }
+
     // Print sources if set
     if (task.sources.len > 0) {
         try w.print("      Sources:", .{});
@@ -316,6 +327,17 @@ fn printTaskJson(
                 try w.print("\"{s}\"", .{r});
             }
             try w.print("]", .{});
+        }
+
+        // Include confirm field (v1.90.0)
+        if (task.confirm) |msg| {
+            if (msg.len > 0) {
+                try w.print(",\"confirm\":\"{s}\"", .{msg});
+            } else {
+                try w.print(",\"confirm\":true", .{});
+            }
+        } else if (task.confirm_if) |cif| {
+            try w.print(",\"confirm_if\":\"{s}\"", .{cif});
         }
 
         try w.print("}}", .{});

@@ -554,6 +554,7 @@ fn cmdInteractiveInner(
                     false, // show_outputs
                     std.StringHashMap([]const u8).init(allocator),
                     false, // non_interactive
+                    false, // yes_confirm
                 ) catch {};
 
                 _ = enterRawMode() catch {};

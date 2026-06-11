@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.88.0 (feat: Interactive Task Input Prompting) — RELEASED 2026-06-06
+- **Latest**: v1.90.0 (feat: Task Confirmation Prompts) — RELEASED 2026-06-11
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)
@@ -17,6 +17,20 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Task Confirmation Prompts
+
+Add a `confirm` field to tasks that prompts the user for explicit yes/no confirmation before execution — essential for destructive operations like production deployments, database migrations, or irreversible file operations. Includes:
+- **`confirm = true`** — prompt `"Run task 'deploy'? [y/N]"` before executing; task is skipped (not failed) on "no"
+- **`confirm = "Deploy to production? This is irreversible."`** — custom confirmation message replacing the default
+- **`confirm_if = "{{ENV}} == 'prod'"`** — conditional confirmation via expression; only prompts when the expression evaluates true
+- **`--yes` / `--no-confirm` CLI flag** — skip all confirmation prompts non-interactively (auto-answer "yes"); useful for CI/CD pipelines
+- **`--non-interactive` + `confirm`** — tasks skipped (exit 0) when no `--yes` flag is provided
+- **`zr run --dry-run` preview** — shows "Confirmations required" section
+- **`zr explain` integration** — text and `--json` output include confirmation requirements per task
+- **Dep-chain propagation** — skipped tasks' dependents are also skipped
+- **13 integration tests** (tests 19000–19012)
+**Status: DONE** — Released v1.90.0 on 2026-06-11 (Cycle 330 STABILIZATION).
 
 ### Interactive Task Input Prompting
 

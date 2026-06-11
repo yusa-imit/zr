@@ -174,6 +174,9 @@ pub fn cmdInteractiveRun(
             false, // notify_override
             false, // only_mode
             false, // show_outputs
+            std.StringHashMap([]const u8).init(allocator),
+            false, // non_interactive
+            false, // yes_confirm
         );
     }
 
@@ -204,6 +207,7 @@ pub fn cmdInteractiveRun(
             false, // show_outputs
             std.StringHashMap([]const u8).init(allocator),
             false, // non_interactive
+            false, // yes_confirm
         );
     }
 
@@ -238,6 +242,7 @@ pub fn cmdInteractiveRun(
             false, // show_outputs
             std.StringHashMap([]const u8).init(allocator),
             false, // non_interactive
+            false, // yes_confirm
         );
     };
     defer leaveRawMode(original_termios);
@@ -279,6 +284,7 @@ pub fn cmdInteractiveRun(
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

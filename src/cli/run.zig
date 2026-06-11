@@ -18,6 +18,44 @@ const env_loader = @import("../config/env_loader.zig");
 const types = @import("../config/types.zig");
 const input_prompt_mod = @import("input_prompt.zig");
 
+/// Substitute {{...}} placeholders in a confirm_if expression using runtime params.
+/// Returns an allocated string (caller must free).
+fn evalConfirmIfExpr(
+    allocator: std.mem.Allocator,
+    expr_str: []const u8,
+    params: *const std.StringHashMap([]const u8),
+) ![]const u8 {
+    var result = std.ArrayList(u8){};
+    defer result.deinit(allocator);
+    var i: usize = 0;
+    while (i < expr_str.len) {
+        if (i + 1 < expr_str.len and expr_str[i] == '{' and expr_str[i + 1] == '{') {
+            const start = i + 2;
+            var end: ?usize = null;
+            var j = start;
+            while (j + 1 < expr_str.len) : (j += 1) {
+                if (expr_str[j] == '}' and expr_str[j + 1] == '}') { end = j; break; }
+            }
+            if (end) |e| {
+                const name = expr_str[start..e];
+                if (params.get(name)) |val| {
+                    try result.appendSlice(allocator, val);
+                } else {
+                    try result.appendSlice(allocator, expr_str[i..e + 2]);
+                }
+                i = e + 2;
+            } else {
+                try result.append(allocator, expr_str[i]);
+                i += 1;
+            }
+        } else {
+            try result.append(allocator, expr_str[i]);
+            i += 1;
+        }
+    }
+    return result.toOwnedSlice(allocator);
+}
+
 /// Display the resolved environment variables for a task
 pub fn printTaskEnvironment(
     allocator: std.mem.Allocator,
@@ -176,6 +214,7 @@ pub fn cmdRun(
     show_outputs: bool,
     cli_inputs: std.StringHashMap([]const u8),
     non_interactive: bool,
+    yes_confirm: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -438,6 +477,81 @@ pub fn cmdRun(
         }
     }
 
+    // v1.90.0: Process task confirmation requirements.
+    // Walk dep graph to build list of tasks to skip due to unanswered confirmations.
+    var confirm_skip_list = std.ArrayList([]const u8){};
+    defer confirm_skip_list.deinit(allocator);
+    if (!yes_confirm) {
+        var cfm_visited = std.StringHashMap(bool).init(allocator);
+        defer cfm_visited.deinit();
+        var cfm_stack = std.ArrayList([]const u8){};
+        defer cfm_stack.deinit(allocator);
+        try cfm_stack.append(allocator, resolved_task_name);
+        while (cfm_stack.items.len > 0) {
+            const tn = cfm_stack.pop() orelse break;
+            if ((try cfm_visited.fetchPut(tn, true)) != null) continue;
+            const ct = config.tasks.get(tn) orelse continue;
+            const needs_confirm = blk: {
+                if (ct.confirm != null) break :blk true;
+                if (ct.confirm_if) |cif| {
+                    // Template-substitute {{...}} then evaluate
+                    const subst = try evalConfirmIfExpr(allocator, cif, &resolved_params);
+                    defer allocator.free(subst);
+                    const trimmed = std.mem.trim(u8, subst, " \t");
+                    if (std.mem.eql(u8, trimmed, "false")) break :blk false;
+                    if (std.mem.eql(u8, trimmed, "true")) break :blk true;
+                    // Try simple LHS == RHS or LHS != RHS comparison
+                    if (std.mem.indexOf(u8, trimmed, " == ")) |p| {
+                        const lhs = std.mem.trim(u8, trimmed[0..p], " \t'\"");
+                        const rhs = std.mem.trim(u8, trimmed[p + 4 ..], " \t'\"");
+                        break :blk std.mem.eql(u8, lhs, rhs);
+                    }
+                    if (std.mem.indexOf(u8, trimmed, " != ")) |p| {
+                        const lhs = std.mem.trim(u8, trimmed[0..p], " \t'\"");
+                        const rhs = std.mem.trim(u8, trimmed[p + 4 ..], " \t'\"");
+                        break :blk !std.mem.eql(u8, lhs, rhs);
+                    }
+                    break :blk true; // fail-open: assume confirmation required
+                }
+                break :blk false;
+            };
+            if (needs_confirm) {
+                if (non_interactive or dry_run) {
+                    // In non-interactive or dry-run mode, just record for skip (dry-run shows plan later)
+                    try confirm_skip_list.append(allocator, tn);
+                } else {
+                    // Interactive: prompt stdin
+                    const prompt = if (ct.confirm != null and ct.confirm.?.len > 0)
+                        ct.confirm.?
+                    else blk2: {
+                        break :blk2 try std.fmt.allocPrint(allocator, "Run task '{s}'?", .{tn});
+                    };
+                    const should_free_prompt = ct.confirm == null or ct.confirm.?.len == 0;
+                    defer if (should_free_prompt) allocator.free(prompt);
+                    try w.print("{s} [y/N]: ", .{prompt});
+                    var buf: [64]u8 = undefined;
+                    const n = std.posix.read(0, &buf) catch 0;
+                    const answer = std.mem.trim(u8, buf[0..n], " \t\r\n");
+                    const is_yes = std.mem.eql(u8, answer, "y") or std.mem.eql(u8, answer, "Y") or
+                        std.mem.eql(u8, answer, "yes") or std.mem.eql(u8, answer, "YES");
+                    if (!is_yes) {
+                        try confirm_skip_list.append(allocator, tn);
+                    }
+                }
+            }
+            if (!only_mode) {
+                for (ct.deps) |dep| try cfm_stack.append(allocator, dep);
+                for (ct.deps_serial) |dep| try cfm_stack.append(allocator, dep);
+            }
+        }
+    }
+
+    // Merge skip_tasks with confirm_skip_list for effective skip list
+    var effective_skip = std.ArrayList([]const u8){};
+    defer effective_skip.deinit(allocator);
+    try effective_skip.appendSlice(allocator, skip_tasks);
+    try effective_skip.appendSlice(allocator, confirm_skip_list.items);
+
     // Show environment variables if --show-env flag is set
     if (show_env) {
         try printTaskEnvironment(allocator, w, err_writer, use_color, &config, &task, resolved_task_name, &resolved_params);
@@ -489,6 +603,32 @@ pub fn cmdRun(
                 }
             }
         }
+        // Show confirmation section if any tasks have confirm field (v1.90.0)
+        var has_confirm_tasks = false;
+        var dc_it = config.tasks.iterator();
+        while (dc_it.next()) |entry| {
+            if (entry.value_ptr.confirm != null or entry.value_ptr.confirm_if != null) {
+                has_confirm_tasks = true;
+                break;
+            }
+        }
+        if (has_confirm_tasks) {
+            try w.print("\n", .{});
+            try color.printBold(w, use_color, "Confirmations required:\n", .{});
+            var dc_it2 = config.tasks.iterator();
+            while (dc_it2.next()) |entry| {
+                const t = entry.value_ptr;
+                if (t.confirm) |msg| {
+                    if (msg.len > 0) {
+                        try w.print("  {s}: {s}\n", .{ entry.key_ptr.*, msg });
+                    } else {
+                        try w.print("  {s}: Run task '{s}'?\n", .{ entry.key_ptr.*, entry.key_ptr.* });
+                    }
+                } else if (t.confirm_if) |cif| {
+                    try w.print("  {s}: (if {s})\n", .{ entry.key_ptr.*, cif });
+                }
+            }
+        }
         return 0;
     }
 
@@ -513,7 +653,7 @@ pub fn cmdRun(
         .silent_override = silent_override,
         .force_run = force_run,
         .runtime_params = &resolved_params,
-        .skip_tasks = skip_tasks,
+        .skip_tasks = effective_skip.items,
         .notify_override = notify_override,
         .only_mode = only_mode,
         .task_outputs = &task_outputs,
@@ -1741,6 +1881,7 @@ test "cmdRun: missing config returns error" {
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1793,6 +1934,7 @@ test "cmdRun: unknown task returns error" {
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -1845,6 +1987,7 @@ test "cmdRun: dry run shows plan without executing" {
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1897,6 +2040,7 @@ test "cmdRun: successful task returns 0" {
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -1949,6 +2093,7 @@ test "cmdRun: failing task returns 1" {
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

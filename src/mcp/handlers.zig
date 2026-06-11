@@ -313,6 +313,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         false, // show_outputs
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
+        false, // yes_confirm
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}
