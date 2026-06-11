@@ -67,3 +67,9 @@
 {"timestamp":"2026-06-06T00:00:00Z","action":"team_create","team_name":"v1.88-input-prompting","members":["test-writer","zig-developer"],"task":"Implement Interactive Task Input Prompting milestone (input_prompt field, --input/--non-interactive flags)","project":"zr"}
 {"timestamp":"2026-06-06T00:05:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement Interactive Task Input Prompting feature (input_prompt field, --input/--non-interactive CLI flags, parser, validation, explain display)","project":"zr"}
 {"timestamp":"2026-06-06T07:30:00Z","action":"subagent","agent_type":"Explore","task":"Check integration test run status and parser multi-line array support","project":"zr"}
+{"timestamp":"2026-06-10T00:00:00Z","action":"team_create","team_name":"v1.89.0-secrets","members":["test-writer","zig-developer"],"task":"Implement Task Secrets & Secure Input (v1.89.0): type=secret for input_prompt, redact field for output masking","project":"zr"}
+{"timestamp":"2026-06-10T10:21:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for v1.90.0 Task Confirmation Prompts (confirm field)","project":"zr"}
+{"timestamp":"2026-06-10T10:30:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement v1.90.0 Task Confirmation Prompts (confirm/confirm_if fields, --yes flag)","project":"zr"}
+{"timestamp":"2026-06-11T00:30:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement Task Confirmation Prompts (v1.90.0) — confirm/confirm_if fields, --yes/--no-confirm flags, dry-run display, explain integration","project":"zr"}
+{"timestamp":"2026-06-10T22:35:28Z","action":"direct","task":"Cycle 329 FEATURE: sailor v2.30.0 migration, verify confirm feature v1.90.0 integration tests","project":"zr"}
+{"timestamp":"2026-06-11T05:30:00Z","action":"subagent","agent_type":"code-reviewer","task":"Review confirm feature bugs (dry-run prompt, parser quote issue)","project":"zr"}
