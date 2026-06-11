@@ -530,7 +530,7 @@ pub fn cmdRun(
                     defer if (should_free_prompt) allocator.free(prompt);
                     try w.print("{s} [y/N]: ", .{prompt});
                     var buf: [64]u8 = undefined;
-                    const n = std.posix.read(0, &buf) catch 0;
+                    const n = std.fs.File.stdin().read(&buf) catch 0;
                     const answer = std.mem.trim(u8, buf[0..n], " \t\r\n");
                     const is_yes = std.mem.eql(u8, answer, "y") or std.mem.eql(u8, answer, "Y") or
                         std.mem.eql(u8, answer, "yes") or std.mem.eql(u8, answer, "YES");
