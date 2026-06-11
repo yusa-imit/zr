@@ -350,12 +350,29 @@ pub fn cmdRun(
                 }
             }
         }
+        // Also accept [vars] keys — --param can override any [vars] variable
+        if (!found and config.vars.contains(key)) {
+            found = true;
+        }
         if (!found) {
             try color.printError(err_writer, use_color,
                 "run: Unknown parameter '{s}' for task '{s}'\n",
                 .{ key, resolved_task_name },
             );
             return 1;
+        }
+    }
+
+    // Copy [vars] overrides from --param into resolved_params so the scheduler sees them.
+    // runtime_params keys that match config.vars keys override the [vars] defaults.
+    {
+        var rp_it = runtime_params.iterator();
+        while (rp_it.next()) |entry| {
+            const key = entry.key_ptr.*;
+            if (std.mem.startsWith(u8, key, "__positional_")) continue;
+            if (config.vars.contains(key) and !resolved_params.contains(key)) {
+                try resolved_params.put(try allocator.dupe(u8, key), try allocator.dupe(u8, entry.value_ptr.*));
+            }
         }
     }
 
