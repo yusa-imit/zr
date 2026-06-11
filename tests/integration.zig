@@ -50,6 +50,7 @@ comptime {
     _ = @import("init_test.zig");
     _ = @import("interactive_run_test.zig");
     _ = @import("input_prompt_test.zig");
+    _ = @import("20000_internal_tasks_test.zig");
     _ = @import("integration_imports.zig");
     _ = @import("integration_path.zig");
     _ = @import("integration_path_separator.zig");

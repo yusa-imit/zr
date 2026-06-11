@@ -138,6 +138,7 @@ fn handleListTasks(allocator: std.mem.Allocator, params_json: []const u8) !ToolR
         false, // show_env = false (not relevant for MCP JSON output)
         false, // verbose = false (not relevant for MCP JSON output)
         null, // sort_by = null (not relevant for MCP JSON output)
+        false, // show_all = false (not relevant for MCP JSON output)
         &stdout_writer.interface,
         &stderr_writer.interface,
         false, // use_color = false

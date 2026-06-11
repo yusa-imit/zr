@@ -1380,6 +1380,7 @@ fn run(
         var show_cache = false;
         var list_verbose = false;
         var sort_by: ?[]const u8 = null;
+        var show_all = false;
         // Quick --help check before full arg parsing
         for (effective_args[2..]) |a| {
             if (std.mem.eql(u8, a, "--help") or std.mem.eql(u8, a, "-h")) {
@@ -1403,6 +1404,7 @@ fn run(
                     "  --verbose            Show detailed task metadata\n" ++
                     "  --format json        Output as JSON\n" ++
                     "  --members            List workspace members only\n" ++
+                    "  --all, -a            Show all tasks including internal ones\n" ++
                     "  -h, --help           Show this help\n",
                     .{},
                 );
@@ -1428,6 +1430,8 @@ fn run(
                 show_cache = true;
             } else if (std.mem.eql(u8, arg, "--verbose")) {
                 list_verbose = true;
+            } else if (std.mem.eql(u8, arg, "--all") or std.mem.eql(u8, arg, "-a")) {
+                show_all = true;
             } else if (std.mem.startsWith(u8, arg, "--recent=")) {
                 const count_str = arg["--recent=".len..];
                 recent_count = std.fmt.parseInt(usize, count_str, 10) catch {
@@ -1488,7 +1492,7 @@ fn run(
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, show_all, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "help")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "help: missing task name\n\n  Usage: zr help <task-name>\n", .{});
