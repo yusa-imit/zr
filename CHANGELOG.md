@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.90.0] - 2026-06-11
+
+### Added
+- **`confirm = true` task field** — prompts `"Run task '<name>'? [y/N]"` before execution; task is skipped (exit 0) on "no" answer
+- **`confirm = "custom message"` string form** — show a custom confirmation message in place of the default prompt
+- **`confirm_if = "expression"` conditional confirmation** — only prompts when the expression evaluates to `true`; supports `{{param}}` template substitution and simple `==`/`!=` comparisons
+- **`--yes` / `--no-confirm` CLI flag** — auto-answer yes to all confirmation prompts; essential for CI/CD pipelines
+- **`--non-interactive` + `confirm`** — tasks requiring confirmation are skipped (exit 0) when no `--yes` flag is provided
+- **Dep-chain propagation** — tasks that were only reachable through a skipped/confirmed-no task are also skipped
+- **`zr run --dry-run` confirmation preview** — shows "Confirmations required" section listing tasks with confirm fields and their messages/conditions
+- **`zr explain` confirmation display** — text output shows "Confirmation:" field; `--json` output includes `"confirm"` or `"confirm_if"` field
+- 13 integration tests covering all confirmation scenarios (tests 19000–19012)
+
+## [1.89.0] - 2026-06-10
+
+### Added
+- **`type = "secret"` in `input_prompt`** — marks an input as sensitive; default value is shown as `[HIDDEN]` in `zr explain` and `--dry-run` output instead of the actual value
+- **`secret = true` in `input_prompt`** — alternative boolean flag to mark an input as secret
+- **Non-interactive secret protection** — secret inputs with defaults never auto-use the default value in `--non-interactive` mode; explicit `--input` flag is always required to prevent accidental secret leakage
+- **`redact = ["ENV_VAR_NAME"]` task field** — list of environment variable names whose resolved values are masked (`***`) in all task output; forces output capture when redact is set
+- **Runtime redaction** — applies string replacement before relaying output to stdout, ensuring secrets never appear in terminal output or history
+- **`zr explain` secret support** — text and `--json` output show `[HIDDEN]` for secret input defaults and include `secret = true` in JSON `input_prompts` array
+- 20 integration tests for secret inputs and output redaction (tests 18013–18032)
+
 ## [1.88.0] - 2026-06-06
 
 ### Added
