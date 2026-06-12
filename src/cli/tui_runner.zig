@@ -276,15 +276,22 @@ pub const TuiRunner = struct {
                 const inner = log_block.inner(chunks[2]);
                 buf.setString(inner.x + 1, inner.y, "(no output yet)", stui.Style{ .dim = true });
             } else {
-                var log_viewer = stui.widgets.LogViewer.init(selected.logs.items);
-                log_viewer.scroll_offset = self.scroll_offset;
-                log_viewer = log_viewer.withBlock(log_block);
-                log_viewer.render(&buf, chunks[2]);
-
                 const inner = log_block.inner(chunks[2]);
                 const log_count = selected.logs.items.len;
                 const display_height: usize = inner.height;
-                const end_idx = @min(self.scroll_offset + display_height, log_count);
+
+                // Clamp scroll_offset so we don't scroll past the last visible entry
+                const clamped_offset = if (log_count > display_height)
+                    @min(self.scroll_offset, log_count - display_height)
+                else
+                    0;
+
+                var log_viewer = stui.widgets.LogViewer.init(selected.logs.items);
+                log_viewer.scroll_offset = clamped_offset;
+                log_viewer = log_viewer.withBlock(log_block);
+                log_viewer.render(&buf, chunks[2]);
+
+                const end_idx = @min(clamped_offset + display_height, log_count);
                 if (end_idx < log_count) {
                     const more_msg = try std.fmt.allocPrint(self.allocator, "... ({d} more lines, scroll down) ...", .{log_count - end_idx});
                     defer self.allocator.free(more_msg);
@@ -634,6 +641,33 @@ test "TuiRunner: render output includes log level tags" {
     // LogViewer shows level tags — stdout lines get [INFO], stderr gets [ERR]
     try std.testing.expect(std.mem.indexOf(u8, output, "[INFO]") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "[ERR]") != null);
+}
+
+test "TuiRunner: scroll_offset past end does not blank the log pane" {
+    // Regression test: over-scrolling must clamp to last visible entry.
+    // Before the fix, setting scroll_offset beyond log_count caused an empty pane.
+    const allocator = std.testing.allocator;
+
+    var runner = TuiRunner.init(allocator);
+    defer runner.deinit();
+
+    try runner.addTask("svc");
+    try runner.appendTaskLog("svc", "line one", false);
+    try runner.appendTaskLog("svc", "line two", false);
+
+    // Scroll far past the end of the 2-entry log
+    runner.scroll_offset = 9999;
+
+    var out_buf: [16384]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var w = fbs.writer();
+
+    try runner.render(&w, false, 24);
+
+    const output = fbs.getWritten();
+    // Both lines must still appear (clamped scroll_offset = 0)
+    try std.testing.expect(std.mem.indexOf(u8, output, "line one") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "line two") != null);
 }
 
 test "TuiRunner: log buffer limit" {
