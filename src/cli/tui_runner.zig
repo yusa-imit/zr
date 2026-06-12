@@ -1,6 +1,6 @@
 /// TUI live execution — real-time log streaming for running tasks.
 ///
-/// Uses sailor.tui widgets (Buffer, Block, List, Paragraph, layout.split)
+/// Uses sailor.tui widgets (Buffer, Block, List, LogViewer, layout.split)
 /// for structured rendering. Status icons and log display are composed
 /// into a cell buffer and flushed to the writer with color.Code ANSI codes.
 const std = @import("std");
@@ -25,11 +25,9 @@ pub const TaskStatus = enum {
     skipped,
 };
 
-/// Log entry for a single line of output.
-const LogLine = struct {
-    text: []const u8, // owned
-    is_stderr: bool,
-};
+/// Re-export sailor LogEntry for task log entries.
+pub const LogEntry = stui.widgets.LogEntry;
+pub const LogLevel = stui.widgets.LogLevel;
 
 /// Runtime state for a single task.
 pub const TaskState = struct {
@@ -37,7 +35,7 @@ pub const TaskState = struct {
     status: TaskStatus,
     exit_code: u8,
     duration_ms: u64,
-    logs: std.ArrayListUnmanaged(LogLine),
+    logs: std.ArrayListUnmanaged(LogEntry),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) TaskState {
@@ -52,8 +50,8 @@ pub const TaskState = struct {
     }
 
     pub fn deinit(self: *TaskState) void {
-        for (self.logs.items) |line| {
-            self.allocator.free(line.text);
+        for (self.logs.items) |entry| {
+            self.allocator.free(entry.message);
         }
         self.logs.deinit(self.allocator);
     }
@@ -65,10 +63,15 @@ pub const TaskState = struct {
 
         if (self.logs.items.len >= MAX_LOG_LINES) {
             const old = self.logs.orderedRemove(0);
-            self.allocator.free(old.text);
+            self.allocator.free(old.message);
         }
 
-        try self.logs.append(self.allocator, .{ .text = owned, .is_stderr = is_stderr });
+        const timestamp_ms: u64 = @intCast(std.time.milliTimestamp());
+        try self.logs.append(self.allocator, .{
+            .timestamp_ms = timestamp_ms,
+            .level = if (is_stderr) .err else .info,
+            .message = owned,
+        });
     }
 };
 
@@ -268,25 +271,20 @@ pub const TuiRunner = struct {
                 .withTitle(log_title, .top_left)
                 .withTitleStyle(stui.Style{ .bold = true });
 
-            log_block.render(&buf, chunks[2]);
-            const inner = log_block.inner(chunks[2]);
-
-            const log_count = selected.logs.items.len;
-            if (log_count == 0) {
+            if (selected.logs.items.len == 0) {
+                log_block.render(&buf, chunks[2]);
+                const inner = log_block.inner(chunks[2]);
                 buf.setString(inner.x + 1, inner.y, "(no output yet)", stui.Style{ .dim = true });
             } else {
+                var log_viewer = stui.widgets.LogViewer.init(selected.logs.items);
+                log_viewer.scroll_offset = self.scroll_offset;
+                log_viewer = log_viewer.withBlock(log_block);
+                log_viewer.render(&buf, chunks[2]);
+
+                const inner = log_block.inner(chunks[2]);
+                const log_count = selected.logs.items.len;
                 const display_height: usize = inner.height;
-                const start_idx = @min(self.scroll_offset, if (log_count > display_height) log_count - display_height else 0);
-                const end_idx = @min(start_idx + display_height, log_count);
-
-                for (selected.logs.items[start_idx..end_idx], 0..) |line, row| {
-                    const log_style: stui.Style = if (line.is_stderr and use_color)
-                        .{ .fg = .bright_red }
-                    else
-                        .{};
-                    buf.setString(inner.x, inner.y + @as(u16, @intCast(row)), line.text, log_style);
-                }
-
+                const end_idx = @min(self.scroll_offset + display_height, log_count);
                 if (end_idx < log_count) {
                     const more_msg = try std.fmt.allocPrint(self.allocator, "... ({d} more lines, scroll down) ...", .{log_count - end_idx});
                     defer self.allocator.free(more_msg);
@@ -590,8 +588,52 @@ test "TuiRunner: append logs" {
     try runner.appendTaskLog("compile", "Error: undefined symbol", true);
 
     try std.testing.expectEqual(@as(usize, 2), runner.tasks.items[0].logs.items.len);
-    try std.testing.expect(std.mem.eql(u8, "Building src/main.zig", runner.tasks.items[0].logs.items[0].text));
-    try std.testing.expect(runner.tasks.items[0].logs.items[1].is_stderr);
+    try std.testing.expect(std.mem.eql(u8, "Building src/main.zig", runner.tasks.items[0].logs.items[0].message));
+    try std.testing.expectEqual(LogLevel.err, runner.tasks.items[0].logs.items[1].level);
+}
+
+test "TuiRunner: LogEntry has timestamp and correct level" {
+    const allocator = std.testing.allocator;
+
+    var runner = TuiRunner.init(allocator);
+    defer runner.deinit();
+
+    try runner.addTask("svc");
+    const before_ms: u64 = @intCast(std.time.milliTimestamp());
+    try runner.appendTaskLog("svc", "started", false);
+    try runner.appendTaskLog("svc", "fatal error", true);
+    const after_ms: u64 = @intCast(std.time.milliTimestamp());
+
+    const stdout_entry = runner.tasks.items[0].logs.items[0];
+    const stderr_entry = runner.tasks.items[0].logs.items[1];
+
+    try std.testing.expectEqual(LogLevel.info, stdout_entry.level);
+    try std.testing.expectEqual(LogLevel.err, stderr_entry.level);
+    // Timestamps must be within the window of the test execution
+    try std.testing.expect(stdout_entry.timestamp_ms >= before_ms);
+    try std.testing.expect(stdout_entry.timestamp_ms <= after_ms);
+}
+
+test "TuiRunner: render output includes log level tags" {
+    const allocator = std.testing.allocator;
+
+    var runner = TuiRunner.init(allocator);
+    defer runner.deinit();
+
+    try runner.addTask("deploy");
+    try runner.appendTaskLog("deploy", "starting", false);
+    try runner.appendTaskLog("deploy", "fatal crash", true);
+
+    var out_buf: [16384]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&out_buf);
+    var w = fbs.writer();
+
+    try runner.render(&w, false, 24);
+
+    const output = fbs.getWritten();
+    // LogViewer shows level tags — stdout lines get [INFO], stderr gets [ERR]
+    try std.testing.expect(std.mem.indexOf(u8, output, "[INFO]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "[ERR]") != null);
 }
 
 test "TuiRunner: log buffer limit" {
