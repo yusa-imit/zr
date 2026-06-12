@@ -100,6 +100,9 @@ pub const SchedulerConfig = struct {
     /// Key = task name, Value = trimmed stdout string (owned by map).
     /// Protected by results_mutex. Tasks with share_output=true populate this.
     task_outputs: ?*std.StringHashMap([]const u8) = null,
+    /// Default timeout in ms for tasks with no explicit `timeout` field (v1.93.0).
+    /// Sourced from [settings] default_timeout. null = no default timeout.
+    default_timeout_ms: ?u64 = null,
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
@@ -2037,6 +2040,7 @@ fn runTaskSync(
     results_mutex: *std.Thread.Mutex,
     runtime_params: ?*const std.StringHashMap([]const u8),
     config_vars: ?*const std.StringHashMap([]const u8),
+    default_timeout_ms: ?u64,
 ) !bool {
     // Auto-install any missing toolchains specified in task.toolchain
     try ensureToolchainsInstalled(allocator, task);
@@ -2122,12 +2126,13 @@ fn runTaskSync(
         null;
 
     const task_start = std.time.milliTimestamp();
+    const effective_timeout_ms: ?u64 = task.timeout_ms orelse default_timeout_ms;
     var proc_result = process.run(allocator, .{
         .cmd = interpolated_cmd,
         .cwd = interpolated_cwd orelse task.cwd,
         .env = final_env,
         .inherit_stdio = inherit_stdio,
-        .timeout_ms = task.timeout_ms,
+        .timeout_ms = effective_timeout_ms,
     }) catch process.ProcessResult{
         .exit_code = 1,
         .duration_ms = 0,
@@ -2151,7 +2156,7 @@ fn runTaskSync(
                 .cwd = interpolated_cwd orelse task.cwd,
                 .env = final_env,
                 .inherit_stdio = inherit_stdio,
-                .timeout_ms = task.timeout_ms,
+                .timeout_ms = effective_timeout_ms,
             }) catch process.ProcessResult{
                 .exit_code = 1,
                 .duration_ms = 0,
@@ -2248,6 +2253,7 @@ fn runSerialChain(
     results_mutex: *std.Thread.Mutex,
     completed: *std.StringHashMap(bool),
     runtime_params: ?*const std.StringHashMap([]const u8),
+    default_timeout_ms: ?u64,
 ) !bool {
     // Convenient reference to config.vars for interpolation
     const config_vars: ?*const std.StringHashMap([]const u8) = if (config.vars.count() > 0) &config.vars else null;
@@ -2269,12 +2275,13 @@ fn runSerialChain(
             const chain_ok = try runSerialChain(
                 allocator, config, dep_task.deps_serial, extra_env, toolchains,
                 inherit_stdio, results, results_mutex, completed, runtime_params,
+                default_timeout_ms,
             );
             if (!chain_ok) return false;
         }
 
         const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
-        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params, config_vars);
+        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params, config_vars, default_timeout_ms);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
@@ -2573,6 +2580,7 @@ pub fn run(
                 const serial_ok = try runSerialChain(
                     allocator, config, task.deps_serial, sched_config.extra_env, config.toolchains.tools,
                     sched_config.inherit_stdio, &results, &results_mutex, &completed, sched_config.runtime_params,
+                    sched_config.default_timeout_ms,
                 );
                 if (!serial_ok) {
                     if (!task.allow_failure) failed.store(true, .release);
@@ -2674,7 +2682,7 @@ pub fn run(
                 .extra_env = sched_config.extra_env,
                 .toolchains = config.toolchains.tools,
                 .inherit_stdio = sched_config.inherit_stdio,
-                .timeout_ms = task.timeout_ms,
+                .timeout_ms = task.timeout_ms orelse sched_config.default_timeout_ms,
                 .allow_failure = task.allow_failure,
                 .retry_max = task.retry_max,
                 .retry_delay_ms = task.retry_delay_ms,

@@ -9,6 +9,7 @@ This document describes the complete `zr.toml` configuration schema.
   - [Remote Execution](#remote-execution-v1460)
 - [Workflows](#workflows)
 - [Profiles](#profiles)
+- [Settings](#settings-v1920)
 - [Variables](#variables-v1840)
 - [Matrix Expansion](#matrix-expansion)
 - [Cache](#cache)
@@ -1484,6 +1485,62 @@ cmd = "npm run build:prod"
 ```
 
 Use with `zr run --profile dev build`.
+
+---
+
+## Settings (v1.92.0)
+
+The `[settings]` section configures project-level defaults that apply to all commands. CLI flags always take precedence over `[settings]` values.
+
+```toml
+[settings]
+default_profile = "dev"   # Profile to activate when --profile is not set
+jobs = 4                  # Default parallel task count (overridden by --jobs)
+default_timeout = 300     # Default task timeout in seconds (tasks without explicit timeout)
+```
+
+### Settings Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_profile` | string | none | Profile to activate when `--profile` flag and `ZR_PROFILE` env var are not set |
+| `jobs` | integer | CPU count | Default `--jobs` value for parallel task execution |
+| `default_timeout` | integer (seconds) | none | Default timeout in seconds for tasks with no explicit `timeout` field |
+
+### Priority Order
+
+Settings values have lower priority than explicit CLI flags:
+
+1. CLI flag (e.g., `--jobs 8`) — highest priority
+2. Environment variable (e.g., `ZR_PROFILE=prod`) — for profile selection
+3. `[settings]` value — project default
+4. Built-in default (CPU count for jobs, no timeout) — lowest priority
+
+### Example
+
+```toml
+[settings]
+default_profile = "dev"
+jobs = 4
+default_timeout = 120
+
+[tasks.build]
+cmd = "zig build"
+# Inherits default_timeout = 120s since no explicit timeout
+
+[tasks.quick-check]
+cmd = "echo ok"
+timeout = "5s"  # Task-level timeout overrides default_timeout
+
+[profiles.dev.vars]
+ENV = "development"
+```
+
+With this config:
+- `zr run build` activates the `dev` profile automatically (no `--profile` needed)
+- All tasks run up to 4 in parallel by default
+- Tasks without `timeout` will be killed after 120 seconds
+- `--jobs 1` overrides `jobs = 4` to run sequentially
 
 ---
 

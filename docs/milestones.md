@@ -3,7 +3,8 @@
 ## Current Status
 
 - **Latest**: v1.92.0 (feat: [settings] section with default_profile + internal task flag) — RELEASED 2026-06-12
-- **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
+- **Pending release**: v1.93.0 (sailor v2.35.0+v2.36.0 migration + LogViewer TUI integration + [settings] jobs/default_timeout) — ready after CI confirms
+- **Active milestones**: 2 (Code Quality & Documentation Polish [continuous], [settings] Section Enhancements [IN PROGRESS])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)
 - **DONE**: Task Output Capture & Variable Passing (Cycles 318-321, v1.87.0 RELEASED), Tag Management & Discovery (Cycle 311, v1.86.0 RELEASED), Task Explain & Execution Preview (Cycles 304-309, v1.85.0), Enhanced Task Control & Developer Experience (Cycle 283, v1.83.0 RELEASED), Sailor v2.5.0 & v2.6.0 Migration (Cycle 209), Dependency Resolution & Version Constraints (Cycles 204, 206, 208), Task Result Caching & Memoization (Cycles 193-199, v1.82.0 RELEASED), Enhanced Watch Mode & Live Reload (Cycles 189-192, v1.81.0 RELEASED), Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
@@ -57,6 +58,15 @@ Enable tasks to share their stdout output with downstream tasks via the `share_o
 - **`zr run --show-outputs`**: Optional flag to display captured task outputs after execution
 - **Integration tests**: Comprehensive tests covering basic capture, inter-task reference, env var injection, trimming, chained capture
 **Status: DONE** — Completed 2026-06-05 (Cycles 318-321 FEATURE). Implementation: share_output field in Task schema, parser integration with reset fix, ZR_OUTPUT_* env var injection in scheduler, {{output.task-name}} template interpolation, --show-outputs CLI flag, sanitizeTaskNameForEnv() public utility, share_output display in explain (text + JSON). Testing: 21 integration tests (17000-17020). Parser bug fixed (share_output bleeds across tasks). Released as v1.87.0.
+
+### [settings] Section Enhancements
+
+Expand the `[settings]` section (introduced in v1.92.0) with additional project-level configuration defaults. Users can set project defaults that eliminate the need to pass the same CLI flags repeatedly. CLI flags always take precedence over `[settings]` values. Includes:
+- **`jobs = N`** — Default `--jobs` value for parallel execution. Overridden by `--jobs` CLI flag. Applied to `run`, `watch`, and `workflow` commands.
+- **`default_timeout = N`** — Default task timeout in seconds applied to tasks with no explicit `timeout` field. Task-level `timeout` takes precedence.
+- Priority order: CLI flag > `[settings]` value > built-in default
+- **6 integration tests** (tests 22000–22005) covering jobs parsing, CLI override, sequential execution, timeout application, task-level override, and combined settings
+**Status: IN PROGRESS** — Cycle 336 FEATURE. Implementation: ProjectSettings.jobs + ProjectSettings.default_timeout fields, parser.zig settings handler, run.zig effective_max_jobs + settings_default_timeout_ms, scheduler SchedulerConfig.default_timeout_ms. Unit tests: 3 new parser tests. Integration tests: 6 tests (22000-22005). Release target: v1.93.0.
 
 ### Code Quality & Documentation Polish
 
@@ -961,8 +971,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v2.13.0 (all migrations complete through v2.13.0)
-- **Next**: v2.14.0+ (when released)
+- **Current in zr**: v2.36.0 (all migrations complete through v2.36.0)
+- **Next**: v2.37.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -1014,6 +1024,9 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v2.5.0-v2.6.0 | DONE | Advanced TUI components (Cycle 209) — drop-in upgrade, no breaking changes |
 | v2.7.0-v2.12.0 | DONE | Batch migration — performance, accessibility, rendering improvements (Cycle 270-280) |
 | v2.13.0 | DONE | Latest stable — Zig 0.15.2 compatibility fixes, API refinements (Cycle 292, commit 0063cee) |
+| v2.14.0-v2.34.0 | DONE | Batch migration — UI improvements, performance, new widgets (Cycles 293-329) |
+| v2.35.0 | DONE | LogViewer widget — log pane TUI integration (Cycle 334, commit 7b6e0a8) |
+| v2.36.0 | DONE | FilterBar widget — multi-tag filter bar with pill rendering (Cycle 336, no zr integration needed) |
 
 ### zuda Library
 

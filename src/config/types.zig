@@ -73,10 +73,14 @@ pub const GlobalResourceConfig = struct {
     max_cpu_percent: ?u8 = null,
 };
 
-/// Project-level settings from [settings] section (v1.92.0).
+/// Project-level settings from [settings] section (v1.92.0+).
 pub const ProjectSettings = struct {
     /// Default profile to activate when no --profile flag or ZR_PROFILE env var is set.
     default_profile: ?[]const u8 = null,
+    /// Default max parallel jobs. Overridden by --jobs CLI flag. 0 = auto (CPU count).
+    jobs: ?u32 = null,
+    /// Default task timeout in seconds. Applied when a task has no explicit `timeout` field.
+    default_timeout: ?u64 = null,
 
     pub fn deinit(self: *ProjectSettings, allocator: std.mem.Allocator) void {
         if (self.default_profile) |p| allocator.free(p);

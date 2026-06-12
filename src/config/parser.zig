@@ -2552,6 +2552,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 // Inside [settings] section — parse key = "value" pairs
                 if (std.mem.eql(u8, key, "default_profile")) {
                     config.settings.default_profile = try allocator.dupe(u8, value);
+                } else if (std.mem.eql(u8, key, "jobs")) {
+                    if (std.fmt.parseInt(u32, value, 10)) |n| {
+                        if (n >= 1) config.settings.jobs = n;
+                    } else |_| {}
+                } else if (std.mem.eql(u8, key, "default_timeout")) {
+                    if (std.fmt.parseInt(u64, value, 10)) |n| {
+                        if (n >= 1) config.settings.default_timeout = n;
+                    } else |_| {}
                 }
             } else if (in_constraint) {
                 // Inside [[constraints]] — parse constraint fields
@@ -6217,4 +6225,55 @@ test "parse [settings] section does not break adjacent sections" {
     try std.testing.expect(config.vars.get("FOO") != null);
     try std.testing.expectEqualStrings("bar", config.vars.get("FOO").?);
     try std.testing.expect(config.tasks.get("build") != null);
+}
+
+test "parse [settings] jobs field is stored correctly" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\jobs = 4
+        \\
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.settings.jobs != null);
+    try std.testing.expectEqual(@as(u32, 4), config.settings.jobs.?);
+}
+
+test "parse [settings] default_timeout field is stored in seconds" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\default_timeout = 120
+        \\
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.settings.default_timeout != null);
+    try std.testing.expectEqual(@as(u64, 120), config.settings.default_timeout.?);
+}
+
+test "parse [settings] jobs and default_timeout together" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\jobs = 2
+        \\default_timeout = 60
+        \\default_profile = "dev"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(@as(u32, 2), config.settings.jobs.?);
+    try std.testing.expectEqual(@as(u64, 60), config.settings.default_timeout.?);
+    try std.testing.expectEqualStrings("dev", config.settings.default_profile.?);
 }

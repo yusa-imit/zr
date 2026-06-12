@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.93.0] - 2026-06-13
+
+### Added
+- **`[settings] jobs = N`** — project-level default for `--jobs` parallel task count; overridden by `--jobs` CLI flag; applies to `run`, `watch`, and `workflow` commands
+- **`[settings] default_timeout = N`** — default task timeout in seconds for tasks with no explicit `timeout` field; task-level `timeout` takes precedence; overridden at task level
+
+### Changed
+- **sailor v2.35.0 + v2.36.0** — migrated to latest sailor (LogViewer widget integration in v2.35.0, FilterBar widget in v2.36.0)
+- **LogViewer TUI integration** — replaced manual rendering loop with `sailor.widgets.LogViewer` in the TUI runner log pane; `LogLevel.err` shows stderr in red, `LogLevel.info` shows stdout normally
+
+### Fixed
+- **LogViewer scroll_offset clamped** — prevents blank log pane when over-scrolling past the last visible log line
+
 ## [1.92.0] - 2026-06-12
 
 ### Added

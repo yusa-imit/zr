@@ -219,6 +219,11 @@ pub fn cmdRun(
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
+    // [settings] jobs overrides default (0=auto) when CLI --jobs not explicitly set
+    const effective_max_jobs: u32 = if (max_jobs != 0) max_jobs else (config.settings.jobs orelse 0);
+    // [settings] default_timeout converted to ms for scheduler (task-level timeout takes precedence)
+    const settings_default_timeout_ms: ?u64 = if (config.settings.default_timeout) |s| s * 1000 else null;
+
     // Try prefix matching if exact match fails
     var resolved_task_name: []const u8 = task_name;
     const match_result = try findTasksByPrefix(allocator, task_name, &config.tasks);
@@ -662,7 +667,7 @@ pub fn cmdRun(
     }
 
     var sched_result = scheduler.run(allocator, &config, &task_names, .{
-        .max_jobs = max_jobs,
+        .max_jobs = effective_max_jobs,
         .monitor = monitor,
         .use_color = use_color,
         .task_control = task_control,
@@ -674,6 +679,7 @@ pub fn cmdRun(
         .notify_override = notify_override,
         .only_mode = only_mode,
         .task_outputs = &task_outputs,
+        .default_timeout_ms = settings_default_timeout_ms,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -938,11 +944,14 @@ pub fn cmdWatch(
 
         const start_ns = std.time.nanoTimestamp();
         const task_names = [_][]const u8{task_name};
+        const watch_max_jobs: u32 = if (max_jobs != 0) max_jobs else (config.settings.jobs orelse 0);
+        const watch_default_timeout_ms: ?u64 = if (config.settings.default_timeout) |s| s * 1000 else null;
         var sched_result = scheduler.run(allocator, &config, &task_names, .{
-            .max_jobs = max_jobs,
+            .max_jobs = watch_max_jobs,
             .filter_options = filter_options,
             .silent_override = silent_override,
             .skip_tasks = skip_tasks,
+            .default_timeout_ms = watch_default_timeout_ms,
         }) catch |err| {
             switch (err) {
                 error.CycleDetected => try color.printError(err_writer, use_color,
@@ -1014,6 +1023,10 @@ pub fn cmdWorkflow(
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
+
+    // [settings] overrides apply to workflow execution
+    const wf_max_jobs: u32 = if (max_jobs != 0) max_jobs else (config.settings.jobs orelse 0);
+    const wf_default_timeout_ms: ?u64 = if (config.settings.default_timeout) |s| s * 1000 else null;
 
     const wf = config.workflows.get(wf_name) orelse {
         // Build list of available workflow names for suggestions
@@ -1203,12 +1216,13 @@ pub fn cmdWorkflow(
 
             var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
                 .inherit_stdio = true,
-                .max_jobs = max_jobs,
+                .max_jobs = wf_max_jobs,
                 .retry_budget = wf.retry_budget,
                 .extra_env = extra_env_slice,
                 .filter_options = filter_options,
                 .silent_override = silent_override,
                 .skip_tasks = skip_tasks,
+                .default_timeout_ms = wf_default_timeout_ms,
             }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
@@ -1268,11 +1282,12 @@ pub fn cmdWorkflow(
                 try color.printWarning(w, use_color, "  Running on_failure task: {s}\n", .{failure_task});
                 var failure_result = scheduler.run(allocator, &config, &[_][]const u8{failure_task}, .{
                     .inherit_stdio = true,
-                    .max_jobs = max_jobs,
+                    .max_jobs = wf_max_jobs,
                     .extra_env = extra_env_slice,
                     .filter_options = filter_options,
                     .silent_override = silent_override,
                     .skip_tasks = skip_tasks,
+                    .default_timeout_ms = wf_default_timeout_ms,
                 }) catch |err| {
                     try color.printError(err_writer, use_color,
                         "workflow: on_failure task '{s}' failed: {s}\n",
