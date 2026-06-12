@@ -78,3 +78,4 @@
 {"timestamp":"2026-06-12T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for [settings] section with default_profile feature","project":"zr"}
 {"timestamp":"2026-06-12T00:05:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement [settings] section with default_profile in parser, types, and common.zig","project":"zr"}
 {"timestamp":"2026-06-12T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement v1.92.0: [settings] section with default_profile support","project":"zr"}
+{"timestamp":"2026-06-12T16:15:15Z","action":"subagent","agent_type":"zig-developer","task":"Migrate sailor dependency to v2.36.0 (FilterBar widget, no breaking changes)","project":"zr"}
