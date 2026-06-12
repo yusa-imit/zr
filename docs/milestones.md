@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.90.0 (feat: Task Confirmation Prompts) — RELEASED 2026-06-11
+- **Latest**: v1.92.0 (feat: [settings] section with default_profile + internal task flag) — RELEASED 2026-06-12
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)

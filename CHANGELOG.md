@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.92.0] - 2026-06-12
+
+### Added
+- **`[settings]` section** — project-level configuration in `zr.toml` with support for `default_profile`
+- **`default_profile` setting** — automatically activate a named profile when no `--profile` flag or `ZR_PROFILE` env var is set; selection priority: `--profile` > `ZR_PROFILE` > `default_profile`
+- **`internal = true` task flag** — hides helper/internal tasks from `zr list` output while still allowing them to be run explicitly or used as dependencies
+
+### Fixed
+- **`--param` override of `[vars]` variables** — `--param KEY=VALUE` now correctly overrides variables defined in the `[vars]` section of `zr.toml`
+
+### Changed
+- **sailor v2.33.0** — migrated to latest sailor version
+
 ## [1.90.0] - 2026-06-11
 
 ### Added
