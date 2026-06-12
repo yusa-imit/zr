@@ -73,6 +73,16 @@ pub const GlobalResourceConfig = struct {
     max_cpu_percent: ?u8 = null,
 };
 
+/// Project-level settings from [settings] section (v1.92.0).
+pub const ProjectSettings = struct {
+    /// Default profile to activate when no --profile flag or ZR_PROFILE env var is set.
+    default_profile: ?[]const u8 = null,
+
+    pub fn deinit(self: *ProjectSettings, allocator: std.mem.Allocator) void {
+        if (self.default_profile) |p| allocator.free(p);
+    }
+};
+
 /// Named concurrency group with worker limit (v1.62.0).
 /// Allows fine-grained control over parallel execution for heterogeneous workloads.
 /// Example: GPU tasks limited to 2, network tasks limited to 10, rest use default pool.
@@ -378,6 +388,8 @@ pub const Config = struct {
     load_dotenv: bool = true,
     /// Import files from [imports] section (v1.55.0).
     imports: [][]const u8 = &.{},
+    /// Project-level settings from [settings] section (v1.92.0).
+    settings: ProjectSettings = .{},
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -454,6 +466,7 @@ pub const Config = struct {
         self.conformance.deinit(self.allocator);
         for (self.imports) |import_path| self.allocator.free(import_path);
         if (self.imports.len > 0) self.allocator.free(self.imports);
+        self.settings.deinit(self.allocator);
     }
 
     /// Apply a named profile to this config. Merges profile env vars into all tasks

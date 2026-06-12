@@ -794,6 +794,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Task variables parsing state — [vars] section
     var in_vars: bool = false;
 
+    // Settings parsing state — [settings] section
+    var in_settings: bool = false;
+
     // Constraint parsing state (Phase 6) — [[constraints]]
     var in_constraint: bool = false;
     var constraint_rule: ?types.ConstraintRule = null;
@@ -1191,6 +1194,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 current_profile = null;
             }
             in_vars = false;
+            in_settings = false;
             in_workspace = true;
         } else if (std.mem.startsWith(u8, trimmed, "[workspace.shared_tasks.")) {
             // Flush pending workspace shared task before starting new one (v1.63.0)
@@ -1229,6 +1233,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             };
             in_workspace = false; // Not parsing workspace top-level fields
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[tools]")) {
             // Flush pending sections
             if (current_task) |task_name| {
@@ -1327,6 +1332,57 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_tools = false;
             in_constraint = false;
             in_vars = true;
+            in_settings = false;
+        } else if (std.mem.eql(u8, trimmed, "[settings]")) {
+            // Flush pending sections (same as [vars])
+            if (current_task) |task_name| {
+                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                const cmd = task_cmd orelse "";
+                if (task_matrix_raw) |mraw| {
+                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                } else {
+                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                }
+                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
+                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
+                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
+                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
+                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
+                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_required_env.clearRetainingCapacity();
+                current_task = null;
+            }
+            if (current_workflow) |wf_name_slice| {
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                for (workflow_stages.items) |*s| s.deinit(allocator);
+                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
+            }
+            if (current_profile) |pname| {
+                if (current_profile_task) |ptask| {
+                    const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
+                    var ptenv_duped: usize = 0;
+                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
+                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
+                    const pto_key = try allocator.dupe(u8, ptask);
+                    errdefer allocator.free(pto_key);
+                    try profile_task_overrides.put(pto_key, pto);
+                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                }
+                try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
+                profile_env.clearRetainingCapacity();
+                profile_vars.clearRetainingCapacity();
+                profile_description = null;
+                in_profile_vars = false;
+                current_profile = null;
+            }
+            in_workspace = false;
+            in_tools = false;
+            in_constraint = false;
+            in_vars = false;
+            in_settings = true;
         } else if (std.mem.eql(u8, trimmed, "[[constraints]]")) {
             // Flush pending constraint (if any)
             if (constraint_rule) |rule| {
@@ -1361,6 +1417,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_constraint = true;
             in_metadata = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[metadata]")) {
             // Flush pending sections
             if (constraint_rule) |rule| {
@@ -1398,6 +1455,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_cache_remote = false;
             in_versioning = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[imports]")) {
             in_workspace = false;
             in_tools = false;
@@ -1409,6 +1467,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_versioning = false;
             in_conformance = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[cache]")) {
             in_workspace = false;
             in_tools = false;
@@ -1420,6 +1479,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_versioning = false;
             in_conformance = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[cache.remote]")) {
             in_workspace = false;
             in_tools = false;
@@ -1431,6 +1491,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_versioning = false;
             in_conformance = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[versioning]")) {
             in_workspace = false;
             in_tools = false;
@@ -1443,6 +1504,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_conformance = false;
             in_conformance_rule = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[conformance]")) {
             in_workspace = false;
             in_tools = false;
@@ -1455,6 +1517,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_conformance = true;
             in_conformance_rule = false;
             in_vars = false;
+            in_settings = false;
         } else if (std.mem.eql(u8, trimmed, "[[conformance.rules]]")) {
             // Flush pending conformance rule
             if (in_conformance_rule) {
@@ -1496,6 +1559,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_tools = false;
             in_constraint = false;
             in_vars = false;
+            in_settings = false;
             // Flush pending task (if any)
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
@@ -1555,6 +1619,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_tools = false;
             in_constraint = false;
             in_vars = false;
+            in_settings = false;
             // Flush pending concurrency group (if any)
             if (current_concurrency_group) |cgn| {
                 const cg = types.ConcurrencyGroup{
@@ -2016,6 +2081,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_workspace = false;
             in_cache = false;
             in_vars = false;
+            in_settings = false;
             in_task_watch = false;
             in_task_matrix = false;
             in_task_env = false;
@@ -2202,6 +2268,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_max_cpu = null;
             template_max_memory = null;
             in_vars = false;
+            in_settings = false;
 
             current_template = validateSectionHeader(trimmed, "[templates.") catch |err| {
                 if (err == error.MalformedSectionHeader) return err;
@@ -2372,6 +2439,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_mixin_env = false;
             in_mixin_hooks = false;
             in_vars = false;
+            in_settings = false;
 
             current_mixin = validateSectionHeader(trimmed, "[mixins.") catch |err| {
                 if (err == error.MalformedSectionHeader) return err;
@@ -2480,6 +2548,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 const owned_val = try allocator.dupe(u8, value);
                 errdefer allocator.free(owned_val);
                 try config.vars.put(owned_key, owned_val);
+            } else if (in_settings) {
+                // Inside [settings] section — parse key = "value" pairs
+                if (std.mem.eql(u8, key, "default_profile")) {
+                    config.settings.default_profile = try allocator.dupe(u8, value);
+                }
             } else if (in_constraint) {
                 // Inside [[constraints]] — parse constraint fields
                 if (std.mem.eql(u8, key, "rule")) {
@@ -6095,4 +6168,53 @@ test "parse task with artifacts field" {
     try std.testing.expectEqual(@as(usize, 2), task.artifacts.?.len);
     try std.testing.expectEqualStrings("dist/*.wasm", task.artifacts.?[0]);
     try std.testing.expectEqualStrings("logs/*.log", task.artifacts.?[1]);
+}
+
+test "parse [settings] section with default_profile" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\default_profile = "dev"
+        \\
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.settings.default_profile != null);
+    try std.testing.expectEqualStrings("dev", config.settings.default_profile.?);
+}
+
+test "parse [settings] section without default_profile leaves it null" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.hello]
+        \\cmd = "echo hi"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.settings.default_profile == null);
+}
+
+test "parse [settings] section does not break adjacent sections" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\default_profile = "staging"
+        \\
+        \\[vars]
+        \\FOO = "bar"
+        \\
+        \\[tasks.build]
+        \\cmd = "make"
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqualStrings("staging", config.settings.default_profile.?);
+    try std.testing.expect(config.vars.get("FOO") != null);
+    try std.testing.expectEqualStrings("bar", config.vars.get("FOO").?);
+    try std.testing.expect(config.tasks.get("build") != null);
 }

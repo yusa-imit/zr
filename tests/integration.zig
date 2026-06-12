@@ -75,6 +75,7 @@ comptime {
     _ = @import("output_capture_test.zig");
     _ = @import("plugin_test.zig");
     _ = @import("profile_test.zig");
+    _ = @import("21000_settings_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");

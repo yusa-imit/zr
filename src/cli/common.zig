@@ -78,7 +78,7 @@ pub fn loadConfig(
         return null;
     };
 
-    // Resolve effective profile: --profile flag, then ZR_PROFILE env var.
+    // Resolve effective profile: --profile flag, then ZR_PROFILE env var, then default_profile from [settings].
     var effective_profile: ?[]const u8 = profile_name_opt;
     var env_profile_buf: [256]u8 = undefined;
     if (effective_profile == null) {
@@ -89,6 +89,13 @@ pub fn loadConfig(
                 effective_profile = env_profile_buf[0..pname.len];
             }
         } else |_| {}
+    }
+
+    // Fallback to default_profile from [settings] section (v1.92.0)
+    if (effective_profile == null) {
+        if (config.settings.default_profile) |dp| {
+            effective_profile = dp;
+        }
     }
 
     if (effective_profile) |pname| {
