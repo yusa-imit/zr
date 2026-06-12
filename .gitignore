@@ -8,6 +8,7 @@ zig-out
 main
 *.wasm
 *.a
+*.o
 docs/*.html
 docs/*.js
 docs/*.tar

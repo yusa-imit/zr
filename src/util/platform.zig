@@ -56,23 +56,15 @@ test "getHome returns valid path" {
 }
 
 test "killProcess handles invalid PID without panic" {
-    // Test that killProcess safely handles non-existent PIDs.
-    // Invalid PIDs should be silently rejected by the kernel.
-    // If the function panics or crashes, the test fails.
-
+    // killProcess silently ignores errors (no-op on invalid PIDs).
+    // The test verifies no panic/crash occurs for clearly invalid inputs.
     if (comptime native_os != .windows) {
-        // On POSIX: try to kill an obviously invalid PID
-        // Kernel will return ESRCH (No such process), which killProcess catches and ignores
-        killProcess(999999);
-        killProcess(1); // PID 1 is init/systemd - likely fails permission, but safely caught
-
-        // Verify we reach here without panic (test passes by not crashing)
-        try std.testing.expect(true);
+        killProcess(999999); // ESRCH from kernel, caught internally
+        killProcess(1); // permission denied for init, caught internally
     } else {
-        // On Windows: call with invalid handle
-        killProcess(0); // Invalid handle, TerminateProcess will fail but be caught
-        try std.testing.expect(true);
+        killProcess(0); // invalid handle, TerminateProcess failure caught internally
     }
+    // If we reach here, no panic occurred — that IS the assertion
 }
 
 test "getenv returns env vars on POSIX" {
