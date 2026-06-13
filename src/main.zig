@@ -1199,6 +1199,13 @@ fn run(
         const has_glob_pattern = std.mem.indexOfAny(u8, task_name, "*?") != null;
         const has_filters = include_tags.items.len > 0 or exclude_tags_list.items.len > 0 or run_dir_filter != null;
 
+        // Group wildcard ("build.*") — route to cmdRun for single-scheduler execution.
+        // Without this, the generic glob path expands it into individual cmdRun calls,
+        // causing shared dependencies (e.g. build.compile) to run once per selected task.
+        if (std.mem.endsWith(u8, task_name, ".*") and !has_filters) {
+            return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode, show_outputs, cli_inputs, non_interactive, yes_confirm);
+        }
+
         if (has_glob_pattern or has_filters) {
             // Task filtering mode: load config and select matching tasks
             var config = (try common.loadConfig(allocator, config_path, profile_name, ew, effective_color)) orelse return 1;
@@ -1381,6 +1388,7 @@ fn run(
         var list_verbose = false;
         var sort_by: ?[]const u8 = null;
         var show_all = false;
+        var group_filter: ?[]const u8 = null;
         // Quick --help check before full arg parsing
         for (effective_args[2..]) |a| {
             if (std.mem.eql(u8, a, "--help") or std.mem.eql(u8, a, "-h")) {
@@ -1390,6 +1398,7 @@ fn run(
                     "OPTIONS:\n" ++
                     "  --tree               Show dependency tree\n" ++
                     "  --sort=<key>         Sort by: name (default), freq, time, recent\n" ++
+                    "  --group=<name>       Show only tasks in namespace group\n" ++
                     "  --group-by-tags      Group tasks by their tags\n" ++
                     "  --tags=<tags>        Filter tasks by tags (comma-separated)\n" ++
                     "  --exclude-tags=<t>   Exclude tasks with these tags\n" ++
@@ -1487,12 +1496,19 @@ fn run(
                     i += 1;
                     sort_by = effective_args[i];
                 }
+            } else if (std.mem.startsWith(u8, arg, "--group=")) {
+                group_filter = arg["--group=".len..];
+            } else if (std.mem.eql(u8, arg, "--group")) {
+                if (i + 1 < effective_args.len) {
+                    i += 1;
+                    group_filter = effective_args[i];
+                }
             } else if (!std.mem.startsWith(u8, arg, "--")) {
                 // First non-flag argument is the filter pattern
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, show_all, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, show_all, group_filter, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "help")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "help: missing task name\n\n  Usage: zr help <task-name>\n", .{});

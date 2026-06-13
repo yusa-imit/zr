@@ -224,6 +224,123 @@ pub fn cmdRun(
     // [settings] default_timeout converted to ms for scheduler (task-level timeout takes precedence)
     const settings_default_timeout_ms: ?u64 = if (config.settings.default_timeout) |s| s * 1000 else null;
 
+    // Wildcard group expansion: "build.*" runs all tasks in the build namespace (v1.94.0)
+    if (std.mem.endsWith(u8, task_name, ".*")) {
+        const group_prefix = task_name[0..task_name.len - 2]; // strip ".*"
+        const prefix_with_dot = try std.fmt.allocPrint(allocator, "{s}.", .{group_prefix});
+        defer allocator.free(prefix_with_dot);
+
+        // Collect all matching tasks
+        var group_task_names = std.ArrayList([]const u8){};
+        defer group_task_names.deinit(allocator);
+
+        var group_it = config.tasks.iterator();
+        while (group_it.next()) |entry| {
+            if (std.mem.startsWith(u8, entry.key_ptr.*, prefix_with_dot)) {
+                try group_task_names.append(allocator, entry.key_ptr.*);
+            }
+        }
+
+        if (group_task_names.items.len == 0) {
+            try color.printError(err_writer, use_color,
+                "run: No tasks found in group '{s}'\n", .{group_prefix});
+            try err_writer.print("\n  Hint: Run 'zr list' to see available tasks\n", .{});
+            return 1;
+        }
+
+        // Sort for deterministic execution order
+        std.mem.sort([]const u8, group_task_names.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        // Dry-run support
+        if (dry_run) {
+            var plan = scheduler.planDryRun(allocator, &config, group_task_names.items, only_mode) catch |err| {
+                switch (err) {
+                    error.TaskNotFound => try color.printError(err_writer, use_color,
+                        "run: A dependency task was not found in config\n", .{}),
+                    error.CycleDetected => try color.printError(err_writer, use_color,
+                        "run: Cycle detected in task dependencies\n\n  Hint: Check your deps fields for circular references\n", .{}),
+                    else => try color.printError(err_writer, use_color,
+                        "run: Scheduler error: {s}\n", .{@errorName(err)}),
+                }
+                return 1;
+            };
+            defer plan.deinit();
+            try printDryRunPlan(allocator, w, use_color, plan, &config);
+            return 0;
+        }
+
+        // Run the group
+        const start_ns_g = std.time.nanoTimestamp();
+        var task_outputs_g = std.StringHashMap([]const u8).init(allocator);
+        defer {
+            var it_g = task_outputs_g.iterator();
+            while (it_g.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                allocator.free(entry.value_ptr.*);
+            }
+            task_outputs_g.deinit();
+        }
+
+        var sched_result_g = scheduler.run(allocator, &config, group_task_names.items, .{
+            .max_jobs = effective_max_jobs,
+            .monitor = monitor,
+            .use_color = use_color,
+            .task_control = task_control,
+            .filter_options = filter_options,
+            .silent_override = silent_override,
+            .force_run = force_run,
+            .runtime_params = &runtime_params,
+            .skip_tasks = skip_tasks,
+            .notify_override = notify_override,
+            .only_mode = only_mode,
+            .task_outputs = &task_outputs_g,
+            .default_timeout_ms = settings_default_timeout_ms,
+        }) catch |err| {
+            switch (err) {
+                error.TaskNotFound => try color.printError(err_writer, use_color,
+                    "run: A dependency task was not found in config\n", .{}),
+                error.CycleDetected => try color.printError(err_writer, use_color,
+                    "run: Cycle detected in task dependencies\n\n  Hint: Check your deps fields for circular references\n", .{}),
+                else => try color.printError(err_writer, use_color,
+                    "run: Scheduler error: {s}\n", .{@errorName(err)}),
+            }
+            return 1;
+        };
+        defer sched_result_g.deinit(allocator);
+
+        const elapsed_ms_g: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_ns_g, std.time.ns_per_ms));
+
+        if (json_output) {
+            try printRunResultJson(w, sched_result_g.results.items, sched_result_g.total_success, elapsed_ms_g);
+        } else {
+            var passed_g: usize = 0;
+            var failed_g: usize = 0;
+            var skipped_g: usize = 0;
+            for (sched_result_g.results.items) |task_result| {
+                if (task_result.skipped) {
+                    skipped_g += 1;
+                } else if (task_result.success) {
+                    passed_g += 1;
+                    try color.printSuccess(w, use_color, "{s} ", .{task_result.task_name});
+                    try color.printDim(w, use_color, "({d}ms)\n", .{task_result.duration_ms});
+                } else {
+                    failed_g += 1;
+                    try color.printError(err_writer, use_color, "{s} ", .{task_result.task_name});
+                    try color.printDim(err_writer, use_color, "(exit: {d})\n", .{task_result.exit_code});
+                }
+            }
+            if (sched_result_g.results.items.len > 1) {
+                try progress.printSummary(w, use_color, passed_g, failed_g, skipped_g, elapsed_ms_g);
+            }
+        }
+
+        return if (sched_result_g.total_success) 0 else 1;
+    }
+
     // Try prefix matching if exact match fails
     var resolved_task_name: []const u8 = task_name;
     const match_result = try findTasksByPrefix(allocator, task_name, &config.tasks);
