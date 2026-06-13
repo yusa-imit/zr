@@ -19,6 +19,61 @@ const addTaskImpl = types.addTaskImpl;
 const addMatrixTask = matrix.addMatrixTask;
 const toolchain_types = @import("../toolchain/types.zig");
 
+/// If the current task state represents a group config (no cmd, no deps, has env/cwd/timeout),
+/// store it in config.group_configs and return true. Otherwise return false.
+fn tryAddGroupConfig(
+    config: *Config,
+    allocator: std.mem.Allocator,
+    task_name: []const u8,
+    task_cmd: ?[]const u8,
+    task_cwd: ?[]const u8,
+    task_env: []const [2][]const u8,
+    task_timeout_ms: ?u64,
+    task_deps_len: usize,
+    task_deps_serial_len: usize,
+    task_matrix_raw: ?[]const u8,
+) !bool {
+    if (task_cmd != null) return false;
+    if (task_deps_len != 0 or task_deps_serial_len != 0) return false;
+    if (task_matrix_raw != null) return false;
+    if (task_env.len == 0 and task_cwd == null and task_timeout_ms == null) return false;
+    // Group config names must not contain dots (e.g., "build", not "build.compile")
+    if (std.mem.indexOf(u8, task_name, ".") != null) return false;
+
+    const name = try allocator.dupe(u8, task_name);
+    errdefer allocator.free(name);
+
+    const env = try allocator.alloc([2][]const u8, task_env.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (env[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (env.len > 0) allocator.free(env);
+    }
+    for (task_env, 0..) |pair, i| {
+        env[i][0] = try allocator.dupe(u8, pair[0]);
+        env[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
+    const cwd = if (task_cwd) |c| try allocator.dupe(u8, c) else null;
+    errdefer if (cwd) |c| allocator.free(c);
+
+    const gc = types.GroupConfig{
+        .name = name,
+        .env = env,
+        .cwd = cwd,
+        .timeout_ms = task_timeout_ms,
+    };
+
+    const key = try allocator.dupe(u8, name);
+    errdefer allocator.free(key);
+    try config.group_configs.put(key, gc);
+    return true;
+}
+
 /// Parse a constraint scope value from TOML (e.g., { tag = "app" } or "path/to/project").
 /// Returns non-owning slices into the value string.
 fn parseScopeValue(value: []const u8) !?types.ConstraintScope {
@@ -933,11 +988,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task (if any — tasks may precede workflow sections)
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -1092,11 +1150,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task (if any)
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity();
                 task_deps_serial.clearRetainingCapacity();
@@ -1157,11 +1218,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1238,11 +1302,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending sections
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1287,11 +1354,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending sections
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1337,11 +1407,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending sections (same as [vars])
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1563,11 +1636,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task (if any)
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
                 task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
                 task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
@@ -1998,11 +2074,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Flush pending task before starting new one
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                const cmd = task_cmd orelse "";
-                if (task_matrix_raw) |mraw| {
-                    try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                } else {
-                    try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                    const cmd = task_cmd orelse "";
+                    if (task_matrix_raw) |mraw| {
+                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                    } else {
+                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+                    }
                 }
             }
 
@@ -4062,12 +4141,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending task
     if (current_task) |task_name| {
-        // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-        const cmd = task_cmd orelse "";
-        if (task_matrix_raw) |mraw| {
-            try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-        } else {
-            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+        // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+        if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+            const cmd = task_cmd orelse "";
+            if (task_matrix_raw) |mraw| {
+                try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+            } else {
+                try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal);
+            }
         }
     }
 
@@ -4457,6 +4538,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         }
         config.imports = owned_imports;
     }
+
+    // Apply group config defaults to tasks (v1.95.0)
+    try config.applyGroupDefaults();
 
     return config;
 }

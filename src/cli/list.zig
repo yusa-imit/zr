@@ -821,6 +821,19 @@ pub fn cmdList(
         // Standard flat list
         try color.printHeader(w, use_color, "Tasks:", .{});
 
+        // Show group config indicator when --group filter is active (v1.95.0)
+        if (group_filter) |gf| {
+            if (config.group_configs.get(gf)) |gc| {
+                try w.print("  ", .{});
+                try color.printInfo(w, use_color, "{s:<20}", .{gf});
+                try color.printDim(w, use_color, " (group)", .{});
+                if (gc.cwd) |cwd| try color.printDim(w, use_color, "  cwd: {s}", .{cwd});
+                if (gc.timeout_ms) |ms| try color.printDim(w, use_color, "  timeout: {d}s", .{ms / 1000});
+                if (gc.env.len > 0) try color.printDim(w, use_color, "  env: {d} var(s)", .{gc.env.len});
+                try w.print("\n", .{});
+            }
+        }
+
         // Calculate unique prefixes for abbreviation hints
         const run_module = @import("run.zig");
         var unique_prefixes = try run_module.calculateUniquePrefix(allocator, &config.tasks);

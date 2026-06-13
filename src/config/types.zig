@@ -101,6 +101,25 @@ pub const ConcurrencyGroup = struct {
     }
 };
 
+/// Group config from [tasks.NAME] sections with no cmd and no deps (v1.95.0).
+/// Provides default env/cwd/timeout inherited by all NAME.* tasks.
+pub const GroupConfig = struct {
+    name: []const u8,
+    env: [][2][]const u8,
+    cwd: ?[]const u8,
+    timeout_ms: ?u64,
+
+    pub fn deinit(self: *GroupConfig, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        for (self.env) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        if (self.env.len > 0) allocator.free(self.env);
+        if (self.cwd) |cwd| allocator.free(cwd);
+    }
+};
+
 /// Remote cache backend type (PRD §5.7.3 Phase 7).
 pub const RemoteCacheType = enum {
     s3,
@@ -394,6 +413,8 @@ pub const Config = struct {
     imports: [][]const u8 = &.{},
     /// Project-level settings from [settings] section (v1.92.0).
     settings: ProjectSettings = .{},
+    /// Group configs from [tasks.NAME] sections with no cmd/deps (v1.95.0).
+    group_configs: std.StringHashMap(GroupConfig) = undefined,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Config {
@@ -405,6 +426,7 @@ pub const Config = struct {
             .mixins = std.StringHashMap(Mixin).init(allocator),
             .vars = std.StringHashMap([]const u8).init(allocator),
             .concurrency_groups = std.StringHashMap(ConcurrencyGroup).init(allocator),
+            .group_configs = std.StringHashMap(GroupConfig).init(allocator),
             .workspace = null,
             .plugins = &.{},
             .toolchains = ToolchainConfig.init(allocator),
@@ -453,6 +475,12 @@ pub const Config = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.concurrency_groups.deinit();
+        var gcit = self.group_configs.iterator();
+        while (gcit.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.group_configs.deinit();
         if (self.workspace) |*ws| ws.deinit(self.allocator);
         for (self.plugins) |*p| {
             var pc = p.*;
@@ -567,6 +595,68 @@ pub const Config = struct {
                     if (task.cwd) |old_cwd| self.allocator.free(old_cwd);
                     task.cwd = try self.allocator.dupe(u8, new_cwd);
                 }
+            }
+        }
+    }
+
+    /// Apply group config defaults to tasks (v1.95.0).
+    /// For each task with name "group.subtask", look up "group" in group_configs
+    /// and apply env (merge, task wins), cwd (fallback), timeout_ms (fallback).
+    pub fn applyGroupDefaults(self: *Config) !void {
+        var it = self.tasks.iterator();
+        while (it.next()) |entry| {
+            const task = entry.value_ptr;
+            const dot_idx = std.mem.indexOf(u8, task.name, ".") orelse continue;
+            const group_name = task.name[0..dot_idx];
+            const gc = self.group_configs.get(group_name) orelse continue;
+
+            // Env: add group env vars not already in task env (task wins on collision)
+            if (gc.env.len > 0) {
+                var extra_count: usize = 0;
+                for (gc.env) |gpair| {
+                    const found = for (task.env) |tpair| {
+                        if (std.mem.eql(u8, tpair[0], gpair[0])) break true;
+                    } else false;
+                    if (!found) extra_count += 1;
+                }
+                if (extra_count > 0) {
+                    const new_env = try self.allocator.alloc([2][]const u8, extra_count + task.env.len);
+                    var idx: usize = 0;
+                    errdefer {
+                        for (new_env[0..idx]) |pair| {
+                            self.allocator.free(pair[0]);
+                            self.allocator.free(pair[1]);
+                        }
+                        self.allocator.free(new_env);
+                    }
+                    for (gc.env) |gpair| {
+                        const found = for (task.env) |tpair| {
+                            if (std.mem.eql(u8, tpair[0], gpair[0])) break true;
+                        } else false;
+                        if (!found) {
+                            const k = try self.allocator.dupe(u8, gpair[0]);
+                            errdefer self.allocator.free(k);
+                            const v = try self.allocator.dupe(u8, gpair[1]);
+                            new_env[idx] = .{ k, v };
+                            idx += 1;
+                        }
+                    }
+                    @memcpy(new_env[idx..], task.env);
+                    if (task.env.len > 0) self.allocator.free(task.env);
+                    task.env = new_env;
+                }
+            }
+
+            // Cwd: use group cwd if task has none
+            if (task.cwd == null) {
+                if (gc.cwd) |gcwd| {
+                    task.cwd = try self.allocator.dupe(u8, gcwd);
+                }
+            }
+
+            // Timeout: use group timeout if task has none
+            if (task.timeout_ms == null) {
+                task.timeout_ms = gc.timeout_ms;
             }
         }
     }

@@ -71,17 +71,53 @@ fn printTaskText(
 
     // Print working directory if set
     if (task.cwd) |cwd| {
-        try w.print("      Dir: {s}\n", .{cwd});
+        // Check if cwd was inherited from group config (v1.95.0)
+        const cwd_from_group = blk: {
+            if (std.mem.indexOf(u8, task_name, ".")) |dot| {
+                const group_name = task_name[0..dot];
+                if (config.group_configs.get(group_name)) |gc| {
+                    if (gc.cwd) |gcwd| break :blk std.mem.eql(u8, gcwd, cwd);
+                }
+            }
+            break :blk false;
+        };
+        if (cwd_from_group) {
+            const dot = std.mem.indexOf(u8, task_name, ".").?;
+            try w.print("      Dir: {s}  (inherited from group: {s})\n", .{ cwd, task_name[0..dot] });
+        } else {
+            try w.print("      Dir: {s}\n", .{cwd});
+        }
     }
 
     // Print timeout if set
     if (task.timeout_ms) |ms| {
-        if (ms % 60_000 == 0) {
-            try w.print("      Timeout: {d}m\n", .{ms / 60_000});
-        } else if (ms % 1_000 == 0) {
-            try w.print("      Timeout: {d}s\n", .{ms / 1_000});
+        // Check if timeout was inherited from group config (v1.95.0)
+        const timeout_from_group = blk: {
+            if (std.mem.indexOf(u8, task_name, ".")) |dot| {
+                const group_name = task_name[0..dot];
+                if (config.group_configs.get(group_name)) |gc| {
+                    if (gc.timeout_ms) |gms| break :blk gms == ms;
+                }
+            }
+            break :blk false;
+        };
+        if (timeout_from_group) {
+            const dot = std.mem.indexOf(u8, task_name, ".").?;
+            if (ms % 60_000 == 0) {
+                try w.print("      Timeout: {d}m  (inherited from group: {s})\n", .{ ms / 60_000, task_name[0..dot] });
+            } else if (ms % 1_000 == 0) {
+                try w.print("      Timeout: {d}s  (inherited from group: {s})\n", .{ ms / 1_000, task_name[0..dot] });
+            } else {
+                try w.print("      Timeout: {d}ms  (inherited from group: {s})\n", .{ ms, task_name[0..dot] });
+            }
         } else {
-            try w.print("      Timeout: {d}ms\n", .{ms});
+            if (ms % 60_000 == 0) {
+                try w.print("      Timeout: {d}m\n", .{ms / 60_000});
+            } else if (ms % 1_000 == 0) {
+                try w.print("      Timeout: {d}s\n", .{ms / 1_000});
+            } else {
+                try w.print("      Timeout: {d}ms\n", .{ms});
+            }
         }
     }
 

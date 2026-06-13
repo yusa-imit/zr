@@ -78,6 +78,7 @@ comptime {
     _ = @import("21000_settings_test.zig");
     _ = @import("22000_settings_jobs_test.zig");
     _ = @import("23000_groups_test.zig");
+    _ = @import("24000_group_defaults_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");
