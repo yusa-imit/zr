@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.94.0] - 2026-06-14
+
+### Added
+- **Task Groups & Namespaces** — organize tasks using dot-separated names with `[tasks.build.compile]`, `[tasks.build.link]` TOML nesting
+- **`zr run build.*`** — wildcard group execution: runs all tasks in the `build` namespace in dependency order
+- **`zr list --group <name>`** — filter list output to a specific namespace group (e.g. `--group build`)
+- **`zr run build` (no exact match)** — when a bare name matches no task but `build.*` tasks exist, shows helpful ambiguous-prefix error listing group members
+
+### Changed
+- **sailor v2.38.0 + v2.39.0** — migrated to latest sailor (KeyMap widget in v2.38.0, NumberInput widget in v2.39.0; both are additive UI components)
+
 ## [1.93.0] - 2026-06-13
 
 ### Added
