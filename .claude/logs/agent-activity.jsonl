@@ -81,3 +81,5 @@
 {"timestamp":"2026-06-12T16:15:15Z","action":"subagent","agent_type":"zig-developer","task":"Migrate sailor dependency to v2.36.0 (FilterBar widget, no breaking changes)","project":"zr"}
 {"timestamp":"2026-06-13T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests 23000-23007 for Task Groups & Namespaces","project":"zr"}
 {"timestamp":"2026-06-14T01:20:00Z","action":"subagent","agent_type":"Explore","task":"Verify parser handles [tasks.build.compile] dot-separated task names","project":"zr"}
+{"timestamp":"2026-06-14T02:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests 24000-24005 for Group-Level Defaults & Inheritance","project":"zr"}
+{"timestamp":"2026-06-14T03:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement Group-Level Defaults & Inheritance: GroupConfig struct, tryAddGroupConfig parser helper, applyGroupDefaults, list/explain updates","project":"zr"}
