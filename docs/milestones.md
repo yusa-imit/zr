@@ -4,7 +4,7 @@
 
 - **Latest**: v1.95.0 (feat: Group-Level Defaults & Inheritance) — RELEASED 2026-06-14
 - **Pending release**: none
-- **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
+- **Active milestones**: 2 (Task Dependency Visualization Enhancements [planned], Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)
 - **DONE**: Group-Level Defaults & Inheritance (Cycle 341, v1.95.0 RELEASED), Task Groups & Namespaces (Cycle 340, v1.94.0 RELEASED), Task Output Capture & Variable Passing (Cycles 318-321, v1.87.0 RELEASED), Tag Management & Discovery (Cycle 311, v1.86.0 RELEASED), Task Explain & Execution Preview (Cycles 304-309, v1.85.0), Enhanced Task Control & Developer Experience (Cycle 283, v1.83.0 RELEASED), Sailor v2.5.0 & v2.6.0 Migration (Cycle 209), Dependency Resolution & Version Constraints (Cycles 204, 206, 208), Task Result Caching & Memoization (Cycles 193-199, v1.82.0 RELEASED), Enhanced Watch Mode & Live Reload (Cycles 189-192, v1.81.0 RELEASED), Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
@@ -93,6 +93,19 @@ Extend the Task Groups & Namespaces system (v1.94.0) with namespace-level config
 - **`zr explain` integration**: show which fields are inherited from group config vs. set on task
 - **Integration tests**: 6 tests (24000–24005) covering env/cwd/timeout inheritance, task override, non-executable group config, explain output
 **Status: DONE** — Released v1.95.0 on 2026-06-14 (Cycle 341 FEATURE). Implementation: GroupConfig struct + Config.group_configs map in types.zig; tryAddGroupConfig() in parser.zig detects group configs at flush time (no cmd, no deps, has env/cwd/timeout); applyGroupDefaults() post-processes all tasks for env merge (task wins), cwd fallback, timeout fallback; list.zig shows "(group)" indicator with cwd/env/timeout summary; explain.zig annotates inherited cwd/timeout with source group. Testing: 6 integration tests (24000-24005). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.95.0
+
+### Task Dependency Visualization Enhancements
+
+Improve the existing `zr graph` command and dependency visualization with richer output formats and interactive features. Currently users can see a basic ASCII graph, but large projects need better navigation, filtering, and export options. Includes:
+- **`zr graph --group <group>`** — filter graph to show only tasks in a specific namespace group and their dependencies
+- **`zr graph --depth <n>`** — limit graph traversal depth for large dependency trees
+- **`zr graph --from <task>`** — show only the subgraph reachable from a specific task (downstream dependencies)
+- **`zr graph --to <task>`** — show only the subgraph that leads to a specific task (upstream dependencies)
+- **`zr graph --format dot`** — output GraphViz DOT format for external visualization
+- **`zr graph --format mermaid`** — output Mermaid diagram syntax for markdown embedding
+- **Cycle detection in output**: highlight cycles with a clear indicator when `--cycles-only` flag is used
+- **Integration tests**: 8 tests (25000–25007) covering depth limiting, upstream/downstream filtering, dot/mermaid format output, group filtering
+**Status: PLANNED** — Next milestone after v1.95.0.
 
 ### Code Quality & Documentation Polish
 
