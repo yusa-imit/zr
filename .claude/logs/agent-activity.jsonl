@@ -79,3 +79,5 @@
 {"timestamp":"2026-06-12T00:05:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement [settings] section with default_profile in parser, types, and common.zig","project":"zr"}
 {"timestamp":"2026-06-12T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement v1.92.0: [settings] section with default_profile support","project":"zr"}
 {"timestamp":"2026-06-12T16:15:15Z","action":"subagent","agent_type":"zig-developer","task":"Migrate sailor dependency to v2.36.0 (FilterBar widget, no breaking changes)","project":"zr"}
+{"timestamp":"2026-06-13T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests 23000-23007 for Task Groups & Namespaces","project":"zr"}
+{"timestamp":"2026-06-14T01:20:00Z","action":"subagent","agent_type":"Explore","task":"Verify parser handles [tasks.build.compile] dot-separated task names","project":"zr"}
