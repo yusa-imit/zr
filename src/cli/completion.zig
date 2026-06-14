@@ -452,6 +452,186 @@ pub fn cmdCompletion(
     }
 }
 
+pub fn installCompletion(
+    allocator: std.mem.Allocator,
+    shell: []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    // Get HOME from environment
+    const home = std.process.getEnvVarOwned(allocator, "HOME") catch |err| {
+        if (err == error.EnvironmentVariableNotFound) {
+            try color.printError(err_writer, use_color, "completion --install: HOME environment variable not set\n", .{});
+            return 1;
+        }
+        return err;
+    };
+    defer allocator.free(home);
+
+    if (std.mem.eql(u8, shell, "bash")) {
+        return try installBashCompletion(allocator, home, w, err_writer, use_color);
+    } else if (std.mem.eql(u8, shell, "zsh")) {
+        return try installZshCompletion(allocator, home, w, err_writer, use_color);
+    } else if (std.mem.eql(u8, shell, "fish")) {
+        return try installFishCompletion(allocator, home, w, err_writer, use_color);
+    } else if (shell.len == 0) {
+        try color.printError(err_writer, use_color,
+            "completion --install: missing shell name\n\n  Hint: zr completion --install <bash|zsh|fish>\n", .{});
+        return 1;
+    } else {
+        try color.printError(err_writer, use_color,
+            "completion --install: unknown shell '{s}'\n\n  Hint: supported shells: bash, zsh, fish\n",
+            .{shell});
+        return 1;
+    }
+}
+
+fn installBashCompletion(
+    allocator: std.mem.Allocator,
+    home: []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    _ = err_writer;
+    _ = use_color;
+
+    const bashrc_path = try std.fmt.allocPrint(allocator, "{s}/.bashrc", .{home});
+    defer allocator.free(bashrc_path);
+
+    const eval_line = "eval \"$(zr completion bash)\"";
+
+    // Try to read existing content
+    var existing_content: ?[]u8 = null;
+    if (std.fs.openFileAbsolute(bashrc_path, .{})) |file| {
+        defer file.close();
+        existing_content = file.readToEndAlloc(allocator, 64 * 1024) catch null;
+    } else |_| {}
+
+    // Check if already installed
+    if (existing_content) |content| {
+        defer allocator.free(content);
+        if (std.mem.indexOf(u8, content, eval_line) != null) {
+            try w.print("Already installed bash completion to ~/.bashrc\n", .{});
+            return 0;
+        }
+    }
+
+    // Append to bashrc
+    const file = try std.fs.createFileAbsolute(bashrc_path, .{});
+    defer file.close();
+
+    // Seek to end
+    try file.seekFromEnd(0);
+
+    // Write newline if file has content
+    if (existing_content) |_| {
+        try file.writeAll("\n");
+    }
+
+    try file.writeAll(eval_line);
+    try file.writeAll("\n");
+
+    try w.print("Installed bash completion to ~/.bashrc\n", .{});
+    return 0;
+}
+
+fn installZshCompletion(
+    allocator: std.mem.Allocator,
+    home: []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    _ = err_writer;
+    _ = use_color;
+
+    const zshrc_path = try std.fmt.allocPrint(allocator, "{s}/.zshrc", .{home});
+    defer allocator.free(zshrc_path);
+
+    const eval_line = "eval \"$(zr completion zsh)\"";
+
+    // Try to read existing content
+    var existing_content: ?[]u8 = null;
+    if (std.fs.openFileAbsolute(zshrc_path, .{})) |file| {
+        defer file.close();
+        existing_content = file.readToEndAlloc(allocator, 64 * 1024) catch null;
+    } else |_| {}
+
+    // Check if already installed
+    if (existing_content) |content| {
+        defer allocator.free(content);
+        if (std.mem.indexOf(u8, content, eval_line) != null) {
+            try w.print("Already installed zsh completion to ~/.zshrc\n", .{});
+            return 0;
+        }
+    }
+
+    // Append to zshrc
+    const file = try std.fs.createFileAbsolute(zshrc_path, .{});
+    defer file.close();
+
+    // Seek to end
+    try file.seekFromEnd(0);
+
+    // Write newline if file has content
+    if (existing_content) |_| {
+        try file.writeAll("\n");
+    }
+
+    try file.writeAll(eval_line);
+    try file.writeAll("\n");
+
+    try w.print("Installed zsh completion to ~/.zshrc\n", .{});
+    return 0;
+}
+
+fn installFishCompletion(
+    allocator: std.mem.Allocator,
+    home: []const u8,
+    w: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+    use_color: bool,
+) !u8 {
+    _ = err_writer;
+    _ = use_color;
+
+    // Create directory structure step by step
+    const config_dir = try std.fmt.allocPrint(allocator, "{s}/.config", .{home});
+    defer allocator.free(config_dir);
+
+    std.fs.makeDirAbsolute(config_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+
+    const fish_base_dir = try std.fmt.allocPrint(allocator, "{s}/.config/fish", .{home});
+    defer allocator.free(fish_base_dir);
+
+    std.fs.makeDirAbsolute(fish_base_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+
+    const fish_completions_dir = try std.fmt.allocPrint(allocator, "{s}/.config/fish/completions", .{home});
+    defer allocator.free(fish_completions_dir);
+
+    std.fs.makeDirAbsolute(fish_completions_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+
+    const fish_file_path = try std.fmt.allocPrint(allocator, "{s}/zr.fish", .{fish_completions_dir});
+    defer allocator.free(fish_file_path);
+
+    // Create or overwrite the completion file
+    const file = try std.fs.createFileAbsolute(fish_file_path, .{});
+    defer file.close();
+
+    try file.writeAll(FISH_COMPLETION);
+
+    try w.print("Installed fish completion to ~/.config/fish/completions/zr.fish\n", .{});
+    return 0;
+}
+
 test "completion scripts are non-empty and contain key markers" {
     try std.testing.expect(BASH_COMPLETION.len > 0);
     try std.testing.expect(std.mem.indexOf(u8, BASH_COMPLETION, "_zr_completion") != null);

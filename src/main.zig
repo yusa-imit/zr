@@ -1643,21 +1643,37 @@ fn run(
             .show_schema = show_schema,
         }, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "completion")) {
-        const shell = if (effective_args.len >= 3) effective_args[2] else "";
+        // Check if --install flag is present
+        var install_mode = false;
+        var shell = if (effective_args.len >= 3) effective_args[2] else "";
+
+        if (effective_args.len >= 3 and std.mem.eql(u8, effective_args[2], "--install")) {
+            install_mode = true;
+            shell = if (effective_args.len >= 4) effective_args[3] else "";
+        }
+
         if (std.mem.eql(u8, shell, "--help") or std.mem.eql(u8, shell, "-h")) {
-            try effective_w.writeAll("Usage: zr completion <shell>\n\n");
-            try effective_w.writeAll("Generate shell completion scripts.\n\n");
+            try effective_w.writeAll("Usage: zr completion [--install] <shell>\n\n");
+            try effective_w.writeAll("Generate or install shell completion scripts.\n\n");
             try effective_w.writeAll("Shells:\n");
-            try effective_w.writeAll("  bash        Generate bash completion script\n");
-            try effective_w.writeAll("  zsh         Generate zsh completion script\n");
-            try effective_w.writeAll("  fish        Generate fish completion script\n");
+            try effective_w.writeAll("  bash        Generate/install bash completion script\n");
+            try effective_w.writeAll("  zsh         Generate/install zsh completion script\n");
+            try effective_w.writeAll("  fish        Generate/install fish completion script\n");
             try effective_w.writeAll("  powershell  Generate PowerShell completion script\n\n");
+            try effective_w.writeAll("Flags:\n");
+            try effective_w.writeAll("  --install   Automatically install completion to shell config file\n\n");
             try effective_w.writeAll("Examples:\n");
             try effective_w.writeAll("  zr completion bash >> ~/.bashrc\n");
-            try effective_w.writeAll("  zr completion zsh >> ~/.zshrc\n");
+            try effective_w.writeAll("  zr completion --install bash\n");
+            try effective_w.writeAll("  zr completion --install zsh\n");
             return 0;
         }
-        return completion.cmdCompletion(shell, effective_w, ew, effective_color);
+
+        if (install_mode) {
+            return try completion.installCompletion(allocator, shell, effective_w, ew, effective_color);
+        } else {
+            return completion.cmdCompletion(shell, effective_w, ew, effective_color);
+        }
     } else if (std.mem.eql(u8, cmd, "workspace")) {
         const sub = if (effective_args.len >= 3) effective_args[2] else "";
         if (std.mem.eql(u8, sub, "") or std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
