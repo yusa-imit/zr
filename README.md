@@ -172,25 +172,53 @@ cmd = "npm run build --outdir={{build_dir}}"  # {{build_dir}} → "dist"
 
 [tasks.push]
 cmd = "docker push {{registry}}/myapp"        # Override: zr run push --param registry=other.io
+
+# Task namespacing with group-level defaults (v1.94.0+)
+[tasks.build]               # Group config (no cmd): sets env/cwd/timeout for all build.* tasks
+env = { NODE_ENV = "production" }
+cwd = "packages/app"
+
+[tasks.build.compile]       # Inherits group env and cwd
+cmd = "tsc --build"
+
+[tasks.build.bundle]        # Inherits group env and cwd
+cmd = "esbuild src/index.ts --bundle"
+deps = ["build.compile"]
 ```
 
 **Commands**:
 ```bash
 zr run <task>              # Execute a task
+zr run build.*             # Run all tasks in the "build" namespace (v1.94.0+)
 zr run <task> --skip dep   # Skip specific dependency tasks
 zr run <task> --only       # Run only this task, skip dependencies (v1.84.0+)
 zr run --only <task>       # Alternate form (same effect)
 zr run --dir packages/app  # Run tasks in matching directories (v1.83.0+)
 zr list                    # Show all tasks
+zr list --group build      # Filter to "build" namespace group (v1.94.0+)
 zr list --sort=freq        # Sort by most frequently run (v1.84.0+)
 zr list --sort=recent      # Sort by most recently run (v1.84.0+)
 zr list --sort=time        # Sort by slowest average duration (v1.84.0+)
 zr graph <task>            # Visualize dependency graph
+zr graph --format=mermaid  # Output as Mermaid flowchart (v1.96.0+)
+zr graph --format=dot      # Output as GraphViz DOT (v1.96.0+)
+zr graph --from=<task>     # Show downstream subgraph from task (v1.96.0+)
+zr graph --cycles-only     # Detect and show cyclic dependencies (v1.96.0+)
 zr watch <task> [paths]    # Re-run on file changes
 zr interactive             # TUI task picker
 zr failures [list|clear]   # View/clear task failure reports (v1.14.0+)
+zr completion bash         # Generate bash completion script (v1.23.0+)
+zr completion --install zsh # Install zsh completion automatically (v1.97.0+)
 zr --dry-run run <task>    # Preview execution plan
 zr --notify run <task>     # Enable desktop notifications globally
+```
+
+**Project settings** (`[settings]` section in `zr.toml`, v1.92.0+):
+```toml
+[settings]
+default_profile = "dev"    # Active profile when --profile not specified
+jobs = 4                   # Default parallel task limit (overridden by --jobs)
+default_timeout = 30       # Default task timeout in seconds
 ```
 
 ### Workflows (Phase 2)

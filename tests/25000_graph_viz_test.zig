@@ -211,12 +211,8 @@ test "25005: graph --cycles-only with no cycles shows no cycles message" {
 
     // Should succeed (no cycles is valid state)
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Output should indicate no cycles (could be empty, "no cycles", or similar message)
-    // Accept either empty output or explicit "no cycles" message
-    const output = result.stdout;
-    const has_no_cycles_msg = std.mem.indexOf(u8, output, "no cycle") != null;
-    const is_mostly_empty = std.mem.trim(u8, output, " \t\n\r").len < 50;
-    try std.testing.expect(has_no_cycles_msg or is_mostly_empty);
+    // graph.zig emits "No cycles detected.\n" when --cycles-only finds no cycles.
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "No cycles detected") != null);
 }
 
 test "25006: graph --format=dot with --from=<task> shows subgraph" {

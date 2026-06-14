@@ -157,12 +157,12 @@ test "23004: zr run build (no exact match) shows group tasks when build.* exists
     var result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
     defer result.deinit();
 
-    // Should not error immediately, but inform about group tasks
-    // Either shows group listing or returns informative message
+    // "build" (without wildcard) is not an exact task; the runner should error and suggest
+    // "build.compile" and/or "build.link" via Levenshtein Did-you-mean suggestions.
+    try std.testing.expect(result.exit_code != 0);
     const output = if (result.stderr.len > 0) result.stderr else result.stdout;
     try std.testing.expect(std.mem.indexOf(u8, output, "build.compile") != null or
-                           std.mem.indexOf(u8, output, "build.link") != null or
-                           std.mem.indexOf(u8, output, "build") != null);
+                           std.mem.indexOf(u8, output, "build.link") != null);
 }
 
 test "23005: zr list with namespace tasks shows grouped output" {

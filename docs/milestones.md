@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- **Latest**: v1.96.0 (feat: Task Dependency Visualization Enhancements) — RELEASED 2026-06-14
+- **Latest**: v1.97.0 (feat: zr completion --install flag) — RELEASED 2026-06-14
 - **Pending release**: none
-- **Active milestones**: 2 (Shell Completion Scripts [planned], Code Quality & Documentation Polish [continuous])
+- **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)
 - **DONE**: Task Dependency Visualization Enhancements (Cycle 343, v1.96.0 RELEASED), Group-Level Defaults & Inheritance (Cycle 341, v1.95.0 RELEASED), Task Groups & Namespaces (Cycle 340, v1.94.0 RELEASED), Task Output Capture & Variable Passing (Cycles 318-321, v1.87.0 RELEASED), Tag Management & Discovery (Cycle 311, v1.86.0 RELEASED), Task Explain & Execution Preview (Cycles 304-309, v1.85.0), Enhanced Task Control & Developer Experience (Cycle 283, v1.83.0 RELEASED), Sailor v2.5.0 & v2.6.0 Migration (Cycle 209), Dependency Resolution & Version Constraints (Cycles 204, 206, 208), Task Result Caching & Memoization (Cycles 193-199, v1.82.0 RELEASED), Enhanced Watch Mode & Live Reload (Cycles 189-192, v1.81.0 RELEASED), Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
@@ -118,7 +118,7 @@ Generate shell completion scripts for bash, zsh, and fish so users get tab-compl
 - **Profile completion** — complete profile names from `[profiles]` section
 - **`--install` flag** — automatically install to the correct shell config directory
 - **Integration tests**: 6 tests (26000–26005) covering bash/zsh/fish output format, task name inclusion, flag list presence
-**Status: PLANNED** — Next milestone after v1.96.0.
+**Status: DONE** — Completed 2026-06-14 (Cycles 343-345). `zr completion bash/zsh/fish/powershell` output implemented in v1.56.0/v1.23.0; `--install` flag added in v1.97.0 (Cycle 343). Dynamic task names via `zr list`, profile names via `zr list --profiles`. Integration tests: completion_test.zig (8 tests) + 26000_completion_install_test.zig (6 tests, 26000–26005).
 
 ### Code Quality & Documentation Polish
 
@@ -1023,8 +1023,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v2.39.0 (all migrations complete through v2.39.0)
-- **Next**: v2.40.0+ (when released)
+- **Current in zr**: v2.43.0 (all migrations complete through v2.43.0)
+- **Next**: v2.44.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -1082,6 +1082,10 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v2.37.0 | DONE | ProgressRing widget — circular progress indicator (Cycle 338, no zr integration needed) |
 | v2.38.0 | DONE | KeyMap widget — scrollable keyboard shortcut reference panel (Cycle 340, no zr integration needed) |
 | v2.39.0 | DONE | NumberInput widget — numeric input with bounded editing and step controls (Cycle 340, commit cd82103) |
+| v2.40.0 | DONE | Additive release — no breaking changes, dependency update only (Cycle 343, commit f67e70a) |
+| v2.41.0 | DONE | ColorSwatch widget — color preview swatch with hex/rgb labels (Cycle 343, commit f67e70a) |
+| v2.42.0 | DONE | Additive release — no breaking changes, dependency update only (Cycle 345) |
+| v2.43.0 | DONE | VirtualTable widget — virtual scroll table for large datasets, visible rows only (Cycle 345, issue #79) |
 
 ### zuda Library
 

@@ -601,7 +601,7 @@ gh issue list --state open --label bug --limit 5
 
 ## Sailor Library
 
-- **Current**: v1.13.1 (all migrations through v1.13.1 complete)
+- **Current**: v2.43.0 (all migrations through v2.43.0 complete)
 - **Tracking**: See `docs/milestones.md` for version-by-version status
 
 ### Migration Protocol

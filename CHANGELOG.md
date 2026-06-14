@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.97.0] - 2026-06-14
+
+### Added
+- **`zr completion --install <shell>`** — automatically install completion script to the correct shell config file (`~/.bashrc` for bash, `~/.zshrc` for zsh, `~/.config/fish/completions/zr.fish` for fish); idempotent (won't duplicate entries)
+
+## [1.96.0] - 2026-06-14
+
+### Added
+- **`zr graph --format=mermaid`** — output task dependency graph as Mermaid flowchart syntax
+- **`zr graph --format=dot`** — output task dependency graph as GraphViz DOT format
+- **`zr graph --group=<name>`** — filter task graph to a namespace group (e.g. `--group=build`)
+- **`zr graph --from=<task>`** — show subgraph downstream from a task (task + all dependents, BFS)
+- **`zr graph --to=<task>`** — show subgraph upstream to a task (task + all dependencies, BFS)
+- **`zr graph --depth=<n>`** — limit traversal depth for `--from`/`--to` filters
+- **`zr graph --cycles-only`** — show only cyclic tasks; outputs "No cycles detected." if none found
+
+### Changed
+- **sailor v2.40.0 + v2.41.0** — migrated to latest sailor (RangeSlider widget in v2.40.0, ColorSwatch widget in v2.41.0)
+
+## [1.95.0] - 2026-06-14
+
+### Added
+- **Group-Level Defaults & Inheritance** — `[tasks.build]` (a group config with no `cmd`) propagates `env`, `cwd`, and `timeout` to all tasks in the `build.*` namespace
+- **env inheritance** — group env vars merged into task env; task-level keys override group-level keys
+- **cwd inheritance** — group `cwd` used when task has no own `cwd`
+- **timeout inheritance** — group `timeout` used when task has no own `timeout`
+
 ## [1.94.0] - 2026-06-14
 
 ### Added
