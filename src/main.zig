@@ -1540,6 +1540,11 @@ fn run(
                 std.mem.eql(u8, arg, "--watch") or
                 std.mem.startsWith(u8, arg, "--affected") or
                 std.mem.startsWith(u8, arg, "--focus=") or
+                std.mem.startsWith(u8, arg, "--group=") or
+                std.mem.startsWith(u8, arg, "--from=") or
+                std.mem.startsWith(u8, arg, "--to=") or
+                std.mem.startsWith(u8, arg, "--depth=") or
+                std.mem.eql(u8, arg, "--cycles-only") or
                 std.mem.eql(u8, arg, "--help") or
                 std.mem.eql(u8, arg, "-h")) {
                 use_new_graph = true;

@@ -15,6 +15,7 @@ pub const GraphFormat = enum {
     ascii,
     dot,
     json,
+    mermaid,
     html,
     tui, // Interactive TUI mode
     interactive, // Interactive HTML workflow visualizer (v1.58.0)
@@ -23,6 +24,7 @@ pub const GraphFormat = enum {
         if (std.mem.eql(u8, s, "ascii")) return .ascii;
         if (std.mem.eql(u8, s, "dot")) return .dot;
         if (std.mem.eql(u8, s, "json")) return .json;
+        if (std.mem.eql(u8, s, "mermaid")) return .mermaid;
         if (std.mem.eql(u8, s, "html")) return .html;
         if (std.mem.eql(u8, s, "tui")) return .tui;
         if (std.mem.eql(u8, s, "interactive")) return .interactive;
@@ -380,13 +382,277 @@ fn sanitizeDotId(path: []const u8) ![]const u8 {
     return std.heap.page_allocator.dupe(u8, path);
 }
 
+/// Collect all tasks in the downstream subgraph from `start` (tasks that depend on it, transitively).
+/// Returns a StringHashMap of included task names. Caller owns the map.
+fn collectDownstream(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+    start: []const u8,
+    max_depth_opt: ?usize,
+) !std.StringHashMap(void) {
+    // Build reverse dependency map: for each task X with dep D, add edge D → X
+    var reverse = std.StringHashMap(std.ArrayList([]const u8)).init(allocator);
+    defer {
+        var it = reverse.iterator();
+        while (it.next()) |entry| entry.value_ptr.deinit(allocator);
+        reverse.deinit();
+    }
+
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        const all_deps = [_][]const []const u8{ task.deps, task.deps_serial, task.deps_optional };
+        for (all_deps) |deps| {
+            for (deps) |dep| {
+                const gop = try reverse.getOrPut(dep);
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = std.ArrayList([]const u8){};
+                }
+                try gop.value_ptr.append(allocator, task.name);
+            }
+        }
+        for (task.deps_if) |dep| {
+            const gop = try reverse.getOrPut(dep.task);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = std.ArrayList([]const u8){};
+            }
+            try gop.value_ptr.append(allocator, task.name);
+        }
+    }
+
+    // BFS from start following reverse edges
+    var included = std.StringHashMap(void).init(allocator);
+    var queue = std.ArrayList(struct { name: []const u8, depth: usize }){};
+    defer queue.deinit(allocator);
+
+    try included.put(start, {});
+    try queue.append(allocator, .{ .name = start, .depth = 0 });
+
+    var qi: usize = 0;
+    while (qi < queue.items.len) {
+        const item = queue.items[qi];
+        qi += 1;
+
+        if (max_depth_opt) |md| {
+            if (item.depth >= md) continue;
+        }
+
+        if (reverse.get(item.name)) |dependents| {
+            for (dependents.items) |dep| {
+                if (!included.contains(dep)) {
+                    try included.put(dep, {});
+                    try queue.append(allocator, .{ .name = dep, .depth = item.depth + 1 });
+                }
+            }
+        }
+    }
+
+    return included;
+}
+
+/// Collect all tasks in the upstream subgraph to `target` (all its transitive dependencies).
+fn collectUpstream(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+    target: []const u8,
+    max_depth_opt: ?usize,
+) !std.StringHashMap(void) {
+    var included = std.StringHashMap(void).init(allocator);
+    var queue = std.ArrayList(struct { name: []const u8, depth: usize }){};
+    defer queue.deinit(allocator);
+
+    try included.put(target, {});
+    try queue.append(allocator, .{ .name = target, .depth = 0 });
+
+    var qi: usize = 0;
+    while (qi < queue.items.len) {
+        const item = queue.items[qi];
+        qi += 1;
+
+        if (max_depth_opt) |md| {
+            if (item.depth >= md) continue;
+        }
+
+        const task = config.tasks.get(item.name) orelse continue;
+        const all_deps = [_][]const []const u8{ task.deps, task.deps_serial, task.deps_optional };
+        for (all_deps) |deps| {
+            for (deps) |dep| {
+                if (!included.contains(dep)) {
+                    try included.put(dep, {});
+                    try queue.append(allocator, .{ .name = dep, .depth = item.depth + 1 });
+                }
+            }
+        }
+        for (task.deps_if) |dep| {
+            if (!included.contains(dep.task)) {
+                try included.put(dep.task, {});
+                try queue.append(allocator, .{ .name = dep.task, .depth = item.depth + 1 });
+            }
+        }
+    }
+
+    return included;
+}
+
+/// Cycle detection state enum
+const CycleDetectState = enum { unvisited, in_stack, done };
+
+/// Detect cycles in the task dependency graph using DFS.
+/// Returns a list of task names that are part of cycles.
+fn detectCycles(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+) !std.StringHashMap(void) {
+    var state = std.StringHashMap(CycleDetectState).init(allocator);
+    defer state.deinit();
+
+    var cyclic_tasks = std.StringHashMap(void).init(allocator);
+
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        try state.put(entry.key_ptr.*, .unvisited);
+    }
+
+    var outer_it = config.tasks.iterator();
+    while (outer_it.next()) |entry| {
+        const task_name = entry.key_ptr.*;
+        const s = state.get(task_name) orelse continue;
+        if (s == .done) continue;
+
+        var path = std.StringHashMap(void).init(allocator);
+        defer path.deinit();
+        try dfsCyclicDetect(allocator, config, task_name, &state, &path, &cyclic_tasks);
+    }
+
+    return cyclic_tasks;
+}
+
+fn dfsCyclicDetect(
+    allocator: std.mem.Allocator,
+    config: *const loader.Config,
+    name: []const u8,
+    state: *std.StringHashMap(CycleDetectState),
+    path: *std.StringHashMap(void),
+    cyclic_tasks: *std.StringHashMap(void),
+) !void {
+    const current_state = state.get(name) orelse .unvisited;
+    if (current_state == .done) return;
+    if (current_state == .in_stack) {
+        // Found a cycle - mark all tasks in path as cyclic
+        try cyclic_tasks.put(name, {});
+        return;
+    }
+
+    try state.put(name, .in_stack);
+    try path.put(name, {});
+
+    const task = config.tasks.get(name) orelse {
+        _ = state.remove(name);
+        _ = path.remove(name);
+        return;
+    };
+
+    const all_deps = [_][]const []const u8{ task.deps, task.deps_serial, task.deps_optional };
+    for (all_deps) |deps| {
+        for (deps) |dep| {
+            try dfsCyclicDetect(allocator, config, dep, state, path, cyclic_tasks);
+        }
+    }
+    for (task.deps_if) |dep| {
+        try dfsCyclicDetect(allocator, config, dep.task, state, path, cyclic_tasks);
+    }
+
+    _ = path.remove(name);
+    try state.put(name, .done);
+}
+
+/// Convert a task name to a valid Mermaid flowchart ID
+fn mermaidId(name: []const u8) ![]const u8 {
+    const result = try std.heap.page_allocator.dupe(u8, name);
+    for (result) |*c| {
+        if (c.* == '.' or c.* == '-' or c.* == ' ') c.* = '_';
+    }
+    return result;
+}
+
+/// Render task graph in Mermaid flowchart format
+fn renderTasksMermaid(
+    w: *std.Io.Writer,
+    config: *const loader.Config,
+    filter: ?*const std.StringHashMap(void),
+) !void {
+    try w.writeAll("flowchart LR\n");
+
+    // Nodes
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        if (filter != null and !filter.?.contains(task.name)) continue;
+        const safe_id = try mermaidId(task.name);
+        defer std.heap.page_allocator.free(safe_id);
+        try w.print("    {s}[\"{s}\"]\n", .{ safe_id, task.name });
+    }
+
+    try w.writeAll("\n");
+
+    // Edges
+    task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        if (filter != null and !filter.?.contains(task.name)) continue;
+        const to_id = try mermaidId(task.name);
+        defer std.heap.page_allocator.free(to_id);
+
+        // Parallel dependencies (solid arrow)
+        for (task.deps) |dep| {
+            if (filter != null and !filter.?.contains(dep)) continue;
+            const from_id = try mermaidId(dep);
+            defer std.heap.page_allocator.free(from_id);
+            try w.print("    {s} --> {s}\n", .{ from_id, to_id });
+        }
+
+        // Serial dependencies (bold arrow with label)
+        for (task.deps_serial) |dep| {
+            if (filter != null and !filter.?.contains(dep)) continue;
+            const from_id = try mermaidId(dep);
+            defer std.heap.page_allocator.free(from_id);
+            try w.print("    {s} -->|serial| {s}\n", .{ from_id, to_id });
+        }
+
+        // Conditional dependencies (dashed arrow with label)
+        for (task.deps_if) |dep| {
+            if (filter != null and !filter.?.contains(dep.task)) continue;
+            const from_id = try mermaidId(dep.task);
+            defer std.heap.page_allocator.free(from_id);
+            try w.print("    {s} -.->|if: {s}| {s}\n", .{ from_id, dep.condition, to_id });
+        }
+
+        // Optional dependencies (dotted arrow with label)
+        for (task.deps_optional) |dep| {
+            if (filter != null and !filter.?.contains(dep)) continue;
+            const from_id = try mermaidId(dep);
+            defer std.heap.page_allocator.free(from_id);
+            try w.print("    {s} -.-> {s}\n", .{ from_id, to_id });
+        }
+    }
+}
+
 /// Render task graph in ASCII tree format
 fn renderTasksAscii(
     w: *std.Io.Writer,
     config: *const loader.Config,
+    filter: ?*const std.StringHashMap(void),
     use_color: bool,
 ) !void {
-    const task_count = config.tasks.count();
+    var task_count: usize = 0;
+    if (filter != null) {
+        var task_it = config.tasks.iterator();
+        while (task_it.next()) |entry| {
+            if (filter.?.contains(entry.key_ptr.*)) task_count += 1;
+        }
+    } else {
+        task_count = config.tasks.count();
+    }
 
     if (task_count == 0) {
         try w.writeAll("(no tasks defined)\n");
@@ -399,6 +665,7 @@ fn renderTasksAscii(
     var task_it = config.tasks.iterator();
     while (task_it.next()) |entry| {
         const task = entry.value_ptr;
+        if (filter != null and !filter.?.contains(task.name)) continue;
 
         // Print task name
         try w.print("● {s}", .{task.name});
@@ -463,6 +730,7 @@ fn renderTasksAscii(
 fn renderTasksDot(
     w: *std.Io.Writer,
     config: *const loader.Config,
+    filter: ?*const std.StringHashMap(void),
     _: bool,
 ) !void {
     try w.writeAll("digraph tasks {\n");
@@ -473,6 +741,7 @@ fn renderTasksDot(
     var task_it = config.tasks.iterator();
     while (task_it.next()) |entry| {
         const task = entry.value_ptr;
+        if (filter != null and !filter.?.contains(task.name)) continue;
         const name = try sanitizeDotId(task.name);
         defer std.heap.page_allocator.free(name);
 
@@ -504,11 +773,13 @@ fn renderTasksDot(
     task_it = config.tasks.iterator();
     while (task_it.next()) |entry| {
         const task = entry.value_ptr;
+        if (filter != null and !filter.?.contains(task.name)) continue;
         const from = try sanitizeDotId(task.name);
         defer std.heap.page_allocator.free(from);
 
         // Parallel dependencies (solid line)
         for (task.deps) |dep| {
+            if (filter != null and !filter.?.contains(dep)) continue;
             const to = try sanitizeDotId(dep);
             defer std.heap.page_allocator.free(to);
             try w.print("  \"{s}\" -> \"{s}\";\n", .{ to, from });
@@ -516,6 +787,7 @@ fn renderTasksDot(
 
         // Serial dependencies (bold line)
         for (task.deps_serial) |dep| {
+            if (filter != null and !filter.?.contains(dep)) continue;
             const to = try sanitizeDotId(dep);
             defer std.heap.page_allocator.free(to);
             try w.print("  \"{s}\" -> \"{s}\" [style=bold, label=\"serial\"];\n", .{ to, from });
@@ -523,6 +795,7 @@ fn renderTasksDot(
 
         // Conditional dependencies (dashed line)
         for (task.deps_if) |dep| {
+            if (filter != null and !filter.?.contains(dep.task)) continue;
             const to = try sanitizeDotId(dep.task);
             defer std.heap.page_allocator.free(to);
             try w.print("  \"{s}\" -> \"{s}\" [style=dashed, label=\"{s}\"];\n", .{ to, from, dep.condition });
@@ -530,6 +803,7 @@ fn renderTasksDot(
 
         // Optional dependencies (dotted line)
         for (task.deps_optional) |dep| {
+            if (filter != null and !filter.?.contains(dep)) continue;
             const to = try sanitizeDotId(dep);
             defer std.heap.page_allocator.free(to);
             try w.print("  \"{s}\" -> \"{s}\" [style=dotted, label=\"optional\"];\n", .{ to, from });
@@ -543,6 +817,7 @@ fn renderTasksDot(
 fn renderTasksJson(
     w: *std.Io.Writer,
     config: *const loader.Config,
+    filter: ?*const std.StringHashMap(void),
     _: bool,
 ) !void {
     const JsonArr = sailor.fmt.JsonArray(*std.Io.Writer);
@@ -553,6 +828,7 @@ fn renderTasksJson(
     var task_it = config.tasks.iterator();
     while (task_it.next()) |entry| {
         const task = entry.value_ptr;
+        if (filter != null and !filter.?.contains(task.name)) continue;
         var obj = try tasks_arr.beginObject();
 
         // Basic task metadata
@@ -655,6 +931,11 @@ pub fn graphCommand(
     var focus_path: ?[]const u8 = null;
     var interactive_flag: bool = false;
     var watch_flag: bool = false;
+    var group_filter: ?[]const u8 = null;
+    var from_task: ?[]const u8 = null;
+    var to_task: ?[]const u8 = null;
+    var max_depth: ?usize = null;
+    var cycles_only: bool = false;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -663,7 +944,7 @@ pub fn graphCommand(
             const fmt_str = arg["--format=".len..];
             format = GraphFormat.fromString(fmt_str) orelse {
                 try color.printError(ew, use_color,
-                    "graph: invalid format '{s}'\n\n  Valid formats: ascii, dot, json, html, tui, interactive\n",
+                    "graph: invalid format '{s}'\n\n  Valid formats: ascii, dot, json, mermaid, html, tui, interactive\n",
                     .{fmt_str});
                 return 1;
             };
@@ -692,6 +973,22 @@ pub fn graphCommand(
             affected_base = args[i];
         } else if (std.mem.startsWith(u8, arg, "--focus=")) {
             focus_path = arg["--focus=".len..];
+        } else if (std.mem.startsWith(u8, arg, "--group=")) {
+            group_filter = arg["--group=".len..];
+        } else if (std.mem.startsWith(u8, arg, "--from=")) {
+            from_task = arg["--from=".len..];
+        } else if (std.mem.startsWith(u8, arg, "--to=")) {
+            to_task = arg["--to=".len..];
+        } else if (std.mem.startsWith(u8, arg, "--depth=")) {
+            const depth_str = arg["--depth=".len..];
+            max_depth = std.fmt.parseInt(usize, depth_str, 10) catch |err| {
+                try color.printError(ew, use_color,
+                    "graph: invalid depth '{s}': {s}\n\n  Hint: --depth must be a positive integer\n",
+                    .{ depth_str, @errorName(err) });
+                return 1;
+            };
+        } else if (std.mem.eql(u8, arg, "--cycles-only")) {
+            cycles_only = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printGraphHelp(w);
             return 0;
@@ -706,6 +1003,76 @@ pub fn graphCommand(
         // Load task configuration
         var config = (try common.loadConfig(allocator, config_path, null, ew, true)) orelse return error.NoConfig;
         defer config.deinit();
+
+        // Compute task filter if any filters are requested
+        var filter_owned: ?std.StringHashMap(void) = null;
+        defer if (filter_owned) |*f| f.deinit();
+
+        if (cycles_only) {
+            // Detect and show cycles
+            var found_cycles = try detectCycles(allocator, &config);
+            defer found_cycles.deinit();
+
+            if (found_cycles.count() == 0) {
+                try w.writeAll("No cycles detected.\n");
+            } else {
+                var it = found_cycles.keyIterator();
+                while (it.next()) |key| {
+                    try w.print("Cyclic task: {s}\n", .{key.*});
+                }
+            }
+            return 0;
+        }
+
+        if (group_filter != null or from_task != null or to_task != null) {
+            var filter = std.StringHashMap(void).init(allocator);
+
+            // Start with all tasks
+            var it = config.tasks.iterator();
+            while (it.next()) |entry| try filter.put(entry.key_ptr.*, {});
+
+            if (group_filter) |gf| {
+                const prefix = try std.fmt.allocPrint(allocator, "{s}.", .{gf});
+                defer allocator.free(prefix);
+                var keys_to_remove = std.ArrayList([]const u8){};
+                defer keys_to_remove.deinit(allocator);
+                var kit = filter.keyIterator();
+                while (kit.next()) |key| {
+                    if (!std.mem.startsWith(u8, key.*, prefix) and !std.mem.eql(u8, key.*, gf)) {
+                        try keys_to_remove.append(allocator, key.*);
+                    }
+                }
+                for (keys_to_remove.items) |key| _ = filter.remove(key);
+            }
+
+            if (from_task) |from| {
+                var downstream = try collectDownstream(allocator, &config, from, max_depth);
+                defer downstream.deinit();
+                var kit = filter.keyIterator();
+                var to_remove = std.ArrayList([]const u8){};
+                defer to_remove.deinit(allocator);
+                while (kit.next()) |key| {
+                    if (!downstream.contains(key.*)) try to_remove.append(allocator, key.*);
+                }
+                for (to_remove.items) |key| _ = filter.remove(key);
+            }
+
+            if (to_task) |to| {
+                var upstream = try collectUpstream(allocator, &config, to, max_depth);
+                defer upstream.deinit();
+                var kit = filter.keyIterator();
+                var to_remove = std.ArrayList([]const u8){};
+                defer to_remove.deinit(allocator);
+                while (kit.next()) |key| {
+                    if (!upstream.contains(key.*)) try to_remove.append(allocator, key.*);
+                }
+                for (to_remove.items) |key| _ = filter.remove(key);
+            }
+
+            filter_owned = filter;
+        }
+
+        const filter_ptr: ?*const std.StringHashMap(void) = if (filter_owned) |*f| f else null;
 
         // Load execution history if showing status
         var store: ?history_store.Store = null;
@@ -738,9 +1105,10 @@ pub fn graphCommand(
 
         // Render task graph in requested format
         switch (format) {
-            .ascii => try renderTasksAscii(w, &config, use_color),
-            .dot => try renderTasksDot(w, &config, use_color),
-            .json => try renderTasksJson(w, &config, use_color),
+            .ascii => try renderTasksAscii(w, &config, filter_ptr, use_color),
+            .dot => try renderTasksDot(w, &config, filter_ptr, use_color),
+            .json => try renderTasksJson(w, &config, filter_ptr, use_color),
+            .mermaid => try renderTasksMermaid(w, &config, filter_ptr),
             .interactive => unreachable, // Already handled above
             .html => {
                 try color.printError(ew, use_color, "✗ [graph]: HTML format is only for workspace graphs\n\n  Hint: Use --format=interactive for task graphs, or run from a workspace\n", .{});
@@ -821,6 +1189,10 @@ pub fn graphCommand(
                 return 1;
             };
         },
+        .mermaid => {
+            try color.printError(ew, use_color, "graph: mermaid format is only for task graphs (use --type=tasks)\n", .{});
+            return 1;
+        },
         .interactive => {
             try color.printError(ew, use_color, "graph: interactive format is only for task graphs (use --type=tasks or --interactive)\n", .{});
             return 1;
@@ -838,11 +1210,16 @@ fn printGraphHelp(w: *std.Io.Writer) !void {
         \\
         \\Options:
         \\  --type=<type>       Graph type: workspace (default), tasks
-        \\  --format=<fmt>      Output format: ascii (default), dot, json, html, tui, interactive
+        \\  --format=<fmt>      Output format: ascii (default), dot, json, mermaid, html, tui, interactive
         \\  --interactive       Interactive HTML workflow visualizer (implies --type=tasks)
         \\  --watch             Live-update graph during workflow execution (requires --type=tasks)
         \\  --affected <ref>    Highlight affected projects (git base reference, workspace only)
         \\  --focus=<path>      Focus on specific project (workspace only)
+        \\  --group=<name>      Filter task graph to namespace group (e.g., build, test)
+        \\  --from=<task>       Show subgraph downstream from task (task + all dependents)
+        \\  --to=<task>         Show subgraph upstream to task (task + all dependencies)
+        \\  --depth=<n>         Limit traversal depth for --from/--to filters
+        \\  --cycles-only       Show only cyclic tasks; "no cycles" if none found
         \\  --config=<path>     Config file path (default: zr.toml)
         \\  -h, --help          Show this help
         \\
@@ -861,6 +1238,14 @@ fn printGraphHelp(w: *std.Io.Writer) !void {
         \\  zr graph --interactive --watch    # Live-update during execution
         \\  zr graph --interactive > workflow.html  # Save to file
         \\
+        \\  # Task graph filters (v1.95.0+)
+        \\  zr graph --type=tasks --format=mermaid   # Mermaid diagram syntax
+        \\  zr graph --type=tasks --from=build       # Show build + all dependents
+        \\  zr graph --type=tasks --to=deploy        # Show deploy + all dependencies
+        \\  zr graph --type=tasks --group=build      # Show only build.* tasks
+        \\  zr graph --type=tasks --cycles-only      # Check for circular dependencies
+        \\  zr graph --type=tasks --from=a --depth=1 # Show only direct dependents of a
+        \\
         \\Interactive Features:
         \\  - Click task nodes to view details (cmd, deps, env, duration)
         \\  - Color-coded status (success/failed/pending/unknown)
@@ -877,6 +1262,7 @@ test "GraphFormat.fromString" {
     try std.testing.expectEqual(GraphFormat.ascii, GraphFormat.fromString("ascii").?);
     try std.testing.expectEqual(GraphFormat.dot, GraphFormat.fromString("dot").?);
     try std.testing.expectEqual(GraphFormat.json, GraphFormat.fromString("json").?);
+    try std.testing.expectEqual(GraphFormat.mermaid, GraphFormat.fromString("mermaid").?);
     try std.testing.expectEqual(GraphFormat.html, GraphFormat.fromString("html").?);
     try std.testing.expectEqual(GraphFormat.tui, GraphFormat.fromString("tui").?);
     try std.testing.expect(GraphFormat.fromString("invalid") == null);

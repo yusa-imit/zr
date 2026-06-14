@@ -83,3 +83,5 @@
 {"timestamp":"2026-06-14T01:20:00Z","action":"subagent","agent_type":"Explore","task":"Verify parser handles [tasks.build.compile] dot-separated task names","project":"zr"}
 {"timestamp":"2026-06-14T02:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests 24000-24005 for Group-Level Defaults & Inheritance","project":"zr"}
 {"timestamp":"2026-06-14T03:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement Group-Level Defaults & Inheritance: GroupConfig struct, tryAddGroupConfig parser helper, applyGroupDefaults, list/explain updates","project":"zr"}
+{"timestamp":"2026-06-14T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests 25000-25007 for Task Dependency Visualization Enhancements","project":"zr"}
+{"timestamp":"2026-06-14T06:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Task Dependency Visualization Enhancements — graph.zig filters (--group, --from, --to, --depth, --cycles-only, --format=mermaid/dot)","project":"zr"}
