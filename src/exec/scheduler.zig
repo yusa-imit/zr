@@ -614,6 +614,8 @@ const WorkerCtx = struct {
     notify_title: ?[]const u8,
     /// Required environment variable names (v1.84.0).
     required_env: []const []const u8,
+    /// Secret environment variable names (v1.98.0).
+    secrets: []const []const u8 = &[_][]const u8{},
     /// Runtime params for {{param}} interpolation (v1.75.0).
     runtime_params: ?*const std.StringHashMap([]const u8) = null,
     /// Config vars for {{var}} interpolation from [vars] section (v1.84.0).
@@ -970,6 +972,56 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
+    // Check secrets environment variables (v1.98.0) — same validation as required_env
+    if (ctx.secrets.len > 0) {
+        var missing = std.ArrayList([]const u8){};
+        defer missing.deinit(task_allocator);
+
+        for (ctx.secrets) |var_name| {
+            const found_in_task = blk: {
+                // Check task env (including env_file merged vars)
+                if (env_with_files) |env| {
+                    for (env) |kv| {
+                        if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
+                    }
+                } else {
+                    for (ctx.env orelse &.{}) |kv| {
+                        if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
+                    }
+                }
+                // Check system env
+                if (std.process.getEnvVarOwned(task_allocator, var_name)) |val| {
+                    task_allocator.free(val);
+                    break :blk true;
+                } else |_| {}
+                break :blk false;
+            };
+            if (!found_in_task) {
+                missing.append(task_allocator, var_name) catch {};
+            }
+        }
+
+        if (missing.items.len > 0) {
+            std.debug.print("\n✗ [{s}]: Missing required secrets:\n", .{ctx.task_name});
+            for (missing.items) |var_name| {
+                std.debug.print("  - {s}\n", .{var_name});
+            }
+            std.debug.print("\n  Hint: Set them in your shell or add to .env file\n\n", .{});
+
+            const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
+            ctx.results_mutex.lock();
+            defer ctx.results_mutex.unlock();
+            ctx.results.append(task_allocator, .{
+                .task_name = owned_name,
+                .success = false,
+                .exit_code = 1,
+                .duration_ms = 0,
+            }) catch task_allocator.free(owned_name);
+            if (!ctx.allow_failure) ctx.failed.store(true, .release);
+            return;
+        }
+    }
+
     // Build combined extra_env: workflow matrix vars + ZR_OUTPUT_* captured task outputs (v1.87.0)
     var combined_extra_env_list: std.ArrayList([2][]u8) = .{};
     var combined_extra_env_used = false;
@@ -1050,13 +1102,13 @@ fn workerFn(ctx: WorkerCtx) void {
     defer if (output_cap) |*oc| oc.deinit();
 
     // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, (4) cache enabled, (5) share_output, or (6) redact
-    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output or ctx.redact_names.len > 0;
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output or ctx.redact_names.len > 0 or ctx.secrets.len > 0;
     // Track whether buffer mode was enabled purely for caching (need to relay output to user after completion)
     const capture_for_cache = ctx.cache and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null;
     // Track whether buffer mode was enabled purely for share_output (need to relay output to user after completion)
     const capture_for_share = ctx.share_output and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache;
-    // Track whether buffer mode was enabled for output redaction (v1.89.0)
-    const capture_for_redact = ctx.redact_names.len > 0 and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache and !ctx.share_output;
+    // Track whether buffer mode was enabled for output redaction (v1.89.0) or secrets masking (v1.98.0)
+    const capture_for_redact = (ctx.redact_names.len > 0 or ctx.secrets.len > 0) and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache and !ctx.share_output;
     if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
             .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent/cache
@@ -1637,6 +1689,7 @@ fn workerFn(ctx: WorkerCtx) void {
     }
 
     // If redact is configured, relay output with sensitive values masked (v1.89.0)
+    // Also masks secret values (v1.98.0)
     if (capture_for_redact and should_show_output) {
         if (output_cap) |*oc| {
             if (oc.config.mode == .buffer) {
@@ -1647,6 +1700,7 @@ fn workerFn(ctx: WorkerCtx) void {
                         var owned_redacted: ?[]u8 = null;
                         defer if (owned_redacted) |r| task_allocator.free(r);
                         if (effective_env) |env| {
+                            // Mask redact_names values
                             for (ctx.redact_names) |name| {
                                 for (env) |pair| {
                                     if (std.mem.eql(u8, pair[0], name)) {
@@ -1660,6 +1714,32 @@ fn workerFn(ctx: WorkerCtx) void {
                                         break;
                                     }
                                 }
+                            }
+                            // Mask secret values from task-level env (v1.98.0)
+                            for (ctx.secrets) |name| {
+                                for (env) |pair| {
+                                    if (std.mem.eql(u8, pair[0], name)) {
+                                        const val = pair[1];
+                                        if (val.len > 0) {
+                                            const new_output = std.mem.replaceOwned(u8, task_allocator, redacted, val, "***") catch break;
+                                            if (owned_redacted) |r| task_allocator.free(r);
+                                            owned_redacted = new_output;
+                                            redacted = new_output;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        // Mask secret values from system/process environment (v1.98.0)
+                        for (ctx.secrets) |name| {
+                            const val = std.process.getEnvVarOwned(task_allocator, name) catch continue;
+                            defer task_allocator.free(val);
+                            if (val.len > 0) {
+                                const new_output = std.mem.replaceOwned(u8, task_allocator, redacted, val, "***") catch continue;
+                                if (owned_redacted) |r| task_allocator.free(r);
+                                owned_redacted = new_output;
+                                redacted = new_output;
                             }
                         }
                         std.fs.File.stdout().writeAll(redacted) catch {};
@@ -2733,6 +2813,7 @@ pub fn run(
                 .notify_on = task.notify_on,
                 .notify_title = task.notify_title,
                 .required_env = task.required_env orelse &[_][]const u8{},
+                .secrets = task.secrets orelse &[_][]const u8{},
                 .runtime_params = sched_config.runtime_params,
                 .config_vars = if (config.vars.count() > 0) &config.vars else null,
                 .share_output = task.share_output,

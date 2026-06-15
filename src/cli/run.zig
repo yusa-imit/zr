@@ -768,6 +768,35 @@ pub fn cmdRun(
                 }
             }
         }
+
+        // Show secrets required by tasks (v1.98.0)
+        var has_secret_tasks = false;
+        var s_it = config.tasks.iterator();
+        while (s_it.next()) |entry| {
+            const t = entry.value_ptr;
+            if (t.secrets != null and t.secrets.?.len > 0) {
+                has_secret_tasks = true;
+                break;
+            }
+        }
+        if (has_secret_tasks) {
+            try w.print("\n", .{});
+            try color.printBold(w, use_color, "Secrets required:\n", .{});
+            var s_it2 = config.tasks.iterator();
+            while (s_it2.next()) |entry| {
+                const t = entry.value_ptr;
+                if (t.secrets) |secrets| {
+                    if (secrets.len > 0) {
+                        try w.print("  {s}: ", .{entry.key_ptr.*});
+                        for (secrets, 0..) |secret, i| {
+                            if (i > 0) try w.print(", ", .{});
+                            try w.print("{s}", .{secret});
+                        }
+                        try w.print("\n", .{});
+                    }
+                }
+            }
+        }
         return 0;
     }
 

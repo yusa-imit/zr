@@ -72,6 +72,7 @@ const shell_hook_cmd = @import("cli/shell_hook.zig");
 const abbreviations = @import("cli/abbreviations.zig");
 const setup_cmd = @import("cli/setup.zig");
 const env_cmd = @import("cli/env.zig");
+const secrets_cmd = @import("cli/secrets.zig");
 const export_cmd = @import("cli/export.zig");
 const explain_cmd = @import("cli/explain.zig");
 const affected_cmd = @import("cli/affected.zig");
@@ -715,7 +716,7 @@ fn run(
         "analytics",  "context",    "conformance", "bench",
         "doctor",     "cd",         "shell-hook", "setup",      "env",        "export",
         "affected",   "clean",      "upgrade",    "alias",
-        "estimate",   "show",       "schedule",   "mcp",
+        "estimate",   "show",       "schedule",   "secrets",    "mcp",
         "explain",    "lsp",        "add",        "edit",       "failures",
         "template",   "which",      "ci",         "deps",       "artifacts",
         "tags",
@@ -1818,6 +1819,10 @@ fn run(
     } else if (std.mem.eql(u8, cmd, "context")) {
         const context_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         return context_cmd.cmdContext(allocator, context_args, effective_w, ew);
+    } else if (std.mem.eql(u8, cmd, "secrets")) {
+        // Secret management: zr secrets list|check (v1.98.0)
+        const secrets_args = if (effective_args.len >= 2) effective_args[1..] else &[_][]const u8{};
+        return try secrets_cmd.secretsCommand(allocator, secrets_args, effective_w, ew, config_path, effective_color);
     } else if (std.mem.eql(u8, cmd, "mcp")) {
         // MCP server: zr mcp serve
         if (effective_args.len < 3) {

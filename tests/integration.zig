@@ -81,6 +81,7 @@ comptime {
     _ = @import("24000_group_defaults_test.zig");
     _ = @import("25000_graph_viz_test.zig");
     _ = @import("26000_completion_install_test.zig");
+    _ = @import("27000_secrets_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");
