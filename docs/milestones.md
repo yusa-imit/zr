@@ -2,12 +2,12 @@
 
 ## Current Status
 
-- **Latest**: v1.97.0 (feat: zr completion --install flag + sailor v2.44.0) — RELEASED 2026-06-15
+- **Latest**: v1.98.0 (feat: Task Secret Management + sailor v2.45.0) — RELEASED 2026-06-15
 - **Pending release**: none
-- **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
-- **READY milestones**: 0
+- **Active milestones**: 2 (Config File Includes & Composition [READY], Code Quality & Documentation Polish [continuous])
+- **READY milestones**: 1
 - **BLOCKED milestones**: 0 (all blockers resolved)
-- **DONE**: Shell Completion Scripts (Cycle 346, v1.97.0 RELEASED), Task Dependency Visualization Enhancements (Cycle 343, v1.96.0 RELEASED), Group-Level Defaults & Inheritance (Cycle 341, v1.95.0 RELEASED), Task Groups & Namespaces (Cycle 340, v1.94.0 RELEASED), Task Output Capture & Variable Passing (Cycles 318-321, v1.87.0 RELEASED), Tag Management & Discovery (Cycle 311, v1.86.0 RELEASED), Task Explain & Execution Preview (Cycles 304-309, v1.85.0), Enhanced Task Control & Developer Experience (Cycle 283, v1.83.0 RELEASED), Sailor v2.5.0 & v2.6.0 Migration (Cycle 209), Dependency Resolution & Version Constraints (Cycles 204, 206, 208), Task Result Caching & Memoization (Cycles 193-199, v1.82.0 RELEASED), Enhanced Watch Mode & Live Reload (Cycles 189-192, v1.81.0 RELEASED), Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
+- **DONE**: Task Secret Management (Cycle 347, v1.98.0 RELEASED), Shell Completion Scripts (Cycle 346, v1.97.0 RELEASED), Task Dependency Visualization Enhancements (Cycle 343, v1.96.0 RELEASED), Group-Level Defaults & Inheritance (Cycle 341, v1.95.0 RELEASED), Task Groups & Namespaces (Cycle 340, v1.94.0 RELEASED), Task Output Capture & Variable Passing (Cycles 318-321, v1.87.0 RELEASED), Tag Management & Discovery (Cycle 311, v1.86.0 RELEASED), Task Explain & Execution Preview (Cycles 304-309, v1.85.0), Enhanced Task Control & Developer Experience (Cycle 283, v1.83.0 RELEASED), Sailor v2.5.0 & v2.6.0 Migration (Cycle 209), Dependency Resolution & Version Constraints (Cycles 204, 206, 208), Task Result Caching & Memoization (Cycles 193-199, v1.82.0 RELEASED), Enhanced Watch Mode & Live Reload (Cycles 189-192, v1.81.0 RELEASED), Sailor v2.3.0 & v2.4.0 Migration (Cycle 188), Task Output Artifacts & Persistence (Cycles 182, 184, 186, 187, v1.80.0 RELEASED), Task Documentation & Rich Help System (Cycles 172-174, 177, 179, v1.79.0 RELEASED), Enhanced Environment Variable Management (Cycle 171, v1.78.0 RELEASED), Enhanced Task Filtering & Selection Patterns (Cycles 163-164, v1.77.0), Task Conditional Dependencies Enhancement (Cycles 160-161, v1.76.0), Sailor v2.1.0 Migration (Cycle 159), Task Parameters & Dynamic Task Generation (Cycles 154-158, v1.75.0), Task Up-to-Date Detection & Incremental Builds (Cycles 148-152, v1.74.0), Task Aliases & Silent Mode (Cycles 144-147, v1.73.0), Documentation Site & Onboarding Experience (Cycle 141, v1.72.0), Performance Benchmarking & Competitive Analysis (Cycle 139, no release), Migration Tool Enhancement (Cycle 138, v1.71.0), Real-Time Task Output Filtering & Grep (Cycle 131, v1.70.0), Task Name Abbreviation & Fuzzy Matching (Cycle 124, v1.69.0), Shell Integration & Developer Ergonomics (Cycle 114, v1.68.0), Advanced Task Composition & Mixins (Cycle 113, v1.67.0), Enhanced Task Retry & Error Recovery (Cycle 109, v1.66.0), Sailor v1.37.0 Migration (Cycle 108, v1.65.0), Enhanced Task Discovery & Search (Cycle 107, v1.64.0), Workspace-Level Task Inheritance (Cycle 106, v1.63.0), Task Parallel Execution Groups (Cycle 103, v1.62.0), Sailor v1.35.0-v1.36.0 Migration (Cycle 101, v1.68.1), CLI Command Unit Test Coverage Enhancement (Cycle 99), Task Templates & Scaffolding (Cycle 94, v1.61.0), CI/CD Integration Templates (Cycle 93), Sailor v1.32.0-v1.34.0 Batch Migration (Cycle 88), Resource Affinity & NUMA Enhancements (Cycle 87), Interactive Task Picker UX (Cycle 82), TUI Performance Optimization (Cycle 79), Sailor v1.31.0 Migration (Cycle 77), Error Message UX Enhancement (Cycle 76), Sailor v1.26.0-v1.30.2 Batch Migration (Cycle 75)
 - **DONE**: zuda WorkStealingDeque Migration (Cycle 228, no release - WONTFIX), Test Infrastructure & Quality Enhancements (v1.60.0), Workflow Matrix Execution (v1.59.0), Task Fuzzy Search & Enhanced Discovery (no release), NUMA Memory Information (no release), Graph Format Enhancements (no release), Interactive Workflow Visualizer (v1.58.0), Configuration Validation Enhancements (v1.58.0), Task Estimation & Time Tracking (v1.58.0), TOML Parser Enhancement (no release), Interactive Task Builder TUI (no release), Enhanced Performance Monitoring (no release), Phase 13C v1.0 Release Preparation (v1.57.0), Phase 13A Documentation Review (no release), Phase 12C Benchmark Dashboard (no release), Phase 13B Migration Tools (no release), Sailor v1.21.0 & v1.22.0 Migration (no release), Windows Platform Enhancements (v1.56.0), Enhanced Configuration System (v1.55.0), TUI Mouse Interaction Enhancements (v1.54.0), Platform-Specific Resource Monitoring (v1.53.0), Output Enhancement & Pager Integration (v1.52.0), Sailor v1.19.0 & v1.20.0 Migration (v1.51.0), Cross-Platform Path Handling Audit (v1.50.0), Task Output Streaming Improvements (v1.49.0), Shell Integration Enhancements (v1.48.0), zuda Glob Migration, zuda Levenshtein Migration
 
 ---
@@ -119,6 +119,33 @@ Generate shell completion scripts for bash, zsh, and fish so users get tab-compl
 - **`--install` flag** — automatically install to the correct shell config directory
 - **Integration tests**: 6 tests (26000–26005) covering bash/zsh/fish output format, task name inclusion, flag list presence
 **Status: DONE** — Completed 2026-06-14 (Cycles 343-345). `zr completion bash/zsh/fish/powershell` output implemented in v1.56.0/v1.23.0; `--install` flag added in v1.97.0 (Cycle 343). Dynamic task names via `zr list`, profile names via `zr list --profiles`. Integration tests: completion_test.zig (8 tests) + 26000_completion_install_test.zig (6 tests, 26000–26005).
+
+### Task Secret Management
+
+Enable tasks to declare and consume secrets securely — essential for production workflows involving API keys, database passwords, and deploy tokens. Currently tasks rely on environment variables set outside zr; this milestone adds a structured secret system with explicit declarations, validation, and safe display. Includes:
+- **`secrets = ["AWS_KEY", "DB_PASSWORD"]`** — task-level field declaring required secrets; zr validates they exist before running (fails early with clear error if missing)
+- **`zr secrets list`** — list all declared secrets across all tasks with their source (env var, file, or unset status)
+- **`zr secrets check`** — validate that all declared secrets are available without running any tasks; exit 1 with detailed report if any are missing
+- **`secret_env_prefix = "ZR_SECRET_"`** — optional config to namespace secret env vars (e.g., `secrets = ["KEY"]` reads `ZR_SECRET_KEY` instead of `KEY`)
+- **Masked output**: when a secret value appears in task stdout/stderr, replace with `[REDACTED]` in terminal output (best-effort, based on declared secrets)
+- **`zr run --show-secrets`** — opt-in flag to print secret values in output (for debugging; explicit consent required)
+- **`--dry-run` integration**: show which secrets are required and their status (set/missing) without running
+- **`zr explain` integration**: text and `--json` output include required secrets list per task
+- **Integration tests**: 6 tests (27000–27005) covering declaration parsing, early validation error, list/check output, masked output, explain/dry-run display
+**Status: DONE** — Completed 2026-06-15 (Cycle 347 FEATURE). Implementation: `secrets` field in Task schema (types.zig), TOML array parsing (parser.zig), secrets validation before task execution + output masking from both task-level env and system env (scheduler.zig), `zr secrets list|check` commands (cli/secrets.zig), dry-run "Secrets required:" display (run.zig), routing in main.zig. Fixes: system env masking + memory management (toOwnedSlice). Testing: 6 integration tests (27000–27005). Released as v1.98.0.
+
+### Config File Includes & Composition
+
+Allow splitting large `zr.toml` configurations into multiple files and composing them together via `include`. Essential for monorepos, team setups, and shared workflow libraries where tasks and profiles need to be organized across files. Includes:
+- **`include = ["./ci.zr.toml", "./deploy.zr.toml"]`** — top-level array merging tasks, vars, and profiles from included files into the root config; included files are processed in order
+- **Relative path resolution**: included files are resolved relative to the including file's directory; nested includes supported (with cycle detection)
+- **Conflict resolution**: if both the root config and an included file define the same task, the root config wins (last-writer-wins for `[vars]` and `[profiles]`)
+- **`zr validate --show-includes`** — display the full include tree with file paths and resolved task counts per file
+- **`zr list --source`** — show which file each task comes from in the task list output (e.g. `build [ci.zr.toml]`)
+- **Error reporting**: parse errors in included files show the source file and line/column, not just the root config
+- **`--config` flag compatibility**: `zr --config project.zr.toml` resolves includes relative to `project.zr.toml`'s directory
+- **Integration tests**: 8 tests (28000–28007) covering basic include, nested include, task override, var merge, cycle detection error, validate tree, list --source, --config compatibility
+**Status: READY** — No dependencies. Implement as the milestone after Task Secret Management.
 
 ### Code Quality & Documentation Polish
 
@@ -1023,8 +1050,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v2.43.0 (all migrations complete through v2.43.0)
-- **Next**: v2.44.0+ (when released)
+- **Current in zr**: v2.45.0 (all migrations complete through v2.45.0)
+- **Next**: v2.46.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -1086,6 +1113,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v2.41.0 | DONE | ColorSwatch widget — color preview swatch with hex/rgb labels (Cycle 343, commit f67e70a) |
 | v2.42.0 | DONE | Additive release — no breaking changes, dependency update only (Cycle 345) |
 | v2.43.0 | DONE | VirtualTable widget — virtual scroll table for large datasets, visible rows only (Cycle 345, issue #79) |
+| v2.44.0 | DONE | HexViewer widget — hex dump viewer for binary data inspection (Cycle 346, issue #80) |
+| v2.45.0 | DONE | KeyValueViewer widget — two-column key-value viewer with auto/fixed width, navigation, selection (Cycle 347, issue #81) |
 
 ### zuda Library
 
