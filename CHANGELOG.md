@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.97.0] - 2026-06-14
+## [1.97.0] - 2026-06-15
 
 ### Added
 - **`zr completion --install <shell>`** — automatically install completion script to the correct shell config file (`~/.bashrc` for bash, `~/.zshrc` for zsh, `~/.config/fish/completions/zr.fish` for fish); idempotent (won't duplicate entries)
+
+### Changed
+- **sailor v2.43.0 + v2.44.0** — migrated to latest sailor (VirtualTable widget in v2.43.0, HexViewer widget in v2.44.0; both are additive UI components, no breaking changes)
 
 ## [1.96.0] - 2026-06-14
 

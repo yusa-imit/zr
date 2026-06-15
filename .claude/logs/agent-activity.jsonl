@@ -86,3 +86,4 @@
 {"timestamp":"2026-06-14T00:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests 25000-25007 for Task Dependency Visualization Enhancements","project":"zr"}
 {"timestamp":"2026-06-14T06:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Task Dependency Visualization Enhancements — graph.zig filters (--group, --from, --to, --depth, --cycles-only, --format=mermaid/dot)","project":"zr"}
 {"timestamp":"2026-06-15T07:12:00Z","action":"subagent","agent_type":"code-reviewer","task":"Review test quality for groups/graph_viz/completion_install tests","project":"zr"}
+{"timestamp":"2026-06-15T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Migrate sailor v2.44.0 (HexViewer widget) — fetch, build, test, bump version to v1.97.0","project":"zr"}
