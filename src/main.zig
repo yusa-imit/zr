@@ -1390,6 +1390,7 @@ fn run(
         var sort_by: ?[]const u8 = null;
         var show_all = false;
         var group_filter: ?[]const u8 = null;
+        var show_source = false;
         // Quick --help check before full arg parsing
         for (effective_args[2..]) |a| {
             if (std.mem.eql(u8, a, "--help") or std.mem.eql(u8, a, "-h")) {
@@ -1411,6 +1412,7 @@ fn run(
                     "  --status             Show up-to-date status for each task\n" ++
                     "  --show-cache         Show cache status for each task\n" ++
                     "  --show-env           Show effective environment variables\n" ++
+                    "  --source             Show source file for tasks from includes (v1.99.0)\n" ++
                     "  --verbose            Show detailed task metadata\n" ++
                     "  --format json        Output as JSON\n" ++
                     "  --members            List workspace members only\n" ++
@@ -1504,12 +1506,14 @@ fn run(
                     i += 1;
                     group_filter = effective_args[i];
                 }
+            } else if (std.mem.eql(u8, arg, "--source")) {
+                show_source = true;
             } else if (!std.mem.startsWith(u8, arg, "--")) {
                 // First non-flag argument is the filter pattern
                 filter_pattern = arg;
             }
         }
-        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, show_all, group_filter, effective_w, ew, effective_color);
+        return list_cmd.cmdList(allocator, config_path, json_output, tree_mode, filter_pattern, filter_tags, exclude_tags, profiles_only, members_only, fuzzy_search, group_by_tags, recent_count, frequent_count, slow_threshold_ms, search_description, show_status, show_cache, show_env, list_verbose, sort_by, show_all, group_filter, show_source, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "help")) {
         if (effective_args.len < 3) {
             try color.printError(ew, effective_color, "help: missing task name\n\n  Usage: zr help <task-name>\n", .{});
@@ -1616,6 +1620,7 @@ fn run(
         // Parse validate options
         var strict = false;
         var show_schema = false;
+        var show_includes = false;
         for (effective_args[2..]) |arg| {
             if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
                 try color.printInfo(effective_w, effective_color,
@@ -1624,12 +1629,14 @@ fn run(
                     "OPTIONS:\n" ++
                     "  --strict              Treat warnings as errors\n" ++
                     "  --schema              Show the configuration schema\n" ++
+                    "  --show-includes       Show include tree with file paths and task counts (v1.99.0)\n" ++
                     "  --config <path>       Config file path (default: zr.toml)\n" ++
                     "  -h, --help            Show this help\n\n" ++
                     "EXAMPLES:\n" ++
                     "  zr validate                     # Validate zr.toml in current directory\n" ++
                     "  zr validate --strict            # Fail on warnings too\n" ++
-                    "  zr validate --config other.toml # Validate a specific file\n",
+                    "  zr validate --config other.toml # Validate a specific file\n" ++
+                    "  zr validate --show-includes     # Show include tree\n",
                     .{},
                 );
                 return 0;
@@ -1637,11 +1644,14 @@ fn run(
                 strict = true;
             } else if (std.mem.eql(u8, arg, "--schema")) {
                 show_schema = true;
+            } else if (std.mem.eql(u8, arg, "--show-includes")) {
+                show_includes = true;
             }
         }
         return validate_cmd.cmdValidate(allocator, config_path, .{
             .strict = strict,
             .show_schema = show_schema,
+            .show_includes = show_includes,
         }, effective_w, ew, effective_color);
     } else if (std.mem.eql(u8, cmd, "completion")) {
         // Check if --install flag is present

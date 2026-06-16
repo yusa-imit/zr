@@ -2543,7 +2543,17 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 value = value[1 .. value.len - 1];
             }
 
-            if (in_profile_vars) {
+            // Top-level include = [...] key (v1.99.0) — feeds same machinery as [imports]
+            if (std.mem.eql(u8, key, "include") and current_task == null and current_profile == null and current_workflow == null and !in_workspace and !in_metadata and !in_imports and !in_settings and !in_vars and !in_constraint and !in_cache and !in_cache_remote and !in_versioning and !in_conformance and !in_tools and !in_task_env and !in_task_watch and !in_task_matrix and !in_task_hooks and !in_task_retry and !in_task_description and !in_task_outputs and !in_profile_vars and current_plugin_name == null) {
+                if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                    const items_str = value[1 .. value.len - 1];
+                    var items_it = std.mem.splitScalar(u8, items_str, ',');
+                    while (items_it.next()) |item| {
+                        const f = std.mem.trim(u8, item, " \t\"");
+                        if (f.len > 0) try import_files.append(allocator, f);
+                    }
+                }
+            } else if (in_profile_vars) {
                 // Inside [profiles.X.vars] — parse key = "value" pairs into profile vars (v1.86.0)
                 // Store non-owning slices (ownership transferred in flushProfile, same as profile_env)
                 try profile_vars.append(allocator, .{ key, value });

@@ -85,7 +85,16 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
         }
 
         // Merge all loaded imports into main config (main config takes precedence)
-        for (loaded_imports.items) |*imported_config| {
+        for (loaded_imports.items, 0..) |*imported_config, idx| {
+            // Set source_file on tasks directly from this imported file (not from nested includes)
+            const import_rel_path = config.imports[idx];
+            const basename = std.fs.path.basename(import_rel_path);
+            var task_it = imported_config.tasks.iterator();
+            while (task_it.next()) |task_entry| {
+                if (task_entry.value_ptr.source_file == null) {
+                    task_entry.value_ptr.source_file = try allocator.dupe(u8, basename);
+                }
+            }
             try mergeConfigs(allocator, &config, imported_config);
         }
     }

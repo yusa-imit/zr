@@ -1465,6 +1465,9 @@ pub const Task = struct {
     /// Internal tasks are typically helper tasks not meant for direct invocation.
     /// Use `zr list --all` to show internal tasks. `zr run <internal-task>` still works.
     internal: bool = false,
+    /// Source file this task was loaded from (null = root config file) (v1.99.0).
+    /// Set to the include path when the task came from an included file.
+    source_file: ?[]const u8 = null,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1605,6 +1608,8 @@ pub const Task = struct {
             for (names) |name| allocator.free(name);
             allocator.free(names);
         }
+        // v1.99.0 source_file
+        if (self.source_file) |sf| allocator.free(sf);
     }
 };
 

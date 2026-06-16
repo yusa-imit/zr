@@ -13,6 +13,8 @@ pub const ValidateOptions = struct {
     strict: bool = false,
     /// Show full schema reference
     show_schema: bool = false,
+    /// Show include tree with file paths and task counts (v1.99.0)
+    show_includes: bool = false,
 };
 
 /// Validate the configuration file.
@@ -47,6 +49,12 @@ pub fn cmdValidate(
         return 1;
     };
     defer config.deinit();
+
+    // Show include tree if requested (v1.99.0)
+    if (options.show_includes) {
+        try printIncludeTree(&config, config_path, w, use_color);
+        return 0;
+    }
 
     var error_count: u32 = 0;
     var warning_count: u32 = 0;
@@ -565,6 +573,36 @@ fn calculateDepChainDepthRecursive(
     }
 
     return max_depth + 1;
+}
+
+/// Print include tree showing file paths and task counts (v1.99.0).
+fn printIncludeTree(config: *const loader.Config, root_path: []const u8, w: *std.Io.Writer, use_color: bool) !void {
+    _ = use_color;
+
+    // Collect task counts per source file
+    var source_counts = std.StringHashMap(usize).init(config.allocator);
+    defer source_counts.deinit();
+
+    var root_task_count: usize = 0;
+    var task_it = config.tasks.iterator();
+    while (task_it.next()) |entry| {
+        const task = entry.value_ptr;
+        if (task.source_file) |sf| {
+            const count = source_counts.get(sf) orelse 0;
+            try source_counts.put(sf, count + 1);
+        } else {
+            root_task_count += 1;
+        }
+    }
+
+    const root_basename = std.fs.path.basename(root_path);
+    try w.print("Include tree for {s}:\n", .{root_basename});
+    try w.print("  {s} (root) — {d} task(s)\n", .{ root_basename, root_task_count });
+
+    var it = source_counts.iterator();
+    while (it.next()) |entry| {
+        try w.print("  └── {s} — {d} task(s)\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+    }
 }
 
 /// Print full schema reference.
