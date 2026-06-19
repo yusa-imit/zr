@@ -476,6 +476,35 @@ fn addWorkspaceSharedTask(
     try shared_tasks.put(task_name, task);
 }
 
+/// Parse a TOML inline array of task names for [settings] lifecycle hooks.
+/// Returns a newly allocated slice of duped strings.
+/// Caller owns the returned memory (freed via ProjectSettings.deinit).
+fn parseSettingsTaskArray(allocator: std.mem.Allocator, value: []const u8, existing: ?[]const []const u8) !?[]const []const u8 {
+    // Free existing if being replaced
+    if (existing) |old| {
+        for (old) |n| allocator.free(n);
+        allocator.free(old);
+    }
+    const trimmed = std.mem.trim(u8, value, " \t");
+    if (trimmed.len < 2 or trimmed[0] != '[' or trimmed[trimmed.len - 1] != ']') {
+        return null;
+    }
+    var arr = std.ArrayList([]const u8){};
+    errdefer {
+        for (arr.items) |n| allocator.free(n);
+        arr.deinit(allocator);
+    }
+    const inner = trimmed[1 .. trimmed.len - 1];
+    var it = std.mem.splitScalar(u8, inner, ',');
+    while (it.next()) |item| {
+        const name = std.mem.trim(u8, item, " \t\"'");
+        if (name.len > 0) {
+            try arr.append(allocator, try allocator.dupe(u8, name));
+        }
+    }
+    return try arr.toOwnedSlice(allocator);
+}
+
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
     errdefer config.deinit();
@@ -2660,6 +2689,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     if (std.fmt.parseInt(u64, value, 10)) |n| {
                         if (n >= 1) config.settings.default_timeout = n;
                     } else |_| {}
+                } else if (std.mem.eql(u8, key, "before_all")) {
+                    config.settings.before_all = try parseSettingsTaskArray(allocator, value, config.settings.before_all);
+                } else if (std.mem.eql(u8, key, "after_all")) {
+                    config.settings.after_all = try parseSettingsTaskArray(allocator, value, config.settings.after_all);
+                } else if (std.mem.eql(u8, key, "on_error")) {
+                    config.settings.on_error = try parseSettingsTaskArray(allocator, value, config.settings.on_error);
+                } else if (std.mem.eql(u8, key, "on_success")) {
+                    config.settings.on_success = try parseSettingsTaskArray(allocator, value, config.settings.on_success);
                 }
             } else if (in_constraint) {
                 // Inside [[constraints]] — parse constraint fields
@@ -6395,4 +6432,58 @@ test "parse [settings] jobs and default_timeout together" {
     try std.testing.expectEqual(@as(u32, 2), config.settings.jobs.?);
     try std.testing.expectEqual(@as(u64, 60), config.settings.default_timeout.?);
     try std.testing.expectEqualStrings("dev", config.settings.default_profile.?);
+}
+
+test "parse [settings] before_all lifecycle hook" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\before_all = ["setup", "check-tools"]
+        \\
+        \\[tasks.setup]
+        \\cmd = "echo setup"
+        \\
+        \\[tasks.check-tools]
+        \\cmd = "echo check"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const before = config.settings.before_all orelse return error.TestUnexpectedNull;
+    try std.testing.expectEqual(@as(usize, 2), before.len);
+    try std.testing.expectEqualStrings("setup", before[0]);
+    try std.testing.expectEqualStrings("check-tools", before[1]);
+}
+
+test "parse [settings] all lifecycle hooks" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[settings]
+        \\before_all = ["setup"]
+        \\after_all = ["cleanup"]
+        \\on_error = ["alert"]
+        \\on_success = ["notify"]
+        \\
+        \\[tasks.setup]
+        \\cmd = "echo s"
+        \\[tasks.cleanup]
+        \\cmd = "echo c"
+        \\[tasks.alert]
+        \\cmd = "echo a"
+        \\[tasks.notify]
+        \\cmd = "echo n"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expect(config.settings.before_all != null);
+    try std.testing.expect(config.settings.after_all != null);
+    try std.testing.expect(config.settings.on_error != null);
+    try std.testing.expect(config.settings.on_success != null);
+    try std.testing.expectEqualStrings("setup", config.settings.before_all.?[0]);
+    try std.testing.expectEqualStrings("cleanup", config.settings.after_all.?[0]);
+    try std.testing.expectEqualStrings("alert", config.settings.on_error.?[0]);
+    try std.testing.expectEqualStrings("notify", config.settings.on_success.?[0]);
 }

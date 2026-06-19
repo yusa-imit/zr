@@ -81,9 +81,34 @@ pub const ProjectSettings = struct {
     jobs: ?u32 = null,
     /// Default task timeout in seconds. Applied when a task has no explicit `timeout` field.
     default_timeout: ?u64 = null,
+    /// Tasks to run before any other task. If any fail, abort the run. (v2.0.0)
+    before_all: ?[]const []const u8 = null,
+    /// Tasks always run after everything else, even if main tasks failed. (v2.0.0)
+    after_all: ?[]const []const u8 = null,
+    /// Tasks run only when the main run had failures. (v2.0.0)
+    on_error: ?[]const []const u8 = null,
+    /// Tasks run only when all main tasks succeeded. (v2.0.0)
+    on_success: ?[]const []const u8 = null,
 
     pub fn deinit(self: *ProjectSettings, allocator: std.mem.Allocator) void {
         if (self.default_profile) |p| allocator.free(p);
+        // Free lifecycle hook arrays
+        if (self.before_all) |arr| {
+            for (arr) |n| allocator.free(n);
+            allocator.free(arr);
+        }
+        if (self.after_all) |arr| {
+            for (arr) |n| allocator.free(n);
+            allocator.free(arr);
+        }
+        if (self.on_error) |arr| {
+            for (arr) |n| allocator.free(n);
+            allocator.free(arr);
+        }
+        if (self.on_success) |arr| {
+            for (arr) |n| allocator.free(n);
+            allocator.free(arr);
+        }
     }
 };
 

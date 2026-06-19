@@ -797,6 +797,59 @@ pub fn cmdRun(
                 }
             }
         }
+        // Show run-level lifecycle hooks if any configured (v2.0.0)
+        const has_lifecycle_hooks = blk: {
+            const s = &config.settings;
+            const ba = s.before_all != null and s.before_all.?.len > 0;
+            const aa = s.after_all != null and s.after_all.?.len > 0;
+            const oe = s.on_error != null and s.on_error.?.len > 0;
+            const os = s.on_success != null and s.on_success.?.len > 0;
+            break :blk ba or aa or oe or os;
+        };
+        if (has_lifecycle_hooks) {
+            try w.print("\n", .{});
+            try color.printBold(w, use_color, "Run lifecycle hooks:\n", .{});
+            if (config.settings.before_all) |tasks| {
+                if (tasks.len > 0) {
+                    try w.print("  before_all: ", .{});
+                    for (tasks, 0..) |t, i| {
+                        if (i > 0) try w.print(", ", .{});
+                        try w.print("{s}", .{t});
+                    }
+                    try w.print("\n", .{});
+                }
+            }
+            if (config.settings.after_all) |tasks| {
+                if (tasks.len > 0) {
+                    try w.print("  after_all: ", .{});
+                    for (tasks, 0..) |t, i| {
+                        if (i > 0) try w.print(", ", .{});
+                        try w.print("{s}", .{t});
+                    }
+                    try w.print("\n", .{});
+                }
+            }
+            if (config.settings.on_success) |tasks| {
+                if (tasks.len > 0) {
+                    try w.print("  on_success: ", .{});
+                    for (tasks, 0..) |t, i| {
+                        if (i > 0) try w.print(", ", .{});
+                        try w.print("{s}", .{t});
+                    }
+                    try w.print("\n", .{});
+                }
+            }
+            if (config.settings.on_error) |tasks| {
+                if (tasks.len > 0) {
+                    try w.print("  on_error: ", .{});
+                    for (tasks, 0..) |t, i| {
+                        if (i > 0) try w.print(", ", .{});
+                        try w.print("{s}", .{t});
+                    }
+                    try w.print("\n", .{});
+                }
+            }
+        }
         return 0;
     }
 
@@ -810,6 +863,29 @@ pub fn cmdRun(
             allocator.free(entry.value_ptr.*);
         }
         task_outputs.deinit();
+    }
+
+    // Run-level lifecycle: before_all tasks (v2.0.0)
+    // These run before any main task; if any fail, the entire run is aborted.
+    before_all_blk: {
+        const before_tasks = config.settings.before_all orelse break :before_all_blk;
+        if (before_tasks.len == 0) break :before_all_blk;
+        try color.printDim(w, use_color, "⟳ Running before_all hooks...\n", .{});
+        var before_r = scheduler.run(allocator, &config, before_tasks, .{
+            .max_jobs = effective_max_jobs,
+            .use_color = use_color,
+            .default_timeout_ms = settings_default_timeout_ms,
+        }) catch {
+            try color.printError(err_writer, use_color,
+                "run: before_all lifecycle hook failed to start\n", .{});
+            return 1;
+        };
+        defer before_r.deinit(allocator);
+        if (!before_r.total_success) {
+            try color.printError(err_writer, use_color,
+                "run: before_all lifecycle hook failed — aborting run\n", .{});
+            return 1;
+        }
     }
 
     var sched_result = scheduler.run(allocator, &config, &task_names, .{
@@ -909,6 +985,46 @@ pub fn cmdRun(
             try color.printDim(w, use_color, "  {s}: ", .{entry.key_ptr.*});
             try w.print("{s}\n", .{entry.value_ptr.*});
         }
+    }
+
+    // Run-level lifecycle: on_success / on_error hooks (v2.0.0)
+    on_success_blk: {
+        if (!sched_result.total_success) break :on_success_blk;
+        const on_s_tasks = config.settings.on_success orelse break :on_success_blk;
+        if (on_s_tasks.len == 0) break :on_success_blk;
+        try color.printDim(w, use_color, "⟳ Running on_success hooks...\n", .{});
+        var on_s = scheduler.run(allocator, &config, on_s_tasks, .{
+            .max_jobs = effective_max_jobs,
+            .use_color = use_color,
+            .default_timeout_ms = settings_default_timeout_ms,
+        }) catch break :on_success_blk;
+        defer on_s.deinit(allocator);
+    }
+
+    on_error_blk: {
+        if (sched_result.total_success) break :on_error_blk;
+        const on_e_tasks = config.settings.on_error orelse break :on_error_blk;
+        if (on_e_tasks.len == 0) break :on_error_blk;
+        try color.printDim(w, use_color, "⟳ Running on_error hooks...\n", .{});
+        var on_e = scheduler.run(allocator, &config, on_e_tasks, .{
+            .max_jobs = effective_max_jobs,
+            .use_color = use_color,
+            .default_timeout_ms = settings_default_timeout_ms,
+        }) catch break :on_error_blk;
+        defer on_e.deinit(allocator);
+    }
+
+    // Run-level lifecycle: after_all hooks — always run, even on main task failure (v2.0.0)
+    after_all_blk: {
+        const after_tasks = config.settings.after_all orelse break :after_all_blk;
+        if (after_tasks.len == 0) break :after_all_blk;
+        try color.printDim(w, use_color, "⟳ Running after_all hooks...\n", .{});
+        var after_r = scheduler.run(allocator, &config, after_tasks, .{
+            .max_jobs = effective_max_jobs,
+            .use_color = use_color,
+            .default_timeout_ms = settings_default_timeout_ms,
+        }) catch break :after_all_blk;
+        defer after_r.deinit(allocator);
     }
 
     return if (sched_result.total_success) 0 else 1;
