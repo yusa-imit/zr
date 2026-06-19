@@ -219,6 +219,12 @@ zr --notify run <task>     # Enable desktop notifications globally
 default_profile = "dev"    # Active profile when --profile not specified
 jobs = 4                   # Default parallel task limit (overridden by --jobs)
 default_timeout = 30       # Default task timeout in seconds
+
+# Run-level lifecycle hooks (v1.100.0+)
+before_all = ["check-env"]  # Must pass or entire run is aborted
+after_all  = ["cleanup"]    # Always runs, even on failure (teardown)
+on_error   = ["notify-failure"]  # Only runs when main tasks fail
+on_success = ["notify-success"]  # Only runs when all main tasks pass
 ```
 
 ### Workflows (Phase 2)
