@@ -1516,6 +1516,54 @@ Settings values have lower priority than explicit CLI flags:
 3. `[settings]` value — project default
 4. Built-in default (CPU count for jobs, no timeout) — lowest priority
 
+### Run-Level Lifecycle Hooks (v1.100.0)
+
+Four optional `[settings]` fields let you define tasks that run automatically at key points in every `zr run` invocation, regardless of which main task is being run:
+
+| Field | When it runs | Effect on failure |
+|-------|-------------|-------------------|
+| `before_all` | Before any main task | Aborts entire run; main tasks never start |
+| `after_all` | After everything else | Always runs, even if main tasks or hooks failed |
+| `on_error` | After main tasks, only on failure | Main run exit code unchanged |
+| `on_success` | After main tasks, only on success | Main run exit code unchanged |
+
+**Execution order**: `before_all` → main tasks → `on_success` OR `on_error` → `after_all`
+
+```toml
+[settings]
+before_all = ["check-env", "wait-for-db"]   # Must pass or run is aborted
+after_all  = ["cleanup", "export-logs"]     # Always runs — perfect for teardown
+on_error   = ["send-alert", "rollback"]     # Runs only when main tasks fail
+on_success = ["deploy-notify"]              # Runs only when all main tasks pass
+
+[tasks.check-env]
+cmd = "scripts/check-env.sh"
+
+[tasks.wait-for-db]
+cmd = "scripts/wait-for-db.sh"
+
+[tasks.cleanup]
+cmd = "docker compose down --remove-orphans"
+
+[tasks.send-alert]
+cmd = "curl -X POST $SLACK_WEBHOOK -d '{\"text\":\"Build failed!\"}'"
+
+[tasks.deploy-notify]
+cmd = "curl -X POST $SLACK_WEBHOOK -d '{\"text\":\"Deployed successfully!\"}'"
+```
+
+Hook tasks inherit all scheduler settings (`jobs`, `default_timeout`) and respect dependencies. `--dry-run` shows which hooks would run:
+
+```
+$ zr run --dry-run build
+...
+Run lifecycle hooks:
+  before_all: check-env, wait-for-db
+  after_all: cleanup, export-logs
+  on_success: deploy-notify
+  on_error: send-alert, rollback
+```
+
 ### Example
 
 ```toml
