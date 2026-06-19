@@ -3,7 +3,7 @@
 ## Current Status
 
 - **Latest**: v1.99.0 (feat: Config File Includes & Composition + sailor v2.47.0) — RELEASED 2026-06-16
-- **Pending release**: Run-Level Lifecycle Hooks (v1.100.0 pending integration test pass)
+- **Pending release**: v1.100.0 — Run-Level Lifecycle Hooks + sailor v2.48.0/v2.49.0 (pending integration test pass)
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)
