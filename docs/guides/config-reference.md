@@ -5,6 +5,7 @@ Quick reference for all `zr.toml` configuration fields. For detailed examples an
 ## Table of Contents
 
 - [Tasks](#tasks)
+- [Settings](#settings)
 - [Workflows](#workflows)
 - [Profiles](#profiles)
 - [Variables](#variables)
@@ -258,6 +259,35 @@ cmd = "npm test"
 tags = ["ci", "test", "node"]
 toolchain = ["node@20.11.1"]
 mixins = ["common-env", "docker-auth"]
+```
+
+---
+
+## Settings
+
+Project-level defaults in the optional `[settings]` section (v1.92.0+).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_profile` | string | none | Profile to activate when `--profile` flag and `ZR_PROFILE` env var are not set |
+| `jobs` | integer | CPU count | Default `--jobs` value for parallel task execution; overridden by `--jobs` flag |
+| `default_timeout` | integer (seconds) | none | Default timeout for tasks with no explicit `timeout` field; task-level `timeout` overrides |
+| `before_all` | string[] | none | Tasks that run BEFORE any main task; if any fail, the entire run is aborted (v1.100.0+) |
+| `after_all` | string[] | none | Tasks that ALWAYS run after everything, even if main tasks failed; ideal for teardown (v1.100.0+) |
+| `on_error` | string[] | none | Tasks that run ONLY when the main run had at least one failure (v1.100.0+) |
+| `on_success` | string[] | none | Tasks that run ONLY when all main tasks succeeded (v1.100.0+) |
+
+**Hook execution order**: `before_all` → main tasks → `on_success` OR `on_error` → `after_all`
+
+```toml
+[settings]
+default_profile = "dev"
+jobs = 4
+default_timeout = 120
+before_all  = ["check-env"]
+after_all   = ["cleanup"]
+on_error    = ["alert"]
+on_success  = ["notify"]
 ```
 
 ---
