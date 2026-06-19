@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Run-Level Lifecycle Hooks** — four new `[settings]` fields control hook tasks that run automatically around every `zr run` invocation:
+  - `before_all = ["setup"]` — tasks run BEFORE any main task; if any fail, the entire run is aborted
+  - `after_all = ["cleanup"]` — tasks ALWAYS run after everything, even when main tasks failed; ideal for teardown and log collection
+  - `on_error = ["alert"]` — tasks run ONLY when the main run had at least one failure; ideal for error notifications and rollback
+  - `on_success = ["notify"]` — tasks run ONLY when all main tasks succeeded; ideal for deployment notifications
+  - `--dry-run` shows "Run lifecycle hooks:" section listing configured hook tasks
+
+### Changed
+- **sailor v2.48.0 + v2.49.0** — migrated to latest sailor (Marquee widget in v2.48.0, Wizard multi-step navigation widget in v2.49.0)
+
+## [1.99.0] - 2026-06-16
+
+### Added
+- **Config File Includes & Composition** — split large `zr.toml` configs into multiple files via top-level `include = ["./ci.zr.toml", "./deploy.zr.toml"]`; nested includes supported with cycle detection; root config task definitions override included files
+- **`zr list --source`** — show which file each task comes from (e.g. `build [ci.zr.toml]`)
+- **`zr validate --show-includes`** — display the full include tree with file paths and resolved task counts per file
+- **JSON list `source_file` field** — `zr list --json` includes `source_file` for each task
+
+### Changed
+- **sailor v2.46.0 + v2.47.0** — migrated to latest sailor (Spinner widget in v2.46.0, DiffStat widget in v2.47.0)
+
+## [1.98.0] - 2026-06-15
+
+### Added
+- **Task Secret Management** — declare sensitive environment variables with `[secrets]` section; values masked in all output (logs, dry-run, errors, history); `zr secrets list` and `zr secrets check` commands; `required = true` for mandatory secrets that fail fast if unset
+- **`zr secrets list`** — show all declared secrets with their status (set/unset, required/optional)
+- **`zr secrets check`** — validate all required secrets are set; non-zero exit if any required secret is missing
+
+### Changed
+- **sailor v2.45.0** — migrated to latest sailor (KeyValueViewer widget; no breaking changes)
+
 ## [1.97.0] - 2026-06-15
 
 ### Added
@@ -2939,7 +2971,14 @@ No breaking changes. New features:
 - [Plugin Development Guide](./docs/PLUGIN_DEV_GUIDE.md)
 - [Plugin User Guide](./docs/PLUGIN_GUIDE.md)
 
-[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.99.0...HEAD
+[1.99.0]: https://github.com/yusa-imit/zr/compare/v1.98.0...v1.99.0
+[1.98.0]: https://github.com/yusa-imit/zr/compare/v1.97.0...v1.98.0
+[1.97.0]: https://github.com/yusa-imit/zr/compare/v1.96.0...v1.97.0
+[1.96.0]: https://github.com/yusa-imit/zr/compare/v1.95.0...v1.96.0
+[1.95.0]: https://github.com/yusa-imit/zr/compare/v1.94.0...v1.95.0
+[1.94.0]: https://github.com/yusa-imit/zr/compare/v1.93.0...v1.94.0
+[1.93.0]: https://github.com/yusa-imit/zr/compare/v1.92.0...v1.93.0
 [1.0.0]: https://github.com/yusa-imit/zr/compare/v0.0.5...v1.0.0
 [0.0.5]: https://github.com/yusa-imit/zr/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/yusa-imit/zr/compare/v0.0.3...v0.0.4
