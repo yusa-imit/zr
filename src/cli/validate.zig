@@ -451,6 +451,55 @@ pub fn cmdValidate(
         }
     }
 
+    // Validate [settings] lifecycle hook task references (v1.100.0)
+    const lifecycle_hooks = [_]struct { field: []const u8, tasks: ?[]const []const u8 }{
+        .{ .field = "before_all", .tasks = config.settings.before_all },
+        .{ .field = "after_all", .tasks = config.settings.after_all },
+        .{ .field = "on_error", .tasks = config.settings.on_error },
+        .{ .field = "on_success", .tasks = config.settings.on_success },
+    };
+    for (lifecycle_hooks) |hook| {
+        const hook_tasks = hook.tasks orelse continue;
+        for (hook_tasks) |task_name| {
+            if (config.tasks.get(task_name) == null) {
+                var all_task_names_list = std.ArrayList([]const u8){};
+                defer all_task_names_list.deinit(allocator);
+                var hook_task_iter = config.tasks.iterator();
+                while (hook_task_iter.next()) |e| {
+                    try all_task_names_list.append(allocator, e.key_ptr.*);
+                }
+                const suggestions = try levenshtein.findClosestMatches(
+                    allocator,
+                    task_name,
+                    all_task_names_list.items,
+                    3,
+                    3,
+                );
+                defer allocator.free(suggestions);
+                try color.printError(err_writer, use_color,
+                    "✗ [settings].{s}: task '{s}' not found\n",
+                    .{ hook.field, task_name },
+                );
+                if (suggestions.len > 0) {
+                    try err_writer.writeAll("  Did you mean: ");
+                    for (suggestions, 0..) |sug, i| {
+                        if (i > 0) try err_writer.writeAll(", ");
+                        if (use_color) try err_writer.writeAll(color.Code.cyan);
+                        try err_writer.writeAll(sug.name);
+                        if (use_color) try err_writer.writeAll(color.Code.reset);
+                    }
+                    try err_writer.writeAll("?\n\n");
+                } else {
+                    try color.printDim(err_writer, use_color,
+                        "  Hint: Add a '[tasks.{s}]' section or fix the task name\n\n",
+                        .{task_name},
+                    );
+                }
+                error_count += 1;
+            }
+        }
+    }
+
     // Validate plugin configurations (if any)
     for (config.plugins) |plugin| {
         // Check required fields
@@ -1094,3 +1143,74 @@ test "cmdValidate: deps_optional with multiple tasks passes" {
     try std.testing.expectEqual(@as(u8, 0), result);
 }
 
+test "cmdValidate: before_all referencing missing task produces error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[settings]
+        \\before_all = ["nonexistent-setup"]
+        \\
+        \\[tasks.build]
+        \\cmd = "echo build"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+    try std.testing.expect(result != 0);
+    const err_output = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "before_all") != null);
+    try std.testing.expect(std.mem.indexOf(u8, err_output, "nonexistent-setup") != null);
+}
+
+test "cmdValidate: lifecycle hooks referencing existing tasks passes" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[settings]
+        \\before_all = ["setup"]
+        \\after_all  = ["cleanup"]
+        \\on_error   = ["alert"]
+        \\on_success = ["notify"]
+        \\
+        \\[tasks.setup]
+        \\cmd = "echo setup"
+        \\[tasks.cleanup]
+        \\cmd = "echo cleanup"
+        \\[tasks.alert]
+        \\cmd = "echo alert"
+        \\[tasks.notify]
+        \\cmd = "echo notify"
+        \\[tasks.build]
+        \\cmd = "echo build"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var err_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const result = try cmdValidate(allocator, config_path, .{}, &out_w, &err_w, false);
+    try std.testing.expectEqual(@as(u8, 0), result);
+}
