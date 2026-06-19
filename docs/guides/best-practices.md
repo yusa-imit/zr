@@ -602,6 +602,45 @@ hooks = [
 
 ---
 
+### Run-Level Lifecycle Hooks for CI/CD Pipelines (v1.100.0+)
+
+For pipeline-wide setup, teardown, and notifications, use run-level lifecycle hooks in `[settings]` instead of per-task hooks. These apply to every `zr run` invocation.
+
+```toml
+[settings]
+# Gate the entire pipeline on environment checks
+before_all = ["check-env", "wait-for-services"]
+
+# Always clean up after a run, success or failure
+after_all = ["stop-services", "collect-logs"]
+
+# Send targeted notifications based on outcome
+on_success = ["deploy-staging", "notify-team-success"]
+on_error   = ["alert-oncall", "upload-failure-logs"]
+
+[tasks.check-env]
+cmd = "scripts/check-required-vars.sh"
+
+[tasks.wait-for-services]
+cmd = "scripts/wait-for-db.sh && scripts/wait-for-cache.sh"
+timeout = "120s"
+
+[tasks.stop-services]
+cmd = "docker compose down"
+
+[tasks.collect-logs]
+cmd = "scripts/export-logs.sh"
+allow_failure = true  # Don't let log collection affect the outcome
+
+[tasks.alert-oncall]
+cmd = "scripts/page-oncall.sh"
+env = { PAGERDUTY_KEY = "{{PAGERDUTY_KEY}}" }
+```
+
+Use `before_all` instead of `deps` when the setup logic shouldn't appear in the dependency graph of individual tasks — this keeps task graphs clean and the pipeline contract explicit.
+
+---
+
 ### Allow Failure for Non-Critical Tasks
 
 ```toml
