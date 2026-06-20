@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.100.0] - 2026-06-21
+
 ### Added
 - **Run-Level Lifecycle Hooks** — four new `[settings]` fields control hook tasks that run automatically around every `zr run` invocation:
   - `before_all = ["setup"]` — tasks run BEFORE any main task; if any fail, the entire run is aborted
@@ -14,9 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `on_error = ["alert"]` — tasks run ONLY when the main run had at least one failure; ideal for error notifications and rollback
   - `on_success = ["notify"]` — tasks run ONLY when all main tasks succeeded; ideal for deployment notifications
   - `--dry-run` shows "Run lifecycle hooks:" section listing configured hook tasks
+- **`zr validate` lifecycle hook validation** — `zr validate` now reports an error when `before_all`/`after_all`/`on_error`/`on_success` reference task names that do not exist in the config, with Levenshtein "Did you mean?" suggestions
 
 ### Changed
-- **sailor v2.48.0 + v2.49.0** — migrated to latest sailor (Marquee widget in v2.48.0, Wizard multi-step navigation widget in v2.49.0)
+- **sailor v2.48.0–v2.51.0** — migrated to latest sailor (Marquee widget in v2.48.0, Wizard multi-step navigation in v2.49.0, Carousel widget in v2.50.0, CountdownTimer widget in v2.51.0)
 
 ## [1.99.0] - 2026-06-16
 
@@ -2971,7 +2974,8 @@ No breaking changes. New features:
 - [Plugin Development Guide](./docs/PLUGIN_DEV_GUIDE.md)
 - [Plugin User Guide](./docs/PLUGIN_GUIDE.md)
 
-[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.99.0...HEAD
+[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.100.0...HEAD
+[1.100.0]: https://github.com/yusa-imit/zr/compare/v1.99.0...v1.100.0
 [1.99.0]: https://github.com/yusa-imit/zr/compare/v1.98.0...v1.99.0
 [1.98.0]: https://github.com/yusa-imit/zr/compare/v1.97.0...v1.98.0
 [1.97.0]: https://github.com/yusa-imit/zr/compare/v1.96.0...v1.97.0
