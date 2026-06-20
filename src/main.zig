@@ -895,7 +895,7 @@ fn run(
                 "Usage: zr run [TASK|PATTERN] [OPTIONS] [PARAMS...]\n\n" ++
                 "Run a task and all its dependencies in topological order.\n\n" ++
                 "ARGUMENTS:\n" ++
-                "  <task>                Task name to run (or glob pattern to run multiple)\n" ++
+                "  <task>                Task name, glob pattern, or comma-separated list to run multiple\n" ++
                 "  [key=value...]        Named task parameters\n" ++
                 "  [value...]            Positional task parameters (in declaration order)\n\n" ++
                 "TASK OPTIONS:\n" ++
@@ -926,7 +926,9 @@ fn run(
                 "  zr run --tag=backend            # Run all tasks tagged 'backend'\n" ++
                 "  zr run deploy --skip=test,lint  # Deploy but skip test and lint tasks\n" ++
                 "  zr run build --jobs=4           # Limit parallel execution to 4 jobs\n" ++
-                "  zr run deploy env=production    # Pass 'env=production' as a task parameter\n",
+                "  zr run deploy env=production    # Pass 'env=production' as a task parameter\n" ++
+                "  zr run build,test,lint          # Run three tasks in sequence\n" ++
+                "  zr run build,test --fail-fast   # Stop on first failure\n",
                 .{},
             );
             return 0;
@@ -1205,6 +1207,74 @@ fn run(
         // causing shared dependencies (e.g. build.compile) to run once per selected task.
         if (std.mem.endsWith(u8, task_name, ".*") and !has_filters) {
             return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode, show_outputs, cli_inputs, non_interactive, yes_confirm);
+        }
+
+        // Comma-separated multi-task run: "zr run build,test,lint" (v1.101.0)
+        // Runs each named task in left-to-right order; respects --fail-fast.
+        const has_comma = std.mem.indexOf(u8, task_name, ",") != null;
+        if (has_comma and !has_glob_pattern and !has_filters) {
+            var task_list = std.ArrayList([]const u8){};
+            defer task_list.deinit(allocator);
+
+            var split_it = std.mem.splitSequence(u8, task_name, ",");
+            while (split_it.next()) |part| {
+                const trimmed = std.mem.trim(u8, part, " \t");
+                if (trimmed.len > 0) {
+                    try task_list.append(allocator, trimmed);
+                }
+            }
+
+            if (task_list.items.len == 0) {
+                try color.printError(ew, effective_color, "run: No valid task names in comma-separated list\n\n  Hint: zr run build,test,lint\n", .{});
+                return 1;
+            }
+
+            if (task_list.items.len > 1) {
+                try color.printBold(effective_w, effective_color, "Running {d} task(s):\n", .{task_list.items.len});
+                for (task_list.items) |name| {
+                    try effective_w.print("  - {s}\n", .{name});
+                }
+                try effective_w.print("\n", .{});
+            }
+
+            var all_success = true;
+            for (task_list.items) |selected_task_name| {
+                const exit_code = try run_cmd.cmdRun(
+                    allocator,
+                    selected_task_name,
+                    profile_name,
+                    dry_run,
+                    force_run,
+                    max_jobs,
+                    config_path,
+                    json_output,
+                    enable_monitor,
+                    effective_w,
+                    ew,
+                    effective_color,
+                    null,
+                    filter_options,
+                    silent,
+                    show_env,
+                    runtime_params,
+                    skip_tasks_list.items,
+                    notify_override,
+                    only_mode,
+                    show_outputs,
+                    cli_inputs,
+                    non_interactive,
+                    yes_confirm,
+                );
+                if (exit_code != 0) {
+                    all_success = false;
+                    if (fail_fast) {
+                        try color.printError(ew, effective_color, "run: Task '{s}' failed — stopping (--fail-fast)\n", .{selected_task_name});
+                        break;
+                    }
+                }
+            }
+
+            return if (all_success) @as(u8, 0) else @as(u8, 1);
         }
 
         if (has_glob_pattern or has_filters) {
