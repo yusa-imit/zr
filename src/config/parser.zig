@@ -351,6 +351,7 @@ fn parseInlineStages(
 pub const ParseError = error{
     MalformedSectionHeader,
     OutOfMemory,
+    VarCommandFailed,
 };
 
 /// Validate that a TOML section header is well-formed (has closing bracket).
@@ -503,6 +504,43 @@ fn parseSettingsTaskArray(allocator: std.mem.Allocator, value: []const u8, exist
         }
     }
     return try arr.toOwnedSlice(allocator);
+}
+
+/// Extract the value of a field from an inline TOML table inner string.
+/// Given inner = `cmd = "echo hello", on_error = "fail"` and field = "cmd",
+/// returns the raw value `"echo hello"` (with quotes).
+fn parseInlineTableField(inner: []const u8, field: []const u8) ?[]const u8 {
+    // Simple approach: find "field =" or "field=" in the inner string
+    var search_buf: [128]u8 = undefined;
+    const search1 = std.fmt.bufPrint(&search_buf, "{s} =", .{field}) catch return null;
+    const search2_start = if (std.mem.indexOf(u8, inner, search1)) |idx| idx + search1.len else blk: {
+        const search2 = std.fmt.bufPrint(&search_buf, "{s}=", .{field}) catch return null;
+        break :blk if (std.mem.indexOf(u8, inner, search2)) |idx| idx + search2.len else return null;
+    };
+
+    const rest = std.mem.trim(u8, inner[search2_start..], " \t");
+    if (rest.len == 0) return null;
+
+    // If starts with quote, find matching end quote
+    if (rest[0] == '"') {
+        if (std.mem.indexOfScalarPos(u8, rest, 1, '"')) |end| {
+            return rest[0 .. end + 1]; // include quotes
+        }
+    }
+
+    // Unquoted: up to comma or end
+    const end = std.mem.indexOfScalar(u8, rest, ',') orelse rest.len;
+    return std.mem.trim(u8, rest[0..end], " \t");
+}
+
+/// Strip surrounding double quotes from a string.
+/// If not quoted, return the string as-is.
+fn stripQuotes(s: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, s, " \t");
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+        return trimmed[1 .. trimmed.len - 1];
+    }
+    return trimmed;
 }
 
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
@@ -2671,12 +2709,73 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     .version = tool_version,
                 });
             } else if (in_vars) {
-                // Inside [vars] section — parse key = "value" pairs
+                // Inside [vars] section — parse key = "value" or key = {cmd = "...", on_error = "..."} pairs
                 const owned_key = try allocator.dupe(u8, key);
                 errdefer allocator.free(owned_key);
-                const owned_val = try allocator.dupe(u8, value);
-                errdefer allocator.free(owned_val);
-                try config.vars.put(owned_key, owned_val);
+
+                // Check if value is an inline table with {cmd = "..."}
+                const trimmed_val = std.mem.trim(u8, value, " \t");
+                if (std.mem.startsWith(u8, trimmed_val, "{") and std.mem.endsWith(u8, trimmed_val, "}")) {
+                    // Parse inline table: {cmd = "command", on_error = "empty"|"fail"}
+                    const inner = trimmed_val[1 .. trimmed_val.len - 1];
+
+                    if (parseInlineTableField(inner, "cmd")) |cmd_raw| {
+                        const cmd_str = stripQuotes(cmd_raw);
+
+                        // Extract on_error value (default: "empty")
+                        const fail_on_error = if (parseInlineTableField(inner, "on_error")) |on_err_raw|
+                            std.mem.eql(u8, stripQuotes(on_err_raw), "fail")
+                        else
+                            false;
+
+                        // Try to run the command via sh -c
+                        if (std.process.Child.run(.{
+                            .allocator = allocator,
+                            .argv = &[_][]const u8{ "sh", "-c", cmd_str },
+                            .max_output_bytes = 64 * 1024,
+                        })) |result| {
+                            defer allocator.free(result.stdout);
+                            defer allocator.free(result.stderr);
+
+                            // Check exit code
+                            if (result.term != .Exited or result.term.Exited != 0) {
+                                if (fail_on_error) {
+                                    const exit_code = if (result.term == .Exited) result.term.Exited else 1;
+                                    std.debug.print("✗ [Config]: Variable '{s}' command failed (exit {d}): '{s}'\n", .{ key, exit_code, cmd_str });
+                                    if (result.stderr.len > 0) {
+                                        std.debug.print("  Stderr: {s}\n", .{result.stderr});
+                                    }
+                                    return error.VarCommandFailed;
+                                }
+                                // For "empty" mode, set var to empty string
+                                const owned_val = try allocator.dupe(u8, "");
+                                try config.vars.put(owned_key, owned_val);
+                            } else {
+                                // Success: trim stdout and store
+                                const trimmed_output = std.mem.trim(u8, result.stdout, " \t\r\n");
+                                const owned_val = try allocator.dupe(u8, trimmed_output);
+                                try config.vars.put(owned_key, owned_val);
+                            }
+                        } else |err| {
+                            if (fail_on_error) {
+                                std.debug.print("✗ [Config]: Failed to evaluate var '{s}': cannot run command '{s}': {}\n", .{ key, cmd_str, err });
+                                return error.VarCommandFailed;
+                            }
+                            // For "empty" mode, set var to empty string
+                            const owned_val = try allocator.dupe(u8, "");
+                            try config.vars.put(owned_key, owned_val);
+                        }
+                    } else {
+                        // Not a cmd table — treat as empty
+                        const owned_val = try allocator.dupe(u8, "");
+                        try config.vars.put(owned_key, owned_val);
+                    }
+                } else {
+                    // Static string value
+                    const owned_val = try allocator.dupe(u8, value);
+                    errdefer allocator.free(owned_val);
+                    try config.vars.put(owned_key, owned_val);
+                }
             } else if (in_settings) {
                 // Inside [settings] section — parse key = "value" pairs
                 if (std.mem.eql(u8, key, "default_profile")) {
