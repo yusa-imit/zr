@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.100.0 (feat: Run-Level Lifecycle Hooks + validate lifecycle refs + sailor v2.48.0–v2.51.0) — RELEASED 2026-06-21
+- **Latest**: v1.101.0 (feat: Comma-Separated Multi-Task Run + sailor v2.52.0) — RELEASED 2026-06-21
 - **Pending release**: none
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0

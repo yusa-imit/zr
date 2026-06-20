@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.101.0] - 2026-06-21
+
+### Added
+- **Comma-Separated Multi-Task Run** — run multiple named tasks in sequence with a single command:
+  - `zr run build,test,lint` — runs three tasks left-to-right, exiting non-zero if any fail
+  - `zr run build,test --fail-fast` — stops execution after the first failure
+  - Trailing/leading commas handled gracefully (ignored)
+  - Banner shows task list before execution (when >1 task)
+  - 8 integration tests (30000–30007)
+
+### Changed
+- **sailor v2.52.0** — migrated to latest sailor (AnimatedBorder widget; no breaking changes)
+
 ## [1.100.0] - 2026-06-21
 
 ### Added
@@ -2974,7 +2987,8 @@ No breaking changes. New features:
 - [Plugin Development Guide](./docs/PLUGIN_DEV_GUIDE.md)
 - [Plugin User Guide](./docs/PLUGIN_GUIDE.md)
 
-[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.100.0...HEAD
+[Unreleased]: https://github.com/yusa-imit/zr/compare/v1.101.0...HEAD
+[1.101.0]: https://github.com/yusa-imit/zr/compare/v1.100.0...v1.101.0
 [1.100.0]: https://github.com/yusa-imit/zr/compare/v1.99.0...v1.100.0
 [1.99.0]: https://github.com/yusa-imit/zr/compare/v1.98.0...v1.99.0
 [1.98.0]: https://github.com/yusa-imit/zr/compare/v1.97.0...v1.98.0
