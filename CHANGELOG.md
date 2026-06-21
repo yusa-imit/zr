@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.102.0] - 2026-06-21
+
+### Added
+- **Shell-Evaluated Variables** — `[vars]` entries can now run shell commands at config-load time:
+  - `VERSION = {cmd = "git describe --tags --abbrev=0"}` — trimmed stdout becomes the variable value
+  - `on_error = "empty"` (default) — failed command sets variable to `""`, task execution continues
+  - `on_error = "fail"` — failed command aborts config loading with a clear error message
+  - Static and command-evaluated vars coexist in the same `[vars]` section
+  - Evaluated vars available as `{{KEY}}` in all task string fields
+  - 6 integration tests (31000–31005)
+
 ## [1.101.0] - 2026-06-21
 
 ### Added
