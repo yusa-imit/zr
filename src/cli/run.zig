@@ -215,6 +215,7 @@ pub fn cmdRun(
     cli_inputs: std.StringHashMap([]const u8),
     non_interactive: bool,
     yes_confirm: bool,
+    cli_env: std.StringHashMap([]const u8),
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -797,6 +798,15 @@ pub fn cmdRun(
                 }
             }
         }
+        // v1.102.0: Show CLI environment variables if any provided
+        if (cli_env.count() > 0) {
+            try w.print("\n", .{});
+            try color.printBold(w, use_color, "CLI env overrides:\n", .{});
+            var show_it = cli_env.iterator();
+            while (show_it.next()) |entry| {
+                try w.print("  {s}={s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            }
+        }
         // Show run-level lifecycle hooks if any configured (v2.0.0)
         const has_lifecycle_hooks = blk: {
             const s = &config.settings;
@@ -855,6 +865,23 @@ pub fn cmdRun(
 
     const start_ns = std.time.nanoTimestamp();
 
+    // v1.102.0: Build cli_env as extra_env array
+    var cli_env_list: std.ArrayList([2][]const u8) = .{};
+    defer {
+        for (cli_env_list.items) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        cli_env_list.deinit(allocator);
+    }
+    var cli_env_it = cli_env.iterator();
+    while (cli_env_it.next()) |entry| {
+        const env_key = try allocator.dupe(u8, entry.key_ptr.*);
+        const env_value = try allocator.dupe(u8, entry.value_ptr.*);
+        try cli_env_list.append(allocator, .{ env_key, env_value });
+    }
+    const cli_env_slice: ?[][2][]const u8 = if (cli_env_list.items.len > 0) cli_env_list.items else null;
+
     var task_outputs = std.StringHashMap([]const u8).init(allocator);
     defer {
         var it = task_outputs.iterator();
@@ -902,6 +929,7 @@ pub fn cmdRun(
         .only_mode = only_mode,
         .task_outputs = &task_outputs,
         .default_timeout_ms = settings_default_timeout_ms,
+        .extra_env = cli_env_slice,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -2151,6 +2179,8 @@ test "cmdRun: missing config returns error" {
 
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
     const result = try cmdRun(
         allocator,
         "build",
@@ -2176,6 +2206,7 @@ test "cmdRun: missing config returns error" {
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2204,6 +2235,8 @@ test "cmdRun: unknown task returns error" {
 
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
     const result = try cmdRun(
         allocator,
         "nonexistent",
@@ -2229,6 +2262,7 @@ test "cmdRun: unknown task returns error" {
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2257,6 +2291,8 @@ test "cmdRun: dry run shows plan without executing" {
 
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
     const result = try cmdRun(
         allocator,
         "hello",
@@ -2282,6 +2318,7 @@ test "cmdRun: dry run shows plan without executing" {
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2310,6 +2347,8 @@ test "cmdRun: successful task returns 0" {
 
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
     const result = try cmdRun(
         allocator,
         "hello",
@@ -2335,6 +2374,7 @@ test "cmdRun: successful task returns 0" {
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2363,6 +2403,8 @@ test "cmdRun: failing task returns 1" {
 
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
     const result = try cmdRun(
         allocator,
         "fail",
@@ -2388,6 +2430,7 @@ test "cmdRun: failing task returns 1" {
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

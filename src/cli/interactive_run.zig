@@ -149,6 +149,8 @@ pub fn cmdInteractiveRun(
 ) !u8 {
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
 
     if (comptime !IS_POSIX) {
         // Fall back to normal run on Windows
@@ -177,6 +179,7 @@ pub fn cmdInteractiveRun(
             std.StringHashMap([]const u8).init(allocator),
             false, // non_interactive
             false, // yes_confirm
+            empty_cli_env,
         );
     }
 
@@ -208,6 +211,7 @@ pub fn cmdInteractiveRun(
             std.StringHashMap([]const u8).init(allocator),
             false, // non_interactive
             false, // yes_confirm
+            empty_cli_env,
         );
     }
 
@@ -243,6 +247,7 @@ pub fn cmdInteractiveRun(
             std.StringHashMap([]const u8).init(allocator),
             false, // non_interactive
             false, // yes_confirm
+            empty_cli_env,
         );
     };
     defer leaveRawMode(original_termios);
@@ -285,6 +290,7 @@ pub fn cmdInteractiveRun(
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

@@ -160,6 +160,29 @@ Add project-level lifecycle hooks via `[settings]` that run automatically at key
 - **Integration tests**: 6 tests (29000–29005) covering order verification, abort-on-before-fail, conditional hooks (on_error/on_success), dry-run display
 **Status: DONE** — Completed Cycle 352 FEATURE (2026-06-20). Implementation: four fields added to `ProjectSettings` (before_all/after_all/on_error/on_success) with proper deinit; `parseSettingsTaskArray()` parses inline TOML arrays; `cmdRun()` runs hooks at appropriate points with `scheduler.run()`; dry-run block displays hook summary. Testing: 2 unit parser tests, 6 integration tests (29000-29005). Commits: d959be5 (feat). sailor v2.48.0 (Marquee) + v2.49.0 (Wizard) also migrated.
 
+### Shell-Evaluated Variables
+
+Allow `[vars]` entries to run shell commands at config-load time and use their stdout as the variable value — a capability every competing tool offers (Make's `$(shell ...)`, just's `` `cmd` `` syntax, Task's `{sh: cmd}`). Eliminates the need to hardcode dynamic values like git tags, branch names, or build timestamps. Includes:
+- **`VERSION = {cmd = "git describe --tags --abbrev=0"}`** — run a command; trimmed stdout becomes the variable value
+- **`on_error = "empty"`** (default) — if the command fails or produces no output, the variable is set to `""`; task execution continues normally
+- **`on_error = "fail"`** — if the command exits non-zero, config loading fails with a clear error message showing the command and stderr
+- **Static vars unaffected** — `KEY = "value"` syntax unchanged; both static and command-evaluated vars coexist in `[vars]`
+- **Full substitution support** — evaluated vars are available as `{{KEY}}` in `cmd`, `env`, `cwd`, and all other task string fields
+- **Profile override compatibility** — `[profiles.X.vars]` can override a command-evaluated var with a static value (or another command var)
+- **`zr run --dry-run` display** — shows vars section with both static values and the command used for dynamic vars
+- **Integration tests**: 6 tests (31000–31005) covering basic cmd evaluation, static+dynamic coexistence, `on_error = "empty"`, `on_error = "fail"`, use in `cmd` field, use in `env` field
+**Status: DONE** — Completed Cycle 356 FEATURE (2026-06-21). Implementation: `parseInlineTableField()` + `stripQuotes()` helpers added; in_vars handler detects `{cmd = "...", on_error = "..."}` inline tables; cmd executed via `std.process.Child.run()` with `sh -c`; stdout trimmed of whitespace; `on_error = "fail"` returns `error.VarCommandFailed` with clear error message; default `on_error = "empty"` sets var to empty string. Testing: 6 integration tests (31000-31005). Released as v1.102.0.
+
+### CLI Environment Override
+
+Allow users to inject or override environment variables at `zr run` invocation time via `--env KEY=VALUE` flags, without modifying `zr.toml`. Essential for CI/CD workflows where the same config needs different credentials, targets, or feature flags per environment. Includes:
+- **`--env KEY=VALUE`** — inject environment variable into the current run; available in all task `cmd`, `env`, and expression fields
+- **Multiple `--env` flags** — `zr run deploy --env ENV=production --env REGION=us-east-1` stacks overrides
+- **Priority**: `--env` overrides take precedence over task-level `env`, `[vars]`, and `.env` files; but NOT over task `required_env` checks (required_env still validates presence, CLI env satisfies it)
+- **`--dry-run` display** — show a "CLI env overrides:" section listing all `--env` values (masked to `KEY=***` for sensitive-looking names like `*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`)
+- **Integration tests**: 6 tests (32000–32005) covering basic override, multiple flags, override over task env, --dry-run display, required_env satisfaction via CLI, masking of sensitive names
+**Status: ACTIVE** — Cycle 357 FEATURE (2026-06-21).
+
 ### Code Quality & Documentation Polish
 
 Polish code quality, improve documentation, and enhance user experience with small but impactful improvements. Focus on developer experience, code maintainability, and documentation accuracy. This milestone addresses technical debt and ensures the codebase is ready for long-term maintenance. Includes:

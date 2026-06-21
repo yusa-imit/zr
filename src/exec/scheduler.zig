@@ -939,6 +939,12 @@ fn workerFn(ctx: WorkerCtx) void {
                         if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
                     }
                 }
+                // v1.102.0: Check extra_env (CLI --env or workflow matrix vars)
+                if (ctx.extra_env) |extra| {
+                    for (extra) |kv| {
+                        if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
+                    }
+                }
                 // Check system env
                 if (std.process.getEnvVarOwned(task_allocator, var_name)) |val| {
                     task_allocator.free(val);
@@ -986,6 +992,12 @@ fn workerFn(ctx: WorkerCtx) void {
                     }
                 } else {
                     for (ctx.env orelse &.{}) |kv| {
+                        if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
+                    }
+                }
+                // v1.102.0: Check extra_env (CLI --env or workflow matrix vars)
+                if (ctx.extra_env) |extra| {
+                    for (extra) |kv| {
                         if (std.mem.eql(u8, kv[0], var_name)) break :blk true;
                     }
                 }

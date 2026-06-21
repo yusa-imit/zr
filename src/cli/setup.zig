@@ -104,6 +104,8 @@ pub fn cmdSetup(
         // Execute the task directly via cmdRun
         var empty_params = std.StringHashMap([]const u8).init(allocator);
         defer empty_params.deinit();
+        var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+        defer empty_cli_env.deinit();
         const exit_code = try run.cmdRun(
             allocator,
             task_name,
@@ -129,6 +131,7 @@ pub fn cmdSetup(
             std.StringHashMap([]const u8).init(allocator),
             false, // non_interactive
             false, // yes_confirm
+            empty_cli_env,
         );
 
         if (exit_code != 0) {

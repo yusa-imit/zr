@@ -292,6 +292,8 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
     // Call run command
     var empty_params = std.StringHashMap([]const u8).init(allocator);
     defer empty_params.deinit();
+    var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
+    defer empty_cli_env.deinit();
     const exit_code = run.cmdRun(
         allocator,
         task_name,
@@ -317,6 +319,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         std.StringHashMap([]const u8).init(allocator),
         false, // non_interactive
         false, // yes_confirm
+        empty_cli_env,
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}
