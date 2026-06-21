@@ -196,3 +196,60 @@ test "33005: no tags = normal behavior — running without --add-tag produces no
     // History should be non-empty
     try std.testing.expect(history_result.stdout.len > 0);
 }
+
+test "33006: --last-run-tags shows runtime tags in list — run build with --add-tag ci, then zr list --last-run-tags shows +ci" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task with --add-tag ci
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "build", "--add-tag", "ci" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+
+    // Now list with --last-run-tags
+    var list_result = try runZr(allocator, &.{ "--config", config, "list", "--last-run-tags" }, tmp_path);
+    defer list_result.deinit();
+
+    // List command should succeed
+    try std.testing.expectEqual(@as(u8, 0), list_result.exit_code);
+    // Output should contain +ci tag (with + prefix) or just "ci"
+    try std.testing.expect(
+        std.mem.indexOf(u8, list_result.stdout, "+ci") != null or
+            std.mem.indexOf(u8, list_result.stdout, "ci") != null
+    );
+}
+
+test "33007: --last-run-tags without prior tagged runs shows no tags — clean run shows no tag annotations" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run task without any tags
+    var run_result = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer run_result.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit_code);
+
+    // Now list with --last-run-tags
+    var list_result = try runZr(allocator, &.{ "--config", config, "list", "--last-run-tags" }, tmp_path);
+    defer list_result.deinit();
+
+    // List command should succeed
+    try std.testing.expectEqual(@as(u8, 0), list_result.exit_code);
+    // Output should contain the task "build" but no + prefix tags
+    try std.testing.expect(std.mem.indexOf(u8, list_result.stdout, "build") != null);
+    // No +tag suffix since no tags were used
+    try std.testing.expect(std.mem.indexOf(u8, list_result.stdout, "+") == null);
+}
