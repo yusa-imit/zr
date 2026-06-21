@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.103.0] - 2026-06-21
+
+### Added
+- **CLI Environment Override** — inject or override environment variables at invocation time without modifying `zr.toml`:
+  - `zr run deploy --env ENV=production --env REGION=us-east-1` — multiple `--env` flags supported
+  - Priority: `--env` > task-level `env` > `[vars]` > system env
+  - `--env` satisfies `required_env` checks (task won't fail for missing env if provided via CLI)
+  - `--dry-run` shows "CLI env overrides:" section listing all `--env` values
+  - 6 integration tests (32000–32005)
+
 ## [1.102.0] - 2026-06-21
 
 ### Added
