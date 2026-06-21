@@ -558,6 +558,7 @@ fn cmdInteractiveInner(
                     false, // non_interactive
                     false, // yes_confirm
                     empty_cli_env,
+                    &.{}, // runtime_tags
                 ) catch {};
 
                 _ = enterRawMode() catch {};

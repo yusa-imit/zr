@@ -320,6 +320,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}

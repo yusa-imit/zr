@@ -132,6 +132,7 @@ pub fn cmdSetup(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // runtime_tags
         );
 
         if (exit_code != 0) {
