@@ -180,6 +180,7 @@ pub fn cmdInteractiveRun(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // runtime_tags
         );
     }
 
@@ -212,6 +213,7 @@ pub fn cmdInteractiveRun(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // runtime_tags
         );
     }
 
@@ -248,6 +250,7 @@ pub fn cmdInteractiveRun(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // runtime_tags
         );
     };
     defer leaveRawMode(original_termios);
@@ -291,6 +294,7 @@ pub fn cmdInteractiveRun(
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();

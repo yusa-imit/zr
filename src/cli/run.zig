@@ -216,6 +216,7 @@ pub fn cmdRun(
     non_interactive: bool,
     yes_confirm: bool,
     cli_env: std.StringHashMap([]const u8),
+    runtime_tags: []const []const u8,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -860,6 +861,16 @@ pub fn cmdRun(
                 }
             }
         }
+        // v1.102.0: Show runtime tags if any provided
+        if (runtime_tags.len > 0) {
+            try w.print("\n", .{});
+            try color.printBold(w, use_color, "Runtime tags: ", .{});
+            for (runtime_tags, 0..) |tag, i| {
+                if (i > 0) try w.print(", ", .{});
+                try w.print("+{s}", .{tag});
+            }
+            try w.print("\n", .{});
+        }
         return 0;
     }
 
@@ -1000,9 +1011,21 @@ pub fn cmdRun(
     }
     const avg_cpu = if (cpu_count > 0) cpu_sum / @as(f64, @floatFromInt(cpu_count)) else 0.0;
 
+    // Build runtime tags string (comma-separated)
+    const tags_str: ?[]const u8 = if (runtime_tags.len > 0) blk: {
+        var buf = std.ArrayList(u8){};
+        defer buf.deinit(allocator);
+        for (runtime_tags, 0..) |tag, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try buf.appendSlice(allocator, tag);
+        }
+        break :blk try buf.toOwnedSlice(allocator);
+    } else null;
+    defer if (tags_str) |t| allocator.free(t);
+
     // Record to history (best-effort, ignore errors)
     recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-        @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu);
+        @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str);
 
     // Display captured task outputs if --show-outputs requested (v1.87.0)
     if (show_outputs and task_outputs.count() > 0) {
@@ -1071,6 +1094,7 @@ pub fn cmdWatch(
     filter_options: filter_mod.FilterOptions,
     silent_override: bool,
     skip_tasks: []const []const u8,
+    runtime_tags: []const []const u8,
 ) !u8 {
     // Verify task exists and extract WatchConfig before starting the watch loop (v1.17.0).
     var watch_options = watcher.WatcherOptions{};
@@ -1276,8 +1300,20 @@ pub fn cmdWatch(
         }
         const avg_cpu = if (cpu_count > 0) cpu_sum / @as(f64, @floatFromInt(cpu_count)) else 0.0;
 
+        // Build runtime tags string (comma-separated)
+        const tags_str: ?[]const u8 = if (runtime_tags.len > 0) blk: {
+            var buf = std.ArrayList(u8){};
+            defer buf.deinit(allocator);
+            for (runtime_tags, 0..) |tag, i| {
+                if (i > 0) try buf.append(allocator, ',');
+                try buf.appendSlice(allocator, tag);
+            }
+            break :blk try buf.toOwnedSlice(allocator);
+        } else null;
+        defer if (tags_str) |t| allocator.free(t);
+
         recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-            @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu);
+            @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str);
 
         // Trigger live reload if enabled and task succeeded
         if (use_live_reload and sched_result.total_success) {
@@ -1749,11 +1785,17 @@ pub fn cmdHistory(
         }
         try color.printInfo(w, use_color, "{s:<20}", .{rec.task_name});
         const rel_time = formatRelativeTime(rec.timestamp, now, &time_buf);
-        try color.printDim(w, use_color, "  {d}ms  ({d} task(s))  {s}\n", .{
+        try color.printDim(w, use_color, "  {d}ms  ({d} task(s))  {s}", .{
             rec.duration_ms,
             rec.task_count,
             rel_time,
         });
+        // Display runtime tags if present
+        if (rec.runtime_tags) |tags| {
+            try w.print("  ", .{});
+            try color.printDim(w, use_color, "[{s}]", .{tags});
+        }
+        try w.print("\n", .{});
     }
 
     return 0;
@@ -1843,6 +1885,7 @@ pub fn recordHistory(
     retry_count: u32,
     peak_memory_bytes: u64,
     avg_cpu_percent: f64,
+    runtime_tags: ?[]const u8,
 ) void {
     const hist_path = history.defaultHistoryPath(allocator) catch return;
     defer allocator.free(hist_path);
@@ -1859,6 +1902,7 @@ pub fn recordHistory(
         .retry_count = retry_count,
         .peak_memory_bytes = peak_memory_bytes,
         .avg_cpu_percent = avg_cpu_percent,
+        .runtime_tags = runtime_tags,
     }) catch {};
 }
 
@@ -2207,6 +2251,7 @@ test "cmdRun: missing config returns error" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2263,6 +2308,7 @@ test "cmdRun: unknown task returns error" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2319,6 +2365,7 @@ test "cmdRun: dry run shows plan without executing" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2375,6 +2422,7 @@ test "cmdRun: successful task returns 0" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2431,6 +2479,7 @@ test "cmdRun: failing task returns 1" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // runtime_tags
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

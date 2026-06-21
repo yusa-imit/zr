@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.104.0] - 2026-06-21
+
+### Added
+- **Runtime Tag Annotation** (`--add-tag`) — annotate a run with custom tags for tracking and audit:
+  - `zr run build --add-tag ci --add-tag pr-123` — multiple `--add-tag` flags supported
+  - Tags are stored in run history and shown in `zr history` output
+  - `--dry-run` shows "Runtime tags:" section listing all `--add-tag` values
+  - 6 integration tests (33000–33005)
+
 ## [1.103.0] - 2026-06-21
 
 ### Added

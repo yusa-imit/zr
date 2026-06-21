@@ -87,6 +87,7 @@ comptime {
     _ = @import("30000_multi_task_run_test.zig");
     _ = @import("31000_cmd_vars_test.zig");
     _ = @import("32000_cli_env_test.zig");
+    _ = @import("33000_add_tag_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");
