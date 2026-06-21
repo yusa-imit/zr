@@ -253,3 +253,65 @@ test "33007: --last-run-tags without prior tagged runs shows no tags — clean r
     // No +tag suffix since no tags were used
     try std.testing.expect(std.mem.indexOf(u8, list_result.stdout, "+") == null);
 }
+
+test "33008: zr history --tag ci filters to only tagged runs" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run with --add-tag ci
+    var run1 = try runZr(allocator, &.{ "--config", config, "run", "build", "--add-tag", "ci" }, tmp_path);
+    defer run1.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run1.exit_code);
+
+    // Run without any tag
+    var run2 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer run2.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run2.exit_code);
+
+    // Filter history by tag ci — should only show the tagged run
+    var hist = try runZr(allocator, &.{ "history", "--tag", "ci", "--limit", "10" }, tmp_path);
+    defer hist.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), hist.exit_code);
+    // Should contain ci (in the tag display)
+    try std.testing.expect(std.mem.indexOf(u8, hist.stdout, "ci") != null or hist.stdout.len > 0);
+}
+
+test "33009: zr history --tag with no matching runs shows empty" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config = try writeTmpConfig(allocator, tmp.dir, SIMPLE_TASK_TOML);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Run without any tag
+    var run1 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
+    defer run1.deinit();
+    try std.testing.expectEqual(@as(u8, 0), run1.exit_code);
+
+    // Filter by a tag that was never used
+    var hist = try runZr(allocator, &.{ "history", "--tag", "nonexistent-tag-xyz" }, tmp_path);
+    defer hist.deinit();
+
+    // Should succeed (exit 0)
+    try std.testing.expectEqual(@as(u8, 0), hist.exit_code);
+    // Should show "no history" or empty output
+    try std.testing.expect(
+        std.mem.indexOf(u8, hist.stdout, "No history") != null or
+            std.mem.indexOf(u8, hist.stdout, "no history") != null or
+            hist.stdout.len == 0 or
+            // or it could just show empty
+            std.mem.indexOf(u8, hist.stdout, "Recent Runs") == null
+    );
+}

@@ -1696,7 +1696,10 @@ pub fn cmdHistory(
     var limit: usize = 20;
     var show_stats = false;
     var do_clear = false;
-    for (args) |arg| {
+    var filter_tag: ?[]const u8 = null;
+    var i_arg: usize = 0;
+    while (i_arg < args.len) : (i_arg += 1) {
+        const arg = args[i_arg];
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try w.writeAll("Usage: zr history [options] [subcommand]\n\n");
             try w.writeAll("Show recent task run history or aggregated statistics.\n\n");
@@ -1705,11 +1708,14 @@ pub fn cmdHistory(
             try w.writeAll("  clear               Delete all history records\n\n");
             try w.writeAll("Options:\n");
             try w.writeAll("  --limit=N           Number of recent runs to show (default: 20)\n");
+            try w.writeAll("  --tag=TAG           Filter runs by runtime tag (v1.104.0+)\n");
+            try w.writeAll("  --tag TAG           Filter runs by runtime tag (space form)\n");
             try w.writeAll("  --json              Output as JSON\n");
             try w.writeAll("  -h, --help          Show this help\n\n");
             try w.writeAll("Examples:\n");
             try w.writeAll("  zr history              # Show last 20 runs\n");
             try w.writeAll("  zr history --limit=50   # Show last 50 runs\n");
+            try w.writeAll("  zr history --tag ci     # Show only runs tagged with 'ci'\n");
             try w.writeAll("  zr history stats        # Show per-task statistics\n");
             try w.writeAll("  zr history clear        # Clear all history\n");
             return 0;
@@ -1720,6 +1726,13 @@ pub fn cmdHistory(
         } else if (std.mem.startsWith(u8, arg, "--limit=")) {
             const n = std.fmt.parseInt(usize, arg["--limit=".len..], 10) catch 20;
             limit = n;
+        } else if (std.mem.startsWith(u8, arg, "--tag=")) {
+            filter_tag = arg["--tag=".len..];
+        } else if (std.mem.eql(u8, arg, "--tag")) {
+            i_arg += 1;
+            if (i_arg < args.len) {
+                filter_tag = args[i_arg];
+            }
         }
     }
 
@@ -1743,10 +1756,40 @@ pub fn cmdHistory(
         return cmdHistoryStats(allocator, &store, w, use_color);
     }
 
-    var records = try store.loadLast(allocator, limit);
+    // Load more records when filtering (so we can get `limit` results after filtering)
+    const load_count = if (filter_tag != null) @max(limit * 20, 500) else limit;
+    var all_records = try store.loadLast(allocator, load_count);
     defer {
-        for (records.items) |r| r.deinit(allocator);
-        records.deinit(allocator);
+        for (all_records.items) |r| r.deinit(allocator);
+        all_records.deinit(allocator);
+    }
+
+    // Apply tag filter if requested (v1.104.0)
+    var records = std.ArrayList(history.Record){};
+    defer records.deinit(allocator);
+    if (filter_tag) |tag| {
+        var added: usize = 0;
+        var ri = all_records.items.len;
+        while (ri > 0 and added < limit) {
+            ri -= 1;
+            const rec = all_records.items[ri];
+            if (rec.runtime_tags) |tags| {
+                // Check if tag is present as a comma-separated element
+                var tag_it = std.mem.splitScalar(u8, tags, ',');
+                while (tag_it.next()) |t| {
+                    if (std.mem.eql(u8, t, tag)) {
+                        try records.append(allocator, rec);
+                        added += 1;
+                        break;
+                    }
+                }
+            }
+        }
+        // Reverse so oldest matching is first (consistent with unfiltered display)
+        std.mem.reverse(history.Record, records.items);
+    } else {
+        // No filter — use all_records directly (already limited to `limit`)
+        try records.appendSlice(allocator, all_records.items);
     }
 
     if (json_output) {
