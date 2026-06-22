@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.105.0] - 2026-06-22
+
+### Added
+- **Task Priority Scheduling** (`priority = N`) — control execution order within a topological level:
+  - `priority = 100` — high priority; task runs first when multiple tasks are ready at the same level
+  - `priority = -5` — low priority; task runs after zero-priority tasks
+  - Default priority is 0; positive = earlier, negative = later
+  - With `--jobs 1`, priority creates strict execution ordering within each level
+  - `zr list` shows `[p:N]` badge for non-zero priority tasks
+  - `zr list --sort=priority` orders tasks by priority descending (highest first)
+  - JSON list output includes `priority` field
+  - 6 integration tests (34000–34005)
+- **sailor v2.55.0** — FlowText widget (multi-column text layout)
+
 ## [1.104.0] - 2026-06-21
 
 ### Added
