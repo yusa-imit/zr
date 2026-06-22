@@ -5,23 +5,23 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.88.0 (build.zig.zon) | Latest Release: v1.88.0 (2026-06-06)
+- **Version**: v1.105.0 (build.zig.zon) | Latest Release: v1.105.0 (2026-06-22)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.88.0 (current in build.zig.zon) | Latest Release: v1.88.0 (2026-06-06)
-- **Unit tests**: ✅ Passing (1750 passed, 8 skipped, 0 failed)
-- **Integration tests**: 110 test files — comprehensive coverage (18000-18012 for input_prompt)
+- **Build version**: v1.105.0 (current in build.zig.zon) | Latest Release: v1.105.0 (2026-06-22)
+- **Unit tests**: ✅ Passing (1766 passed, 8 skipped, 0 failed)
+- **Integration tests**: 112 test files — comprehensive coverage (34000-34005 for task priority)
 - **Test coverage**: ~98% file coverage — exceeds 80% threshold
-- **CI**: Running (pushed v1.88.0)
+- **CI**: Green (all cancelled = no failures)
 - **GitHub Issues**: 0 open, **0 bugs**, **0 bug reports**
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
-- **Sailor version**: v2.13.0 (upgraded in v1.84.0 cycle)
+- **Sailor version**: v2.55.0 (upgraded in v1.105.0 cycle)
 - **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix)
-- **Source**: ~77,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-06-06, FEATURE Cycle 323)**: ✅ **v1.88.0 Released** — Interactive Task Input Prompting: input_prompt field, --input/--non-interactive CLI flags, type+choices validation, resolved_params integration, zr explain integration. 13 integration tests (18000-18012). IMPORTANT: input_prompt arrays must be single-line in TOML (parser limitation). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.88.0
+- **Source**: ~78,000+ lines, 100+ modules, 10 language providers
+- **Latest work (2026-06-22, FEATURE Cycle 361)**: ✅ **v1.105.0 Released** — Task Priority Scheduling: priority = N field (i32), [p:N] badge in list, --sort=priority, priority-based sorting in scheduler within topological levels. 6 integration tests (34000-34005). sailor v2.55.0 (FlowText widget). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.105.0
 
 ## PRD Phase Status
 
