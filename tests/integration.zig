@@ -88,6 +88,7 @@ comptime {
     _ = @import("31000_cmd_vars_test.zig");
     _ = @import("32000_cli_env_test.zig");
     _ = @import("33000_add_tag_test.zig");
+    _ = @import("34000_priority_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");
@@ -121,6 +122,7 @@ comptime {
     _ = @import("vars_test.zig");
     _ = @import("version_test.zig");
     _ = @import("watch_test.zig");
+    _ = @import("tags_test.zig");
     _ = @import("which_test.zig");
     _ = @import("workflow_test.zig");
     _ = @import("workflow_matrix_test.zig");

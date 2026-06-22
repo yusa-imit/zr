@@ -2548,7 +2548,19 @@ pub fn run(
         defer threads.deinit(allocator);
         try threads.ensureTotalCapacity(allocator, level.items.len);
 
-        for (level.items) |task_name| {
+        // Sort tasks within this level by priority descending (v1.105.0).
+        // Higher priority tasks are spawned first — with --jobs 1 this creates strict order.
+        const sorted_level = try allocator.dupe([]const u8, level.items);
+        defer allocator.free(sorted_level);
+        std.mem.sort([]const u8, sorted_level, config, struct {
+            fn lessThan(cfg: *const types.Config, a: []const u8, b: []const u8) bool {
+                const pa = if (cfg.tasks.get(a)) |t| t.priority else 0;
+                const pb = if (cfg.tasks.get(b)) |t| t.priority else 0;
+                return pa > pb; // descending: higher priority first
+            }
+        }.lessThan);
+
+        for (sorted_level) |task_name| {
             // Stop spawning new tasks if failure detected
             if (failed.load(.acquire)) break;
 

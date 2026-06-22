@@ -412,6 +412,7 @@ pub fn cmdList(
                     try obj.addNull("description");
                 }
                 try obj.addBool("internal", task.internal);
+                try obj.addNumber("priority", task.priority);
                 // Add source_file if task came from an included file (v1.99.0)
                 if (task.source_file) |sf| {
                     try obj.addString("source_file", sf);
@@ -618,7 +619,7 @@ pub fn cmdList(
 
     // Apply --sort=<key> sort to the final task list (v1.85.0).
     // Supported keys: "name" (default, alphabetical), "freq" (most-run first),
-    // "time" (slowest first), "recent" (last-run first).
+    // "time" (slowest first), "recent" (last-run first), "priority" (highest priority first, v1.105.0).
     if (sort_by) |key| {
         if (std.mem.eql(u8, key, "freq")) {
             var exec_counts = std.StringHashMap(usize).init(allocator);
@@ -681,6 +682,23 @@ pub fn cmdList(
             }.lessThan);
             names.clearRetainingCapacity();
             for (nt_list.items) |nt| try names.append(allocator, nt.name);
+        } else if (std.mem.eql(u8, key, "priority")) {
+            // Sort by scheduling priority descending (highest first) (v1.105.0)
+            const NP = struct { name: []const u8, prio: i32 };
+            var np_list = std.ArrayList(NP){};
+            defer np_list.deinit(allocator);
+            for (names.items) |name| {
+                const prio = if (config.tasks.get(name)) |t| t.priority else 0;
+                try np_list.append(allocator, .{ .name = name, .prio = prio });
+            }
+            std.mem.sort(NP, np_list.items, {}, struct {
+                fn lessThan(_: void, a: NP, b: NP) bool {
+                    if (a.prio != b.prio) return a.prio > b.prio;
+                    return std.mem.lessThan(u8, a.name, b.name);
+                }
+            }.lessThan);
+            names.clearRetainingCapacity();
+            for (np_list.items) |np| try names.append(allocator, np.name);
         }
         // "name" and unknown keys: already alphabetically sorted above
     }
@@ -758,6 +776,10 @@ pub fn cmdList(
                 if (task.internal) {
                     try color.printDim(w, use_color, " (internal)", .{});
                 }
+                // Show priority badge for non-zero priority tasks (v1.105.0)
+                if (task.priority != 0) {
+                    try color.printDim(w, use_color, " [p:{d}]", .{task.priority});
+                }
 
                 // Show duration estimate if available
                 if (records_list.items.len > 0) {
@@ -829,6 +851,10 @@ pub fn cmdList(
                 // Mark internal tasks (v1.91.0)
                 if (task.internal) {
                     try color.printDim(w, use_color, " (internal)", .{});
+                }
+                // Show priority badge for non-zero priority tasks (v1.105.0)
+                if (task.priority != 0) {
+                    try color.printDim(w, use_color, " [p:{d}]", .{task.priority});
                 }
 
                 // Show duration estimate if available
@@ -923,6 +949,10 @@ pub fn cmdList(
             // Mark internal tasks (v1.91.0)
             if (task.internal) {
                 try color.printDim(w, use_color, " (internal)", .{});
+            }
+            // Show priority badge for non-zero priority tasks (v1.105.0)
+            if (task.priority != 0) {
+                try color.printDim(w, use_color, " [p:{d}]", .{task.priority});
             }
 
             // Show duration estimate if available
