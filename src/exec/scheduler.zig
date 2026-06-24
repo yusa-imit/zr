@@ -2755,7 +2755,16 @@ pub fn run(
 
             // Compute cache key for all tasks (Phase 2 - Cache Key Generation stores all executions)
             const task_env_slice: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
-            const cache_key: ?[]u8 = cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch null;
+            const cache_key: ?[]u8 = if (task.sources.len > 0)
+                cache_store.CacheStore.computeKeyWithSources(
+                    allocator,
+                    task.cmd,
+                    task_env_slice,
+                    task.sources,
+                    sched_config.project_root orelse ".",
+                ) catch null
+            else
+                cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch null;
 
             // Initialize circuit breaker for this task if configured (v1.30.0)
             var circuit_breaker_ptr: ?*CircuitBreakerState = null;

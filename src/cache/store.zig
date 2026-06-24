@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../config/types.zig");
+const glob_mod = @import("../util/glob.zig");
 
 /// Cache entry metadata stored on disk.
 /// File name: <hex-hash>.ok  (task succeeded)
@@ -60,6 +61,79 @@ pub const CacheStore = struct {
                 hasher.update(";");
             }
         }
+        const hash_val = hasher.final();
+        return std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
+    }
+
+    /// Compute cache key including source file content hashes.
+    /// Use this for tasks with `inputs`/`sources` so file edits invalidate the cache.
+    /// `cwd` is the directory from which glob patterns are resolved.
+    /// Returns a 16-char hex string (caller owns).
+    pub fn computeKeyWithSources(
+        allocator: std.mem.Allocator,
+        cmd: []const u8,
+        env: ?[]const [2][]const u8,
+        sources: []const []const u8,
+        cwd: []const u8,
+    ) ![]u8 {
+        var hasher = std.hash.Wyhash.init(0);
+        hasher.update(cmd);
+        if (env) |pairs| {
+            for (pairs) |pair| {
+                hasher.update(pair[0]);
+                hasher.update("=");
+                hasher.update(pair[1]);
+                hasher.update(";");
+            }
+        }
+
+        if (sources.len > 0) {
+            var base_dir = std.fs.cwd().openDir(cwd, .{ .iterate = true }) catch {
+                // If we can't open the cwd, fall back to key without source hashes
+                const hash_val = hasher.final();
+                return std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
+            };
+            defer base_dir.close();
+
+            // Collect all matching file paths
+            var matched = std.ArrayList([]const u8){};
+            defer {
+                for (matched.items) |f| allocator.free(f);
+                matched.deinit(allocator);
+            }
+
+            for (sources) |pattern| {
+                const files = glob_mod.find(allocator, base_dir, pattern) catch continue;
+                defer {
+                    for (files) |f| allocator.free(f);
+                    allocator.free(files);
+                }
+                for (files) |f| {
+                    try matched.append(allocator, try allocator.dupe(u8, f));
+                }
+            }
+
+            // Sort for determinism
+            std.mem.sort([]const u8, matched.items, {}, struct {
+                fn lt(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.order(u8, a, b) == .lt;
+                }
+            }.lt);
+
+            for (matched.items) |file_path| {
+                hasher.update(file_path);
+                hasher.update("\x00");
+                const content = base_dir.readFileAlloc(allocator, file_path, 10 * 1024 * 1024) catch |err| {
+                    hasher.update(@errorName(err));
+                    hasher.update("\x00");
+                    continue;
+                };
+                defer allocator.free(content);
+                hasher.update(content);
+                hasher.update("\x00");
+            }
+        }
+
         const hash_val = hasher.final();
         return std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
     }
@@ -305,4 +379,71 @@ test "clearAll removes cache entries" {
 
     try std.testing.expect(!store.hasHit(key1));
     try std.testing.expect(!store.hasHit(key2));
+}
+
+test "computeKeyWithSources changes when file content changes" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [512]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    try tmp.dir.writeFile(.{ .sub_path = "input.txt", .data = "v1" });
+
+    const key1 = try CacheStore.computeKeyWithSources(
+        allocator,
+        "cat input.txt",
+        null,
+        &[_][]const u8{"input.txt"},
+        tmp_path,
+    );
+    defer allocator.free(key1);
+
+    try tmp.dir.writeFile(.{ .sub_path = "input.txt", .data = "v2" });
+
+    const key2 = try CacheStore.computeKeyWithSources(
+        allocator,
+        "cat input.txt",
+        null,
+        &[_][]const u8{"input.txt"},
+        tmp_path,
+    );
+    defer allocator.free(key2);
+
+    // Different file content → different cache key → cache invalidated
+    try std.testing.expect(!std.mem.eql(u8, key1, key2));
+}
+
+test "computeKeyWithSources stable for unchanged files" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [512]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    try tmp.dir.writeFile(.{ .sub_path = "input.txt", .data = "stable" });
+
+    const key1 = try CacheStore.computeKeyWithSources(
+        allocator,
+        "cat input.txt",
+        null,
+        &[_][]const u8{"input.txt"},
+        tmp_path,
+    );
+    defer allocator.free(key1);
+
+    const key2 = try CacheStore.computeKeyWithSources(
+        allocator,
+        "cat input.txt",
+        null,
+        &[_][]const u8{"input.txt"},
+        tmp_path,
+    );
+    defer allocator.free(key2);
+
+    try std.testing.expectEqualStrings(key1, key2);
 }
