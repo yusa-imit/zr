@@ -1196,7 +1196,9 @@ fn workerFn(ctx: WorkerCtx) void {
 
                 // Write cached stdout if not empty
                 if (entry.stdout.len > 0) {
-                    std.fs.File.stdout().writeAll(entry.stdout) catch {};
+                    const stdout_f = std.fs.File.stdout();
+                    if (stdout_f.isTty()) stdout_f.writeAll("\r\x1b[K") catch {};
+                    stdout_f.writeAll(entry.stdout) catch {};
                 }
 
                 // Write cached stderr if not empty
@@ -1682,7 +1684,10 @@ fn workerFn(ctx: WorkerCtx) void {
                 if (oc.getBuffer()) |buffered_output| {
                     defer task_allocator.free(buffered_output);
                     if (buffered_output.len > 0) {
-                        std.fs.File.stdout().writeAll(buffered_output) catch {};
+                        const stdout_f = std.fs.File.stdout();
+                        // Clear any in-progress spinner/monitor line before printing buffered output.
+                        if (stdout_f.isTty()) stdout_f.writeAll("\r\x1b[K") catch {};
+                        stdout_f.writeAll(buffered_output) catch {};
                     }
                 } else |_| {}
             }
@@ -1696,7 +1701,9 @@ fn workerFn(ctx: WorkerCtx) void {
                 if (oc.getBuffer()) |buffered_output| {
                     defer task_allocator.free(buffered_output);
                     if (buffered_output.len > 0) {
-                        std.fs.File.stdout().writeAll(buffered_output) catch {};
+                        const stdout_f = std.fs.File.stdout();
+                        if (stdout_f.isTty()) stdout_f.writeAll("\r\x1b[K") catch {};
+                        stdout_f.writeAll(buffered_output) catch {};
                     }
                 } else |_| {}
             }
