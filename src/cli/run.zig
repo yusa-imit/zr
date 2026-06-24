@@ -221,6 +221,9 @@ pub fn cmdRun(
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
 
+    // Derive project root from config file path so tasks run from the right directory.
+    const project_root: ?[]const u8 = std.fs.path.dirname(config_path);
+
     // [settings] jobs overrides default (0=auto) when CLI --jobs not explicitly set
     const effective_max_jobs: u32 = if (max_jobs != 0) max_jobs else (config.settings.jobs orelse 0);
     // [settings] default_timeout converted to ms for scheduler (task-level timeout takes precedence)
@@ -301,6 +304,7 @@ pub fn cmdRun(
             .only_mode = only_mode,
             .task_outputs = &task_outputs_g,
             .default_timeout_ms = settings_default_timeout_ms,
+            .project_root = project_root,
         }) catch |err| {
             switch (err) {
                 error.TaskNotFound => try color.printError(err_writer, use_color,
@@ -913,6 +917,7 @@ pub fn cmdRun(
             .max_jobs = effective_max_jobs,
             .use_color = use_color,
             .default_timeout_ms = settings_default_timeout_ms,
+            .project_root = project_root,
         }) catch {
             try color.printError(err_writer, use_color,
                 "run: before_all lifecycle hook failed to start\n", .{});
@@ -941,6 +946,7 @@ pub fn cmdRun(
         .task_outputs = &task_outputs,
         .default_timeout_ms = settings_default_timeout_ms,
         .extra_env = cli_env_slice,
+        .project_root = project_root,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -1048,6 +1054,7 @@ pub fn cmdRun(
             .max_jobs = effective_max_jobs,
             .use_color = use_color,
             .default_timeout_ms = settings_default_timeout_ms,
+            .project_root = project_root,
         }) catch break :on_success_blk;
         defer on_s.deinit(allocator);
     }
@@ -1061,6 +1068,7 @@ pub fn cmdRun(
             .max_jobs = effective_max_jobs,
             .use_color = use_color,
             .default_timeout_ms = settings_default_timeout_ms,
+            .project_root = project_root,
         }) catch break :on_error_blk;
         defer on_e.deinit(allocator);
     }
@@ -1074,6 +1082,7 @@ pub fn cmdRun(
             .max_jobs = effective_max_jobs,
             .use_color = use_color,
             .default_timeout_ms = settings_default_timeout_ms,
+            .project_root = project_root,
         }) catch break :after_all_blk;
         defer after_r.deinit(allocator);
     }
@@ -1266,6 +1275,7 @@ pub fn cmdWatch(
             .silent_override = silent_override,
             .skip_tasks = skip_tasks,
             .default_timeout_ms = watch_default_timeout_ms,
+            .project_root = std.fs.path.dirname(config_path),
         }) catch |err| {
             switch (err) {
                 error.CycleDetected => try color.printError(err_writer, use_color,
@@ -1549,6 +1559,7 @@ pub fn cmdWorkflow(
                 .silent_override = silent_override,
                 .skip_tasks = skip_tasks,
                 .default_timeout_ms = wf_default_timeout_ms,
+                .project_root = std.fs.path.dirname(config_path),
             }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {
@@ -1614,6 +1625,7 @@ pub fn cmdWorkflow(
                     .silent_override = silent_override,
                     .skip_tasks = skip_tasks,
                     .default_timeout_ms = wf_default_timeout_ms,
+                    .project_root = std.fs.path.dirname(config_path),
                 }) catch |err| {
                     try color.printError(err_writer, use_color,
                         "workflow: on_failure task '{s}' failed: {s}\n",

@@ -2443,6 +2443,9 @@ fn run(
                     ci_template_type = arg["--type=".len..];
                 } else if (std.mem.startsWith(u8, arg, "--output=")) {
                     ci_output_path = arg["--output=".len..];
+                } else if (!std.mem.startsWith(u8, arg, "-")) {
+                    // Positional arg: first non-flag is the platform name
+                    if (ci_platform == null) ci_platform = arg;
                 }
             }
 

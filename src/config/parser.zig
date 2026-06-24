@@ -3530,8 +3530,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             }
                         }
                     }
-                } else if (std.mem.eql(u8, key, "sources")) {
-                    // Source file patterns for up-to-date detection (v1.74.0)
+                } else if (std.mem.eql(u8, key, "sources") or std.mem.eql(u8, key, "inputs")) {
+                    // Source file patterns for up-to-date detection and cache key computation (v1.74.0).
+                    // `inputs` is accepted as an alias for `sources`.
                     // Parse array: ["src/**/*.ts", "config.json"]
                     if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
                         const sources_str = value[1 .. value.len - 1];

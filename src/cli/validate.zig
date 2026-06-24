@@ -515,13 +515,14 @@ pub fn cmdValidate(
         if (plugin.source.len > 0) {
             const has_protocol = std.mem.indexOf(u8, plugin.source, "://") != null or
                 std.mem.startsWith(u8, plugin.source, "./") or
-                std.mem.startsWith(u8, plugin.source, "/");
+                std.mem.startsWith(u8, plugin.source, "/") or
+                std.mem.startsWith(u8, plugin.source, "builtin:");
 
             if (!has_protocol) {
                 if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
                 try err_writer.print("⚠ Plugin '{s}': source '{s}' should start with protocol or path\n", .{ plugin.name, plugin.source });
                 if (use_color) try err_writer.writeAll(color.Code.reset);
-                try color.printDim(err_writer, use_color, "  Hint: Use 'git:https://...', 'http://...', or './path'\n\n", .{});
+                try color.printDim(err_writer, use_color, "  Hint: Use 'builtin:<name>', 'git:https://...', 'http://...', or './path'\n\n", .{});
                 warning_count += 1;
             }
         }

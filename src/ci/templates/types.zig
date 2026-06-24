@@ -9,6 +9,7 @@ pub const Platform = enum {
 
     pub fn fromString(s: []const u8) ?Platform {
         if (std.mem.eql(u8, s, "github-actions")) return .github_actions;
+        if (std.mem.eql(u8, s, "github")) return .github_actions;
         if (std.mem.eql(u8, s, "gitlab")) return .gitlab_ci;
         if (std.mem.eql(u8, s, "circleci")) return .circleci;
         return null;

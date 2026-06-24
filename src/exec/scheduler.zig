@@ -103,6 +103,9 @@ pub const SchedulerConfig = struct {
     /// Default timeout in ms for tasks with no explicit `timeout` field (v1.93.0).
     /// Sourced from [settings] default_timeout. null = no default timeout.
     default_timeout_ms: ?u64 = null,
+    /// Directory containing zr.toml — used as default CWD for tasks that don't
+    /// specify their own `cwd`. null means inherit the process CWD (legacy behavior).
+    project_root: ?[]const u8 = null,
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
@@ -2781,7 +2784,7 @@ pub fn run(
                 .allocator = allocator,
                 .task_name = owned_task_name,
                 .cmd = task.cmd,
-                .cwd = task.cwd,
+                .cwd = task.cwd orelse sched_config.project_root,
                 .env = task_env_slice,
                 .extra_env = sched_config.extra_env,
                 .toolchains = config.toolchains.tools,
@@ -2829,7 +2832,7 @@ pub fn run(
                 .task_deps = all_deps.items,
                 .executed_tasks = &executed_tasks,
                 .env_file = task.env_file orelse &[_][]const u8{},
-                .task_cwd = task.cwd,
+                .task_cwd = task.cwd orelse sched_config.project_root,
                 .artifacts = task.artifacts,
                 .artifact_retention = task.artifact_retention,
                 .compress_artifacts = task.compress_artifacts,

@@ -9,13 +9,19 @@ const template_cmd = @import("../cli/template_cmd.zig");
 pub fn listTemplates(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     _ = args; // No additional arguments needed for list
 
-    var config = try loader.loadFromFile(allocator, "zr.toml");
-    defer config.deinit();
-
     var out_buf: [4096]u8 = undefined;
     const stdout = std.fs.File.stdout();
     var out_w = stdout.writer(&out_buf);
     defer out_w.interface.flush() catch {};
+
+    var config = loader.loadFromFile(allocator, "zr.toml") catch |err| {
+        if (err == error.FileNotFound) {
+            try out_w.interface.print("No templates available (no zr.toml found)\n", .{});
+            return 0;
+        }
+        return err;
+    };
+    defer config.deinit();
 
     if (config.templates.count() == 0) {
         try out_w.interface.print("No templates defined in zr.toml\n", .{});
