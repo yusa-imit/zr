@@ -85,16 +85,29 @@ fn generateConfigFromDetected(
         \\
     );
 
-    // Collect all tasks from all detected languages
+    // Collect all tasks from all detected languages, deduplicating by name.
+    // When multiple providers (e.g. node + bun) detect the same script name,
+    // keep only the first occurrence so the generated TOML has no duplicate keys.
     var all_tasks = std.ArrayList(LanguageProvider.TaskSuggestion){};
     defer all_tasks.deinit(allocator);
+    var seen_names = std.StringHashMap(void).init(allocator);
+    defer seen_names.deinit();
 
     for (detected) |lang| {
         if (lang.provider.extractTasks) |extract_fn| {
             const tasks = try extract_fn(allocator, dir_path);
-            // Transfer ownership to all_tasks
-            try all_tasks.appendSlice(allocator, tasks);
-            allocator.free(tasks); // Free the slice wrapper, not the items
+            defer allocator.free(tasks); // Free the slice wrapper only
+            for (tasks) |task| {
+                if (seen_names.contains(task.name)) {
+                    // Duplicate task name — free and skip
+                    allocator.free(task.name);
+                    allocator.free(task.command);
+                    allocator.free(task.description);
+                } else {
+                    try seen_names.put(task.name, {});
+                    try all_tasks.append(allocator, task);
+                }
+            }
         }
     }
 
