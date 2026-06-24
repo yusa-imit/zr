@@ -66,14 +66,21 @@ pub fn serve(allocator: std.mem.Allocator) !u8 {
             .request => |req| {
                 const response = handleRequest(allocator, &state, req) catch |err| {
                     std.debug.print("MCP server: error handling request: {s}\n", .{@errorName(err)});
-                    const err_resp = jsonrpc.ErrorResponse{
+                    const err_code: jsonrpc.ErrorCode = switch (err) {
+                        error.MethodNotFound => .method_not_found,
+                        error.InvalidParams, error.MissingToolName => .invalid_params,
+                        error.ServerNotInitialized => .server_not_initialized,
+                        else => .internal_error,
+                    };
+                    var err_resp = jsonrpc.ErrorResponse{
                         .jsonrpc = jsonrpc.JSONRPC_VERSION,
                         .id = try req.id.clone(allocator),
                         .@"error" = .{
-                            .code = .internal_error,
+                            .code = err_code,
                             .message = try allocator.dupe(u8, @errorName(err)),
                         },
                     };
+                    defer err_resp.deinit(allocator);
                     const err_json = try writer.serializeMessage(allocator, .{ .error_response = err_resp });
                     defer allocator.free(err_json);
                     try stdout_file.writeAll(err_json);
@@ -116,7 +123,8 @@ fn handleRequest(
         }
         state.* = .initialized;
 
-        // Return capabilities
+        // MCP-spec initialize response: { protocolVersion, capabilities, serverInfo }
+        // Tools are NOT included here — clients must call tools/list to discover them.
         const cap_json = try capability.getCapabilities(allocator);
         return jsonrpc.Response{
             .jsonrpc = try allocator.dupe(u8, jsonrpc.JSONRPC_VERSION),
@@ -128,7 +136,7 @@ fn handleRequest(
     // Handle shutdown
     if (std.mem.eql(u8, req.method, "shutdown")) {
         state.* = .shutdown;
-        const result = try allocator.dupe(u8, "{}");
+        const result = try allocator.dupe(u8, "null");
         return jsonrpc.Response{
             .jsonrpc = try allocator.dupe(u8, jsonrpc.JSONRPC_VERSION),
             .id = try req.id.clone(allocator),
@@ -139,6 +147,16 @@ fn handleRequest(
     // Check if initialized before handling tool calls
     if (state.* != .initialized) {
         return error.ServerNotInitialized;
+    }
+
+    // Handle tools/list — MCP discovery endpoint
+    if (std.mem.eql(u8, req.method, "tools/list")) {
+        const tools_json = try capability.getToolsList(allocator);
+        return jsonrpc.Response{
+            .jsonrpc = try allocator.dupe(u8, jsonrpc.JSONRPC_VERSION),
+            .id = try req.id.clone(allocator),
+            .result = tools_json,
+        };
     }
 
     // Handle tool calls (tools/call method in MCP)
