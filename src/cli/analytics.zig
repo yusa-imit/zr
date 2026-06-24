@@ -113,9 +113,13 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
 
         try w.print("✓ Report saved to {s}\n", .{path});
 
-        // Open in browser if HTML (unless --no-open)
+        // Open in browser if HTML (unless --no-open or non-interactive context)
         if (!json_output and !no_open) {
-            try openInBrowser(path, w);
+            if (std.fs.File.stdout().isTty()) {
+                try openInBrowser(path, w);
+            } else {
+                try w.print("  (Skipping browser open in non-interactive context.)\n", .{});
+            }
         }
     } else if (json_output) {
         // Print JSON to stdout
@@ -153,7 +157,11 @@ pub fn cmdAnalytics(allocator: std.mem.Allocator, args: []const []const u8, glob
 
         try w.print("✓ Report generated: {s}\n", .{temp_path_for_write});
         if (!no_open) {
-            try openInBrowser(temp_path_for_write, w);
+            if (std.fs.File.stdout().isTty()) {
+                try openInBrowser(temp_path_for_write, w);
+            } else {
+                try w.print("  (Skipping browser open in non-interactive context. Use --no-open to suppress this message.)\n", .{});
+            }
         }
     }
 
@@ -199,6 +207,11 @@ fn printHelp(w: *std.Io.Writer) !void {
         \\  -n, --limit <N>     Analyze only the last N executions
         \\  --no-open           Do not open the report in browser
         \\  -h, --help          Show this help message
+        \\
+        \\Note:
+        \\  Browser auto-open is suppressed in non-interactive contexts (no TTY):
+        \\  CI pipelines, SSH sessions, and piped output will never launch a browser.
+        \\  Use --no-open to suppress the report path output when redirecting.
         \\
         \\Examples:
         \\  zr analytics                    # Generate HTML report and open in browser
