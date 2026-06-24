@@ -1,3 +1,12 @@
+## Issue #100: Intermittent argv joining on macOS arm64 (2026-06-25)
+**Symptom**: `zr cache status` → "Unknown command: cache status" (two words joined into one) in some shell sessions; same binary works in others. Single-word commands unaffected. Consistent within a process tree, flips between independent sessions.
+**Root cause fingerprint**: `effective_args[1]` receives a space-separated joined string (e.g., "cache status") instead of separate args[1]="cache", args[2]="status". Likely a macOS arm64 / Zig 0.15 startup interaction — possibly in how `std.os.argv` is populated when `link_libc = true` and the C runtime hands off argc/argv. No deterministic trigger found.
+**Workaround added**: `printUnknownCommandError` now detects if the unknown_cmd contains a space and prints: "Arguments appear to have been joined into one string. Try running without quotes: zr [cmd]. If the error persists, restart your shell session."
+**Status**: OPEN — root cause unknown, no deterministic reproducer. If a future Zig 0.15 release notes mention argv startup fix on macOS arm64, verify and close.
+**Investigation done**: isGlobalFlag(), remaining_args construction, alias expansion all verified correct. Not a Zig libc startup regression (link_libc=true). Possibly DYLD interposer inherited from parent shell, or macOS arm64 stack layout issue in Zig startup code.
+
+---
+
 ## macOS TCC blocks getcwd() for launchd agents accessing ~/Desktop/ (2026-03-19)
 **Symptom**: All cron-spawned Claude CLI processes stuck at 0 CPU, ~5KB RSS, producing zero output. Timeout after 30 min.
 **Root cause**: macOS TCC (Transparency, Consent, and Control) blocks `open()` syscall inside `getcwd()` for processes launched by a launchd agent (no TTY, `??` terminal) when cwd is under `~/Desktop/` (TCC-protected directory). The `__open_nocancel` syscall hangs indefinitely instead of returning EPERM. Both the Bun daemon AND child Claude processes were affected. Even freshly restarted launchd agent exhibited the same behavior.

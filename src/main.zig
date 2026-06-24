@@ -322,7 +322,15 @@ fn printUnknownCommandError(
     var hint_stream = std.io.fixedBufferStream(&hint_buf);
     const hint_writer = hint_stream.writer();
 
-    if (suggestions.len > 0) {
+    // Detect joined-args pattern: if unknown_cmd contains spaces, argv may have been
+    // concatenated. This can happen due to a macOS arm64 / Zig startup interaction
+    // (see issue #100). Provide a specific diagnostic hint in this case.
+    const has_space = std.mem.indexOfScalar(u8, unknown_cmd, ' ') != null;
+    if (has_space) {
+        try hint_writer.print("Arguments appear to have been joined into one string.\n", .{});
+        try hint_writer.print("Try running without quotes: zr {s}\n", .{unknown_cmd});
+        try hint_writer.print("If the error persists, restart your shell session.", .{});
+    } else if (suggestions.len > 0) {
         try hint_writer.print("Did you mean one of these?\n", .{});
         for (suggestions) |suggestion| {
             try hint_writer.print("    zr {s}\n", .{suggestion.name});
