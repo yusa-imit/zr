@@ -327,9 +327,9 @@ fn printUnknownCommandError(
     // (see issue #100). Provide a specific diagnostic hint in this case.
     const has_space = std.mem.indexOfScalar(u8, unknown_cmd, ' ') != null;
     if (has_space) {
-        try hint_writer.print("Arguments appear to have been joined into one string.\n", .{});
-        try hint_writer.print("Try running without quotes: zr {s}\n", .{unknown_cmd});
-        try hint_writer.print("If the error persists, restart your shell session.", .{});
+        try hint_writer.print("Command name contains a space — check if 'zr' is a shell\n", .{});
+        try hint_writer.print("function using \"$*\" (joins args) instead of \"$@\".\n", .{});
+        try hint_writer.print("Run: type zr   to inspect, or restart your shell session.", .{});
     } else if (suggestions.len > 0) {
         try hint_writer.print("Did you mean one of these?\n", .{});
         for (suggestions) |suggestion| {
@@ -696,7 +696,27 @@ fn run(
         break :blk w;
     };
 
-    const effective_args = remaining_args.items;
+    // Defensive normalization for joined-argv pattern (macOS arm64 / issue #100):
+    // When argv[1] contains spaces and is not a flag, the process may have received
+    // multiple arguments pre-joined as one string. Split transparently before dispatch.
+    var joined_argv_buf: std.ArrayListUnmanaged([]const u8) = .{};
+    defer joined_argv_buf.deinit(allocator);
+    const effective_args: []const []const u8 = blk: {
+        const raw = remaining_args.items;
+        if (raw.len >= 2 and
+            !std.mem.startsWith(u8, raw[1], "-") and
+            std.mem.indexOfScalar(u8, raw[1], ' ') != null)
+        {
+            try joined_argv_buf.append(allocator, raw[0]);
+            var tok = std.mem.tokenizeAny(u8, raw[1], " \t");
+            while (tok.next()) |token| {
+                try joined_argv_buf.append(allocator, token);
+            }
+            for (raw[2..]) |a| try joined_argv_buf.append(allocator, a);
+            break :blk joined_argv_buf.items;
+        }
+        break :blk raw;
+    };
     if (effective_args.len < 2) {
         try printHelp(effective_w, effective_color);
         return 0;
