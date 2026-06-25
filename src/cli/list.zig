@@ -1447,6 +1447,7 @@ test "cmdList: text output lists tasks alphabetically" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
+    // Tasks declared in reverse order to verify alphabetical sort
     const toml = "[tasks.build]\ncmd = \"make\"\n[tasks.alpha]\ncmd = \"echo a\"\n";
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
 
@@ -1457,14 +1458,19 @@ test "cmdList: text output lists tasks alphabetically" {
     defer allocator.free(config_path);
 
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
+    var out_w = std.Io.Writer.fixed(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdList(allocator, config_path, false, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, false, null, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdList(allocator, config_path, false, false, null, null, null, false, false, false, false, null, null, null, null, false, false, false, false, null, false, null, false, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    // Both tasks should appear in output
+    const alpha_pos = std.mem.indexOf(u8, written, "alpha") orelse return error.AlphaNotFound;
+    const build_pos = std.mem.indexOf(u8, written, "build") orelse return error.BuildNotFound;
+    // "alpha" should appear before "build" (alphabetical order)
+    try std.testing.expect(alpha_pos < build_pos);
 }
 
 test "cmdList: json output contains tasks array" {
@@ -1492,6 +1498,9 @@ test "cmdList: json output contains tasks array" {
 
     const written = out_buf[0..out_w.end];
     try std.testing.expect(std.mem.indexOf(u8, written, "\"tasks\"") != null);
+    // Both task names must appear in JSON output
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"build\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"alpha\"") != null);
 }
 
 test "cmdList: missing config file returns error" {
@@ -1514,6 +1523,7 @@ test "cmdGraph: text output shows dependency levels" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
+    // "test" depends on "build" — two distinct levels
     const toml = "[tasks.build]\ncmd = \"make\"\n[tasks.test]\ncmd = \"test\"\ndeps = [\"build\"]\n";
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
 
@@ -1524,14 +1534,21 @@ test "cmdGraph: text output shows dependency levels" {
     defer allocator.free(config_path);
 
     var out_buf: [4096]u8 = undefined;
-    const stdout = std.fs.File.stdout();
-    var out_w = stdout.writer(&out_buf);
+    var out_w = std.Io.Writer.fixed(&out_buf);
     var err_buf: [4096]u8 = undefined;
-    const stderr_f = std.fs.File.stderr();
-    var err_w = stderr_f.writer(&err_buf);
+    var err_w = std.Io.Writer.fixed(&err_buf);
 
-    const code = try cmdGraph(allocator, config_path, false, false, &out_w.interface, &err_w.interface, false);
+    const code = try cmdGraph(allocator, config_path, false, false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    // Both task names must appear in the graph output
+    try std.testing.expect(std.mem.indexOf(u8, written, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "test") != null);
+    // The dependency arrow or level indicator must appear (build appears before test)
+    const build_pos = std.mem.indexOf(u8, written, "build") orelse return error.BuildNotFound;
+    const test_pos = std.mem.indexOf(u8, written, "test") orelse return error.TestNotFound;
+    try std.testing.expect(build_pos < test_pos);
 }
 
 test "cmdGraph: json output contains levels array" {

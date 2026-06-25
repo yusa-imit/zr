@@ -321,10 +321,21 @@ test "DAG: deinit cleans up memory" {
     try dag.addNode("task2");
     try dag.addEdge("task1", "task2");
 
-    // Verify graph was created
-    try std.testing.expect(dag.nodeCount() == 2);
+    // Verify structure before cleanup
+    // addEdge("task1", "task2") means task1 depends on task2
+    try std.testing.expectEqual(@as(usize, 2), dag.nodeCount());
+    // task1 depends on task2 → task2 has in-degree 1 (task1 depends on it), task1 has in-degree 0
+    try std.testing.expectEqual(@as(usize, 1), dag.getInDegree("task2"));
+    try std.testing.expectEqual(@as(usize, 0), dag.getInDegree("task1"));
+    // task2 is an entry node (has no dependencies itself; task1 depends on task2)
+    var entries = try dag.getEntryNodes(allocator);
+    defer {
+        for (entries.items) |item| allocator.free(item);
+        entries.deinit(allocator);
+    }
+    try std.testing.expectEqual(@as(usize, 1), entries.items.len);
+    try std.testing.expectEqualStrings("task2", entries.items[0]);
 
-    // Clean up - should not leak
     dag.deinit();
 }
 
