@@ -17,6 +17,7 @@ const uptodate = @import("../exec/uptodate.zig");
 const env_loader = @import("../config/env_loader.zig");
 const types = @import("../config/types.zig");
 const input_prompt_mod = @import("input_prompt.zig");
+const junit = @import("junit.zig");
 
 /// Substitute {{...}} placeholders in a confirm_if expression using runtime params.
 /// Returns an allocated string (caller must free).
@@ -217,6 +218,7 @@ pub fn cmdRun(
     yes_confirm: bool,
     cli_env: std.StringHashMap([]const u8),
     runtime_tags: []const []const u8,
+    junit_path: ?[]const u8,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -342,6 +344,12 @@ pub fn cmdRun(
             if (sched_result_g.results.items.len > 1) {
                 try progress.printSummary(w, use_color, passed_g, failed_g, skipped_g, elapsed_ms_g);
             }
+        }
+
+        if (junit_path) |jpath| {
+            junit.writeJunitXml(allocator, jpath, task_name, sched_result_g.results.items, elapsed_ms_g) catch |err| {
+                try color.printError(err_writer, use_color, "run: Failed to write JUnit XML to '{s}': {}\n", .{ jpath, err });
+            };
         }
 
         return if (sched_result_g.total_success) 0 else 1;
@@ -1042,6 +1050,13 @@ pub fn cmdRun(
             try color.printDim(w, use_color, "  {s}: ", .{entry.key_ptr.*});
             try w.print("{s}\n", .{entry.value_ptr.*});
         }
+    }
+
+    // Write JUnit XML if requested
+    if (junit_path) |jpath| {
+        junit.writeJunitXml(allocator, jpath, task_name, sched_result.results.items, elapsed_ms) catch |err| {
+            try color.printError(err_writer, use_color, "run: Failed to write JUnit XML to '{s}': {}\n", .{ jpath, err });
+        };
     }
 
     // Run-level lifecycle: on_success / on_error hooks (v2.0.0)
@@ -2307,6 +2322,7 @@ test "cmdRun: missing config returns error" {
         false, // yes_confirm
         empty_cli_env,
         &.{}, // runtime_tags
+        null, // junit_path
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2364,6 +2380,7 @@ test "cmdRun: unknown task returns error" {
         false, // yes_confirm
         empty_cli_env,
         &.{}, // runtime_tags
+        null, // junit_path
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2421,6 +2438,7 @@ test "cmdRun: dry run shows plan without executing" {
         false, // yes_confirm
         empty_cli_env,
         &.{}, // runtime_tags
+        null, // junit_path
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2478,6 +2496,7 @@ test "cmdRun: successful task returns 0" {
         false, // yes_confirm
         empty_cli_env,
         &.{}, // runtime_tags
+        null, // junit_path
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2535,6 +2554,7 @@ test "cmdRun: failing task returns 1" {
         false, // yes_confirm
         empty_cli_env,
         &.{}, // runtime_tags
+        null, // junit_path
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

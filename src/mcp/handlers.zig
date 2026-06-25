@@ -322,6 +322,7 @@ fn handleRunTask(allocator: std.mem.Allocator, params_json: []const u8) !ToolRes
         false, // yes_confirm
         empty_cli_env,
         &.{}, // runtime_tags
+        null, // junit_path
     ) catch |err| {
         const error_json = try std.fmt.allocPrint(allocator,
             \\{{"success":false,"error":"{s}"}}

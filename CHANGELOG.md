@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.106.0] - 2026-06-26
+
+### Added
+- **JUnit XML Output** (`--junit <file>`) — write a standard JUnit XML report after task execution:
+  - `zr run build --junit results.xml` — creates JUnit XML with per-task `<testcase>` entries
+  - `--junit=results.xml` — equals-sign syntax also supported
+  - Successful tasks emit `<testcase ... />` (self-closing)
+  - Failed tasks emit `<failure message="exit code N" type="ExecutionFailure">...</failure>`
+  - Skipped tasks (condition=false, up-to-date) emit `<skipped/>`
+  - Accurate `time` attribute (seconds with millisecond precision) per testcase and testsuite
+  - XML-escapes special characters (`<`, `>`, `&`, `"`) in task names and suite names
+  - 8 integration tests (36000–36007) and 3 unit tests
+- **sailor v2.58.0** — no breaking changes (additive widgets)
+- **sailor v2.59.0** — StopWatch widget (lap timing, HH:MM:SS.mmm, RUNNING/PAUSED state)
+
 ## [1.105.0] - 2026-06-22
 
 ### Added

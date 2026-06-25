@@ -559,6 +559,7 @@ fn cmdInteractiveInner(
                     false, // yes_confirm
                     empty_cli_env,
                     &.{}, // runtime_tags
+                    null, // junit_path
                 ) catch {};
 
                 _ = enterRawMode() catch {};
