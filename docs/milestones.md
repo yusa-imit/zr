@@ -1109,8 +1109,8 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v2.54.0 (all migrations complete through v2.54.0)
-- **Next**: v2.55.0+ (when released)
+- **Current in zr**: v2.59.0 (all migrations complete through v2.59.0)
+- **Next**: v2.60.0+ (when released)
 - **Repository**: https://github.com/yusa-imit/sailor
 
 | Sailor Version | Status | Summary |
@@ -1183,6 +1183,11 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 | v2.52.0 | DONE | AnimatedBorder widget — animated border effects (Cycle 355, v1.101.0) |
 | v2.53.0 | DONE | Additive release — no breaking changes (Cycle 358, v1.104.0) |
 | v2.54.0 | DONE | AnimatedText widget — typewriter/wave/fade/blink/glow text animations (Cycle 358, v1.104.0, issue #88) |
+| v2.55.0 | DONE | FlowText widget — multi-column text layout (Cycle 361, v1.105.0) |
+| v2.56.0 | DONE | MiniMap widget, Linux clipboard fix (Cycle 364, v1.105.1, issue #101) |
+| v2.57.0 | DONE | RingMenu widget — circular menu navigation (Cycle 365 STABILIZATION) |
+| v2.58.0 | DONE | Additive release — no breaking changes (Cycle 367, v1.106.0) |
+| v2.59.0 | DONE | StopWatch widget — lap timing, HH:MM:SS.mmm, RUNNING/PAUSED state (Cycle 367, v1.106.0, issue #104) |
 
 ### zuda Library
 
