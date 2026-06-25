@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- **Latest**: v1.106.0 (feat: JUnit XML output `--junit` + sailor v2.58.0-v2.59.0) — PENDING RELEASE 2026-06-26
-- **Pending release**: v1.106.0 (JUnit XML + sailor v2.58.0–v2.59.0)
+- **Latest**: v1.106.0 (feat: JUnit XML output `--junit` + sailor v2.58.0-v2.59.0) — RELEASED 2026-06-26
+- **Pending release**: none
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)

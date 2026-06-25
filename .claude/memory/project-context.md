@@ -11,7 +11,7 @@
 
 ## Current Status
 
-- **Build version**: v1.106.0 (current in build.zig.zon) | Latest Release: v1.105.1 (2026-06-25)
+- **Build version**: v1.106.0 (current in build.zig.zon) | Latest Release: v1.106.0 (2026-06-26)
 - **Unit tests**: ✅ Passing (1771 passed, 8 skipped, 0 failed)
 - **Integration tests**: 114 test files — comprehensive coverage (36000-36007 for JUnit XML)
 - **Test coverage**: ~98% file coverage — exceeds 80% threshold
@@ -21,7 +21,7 @@
 - **Sailor version**: v2.59.0 (upgraded in v1.106.0 cycle — StopWatch widget, no breaking changes)
 - **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix)
 - **Source**: ~78,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-06-26, FEATURE Cycle 367)**: ✅ **v1.106.0 pending** — JUnit XML output (--junit <file>, src/cli/junit.zig), sailor v2.58.0-v2.59.0. 8 integration tests (36000-36007), 3 unit tests. Commit 5880b86.
+- **Latest work (2026-06-26, FEATURE Cycle 367)**: ✅ **v1.106.0 RELEASED** — JUnit XML output (--junit <file>, src/cli/junit.zig), sailor v2.58.0-v2.59.0. 8 integration tests (36000-36007), 3 unit tests. GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.106.0
 - **Previous work (2026-06-25, FEATURE Cycle 364)**: ✅ **v1.105.1 Released** — Bug fixes: joined-argv transparent split (#100), analytics TTY detection (#97), sailor v2.56.0 migration (#101). 5 integration tests (35000-35004). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.105.1
 
 ## PRD Phase Status
