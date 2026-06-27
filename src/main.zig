@@ -486,7 +486,7 @@ fn run(
             defer empty_params.deinit();
             var empty_cli_env = std.StringHashMap([]const u8).init(allocator);
             defer empty_cli_env.deinit();
-            return run_cmd.cmdRun(allocator, "default", null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env, &.{}, null);
+            return run_cmd.cmdRun(allocator, "default", null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env, &.{}, null, true);
         }
 
         // Count tasks
@@ -503,7 +503,7 @@ fn run(
             defer empty_params2.deinit();
             var empty_cli_env2 = std.StringHashMap([]const u8).init(allocator);
             defer empty_cli_env2.deinit();
-            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params2, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env2, &.{}, null);
+            return run_cmd.cmdRun(allocator, single_task.key_ptr.*, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params2, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env2, &.{}, null, true);
         } else {
             // Multiple tasks → interactive picker
             if (!std.fs.File.stdout().isTty()) {
@@ -536,7 +536,7 @@ fn run(
                 defer empty_params.deinit();
                 var empty_cli_env3 = std.StringHashMap([]const u8).init(allocator);
                 defer empty_cli_env3.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env3, &.{}, null);
+                return run_cmd.cmdRun(allocator, picker_result.name, null, false, false, 0, config_path, false, false, w, ew, use_color, null, .{}, false, false, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env3, &.{}, null, true);
             } else {
                 return run_cmd.cmdWorkflow(allocator, picker_result.name, null, false, 0, config_path, false, w, ew, use_color, .{}, false, &.{});
             }
@@ -922,7 +922,7 @@ fn run(
         defer empty_params.deinit();
         var empty_cli_env4 = std.StringHashMap([]const u8).init(allocator);
         defer empty_cli_env4.deinit();
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env4, &.{}, null);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env4, &.{}, null, true);
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
@@ -946,7 +946,8 @@ fn run(
                 "  --param key=value     Set a named task parameter\n" ++
                 "  --env KEY=VALUE       Inject environment variable (repeatable, overrides task env)\n" ++
                 "  --input KEY=VALUE     Provide answer for input_prompt (repeatable)\n" ++
-                "  --junit <file>        Write JUnit XML test report to file\n\n" ++
+                "  --junit <file>        Write JUnit XML test report to file\n" ++
+                "  --retry-failed        Re-run only the tasks that failed in the last run\n\n" ++
                 "GLOBAL OPTIONS:\n" ++
                 "  --dry-run, -n         Preview what would run without executing\n" ++
                 "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
@@ -969,7 +970,8 @@ fn run(
                 "  zr run test --env DATABASE=test      # Inject env var (override task config)\n" ++
                 "  zr run deploy --env KEY=val --env SECRET=xyz  # Multiple env vars\n" ++
                 "  zr run build,test,lint               # Run three tasks in sequence\n" ++
-                "  zr run build,test --fail-fast        # Stop on first failure\n",
+                "  zr run build,test --fail-fast        # Stop on first failure\n" ++
+                "  zr run --retry-failed                # Re-run tasks that failed in the last run\n",
                 .{},
             );
             return 0;
@@ -1028,7 +1030,7 @@ fn run(
                 defer empty_params.deinit();
                 var empty_cli_env5 = std.StringHashMap([]const u8).init(allocator);
                 defer empty_cli_env5.deinit();
-                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env5, &.{}, null);
+                return run_cmd.cmdRun(allocator, picker_result.name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env5, &.{}, null, true);
             } else {
                 // Workflow selected — delegate to workflow command
                 config.deinit();
@@ -1040,6 +1042,11 @@ fn run(
         var only_mode_pre = false;
         var task_name_idx: usize = 2;
         var filter_only_mode = false; // true when first arg is a flag (tag/dir filter without explicit task)
+
+        // v1.107.0: --retry-failed synthesizes task_name from last-failures.txt
+        var retry_task_name: ?[]const u8 = null;
+        defer if (retry_task_name) |n| allocator.free(n);
+
         if (std.mem.eql(u8, effective_args[2], "--only")) {
             if (effective_args.len < 4) {
                 try color.printError(ew, effective_color, "run: --only requires a task name\n\n  Hint: zr run <task-name> --only\n", .{});
@@ -1053,6 +1060,42 @@ fn run(
                 return 1;
             }
             task_name_idx = 3;
+        } else if (std.mem.eql(u8, effective_args[2], "--retry-failed")) {
+            // Read .zr/last-failures.txt from the project root and build a comma-joined task list.
+            const project_root = std.fs.path.dirname(config_path) orelse ".";
+            const failures_path = try std.fmt.allocPrint(allocator, "{s}/.zr/last-failures.txt", .{project_root});
+            defer allocator.free(failures_path);
+
+            const content = std.fs.cwd().readFileAlloc(allocator, failures_path, 65536) catch |err| {
+                if (err == error.FileNotFound) {
+                    try color.printInfo(effective_w, effective_color, "No previous failures to retry.\n", .{});
+                    return 0;
+                }
+                return err;
+            };
+            defer allocator.free(content);
+
+            var task_list = std.ArrayList([]const u8){};
+            defer task_list.deinit(allocator);
+            var line_it = std.mem.splitScalar(u8, content, '\n');
+            while (line_it.next()) |line| {
+                const trimmed = std.mem.trim(u8, line, " \t\r");
+                if (trimmed.len > 0) try task_list.append(allocator, trimmed);
+            }
+
+            if (task_list.items.len == 0) {
+                try color.printInfo(effective_w, effective_color, "No previous failures to retry.\n", .{});
+                return 0;
+            }
+
+            try color.printBold(effective_w, effective_color, "Retrying {d} failed task(s):\n", .{task_list.items.len});
+            for (task_list.items) |name| {
+                try effective_w.print("  - {s}\n", .{name});
+            }
+            try effective_w.print("\n", .{});
+
+            retry_task_name = try std.mem.join(allocator, ",", task_list.items);
+            // task_name_idx stays at 2 but is overridden below; loop starts at i=3
         } else if (std.mem.startsWith(u8, effective_args[2], "--tag") or
             std.mem.startsWith(u8, effective_args[2], "--exclude-tag") or
             std.mem.startsWith(u8, effective_args[2], "--dir="))
@@ -1061,7 +1104,11 @@ fn run(
             // `zr run --tag=backend` is equivalent to `zr run "*" --tag=backend`
             filter_only_mode = true;
         }
-        const task_name = if (filter_only_mode) "*" else effective_args[task_name_idx];
+        const task_name: []const u8 = blk: {
+            if (retry_task_name) |rtn| break :blk rtn;
+            if (filter_only_mode) break :blk @as([]const u8, "*");
+            break :blk effective_args[task_name_idx];
+        };
 
         // Parse filtering flags (v1.77.0 — Enhanced Task Filtering)
         var include_tags = std.ArrayList([]const u8){};
@@ -1299,7 +1346,7 @@ fn run(
         // Without this, the generic glob path expands it into individual cmdRun calls,
         // causing shared dependencies (e.g. build.compile) to run once per selected task.
         if (std.mem.endsWith(u8, task_name, ".*") and !has_filters) {
-            return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode, show_outputs, cli_inputs, non_interactive, yes_confirm, cli_env, runtime_tags.items, junit_path);
+            return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode, show_outputs, cli_inputs, non_interactive, yes_confirm, cli_env, runtime_tags.items, junit_path, true);
         }
 
         // Comma-separated multi-task run: "zr run build,test,lint" (v1.101.0)
@@ -1330,6 +1377,8 @@ fn run(
                 try effective_w.print("\n", .{});
             }
 
+            // Multi-task failure tracking: clear once, then append per-failure.
+            run_cmd.clearLastFailures(allocator, config_path);
             var all_success = true;
             for (task_list.items) |selected_task_name| {
                 const exit_code = try run_cmd.cmdRun(
@@ -1360,15 +1409,19 @@ fn run(
                     cli_env,
                     runtime_tags.items,
                     null,
+                    false, // track_failures=false: handled externally for multi-task
                 );
                 if (exit_code != 0) {
                     all_success = false;
+                    run_cmd.appendLastFailureName(allocator, config_path, selected_task_name);
                     if (fail_fast) {
                         try color.printError(ew, effective_color, "run: Task '{s}' failed — stopping (--fail-fast)\n", .{selected_task_name});
                         break;
                     }
                 }
             }
+            // All succeeded — ensure failures file is cleared.
+            if (all_success) run_cmd.clearLastFailures(allocator, config_path);
 
             return if (all_success) @as(u8, 0) else @as(u8, 1);
         }
@@ -1423,7 +1476,8 @@ fn run(
                 try effective_w.print("\n", .{});
             }
 
-            // Run each selected task
+            // Run each selected task; multi-task failure tracking handled externally.
+            run_cmd.clearLastFailures(allocator, config_path);
             var all_success = true;
             for (selection.task_names) |selected_task_name| {
                 // Note: runtime_params apply to all selected tasks
@@ -1455,21 +1509,24 @@ fn run(
                     cli_env,
                     runtime_tags.items,
                     null,
+                    false, // track_failures=false: handled externally for multi-task
                 );
                 if (exit_code != 0) {
                     all_success = false;
+                    run_cmd.appendLastFailureName(allocator, config_path, selected_task_name);
                     if (fail_fast) {
                         try color.printError(ew, effective_color, "run: Task '{s}' failed — stopping (--fail-fast)\n", .{selected_task_name});
                         break;
                     }
                 }
             }
+            if (all_success) run_cmd.clearLastFailures(allocator, config_path);
 
             return if (all_success) @as(u8, 0) else @as(u8, 1);
         }
 
         // No filtering — run single task directly (existing behavior)
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode, show_outputs, cli_inputs, non_interactive, yes_confirm, cli_env, runtime_tags.items, junit_path);
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, runtime_params, skip_tasks_list.items, notify_override, only_mode, show_outputs, cli_inputs, non_interactive, yes_confirm, cli_env, runtime_tags.items, junit_path, true);
     } else if (std.mem.eql(u8, cmd, "watch")) {
         if (effective_args.len >= 3 and (std.mem.eql(u8, effective_args[2], "--help") or std.mem.eql(u8, effective_args[2], "-h"))) {
             try color.printInfo(effective_w, effective_color,

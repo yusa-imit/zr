@@ -91,6 +91,7 @@ comptime {
     _ = @import("34000_priority_test.zig");
     _ = @import("35000_joined_argv_test.zig");
     _ = @import("36000_junit_test.zig");
+    _ = @import("37000_retry_failed_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");

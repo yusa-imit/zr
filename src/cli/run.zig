@@ -219,6 +219,7 @@ pub fn cmdRun(
     cli_env: std.StringHashMap([]const u8),
     runtime_tags: []const []const u8,
     junit_path: ?[]const u8,
+    track_failures: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -1041,6 +1042,16 @@ pub fn cmdRun(
     recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
         @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str);
 
+    // Save/clear last-failures.txt for --retry-failed support (v1.107.0)
+    // Suppressed when track_failures=false (multi-task runs handle this externally).
+    if (track_failures) {
+        if (!sched_result.total_success) {
+            saveLastFailures(allocator, config_path, sched_result.results.items);
+        } else {
+            clearLastFailures(allocator, config_path);
+        }
+    }
+
     // Display captured task outputs if --show-outputs requested (v1.87.0)
     if (show_outputs and task_outputs.count() > 0) {
         try w.print("\n", .{});
@@ -1103,6 +1114,54 @@ pub fn cmdRun(
     }
 
     return if (sched_result.total_success) 0 else 1;
+}
+
+/// Write failed task names (one per line) to <project_root>/.zr/last-failures.txt.
+/// Called after every scheduler run so --retry-failed can replay them.
+pub fn saveLastFailures(allocator: std.mem.Allocator, config_path: []const u8, results: []const scheduler.TaskResult) void {
+    const project_root = std.fs.path.dirname(config_path) orelse ".";
+    const zr_dir = std.fmt.allocPrint(allocator, "{s}/.zr", .{project_root}) catch return;
+    defer allocator.free(zr_dir);
+    std.fs.cwd().makePath(zr_dir) catch {};
+    const failures_path = std.fmt.allocPrint(allocator, "{s}/.zr/last-failures.txt", .{project_root}) catch return;
+    defer allocator.free(failures_path);
+
+    const file = std.fs.cwd().createFile(failures_path, .{ .truncate = true }) catch return;
+    defer file.close();
+
+    for (results) |result| {
+        if (!result.success and !result.skipped) {
+            file.writeAll(result.task_name) catch {};
+            file.writeAll("\n") catch {};
+        }
+    }
+}
+
+/// Truncate last-failures.txt to zero bytes on a fully successful run.
+pub fn clearLastFailures(allocator: std.mem.Allocator, config_path: []const u8) void {
+    const project_root = std.fs.path.dirname(config_path) orelse ".";
+    const failures_path = std.fmt.allocPrint(allocator, "{s}/.zr/last-failures.txt", .{project_root}) catch return;
+    defer allocator.free(failures_path);
+
+    const file = std.fs.cwd().createFile(failures_path, .{ .truncate = true }) catch return;
+    file.close();
+}
+
+/// Append a single failed task name to last-failures.txt (used by multi-task runs).
+pub fn appendLastFailureName(allocator: std.mem.Allocator, config_path: []const u8, task_name: []const u8) void {
+    const project_root = std.fs.path.dirname(config_path) orelse ".";
+    const zr_dir = std.fmt.allocPrint(allocator, "{s}/.zr", .{project_root}) catch return;
+    defer allocator.free(zr_dir);
+    std.fs.cwd().makePath(zr_dir) catch {};
+    const failures_path = std.fmt.allocPrint(allocator, "{s}/.zr/last-failures.txt", .{project_root}) catch return;
+    defer allocator.free(failures_path);
+
+    const file = std.fs.cwd().openFile(failures_path, .{ .mode = .write_only }) catch
+        (std.fs.cwd().createFile(failures_path, .{}) catch return);
+    defer file.close();
+    file.seekFromEnd(0) catch {};
+    file.writeAll(task_name) catch {};
+    file.writeAll("\n") catch {};
 }
 
 pub fn cmdWatch(
@@ -2323,6 +2382,7 @@ test "cmdRun: missing config returns error" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2381,6 +2441,7 @@ test "cmdRun: unknown task returns error" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2439,6 +2500,7 @@ test "cmdRun: dry run shows plan without executing" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2497,6 +2559,7 @@ test "cmdRun: successful task returns 0" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2555,6 +2618,7 @@ test "cmdRun: failing task returns 1" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

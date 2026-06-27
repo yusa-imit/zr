@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.107.0] - 2026-06-27
+
+### Added
+- **Retry Failed Tasks** (`--retry-failed`) — re-run only the tasks that failed in the previous invocation:
+  - `zr run --retry-failed` — reads `.zr/last-failures.txt` and re-runs all previously failed tasks
+  - Every `zr run` automatically writes failed task names to `<project>/.zr/last-failures.txt`
+  - Successful runs truncate the failures file (no stale failures on retry after fix)
+  - `--retry-failed --dry-run` — shows which tasks would be retried without running them
+  - Multiple failures: comma-joins task names and uses existing multi-task run machinery
+  - No-op when file is missing or empty: prints "No previous failures to retry." and exits 0
+  - 6 integration tests (37000–37005) covering all scenarios
+- **sailor v2.60.0** — WordCloud widget (Archimedean spiral layout, weight-based styling)
+- **sailor v2.61.0** — KanbanBoard widget (multi-column task board, priority levels, card navigation)
+
 ## [1.106.0] - 2026-06-26
 
 ### Added

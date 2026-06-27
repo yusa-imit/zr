@@ -134,6 +134,7 @@ pub fn cmdSetup(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            true,
         );
 
         if (exit_code != 0) {

@@ -182,6 +182,7 @@ pub fn cmdInteractiveRun(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            true,
         );
     }
 
@@ -216,6 +217,7 @@ pub fn cmdInteractiveRun(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            true,
         );
     }
 
@@ -254,6 +256,7 @@ pub fn cmdInteractiveRun(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            true,
         );
     };
     defer leaveRawMode(original_termios);
@@ -299,6 +302,7 @@ pub fn cmdInteractiveRun(
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        true,
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();
