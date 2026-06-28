@@ -5,24 +5,24 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.106.0 (build.zig.zon) | Latest Release: v1.105.1 (2026-06-25)
+- **Version**: v1.108.0 (build.zig.zon) | Latest Release: v1.108.0 (2026-06-28)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.106.0 (current in build.zig.zon) | Latest Release: v1.106.0 (2026-06-26)
+- **Build version**: v1.108.0 (current in build.zig.zon) | Latest Release: v1.108.0 (2026-06-28)
 - **Unit tests**: ✅ Passing (1771 passed, 8 skipped, 0 failed)
-- **Integration tests**: 114 test files — comprehensive coverage (36000-36007 for JUnit XML)
+- **Integration tests**: 115 test files — comprehensive coverage (38000-38005 for output-on-failure)
 - **Test coverage**: ~98% file coverage — exceeds 80% threshold
 - **CI**: Green (all cancelled = no failures)
 - **GitHub Issues**: 0 open bugs
 - **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
-- **Sailor version**: v2.59.0 (upgraded in v1.106.0 cycle — StopWatch widget, no breaking changes)
+- **Sailor version**: v2.62.0 (upgraded in v1.108.0 cycle — BracketViewer widget, no breaking changes)
 - **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix)
 - **Source**: ~78,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-06-26, FEATURE Cycle 367)**: ✅ **v1.106.0 RELEASED** — JUnit XML output (--junit <file>, src/cli/junit.zig), sailor v2.58.0-v2.59.0. 8 integration tests (36000-36007), 3 unit tests. GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.106.0
-- **Previous work (2026-06-25, FEATURE Cycle 364)**: ✅ **v1.105.1 Released** — Bug fixes: joined-argv transparent split (#100), analytics TTY detection (#97), sailor v2.56.0 migration (#101). 5 integration tests (35000-35004). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.105.1
+- **Latest work (2026-06-28, FEATURE Cycle 373)**: ✅ **v1.108.0 RELEASED** — Output-On-Failure (--output-on-failure, buffers task output and shows only for failed tasks), sailor v2.62.0 migration (BracketViewer). 6 integration tests (38000-38005). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.108.0
+- **Previous work (2026-06-27, FEATURE/STABILIZATION Cycle 370)**: ✅ **v1.107.0 Released** — Retry Failed Tasks (--retry-failed, re-runs tasks from .zr/last-failures.txt), sailor v2.60.0-v2.61.0 migration. 6 integration tests (37000-37005). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.107.0
 
 ## PRD Phase Status
 
