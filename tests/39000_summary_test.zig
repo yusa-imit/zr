@@ -14,6 +14,8 @@ const writeTmpConfig = helpers.writeTmpConfig;
 // 39003: --summary shows skipped tasks
 // 39004: without --summary, no "Run Summary" header is shown
 // 39005: --summary with --json skips the summary table
+// 39006: --summary + --output-on-failure: both flags active simultaneously
+// 39007: --summary + --retry-failed: summary shown after retried tasks
 //
 
 // Test 39000: --summary shows Run Summary header for single successful task
@@ -203,4 +205,76 @@ test "summary: --summary with --json outputs JSON, no summary table" {
     // But JSON output should be present
     try testing.expect(std.mem.indexOf(u8, combined, "\"tasks\"") != null or
         std.mem.indexOf(u8, combined, "success") != null);
+}
+
+// Test 39006: --summary + --output-on-failure both active simultaneously
+test "summary: --summary + --output-on-failure: both flags work together" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.pass]
+        \\cmd = "echo PASS_OUTPUT"
+        \\
+        \\[tasks.fail]
+        \\cmd = "sh -c 'echo FAIL_OUTPUT; exit 1'"
+        \\deps = ["pass"]
+    ;
+
+    const config = try writeTmpConfig(testing.allocator, tmp.dir, toml);
+    defer testing.allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(tmp_path);
+
+    var result = try runZr(testing.allocator, &.{ "--config", config, "run", "fail", "--summary", "--output-on-failure" }, tmp_path);
+    defer result.deinit();
+
+    try testing.expect(result.exit_code == 1);
+
+    const combined = try std.fmt.allocPrint(testing.allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer testing.allocator.free(combined);
+
+    // Summary table must appear
+    try testing.expect(std.mem.indexOf(u8, combined, "Run Summary") != null);
+    // Successful task's output should be suppressed (output-on-failure)
+    try testing.expect(std.mem.indexOf(u8, combined, "PASS_OUTPUT") == null);
+    // Failed task's output should appear (output-on-failure)
+    try testing.expect(std.mem.indexOf(u8, combined, "FAIL_OUTPUT") != null);
+}
+
+// Test 39007: --summary + --retry-failed: summary is shown after retried tasks
+test "summary: --summary + --retry-failed shows summary for retried tasks" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.flaky]
+        \\cmd = "sh -c 'exit 1'"
+    ;
+
+    const config = try writeTmpConfig(testing.allocator, tmp.dir, toml);
+    defer testing.allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(tmp_path);
+
+    // First run: create the failures file
+    var first = try runZr(testing.allocator, &.{ "--config", config, "run", "flaky" }, tmp_path);
+    defer first.deinit();
+    try testing.expect(first.exit_code == 1);
+
+    // Retry with --summary: should show summary after retrying
+    var retry = try runZr(testing.allocator, &.{ "--config", config, "run", "--retry-failed", "--summary" }, tmp_path);
+    defer retry.deinit();
+
+    try testing.expect(retry.exit_code == 1);
+
+    const combined = try std.fmt.allocPrint(testing.allocator, "{s}{s}", .{ retry.stdout, retry.stderr });
+    defer testing.allocator.free(combined);
+
+    // Summary table must appear after retry
+    try testing.expect(std.mem.indexOf(u8, combined, "Run Summary") != null);
+    // Task name should appear in summary
+    try testing.expect(std.mem.indexOf(u8, combined, "flaky") != null);
 }

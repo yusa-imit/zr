@@ -1,12 +1,12 @@
 .{
     .name = .zr,
-    .version = "1.109.0",
+    .version = "1.110.0",
     .fingerprint = 0x2a029393cdc4be33,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .sailor = .{
-            .url = "https://github.com/yusa-imit/sailor/archive/refs/tags/v2.63.0.tar.gz",
-            .hash = "sailor-2.63.0-53_z3GwHQwC3PWXBOw9IGxFp5ksLOoC3Mfx6RFxngyuN",
+            .url = "https://github.com/yusa-imit/sailor/archive/refs/tags/v2.64.0.tar.gz",
+            .hash = "sailor-2.64.0-53_z3M8yQwBrvSOKr8GCOYJN1XzlM4z_Td6ev6Rz4Ka4",
         },
         .zuda = .{
             .url = "git+https://github.com/yusa-imit/zuda?ref=main#4ff232526da49706b3ae2d1ca76c9cdb493934c7",

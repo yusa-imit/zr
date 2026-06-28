@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.110.0] - 2026-06-29
+
+### Added
+- **sailor v2.64.0** — GanttChart widget (project timeline with auto-scaling horizontal bars, progress fill █/░, focused highlight, adjustable label column width, per-task style overrides, Block border support)
+
+### Changed
+- 2 new integration tests (39006–39007) for `--summary` combined with `--output-on-failure` and `--retry-failed`
+
 ## [1.109.0] - 2026-06-28
 
 ### Added

@@ -1328,6 +1328,8 @@ fn run(
                 output_on_failure = true;
             } else if (std.mem.eql(u8, arg, "--summary")) {
                 show_summary = true;
+            } else if (std.mem.eql(u8, arg, "--json")) {
+                json_output = true;
             } else if (std.mem.indexOf(u8, arg, "=")) |eq_pos| {
                 // Named key=value syntax
                 const key = arg[0..eq_pos];
