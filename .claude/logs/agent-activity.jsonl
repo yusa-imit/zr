@@ -106,3 +106,4 @@
 {"timestamp":"2026-06-26T01:26:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement JUnit XML output (--junit flag) for zr run","project":"zr"}
 {"timestamp":"2026-06-28T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement --output-on-failure flag for zr run command","project":"zr"}
 {"timestamp":"2026-06-28T00:00:00Z","action":"subagent","agent_type":"Explore","task":"Check integration test 38000 results for output-on-failure feature","project":"zr"}
+{"timestamp":"2026-06-28T09:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement --summary run summary table feature (v1.109.0)","project":"zr"}
