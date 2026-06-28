@@ -221,6 +221,7 @@ pub fn cmdRun(
     junit_path: ?[]const u8,
     output_on_failure: bool,
     track_failures: bool,
+    show_summary: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
     defer config.deinit();
@@ -352,6 +353,10 @@ pub fn cmdRun(
             junit.writeJunitXml(allocator, jpath, task_name, sched_result_g.results.items, elapsed_ms_g) catch |err| {
                 try color.printError(err_writer, use_color, "run: Failed to write JUnit XML to '{s}': {}\n", .{ jpath, err });
             };
+        }
+
+        if (show_summary and !json_output) {
+            try printRunSummaryTable(w, use_color, sched_result_g.results.items, elapsed_ms_g);
         }
 
         return if (sched_result_g.total_success) 0 else 1;
@@ -1070,6 +1075,11 @@ pub fn cmdRun(
         junit.writeJunitXml(allocator, jpath, task_name, sched_result.results.items, elapsed_ms) catch |err| {
             try color.printError(err_writer, use_color, "run: Failed to write JUnit XML to '{s}': {}\n", .{ jpath, err });
         };
+    }
+
+    // Print run summary table if --summary requested (v1.109.0)
+    if (show_summary and !json_output) {
+        try printRunSummaryTable(w, use_color, sched_result.results.items, elapsed_ms);
     }
 
     // Run-level lifecycle: on_success / on_error hooks (v2.0.0)
@@ -2063,6 +2073,114 @@ pub fn printRunResultJson(
     try w.writeAll("}\n");
 }
 
+/// Print a formatted summary table for a completed run (--summary flag).
+/// Shows each task's status, name, and duration/exit code in a compact table.
+pub fn printRunSummaryTable(
+    w: *std.Io.Writer,
+    use_color: bool,
+    results: []const scheduler.TaskResult,
+    elapsed_ms: u64,
+) !void {
+    if (results.len == 0) return;
+
+    // Calculate max task name width for alignment (capped at 30 chars)
+    var max_name: usize = 4; // minimum "task" width
+    for (results) |r| {
+        const n = @min(r.task_name.len, 30);
+        if (n > max_name) max_name = n;
+    }
+
+    // Header
+    if (use_color) {
+        try sailor.color.printStyled(w, .{ .attrs = .{ .dim = true } }, "\u{2500}\u{2500} Run Summary ", .{});
+        var i: usize = 0;
+        while (i < max_name + 20) : (i += 1) try w.writeAll("\u{2500}");
+        try w.writeAll("\n");
+    } else {
+        try w.writeAll("-- Run Summary ");
+        var i: usize = 0;
+        while (i < max_name + 20) : (i += 1) try w.writeAll("-");
+        try w.writeAll("\n");
+    }
+
+    var passed: usize = 0;
+    var failed: usize = 0;
+    var skipped: usize = 0;
+
+    for (results) |r| {
+        const name_len = @min(r.task_name.len, 30);
+        const pad = max_name - name_len + 2;
+
+        if (r.skipped) {
+            skipped += 1;
+            if (use_color) {
+                try sailor.color.printStyled(w, .{ .fg = .{ .basic = .yellow } }, "  \u{229a}  ", .{});
+                try w.writeAll(r.task_name[0..name_len]);
+                var p: usize = 0;
+                while (p < pad) : (p += 1) try w.writeAll(" ");
+                try sailor.color.printStyled(w, .{ .attrs = .{ .dim = true } }, "skipped\n", .{});
+            } else {
+                try w.print("  -  {s}", .{r.task_name[0..name_len]});
+                var p: usize = 0;
+                while (p < pad) : (p += 1) try w.writeAll(" ");
+                try w.writeAll("skipped\n");
+            }
+        } else if (r.success) {
+            passed += 1;
+            if (use_color) {
+                try sailor.color.printStyled(w, .{ .fg = .{ .basic = .green } }, "  \u{2713}  ", .{});
+                try w.writeAll(r.task_name[0..name_len]);
+                var p: usize = 0;
+                while (p < pad) : (p += 1) try w.writeAll(" ");
+                if (r.duration_ms >= 1000) {
+                    try sailor.color.printStyled(w, .{ .attrs = .{ .dim = true } }, "{d}.{d}s\n", .{ r.duration_ms / 1000, (r.duration_ms % 1000) / 100 });
+                } else {
+                    try sailor.color.printStyled(w, .{ .attrs = .{ .dim = true } }, "{d}ms\n", .{r.duration_ms});
+                }
+            } else {
+                try w.print("  v  {s}", .{r.task_name[0..name_len]});
+                var p: usize = 0;
+                while (p < pad) : (p += 1) try w.writeAll(" ");
+                if (r.duration_ms >= 1000) {
+                    try w.print("{d}.{d}s\n", .{ r.duration_ms / 1000, (r.duration_ms % 1000) / 100 });
+                } else {
+                    try w.print("{d}ms\n", .{r.duration_ms});
+                }
+            }
+        } else {
+            failed += 1;
+            if (use_color) {
+                try sailor.color.printStyled(w, .{ .fg = .{ .basic = .red } }, "  \u{2717}  ", .{});
+                try w.writeAll(r.task_name[0..name_len]);
+                var p: usize = 0;
+                while (p < pad) : (p += 1) try w.writeAll(" ");
+                try sailor.color.printStyled(w, .{ .fg = .{ .basic = .red } }, "(exit: {d})\n", .{r.exit_code});
+            } else {
+                try w.print("  x  {s}", .{r.task_name[0..name_len]});
+                var p: usize = 0;
+                while (p < pad) : (p += 1) try w.writeAll(" ");
+                try w.print("(exit: {d})\n", .{r.exit_code});
+            }
+        }
+    }
+
+    // Footer divider
+    if (use_color) {
+        try sailor.color.printStyled(w, .{ .attrs = .{ .dim = true } }, "\u{2500}\u{2500}\u{2500}", .{});
+        var i: usize = 0;
+        while (i < max_name + 27) : (i += 1) try w.writeAll("\u{2500}");
+        try w.writeAll("\n");
+    } else {
+        try w.writeAll("---");
+        var i: usize = 0;
+        while (i < max_name + 27) : (i += 1) try w.writeAll("-");
+        try w.writeAll("\n");
+    }
+
+    // Footer summary line
+    try progress.printSummary(w, use_color, passed, failed, skipped, elapsed_ms);
+}
+
 /// Get up-to-date status symbol for a task.
 /// Returns: "✓" (up-to-date), "✗" (stale), or "?" (never-run/no generates).
 fn getTaskStatus(allocator: std.mem.Allocator, task: loader.Task) ![]const u8 {
@@ -2386,6 +2504,7 @@ test "cmdRun: missing config returns error" {
         null, // junit_path
         false, // output_on_failure
         true, // track_failures
+        false, // show_summary
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2446,6 +2565,7 @@ test "cmdRun: unknown task returns error" {
         null, // junit_path
         false, // output_on_failure
         true, // track_failures
+        false, // show_summary
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }
@@ -2506,6 +2626,7 @@ test "cmdRun: dry run shows plan without executing" {
         null, // junit_path
         false, // output_on_failure
         true, // track_failures
+        false, // show_summary
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2566,6 +2687,7 @@ test "cmdRun: successful task returns 0" {
         null, // junit_path
         false, // output_on_failure
         true, // track_failures
+        false, // show_summary
     );
     try std.testing.expectEqual(@as(u8, 0), result);
 }
@@ -2626,6 +2748,7 @@ test "cmdRun: failing task returns 1" {
         null, // junit_path
         false, // output_on_failure
         true, // track_failures
+        false, // show_summary
     );
     try std.testing.expectEqual(@as(u8, 1), result);
 }

@@ -136,6 +136,7 @@ pub fn cmdSetup(
             null, // junit_path
             false, // output_on_failure
             true,
+            false, // show_summary
         );
 
         if (exit_code != 0) {

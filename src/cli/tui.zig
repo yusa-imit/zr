@@ -562,6 +562,7 @@ fn cmdInteractiveInner(
                     null, // junit_path
                     false, // output_on_failure
                     true,
+                    false, // show_summary
                 ) catch {};
 
                 _ = enterRawMode() catch {};

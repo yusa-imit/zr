@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.109.0] - 2026-06-28
+
+### Added
+- **Run Summary Table** (`--summary`) — print a formatted table after all tasks complete:
+  - `zr run build --summary` — shows each task's status (✓/✗/⊘), name, and duration/exit code
+  - `zr run build,test,lint --summary` — one summary table per task chain
+  - Color-coded rows: green for success, red for failure, yellow for skipped
+  - Duration shown as ms (under 1s) or X.Ys (1s and above)
+  - Footer line reuses the existing summary count (N tasks ✓ M passed ✗ K failed)
+  - No table shown for `--json` output (JSON already carries all result data)
+  - 6 integration tests (39000–39005) covering single task, multi-task, failures, skipped, no-flag guard, JSON guard
+- **sailor v2.63.0** — ActivityFeed widget (scrollable timestamped event feed with kind-based icons and color coding)
+
 ## [1.108.0] - 2026-06-28
 
 ### Added

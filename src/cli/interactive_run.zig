@@ -184,6 +184,7 @@ pub fn cmdInteractiveRun(
             null, // junit_path
             false, // output_on_failure
             true,
+            false, // show_summary
         );
     }
 
@@ -220,6 +221,7 @@ pub fn cmdInteractiveRun(
             null, // junit_path
             false, // output_on_failure
             true,
+            false, // show_summary
         );
     }
 
@@ -260,6 +262,7 @@ pub fn cmdInteractiveRun(
             null, // junit_path
             false, // output_on_failure
             true,
+            false, // show_summary
         );
     };
     defer leaveRawMode(original_termios);
@@ -307,6 +310,7 @@ pub fn cmdInteractiveRun(
         null, // junit_path
         false, // output_on_failure
         true,
+        false, // show_summary
     ) catch |err| {
         running.store(false, .release);
         input_thread.join();
