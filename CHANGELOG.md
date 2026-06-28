@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.108.0] - 2026-06-28
+
+### Added
+- **Output-On-Failure** (`--output-on-failure`) — suppress task output unless the task fails:
+  - `zr run build --output-on-failure` — buffers all task output; shows it only for failed tasks
+  - Failed tasks emit a header `Output (taskname):` followed by the buffered output
+  - Successful tasks' output is discarded, keeping the terminal clean in CI environments
+  - Compatible with `--dry-run`, `--jobs`, and all other run flags
+  - 6 integration tests (38000–38005) covering all scenarios
+- **sailor v2.62.0** — BracketViewer widget (tournament bracket display, round columns, winner highlighting, score display)
+
 ## [1.107.0] - 2026-06-27
 
 ### Added

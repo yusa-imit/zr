@@ -106,6 +106,9 @@ pub const SchedulerConfig = struct {
     /// Directory containing zr.toml — used as default CWD for tasks that don't
     /// specify their own `cwd`. null means inherit the process CWD (legacy behavior).
     project_root: ?[]const u8 = null,
+    /// When true, buffer all task output and only display it (with header) for failed tasks.
+    /// Successful tasks' output is discarded. Analogous to --output-on-failure in make/pytest (v1.108.0).
+    output_on_failure: bool = false,
 };
 
 /// Interpolate runtime parameters in a string (v1.75.0).
@@ -629,6 +632,8 @@ const WorkerCtx = struct {
     task_outputs: ?*std.StringHashMap([]const u8) = null,
     /// Env var names whose values should be redacted from output (v1.89.0).
     redact_names: []const []const u8 = &[_][]const u8{},
+    /// When true, buffer output and only show it if the task fails (v1.108.0).
+    output_on_failure: bool = false,
 };
 
 /// Build environment variables with toolchain PATH injection and extra_env merging.
@@ -1116,8 +1121,8 @@ fn workerFn(ctx: WorkerCtx) void {
     var output_cap: ?output_capture.OutputCapture = null;
     defer if (output_cap) |*oc| oc.deinit();
 
-    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, (4) cache enabled, (5) share_output, or (6) redact
-    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output or ctx.redact_names.len > 0 or ctx.secrets.len > 0;
+    // Enable OutputCapture if: (1) output_mode is set, (2) filtering is enabled, (3) silent mode, (4) cache enabled, (5) share_output, (6) redact, or (7) output_on_failure
+    const need_capture = ctx.output_mode != null or ctx.filter_options.isEnabled() or ctx.silent or ctx.cache or ctx.share_output or ctx.redact_names.len > 0 or ctx.secrets.len > 0 or ctx.output_on_failure;
     // Track whether buffer mode was enabled purely for caching (need to relay output to user after completion)
     const capture_for_cache = ctx.cache and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null;
     // Track whether buffer mode was enabled purely for share_output (need to relay output to user after completion)
@@ -1673,6 +1678,20 @@ fn workerFn(ctx: WorkerCtx) void {
                 if (buffered_output.len > 0) {
                     std.debug.print("{s}", .{buffered_output});
                 }
+            }
+        }
+    }
+
+    // Handle output-on-failure mode: show buffered output only if task failed (v1.108.0)
+    if (ctx.output_on_failure and !proc_result.success) {
+        if (output_cap) |*oc| {
+            if (oc.config.mode == .buffer) {
+                if (oc.getBuffer()) |buffered_output| {
+                    defer task_allocator.free(buffered_output);
+                    if (buffered_output.len > 0) {
+                        std.debug.print("Output ({s}):\n{s}", .{ ctx.task_name, buffered_output });
+                    }
+                } else |_| {}
             }
         }
     }
@@ -2862,6 +2881,7 @@ pub fn run(
                 .share_output = task.share_output,
                 .task_outputs = sched_config.task_outputs,
                 .redact_names = task.redact,
+                .output_on_failure = sched_config.output_on_failure,
             };
 
             const thread = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {

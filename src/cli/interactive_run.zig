@@ -182,6 +182,7 @@ pub fn cmdInteractiveRun(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            false, // output_on_failure
             true,
         );
     }
@@ -217,6 +218,7 @@ pub fn cmdInteractiveRun(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            false, // output_on_failure
             true,
         );
     }
@@ -256,6 +258,7 @@ pub fn cmdInteractiveRun(
             empty_cli_env,
             &.{}, // runtime_tags
             null, // junit_path
+            false, // output_on_failure
             true,
         );
     };
@@ -302,6 +305,7 @@ pub fn cmdInteractiveRun(
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        false, // output_on_failure
         true,
     ) catch |err| {
         running.store(false, .release);

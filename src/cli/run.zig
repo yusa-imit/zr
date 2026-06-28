@@ -219,6 +219,7 @@ pub fn cmdRun(
     cli_env: std.StringHashMap([]const u8),
     runtime_tags: []const []const u8,
     junit_path: ?[]const u8,
+    output_on_failure: bool,
     track_failures: bool,
 ) !u8 {
     var config = (try common.loadConfig(allocator, config_path, profile_name, err_writer, use_color)) orelse return 1;
@@ -956,6 +957,7 @@ pub fn cmdRun(
         .default_timeout_ms = settings_default_timeout_ms,
         .extra_env = cli_env_slice,
         .project_root = project_root,
+        .output_on_failure = output_on_failure,
     }) catch |err| {
         switch (err) {
             error.TaskNotFound => {
@@ -2382,6 +2384,7 @@ test "cmdRun: missing config returns error" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        false, // output_on_failure
         true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 1), result);
@@ -2441,6 +2444,7 @@ test "cmdRun: unknown task returns error" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        false, // output_on_failure
         true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 1), result);
@@ -2500,6 +2504,7 @@ test "cmdRun: dry run shows plan without executing" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        false, // output_on_failure
         true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 0), result);
@@ -2559,6 +2564,7 @@ test "cmdRun: successful task returns 0" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        false, // output_on_failure
         true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 0), result);
@@ -2618,6 +2624,7 @@ test "cmdRun: failing task returns 1" {
         empty_cli_env,
         &.{}, // runtime_tags
         null, // junit_path
+        false, // output_on_failure
         true, // track_failures
     );
     try std.testing.expectEqual(@as(u8, 1), result);
