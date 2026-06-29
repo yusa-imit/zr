@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.111.0] - 2026-06-29
+
+### Added
+- **`--env-file <path>`** flag for `zr run` — load environment variables from a dotenv file; repeatable, loaded before explicit `--env` flags so `--env` always takes precedence
+- **sailor v2.66.0** — migration to latest sailor release
+- 6 integration tests (40000–40005) for `--env-file` (basic load, multiple files, `--env` override, missing file warning, second-file override, comments/blank lines)
+
+### Fixed
+- `watch: no config file shows error` integration test now uses `/tmp` path to avoid inheriting parent directory's `zr.toml`
+
 ## [1.110.0] - 2026-06-29
 
 ### Added

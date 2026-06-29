@@ -107,3 +107,6 @@
 {"timestamp":"2026-06-28T00:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement --output-on-failure flag for zr run command","project":"zr"}
 {"timestamp":"2026-06-28T00:00:00Z","action":"subagent","agent_type":"Explore","task":"Check integration test 38000 results for output-on-failure feature","project":"zr"}
 {"timestamp":"2026-06-28T09:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement --summary run summary table feature (v1.109.0)","project":"zr"}
+{"timestamp":"2026-06-29T09:00:00Z","action":"subagent","agent_type":"test-writer","task":"Write integration tests for zr run --env-file feature (tests 40000-40005)","project":"zr"}
+{"timestamp":"2026-06-29T09:20:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement --env-file flag for zr run command (v1.111.0)","project":"zr"}
+{"timestamp":"2026-06-29T12:00:00Z","action":"subagent","agent_type":"zig-developer","task":"Implement --env-file flag for zr run (v1.111.0) + sailor v2.66.0 migration","project":"zr"}

@@ -47,12 +47,12 @@ test "watch: nonexistent task shows error" {
 
 test "watch: no config file shows error" {
     const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
 
-    // Get tmpDir path as cwd (no zr.toml exists)
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    // Use /tmp to avoid zr's parent-dir config traversal finding the project's zr.toml
+    const tmp_path = try std.fmt.allocPrint(allocator, "/tmp/zr_watch_test_{d}", .{std.time.milliTimestamp()});
     defer allocator.free(tmp_path);
+    try std.fs.makeDirAbsolute(tmp_path);
+    defer std.fs.deleteTreeAbsolute(tmp_path) catch {};
 
     var result = try runZr(allocator, &.{ "watch", "build" }, tmp_path);
     defer result.deinit();

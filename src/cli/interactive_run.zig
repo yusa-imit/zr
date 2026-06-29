@@ -180,6 +180,7 @@ pub fn cmdInteractiveRun(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // cli_env_files
             &.{}, // runtime_tags
             null, // junit_path
             false, // output_on_failure
@@ -217,6 +218,7 @@ pub fn cmdInteractiveRun(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // cli_env_files
             &.{}, // runtime_tags
             null, // junit_path
             false, // output_on_failure
@@ -258,6 +260,7 @@ pub fn cmdInteractiveRun(
             false, // non_interactive
             false, // yes_confirm
             empty_cli_env,
+            &.{}, // cli_env_files
             &.{}, // runtime_tags
             null, // junit_path
             false, // output_on_failure
@@ -306,6 +309,7 @@ pub fn cmdInteractiveRun(
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // cli_env_files
         &.{}, // runtime_tags
         null, // junit_path
         false, // output_on_failure

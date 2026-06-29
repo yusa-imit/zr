@@ -217,6 +217,7 @@ pub fn cmdRun(
     non_interactive: bool,
     yes_confirm: bool,
     cli_env: std.StringHashMap([]const u8),
+    cli_env_files: []const []const u8,
     runtime_tags: []const []const u8,
     junit_path: ?[]const u8,
     output_on_failure: bool,
@@ -895,7 +896,7 @@ pub fn cmdRun(
 
     const start_ns = std.time.nanoTimestamp();
 
-    // v1.102.0: Build cli_env as extra_env array
+    // v1.102.0/v1.111.0: Build extra_env array from --env-file (lower priority) then --env (higher priority)
     var cli_env_list: std.ArrayList([2][]const u8) = .{};
     defer {
         for (cli_env_list.items) |pair| {
@@ -904,6 +905,51 @@ pub fn cmdRun(
         }
         cli_env_list.deinit(allocator);
     }
+    // v1.111.0: Load --env-file entries first (lower priority than explicit --env)
+    for (cli_env_files) |file_path| {
+        const full_path = if (std.fs.path.isAbsolute(file_path))
+            try allocator.dupe(u8, file_path)
+        else
+            try std.fs.path.join(allocator, &[_][]const u8{ project_root orelse ".", file_path });
+        defer allocator.free(full_path);
+
+        // Check existence first — loadEnvFile silently returns empty map for missing files
+        const file_exists = blk: {
+            const f = std.fs.openFileAbsolute(full_path, .{}) catch |err| switch (err) {
+                error.FileNotFound, error.AccessDenied, error.NotDir => break :blk false,
+                else => break :blk false,
+            };
+            f.close();
+            break :blk true;
+        };
+        if (!file_exists) {
+            try err_writer.print("Warning: env file not found: {s}\n", .{file_path});
+            continue;
+        }
+
+        var file_env = env_loader.loadEnvFile(allocator, full_path) catch |err| switch (err) {
+            error.FileNotFound, error.AccessDenied => {
+                try err_writer.print("Warning: env file not found: {s}\n", .{file_path});
+                continue;
+            },
+            else => return err,
+        };
+        defer {
+            var it = file_env.iterator();
+            while (it.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                allocator.free(entry.value_ptr.*);
+            }
+            file_env.deinit();
+        }
+        var file_it = file_env.iterator();
+        while (file_it.next()) |entry| {
+            const env_key = try allocator.dupe(u8, entry.key_ptr.*);
+            const env_value = try allocator.dupe(u8, entry.value_ptr.*);
+            try cli_env_list.append(allocator, .{ env_key, env_value });
+        }
+    }
+    // Explicit --env flags override --env-file values (added last = highest priority in extra_env)
     var cli_env_it = cli_env.iterator();
     while (cli_env_it.next()) |entry| {
         const env_key = try allocator.dupe(u8, entry.key_ptr.*);
@@ -2500,6 +2546,7 @@ test "cmdRun: missing config returns error" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // cli_env_files
         &.{}, // runtime_tags
         null, // junit_path
         false, // output_on_failure
@@ -2561,6 +2608,7 @@ test "cmdRun: unknown task returns error" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // cli_env_files
         &.{}, // runtime_tags
         null, // junit_path
         false, // output_on_failure
@@ -2622,6 +2670,7 @@ test "cmdRun: dry run shows plan without executing" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // cli_env_files
         &.{}, // runtime_tags
         null, // junit_path
         false, // output_on_failure
@@ -2683,6 +2732,7 @@ test "cmdRun: successful task returns 0" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // cli_env_files
         &.{}, // runtime_tags
         null, // junit_path
         false, // output_on_failure
@@ -2744,6 +2794,7 @@ test "cmdRun: failing task returns 1" {
         false, // non_interactive
         false, // yes_confirm
         empty_cli_env,
+        &.{}, // cli_env_files
         &.{}, // runtime_tags
         null, // junit_path
         false, // output_on_failure
