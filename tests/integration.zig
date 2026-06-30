@@ -95,6 +95,7 @@ comptime {
     _ = @import("38000_output_on_failure_test.zig");
     _ = @import("39000_summary_test.zig");
     _ = @import("40000_env_file_test.zig");
+    _ = @import("41000_status_test.zig");
     _ = @import("publish_test.zig");
     _ = @import("registry_test.zig");
     _ = @import("remote_test.zig");

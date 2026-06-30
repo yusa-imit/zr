@@ -82,6 +82,7 @@ const alias_cmd = @import("cli/alias.zig");
 const add_cmd = @import("cli/add.zig");
 const config_editor = @import("cli/config_editor.zig");
 const failures_cmd = @import("cli/failures.zig");
+const status_cmd = @import("cli/status.zig");
 const template_cmd = @import("cli/template.zig");
 const ci_cmd = @import("cli/ci.zig");
 const mcp_server = @import("mcp/server.zig");
@@ -753,7 +754,7 @@ fn run(
         "estimate",   "show",       "schedule",   "secrets",    "mcp",
         "explain",    "lsp",        "add",        "edit",       "failures",
         "template",   "which",      "ci",         "deps",       "artifacts",
-        "tags",
+        "tags",       "status",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -2487,6 +2488,33 @@ fn run(
         } else {
             return failures_cmd.cmdFailures(allocator, opts, effective_w, ew);
         }
+    } else if (std.mem.eql(u8, cmd, "status")) {
+        const status_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
+        var status_opts = status_cmd.StatusOptions{
+            .use_color = effective_color,
+            .config_path = config_path,
+        };
+        for (status_args) |arg| {
+            if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                try effective_w.writeAll(
+                    "Usage: zr status [OPTIONS]\n\n" ++
+                    "Show project status: config, task count, and last run failures.\n\n" ++
+                    "OPTIONS:\n" ++
+                    "  --json           Output JSON format\n" ++
+                    "  --config=<path>  Config file path (default: zr.toml)\n" ++
+                    "  -h, --help       Show this help\n\n" ++
+                    "EXAMPLES:\n" ++
+                    "  zr status          # Show status summary\n" ++
+                    "  zr status --json   # Output as JSON\n",
+                );
+                return 0;
+            } else if (std.mem.eql(u8, arg, "--json")) {
+                status_opts.json_output = true;
+            } else if (std.mem.startsWith(u8, arg, "--config=")) {
+                status_opts.config_path = arg["--config=".len..];
+            }
+        }
+        return status_cmd.cmdStatus(allocator, status_opts, effective_w, ew);
     } else if (std.mem.eql(u8, cmd, "template")) {
         const template_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
         if (template_args.len == 0) {

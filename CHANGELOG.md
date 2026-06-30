@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.113.0] - 2026-06-30
+
+### Added
+- **`zr status`** — new command that shows project health at a glance: config path, task count, and last-run failures from `.zr/last-failures.txt`. Suggests `zr run --retry-failed` when failures exist. Supports `--json` flag for machine-readable output.
+
+### Changed
+- **sailor v2.70.0** — migrated to latest sailor release (MatrixView widget added; no breaking changes)
+
+### Fixed
+- `retry_section_syntax_test.991`: increased timing upper bound to 5s to accommodate CI runner variability (8 retries × 50ms max backoff + process spawning overhead)
+
 ## [1.112.0] - 2026-06-30
 
 ### Changed

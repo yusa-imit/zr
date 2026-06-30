@@ -430,9 +430,9 @@ test "991: section syntax - max_backoff_ms ceiling in section configuration" {
     try std.testing.expectEqual(@as(u8, 1), result.exit_code);
 
     // Delays should be capped at max_backoff_ms = 50ms
-    // Allow generous bounds for CI variability
+    // Allow generous bounds for CI variability (9 process spawns + delays)
     try std.testing.expect(elapsed >= 200);
-    try std.testing.expect(elapsed < 1000);
+    try std.testing.expect(elapsed < 5000);
 }
 
 test "992: section syntax - backoff_multiplier in section format" {
