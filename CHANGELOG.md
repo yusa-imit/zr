@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.112.0] - 2026-06-30
+
+### Changed
+- **sailor v2.69.0** — migrated to latest sailor release (Treemap, HexEditor, RadarChart widgets added; no breaking changes)
+
+### Fixed
+- `doctor` command now outputs to stderr (diagnostic tool behavior)
+- `failures` command now outputs to stderr for consistent error reporting
+- `clean --cache` and `clean --history` now also clean `.zr/cache` and `.zr/history` local project directories
+- `zr ci list` now correctly shows "CircleCI" templates in output
+- `zr explain <task1> <task2>` multi-task header format simplified
+- Error messages for `publish` and `version` commands improved with better hints
+
 ## [1.111.0] - 2026-06-29
 
 ### Added
