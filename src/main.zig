@@ -2254,7 +2254,7 @@ fn run(
             try color.printError(ew, effective_color, "Usage: zr estimate <task|workflow> [--limit N] [--format json]\n", .{});
             try effective_w.writeAll("\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
-            try effective_w.writeAll("  Estimate task or workflow duration based on execution history\n\n");
+            try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
             try effective_w.writeAll("  --limit N         Limit history sample to last N executions (default: 20)\n");
             try effective_w.writeAll("  --format json     Output estimation in JSON format\n");
@@ -2267,7 +2267,7 @@ fn run(
         if (std.mem.eql(u8, task_name, "--help") or std.mem.eql(u8, task_name, "-h")) {
             try effective_w.writeAll("Usage: zr estimate <task|workflow> [--limit N] [--format json]\n\n");
             try color.printBold(effective_w, effective_color, "Description:\n", .{});
-            try effective_w.writeAll("  Estimate task or workflow duration based on execution history\n\n");
+            try effective_w.writeAll("  Estimate task duration based on execution history\n\n");
             try color.printBold(effective_w, effective_color, "Options:\n", .{});
             try effective_w.writeAll("  --limit N         Limit history sample to last N executions (default: 20)\n");
             try effective_w.writeAll("  --format json     Output estimation in JSON format\n");

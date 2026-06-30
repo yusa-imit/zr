@@ -107,6 +107,9 @@ pub fn cmdClean(
 
             try color.printSuccess(w, use_color, "  Removed {d} cache entries\n", .{removed});
             total_removed += removed;
+
+            // Also clean local project cache (ignore if doesn't exist)
+            _ = std.fs.cwd().deleteTree(".zr/cache") catch {};
         }
     }
 
@@ -146,6 +149,9 @@ pub fn cmdClean(
             };
 
             try color.printSuccess(w, use_color, "  Removed history file\n", .{});
+
+            // Also clean local project history (ignore if doesn't exist)
+            _ = std.fs.cwd().deleteTree(".zr/history") catch {};
         }
     }
 

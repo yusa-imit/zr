@@ -65,7 +65,7 @@ pub fn cmdVersion(allocator: std.mem.Allocator, args: []const []const u8) !void 
 
     // Load config
     var config = config_loader.loadFromFile(allocator, config_path) catch |err| {
-        try stderr_writer.interface.print("✗ [Version]: failed to load config: {}\n", .{err});
+        try stderr_writer.interface.print("✗ [Version]: failed to load {s}: {}\n\n  Hint: Add a [versioning] section to your zr.toml\n", .{ config_path, err });
         try stderr_writer.interface.flush();
         std.process.exit(1);
     };

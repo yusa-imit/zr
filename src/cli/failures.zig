@@ -37,8 +37,7 @@ pub fn printHelp(w: *std.Io.Writer) !void {
 }
 
 /// Execute the failures command to view captured failure reports.
-pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
-    _ = ew; // Not needed for failures command, but accept for consistency
+pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, _: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var mgr = try replay.ReplayManager.init(allocator, options.storage_dir);
     defer mgr.deinit();
 
@@ -65,9 +64,9 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, w: *s
 
     if (failures_list.items.len == 0) {
         if (options.task) |t| {
-            try w.print("No failure reports found for task: {s}\n", .{t});
+            try ew.print("No failure reports found for task: {s}\n", .{t});
         } else {
-            try w.print("No failure reports found.\n", .{});
+            try ew.print("No failure reports found.\n", .{});
         }
         return 0;
     }
@@ -75,13 +74,13 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, w: *s
     // Display each failure report
     for (failures_list.items, 0..) |*failure, i| {
         if (i > 0) {
-            try w.print("\n", .{});
+            try ew.print("\n", .{});
             if (options.use_color) {
-                try w.print("\x1b[2m", .{}); // dim
+                try ew.print("\x1b[2m", .{}); // dim
             }
-            try w.print("{s}\n\n", .{"─" ** 80});
+            try ew.print("{s}\n\n", .{"─" ** 80});
             if (options.use_color) {
-                try w.print("\x1b[0m", .{}); // reset
+                try ew.print("\x1b[0m", .{}); // reset
             }
         }
 
@@ -89,15 +88,14 @@ pub fn cmdFailures(allocator: std.mem.Allocator, options: FailuresOptions, w: *s
         defer buf.deinit(allocator);
         const buf_writer = buf.writer(allocator);
         try failure.formatReport(buf_writer);
-        try w.print("{s}", .{buf.items});
+        try ew.print("{s}", .{buf.items});
     }
 
     return 0;
 }
 
 /// Clear all captured failure reports.
-pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
-    _ = ew; // Not needed for clear command, but accept for consistency
+pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions, _: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
     var mgr = try replay.ReplayManager.init(allocator, options.storage_dir);
     defer mgr.deinit();
 
@@ -109,7 +107,7 @@ pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions, 
     // Delete all JSON files from disk
     const dir = std.fs.cwd().openDir(options.storage_dir, .{ .iterate = true }) catch |err| {
         if (err == error.FileNotFound) {
-            try w.print("No failure reports to clear.\n", .{});
+            try ew.print("No failure reports to clear.\n", .{});
             return 0;
         }
         return err;
@@ -134,7 +132,7 @@ pub fn cmdFailuresClear(allocator: std.mem.Allocator, options: FailuresOptions, 
     }
     mgr.failures.clearRetainingCapacity();
 
-    try w.print("Cleared {d} failure report(s).\n", .{count});
+    try ew.print("Cleared {d} failure report(s).\n", .{count});
     return 0;
 }
 

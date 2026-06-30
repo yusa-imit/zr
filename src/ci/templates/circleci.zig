@@ -9,7 +9,7 @@ pub const basic_ci = Template.init(
     .circleci,
     .basic_ci,
     "CircleCI Basic CI",
-    "Basic continuous integration workflow with zr",
+    "CircleCI basic continuous integration workflow with zr",
     \\version: 2.1
     \\
     \\orbs:

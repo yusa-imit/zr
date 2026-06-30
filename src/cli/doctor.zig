@@ -33,7 +33,7 @@ pub const CheckResult = struct {
 
 /// Execute the doctor command to diagnose environment
 pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.Io.Writer, ew: *std.Io.Writer) !u8 {
-    _ = ew; // Used in future error reporting
+    _ = w; // Doctor output goes to stderr (diagnostic tool)
 
     const config_path = options.config_path orelse "zr.toml";
 
@@ -46,9 +46,9 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.I
     };
 
     if (!config_exists) {
-        try w.print("\n", .{});
-        try w.print(" ℹ No zr.toml found. Running basic system checks.\n\n", .{});
-        return try runBasicChecks(allocator, options, w);
+        try ew.print("\n", .{});
+        try ew.print(" ℹ No zr.toml found. Running basic system checks.\n\n", .{});
+        return try runBasicChecks(allocator, options, ew);
     }
 
     // Load config using the loader module directly
@@ -56,8 +56,8 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.I
     var config = try loader.loadFromFile(allocator, config_path);
     defer config.deinit();
 
-    try w.print("\n", .{});
-    try w.print(" 🔍 zr doctor\n\n", .{});
+    try ew.print("\n", .{});
+    try ew.print(" 🔍 zr doctor\n\n", .{});
 
     var results = std.ArrayList(CheckResult){};
     defer {
@@ -94,25 +94,25 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.I
             .error_ => "✗",
         };
 
-        try w.print(" {s} {s:<16}", .{ status_symbol, result.name });
+        try ew.print(" {s} {s:<16}", .{ status_symbol, result.name });
 
         if (result.found_version) |version| {
-            try w.print("{s}", .{version});
+            try ew.print("{s}", .{version});
             if (result.required_version) |required| {
-                try w.print("  (required: {s})", .{required});
+                try ew.print("  (required: {s})", .{required});
             }
         } else {
-            try w.print("not found", .{});
+            try ew.print("not found", .{});
             if (result.required_version) |required| {
-                try w.print("  (required: {s})", .{required});
+                try ew.print("  (required: {s})", .{required});
             }
         }
 
         if (result.message) |msg| {
-            try w.print("  {s}", .{msg});
+            try ew.print("  {s}", .{msg});
         }
 
-        try w.print("\n", .{});
+        try ew.print("\n", .{});
 
         switch (result.status) {
             .ok => {},
@@ -121,16 +121,16 @@ pub fn cmdDoctor(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.I
         }
     }
 
-    try w.print("\n", .{});
+    try ew.print("\n", .{});
 
     if (error_count > 0 or warning_count > 0) {
         const total = error_count + warning_count;
-        try w.print(" {d} issue(s) found. Run 'zr setup' to fix.\n", .{total});
+        try ew.print(" {d} issue(s) found. Run 'zr setup' to fix.\n", .{total});
     } else {
-        try w.print(" ✓ All checks passed!\n", .{});
+        try ew.print(" ✓ All checks passed!\n", .{});
     }
 
-    try w.print("\n", .{});
+    try ew.print("\n", .{});
 
     return if (error_count > 0) 1 else 0;
 }
@@ -226,7 +226,7 @@ fn hasDockerTasks(config: types.Config) bool {
     return false;
 }
 
-fn runBasicChecks(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.Io.Writer) !u8 {
+fn runBasicChecks(allocator: std.mem.Allocator, options: DoctorOptions, ew: *std.Io.Writer) !u8 {
     _ = options;
 
     var results = std.ArrayList(CheckResult){};
@@ -252,31 +252,31 @@ fn runBasicChecks(allocator: std.mem.Allocator, options: DoctorOptions, w: *std.
             .error_ => "✗",
         };
 
-        try w.print(" {s} {s:<16}", .{ status_symbol, result.name });
+        try ew.print(" {s} {s:<16}", .{ status_symbol, result.name });
 
         if (result.found_version) |version| {
-            try w.print("{s}", .{version});
+            try ew.print("{s}", .{version});
         } else {
-            try w.print("not found", .{});
+            try ew.print("not found", .{});
         }
 
         if (result.message) |msg| {
-            try w.print("  {s}", .{msg});
+            try ew.print("  {s}", .{msg});
         }
 
-        try w.print("\n", .{});
+        try ew.print("\n", .{});
 
         if (result.status == .error_) {
             error_count += 1;
         }
     }
 
-    try w.print("\n", .{});
+    try ew.print("\n", .{});
 
     if (error_count > 0) {
-        try w.print(" {d} issue(s) found.\n\n", .{error_count});
+        try ew.print(" {d} issue(s) found.\n\n", .{error_count});
     } else {
-        try w.print(" ✓ Basic system checks passed!\n\n", .{});
+        try ew.print(" ✓ Basic system checks passed!\n\n", .{});
     }
 
     return if (error_count > 0) 1 else 0;

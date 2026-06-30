@@ -86,7 +86,7 @@ pub fn cmdPublish(
 
     // Get versioning config
     const versioning_cfg = cfg.versioning orelse {
-        try output.printError(ew, use_color, "[Publish]: No [versioning] section found in config\n\n", .{});
+        try output.printError(ew, use_color, "[Publish]: No [versioning] section found in config. Cannot publish.\n\n", .{});
         try ew.print("  Add a [versioning] section to your zr.toml:\n", .{});
         try ew.print("  [versioning]\n", .{});
         try ew.print("  mode = \"independent\"  # or \"fixed\"\n", .{});

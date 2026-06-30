@@ -476,12 +476,7 @@ pub fn cmdExplain(
             if (task_names.items.len == 1) {
                 try w.print("Execution plan for: {s}\n", .{task_names.items[0]});
             } else {
-                try w.print("Execution plan for: ", .{});
-                for (task_names.items, 0..) |name, idx| {
-                    if (idx > 0) try w.print(", ", .{});
-                    try w.print("{s}", .{name});
-                }
-                try w.print("\n", .{});
+                try w.print("Execution plan for {d} tasks:\n", .{task_names.items.len});
             }
             try w.print("Tasks to run ({d}):\n", .{ordered_tasks.items.len});
 
