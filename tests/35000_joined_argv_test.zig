@@ -29,8 +29,11 @@ test "joined-argv: cache status as single arg dispatches correctly" {
     const tmp_path = try helpers.writeTmpConfig(testing.allocator, tmp.dir, toml);
     defer testing.allocator.free(tmp_path);
 
+    const cwd_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(cwd_path);
+
     // Pass "cache status" as a single argv element — simulates the joined-argv bug
-    var result = try runZr(testing.allocator, &.{"cache status"}, tmp_path);
+    var result = try runZr(testing.allocator, &.{"cache status"}, cwd_path);
     defer result.deinit();
 
     // Should NOT fail with "Unknown command: cache status"
@@ -52,8 +55,11 @@ test "joined-argv: list --help as single arg dispatches correctly" {
     const tmp_path = try helpers.writeTmpConfig(testing.allocator, tmp.dir, toml);
     defer testing.allocator.free(tmp_path);
 
+    const cwd_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(cwd_path);
+
     // "list --help" as a single argv element
-    var result = try runZr(testing.allocator, &.{"list --help"}, tmp_path);
+    var result = try runZr(testing.allocator, &.{"list --help"}, cwd_path);
     defer result.deinit();
 
     try testing.expect(!std.mem.containsAtLeast(u8, result.stderr, 1, "Unknown command"));
@@ -74,7 +80,10 @@ test "joined-argv: single-word command unaffected by normalization" {
     const tmp_path = try helpers.writeTmpConfig(testing.allocator, tmp.dir, toml);
     defer testing.allocator.free(tmp_path);
 
-    var result = try runZr(testing.allocator, &.{"list"}, tmp_path);
+    const cwd_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(cwd_path);
+
+    var result = try runZr(testing.allocator, &.{"list"}, cwd_path);
     defer result.deinit();
 
     try testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -94,8 +103,11 @@ test "joined-argv: unknown joined command reports first token as unknown" {
     const tmp_path = try helpers.writeTmpConfig(testing.allocator, tmp.dir, toml);
     defer testing.allocator.free(tmp_path);
 
+    const cwd_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(cwd_path);
+
     // "foobar baz" as one arg — neither is a known command; after split, "foobar" is unknown
-    var result = try runZr(testing.allocator, &.{"foobar baz"}, tmp_path);
+    var result = try runZr(testing.allocator, &.{"foobar baz"}, cwd_path);
     defer result.deinit();
 
     try testing.expectEqual(@as(u8, 1), result.exit_code);
@@ -117,8 +129,11 @@ test "joined-argv: cache clear as single arg dispatches correctly" {
     const tmp_path = try helpers.writeTmpConfig(testing.allocator, tmp.dir, toml);
     defer testing.allocator.free(tmp_path);
 
+    const cwd_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(cwd_path);
+
     // "cache clear" as a single argv element
-    var result = try runZr(testing.allocator, &.{"cache clear"}, tmp_path);
+    var result = try runZr(testing.allocator, &.{"cache clear"}, cwd_path);
     defer result.deinit();
 
     try testing.expect(!std.mem.containsAtLeast(u8, result.stderr, 1, "Unknown command: cache clear"));
