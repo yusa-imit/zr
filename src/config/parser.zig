@@ -420,6 +420,7 @@ fn addWorkspaceSharedTask(
     env: []const [2][]const u8,
     timeout_ms: ?u64,
     allow_failure: bool,
+    tags: []const []const u8,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -456,7 +457,7 @@ fn addWorkspaceSharedTask(
         .max_cpu = null,
         .max_memory = null,
         .toolchain = &.{},
-        .tags = &.{},
+        .tags = try dupeDeps(allocator, tags),
         .cpu_affinity = null,
         .numa_node = null,
         .watch = null,
@@ -1352,6 +1353,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     task_env.items,
                     task_timeout_ms,
                     task_allow_failure,
+                    task_tags.items,
                 );
             }
             // Reset task state
@@ -1359,6 +1361,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_deps_serial.clearRetainingCapacity();
             task_deps_optional.clearRetainingCapacity();
             task_env.clearRetainingCapacity();
+            task_tags.clearRetainingCapacity();
             task_cmd = null;
             task_cwd = null;
             task_desc = null;
@@ -2242,6 +2245,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_cache = false;
             in_vars = false;
             in_settings = false;
+            in_imports = false;
             in_task_watch = false;
             in_task_matrix = false;
             in_task_env = false;
@@ -2857,6 +2861,109 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (ws_shared_task_name != null) {
+                // Inside [workspace.shared_tasks.NAME] — parse task fields (v1.114.0)
+                // Shared tasks support: cmd, cwd, description, deps, deps_serial, deps_optional, env, timeout, timeout_ms, tags, allow_failure
+                if (std.mem.eql(u8, key, "cmd")) {
+                    task_cmd = value;
+                } else if (std.mem.eql(u8, key, "cwd")) {
+                    task_cwd = value;
+                } else if (std.mem.eql(u8, key, "description")) {
+                    task_desc = value;
+                } else if (std.mem.eql(u8, key, "timeout")) {
+                    task_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "timeout_ms")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    task_timeout_ms = std.fmt.parseInt(u64, trimmed_val, 10) catch null;
+                } else if (std.mem.eql(u8, key, "tags")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const tags_str = value[1 .. value.len - 1];
+                        var tags_it = std.mem.splitScalar(u8, tags_str, ',');
+                        while (tags_it.next()) |tag| {
+                            const trimmed_tag = std.mem.trim(u8, tag, " \t\"");
+                            if (trimmed_tag.len > 0) {
+                                try task_tags.append(allocator, trimmed_tag);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "allow_failure")) {
+                    task_allow_failure = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "deps")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try task_deps.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_serial")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try task_deps_serial.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "deps_optional")) {
+                    if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        const deps_str = value[1 .. value.len - 1];
+                        var deps_it = std.mem.splitScalar(u8, deps_str, ',');
+                        while (deps_it.next()) |dep| {
+                            const trimmed_dep = std.mem.trim(u8, dep, " \t\"");
+                            if (trimmed_dep.len > 0) {
+                                try task_deps_optional.append(allocator, trimmed_dep);
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "env")) {
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        // Parse inline table: { KEY = "value", FOO = "bar" }
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                try task_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    } else if (std.mem.startsWith(u8, inner, "[") and std.mem.endsWith(u8, inner, "]")) {
+                        // Parse array of pairs: [["KEY", "value"], ["FOO", "bar"]]
+                        const array_str = inner[1 .. inner.len - 1];
+                        var depth: usize = 0;
+                        var pair_start: usize = 0;
+                        var in_quotes = false;
+                        for (array_str, 0..) |c, i| {
+                            if (c == '"') in_quotes = !in_quotes;
+                            if (in_quotes) continue;
+                            if (c == '[') {
+                                if (depth == 0) pair_start = i + 1;
+                                depth += 1;
+                            } else if (c == ']' and depth > 0) {
+                                depth -= 1;
+                                if (depth == 0) {
+                                    const pair_str = array_str[pair_start..i];
+                                    var parts_it = std.mem.splitScalar(u8, pair_str, ',');
+                                    const key_part = parts_it.next() orelse continue;
+                                    const val_part = parts_it.next() orelse continue;
+                                    const env_key = std.mem.trim(u8, key_part, " \t\"");
+                                    const env_val = std.mem.trim(u8, val_part, " \t\"");
+                                    if (env_key.len > 0) {
+                                        try task_env.append(allocator, .{ env_key, env_val });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } else if (in_workspace) {
                 // Inside [workspace] — parse members and ignore arrays
                 if (std.mem.eql(u8, key, "members")) {
@@ -3162,6 +3269,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     task_output_if = value;
                 } else if (std.mem.eql(u8, key, "timeout")) {
                     task_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "timeout_ms")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    task_timeout_ms = std.fmt.parseInt(u64, trimmed_val, 10) catch null;
                 } else if (std.mem.eql(u8, key, "allow_failure")) {
                     task_allow_failure = std.mem.eql(u8, value, "true");
                 } else if (std.mem.eql(u8, key, "deps")) {
@@ -3876,6 +3986,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     template_condition = value;
                 } else if (std.mem.eql(u8, key, "timeout")) {
                     template_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "timeout_ms")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    template_timeout_ms = std.fmt.parseInt(u64, trimmed_val, 10) catch null;
                 } else if (std.mem.eql(u8, key, "allow_failure")) {
                     template_allow_failure = std.mem.eql(u8, value, "true");
                 } else if (std.mem.eql(u8, key, "deps")) {
@@ -4101,6 +4214,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     }
                 } else if (std.mem.eql(u8, key, "timeout")) {
                     mixin_timeout_ms = parseDurationMs(value);
+                } else if (std.mem.eql(u8, key, "timeout_ms")) {
+                    const trimmed_val = std.mem.trim(u8, value, " \t\"");
+                    mixin_timeout_ms = std.fmt.parseInt(u64, trimmed_val, 10) catch null;
                 } else if (std.mem.eql(u8, key, "retry")) {
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
@@ -4486,6 +4602,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             task_env.items,
             task_timeout_ms,
             task_allow_failure,
+            task_tags.items,
         );
     }
 
@@ -4528,6 +4645,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         while (task_it.next()) |entry| {
             try shared_tasks_map.put(entry.key_ptr.*, entry.value_ptr.*);
         }
+        ws_shared_tasks.clearRetainingCapacity(); // Prevent double-free in defer block (v1.114.0)
 
         config.workspace = Workspace{
             .members = members,

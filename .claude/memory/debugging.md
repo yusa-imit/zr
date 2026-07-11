@@ -1,3 +1,13 @@
+## CI red since v1.113.0: ~270 integration test failures, mostly untriaged (2026-07-11, Cycle 394)
+**Symptom**: `zig build integration-test` has been failing on `main` since commit 72bcedd (2026-06-30, v1.113.0) — 1797 passed/44 skipped/276 failed on CI (Ubuntu), reproduces locally on macOS at 1803/44/270. `zig build test` (unit tests) passes cleanly, so this was never caught by sessions that only ran unit tests. Filed as issue #124 with full details — **read that issue first** before re-triaging from scratch.
+**Confirmed root causes so far** (see issue #124 for the rest — most of the 270 are still untriaged):
+1. Workflow matrix (`[workflows.X.matrix]` / inline `matrix = {...}`) is completely unwired in `src/config/parser.zig` — `addWorkflow()` never sets `Workflow.matrix`, so it's always null regardless of TOML content. Affects `tests/workflow_matrix_test.zig` (~10 tests). NOT yet fixed — needs a parser feature addition (support both inline `matrix = {...}` and `[workflows.X.matrix]` + `[[workflows.X.matrix.exclude]]` since the test file uses both).
+2. `upgrade.zig` "unknown option" vs test-expected "Unknown option" casing — fixed (trivial 1-line).
+3. **Serious**: `copyTask()` in `src/config/loader.zig` (used by `inheritWorkspaceSharedTasks`, pre-existing since v1.63.0) only deep-copies ~8 of Task's ~40 heap-allocated fields; the rest are shallow-copied pointers. This was latent/harmless while workspace configs stayed alive for the whole command, but the new (v1.114.0 WIP) `findAndApplyParentWorkspace()` loads-then-immediately-deinits the parent config, turning it into a real use-after-free. Delegated to a zig-developer agent this session to fix properly (deep-copy every field, matching `Task.deinit()`).
+**Lesson**: `zig build integration-test` (~4-5 min) must be run periodically, not just unit tests — a stabilization session should budget time for a full integration run, not just `zig build test`. Given 270 failures span dozens of unrelated files, full triage needs multiple sessions; track via issue #124, don't attempt it all in one cycle.
+
+---
+
 ## Issue #100: Intermittent argv joining on macOS arm64 (2026-06-25)
 **Symptom**: `zr cache status` → "Unknown command: cache status" (two words joined into one) in some shell sessions; same binary works in others. Single-word commands unaffected. Consistent within a process tree, flips between independent sessions.
 **Root cause fingerprint**: `effective_args[1]` receives a space-separated joined string (e.g., "cache status") instead of separate args[1]="cache", args[2]="status". Likely a macOS arm64 / Zig 0.15 startup interaction — possibly in how `std.os.argv` is populated when `link_libc = true` and the C runtime hands off argc/argv. No deterministic trigger found.

@@ -132,7 +132,7 @@ test "6002: shared task with dependencies" {
     defer allocator.free(member_path);
 
     // Run test task (should run build first due to dependency)
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -174,7 +174,7 @@ test "6003: shared task with serial dependencies" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "deploy" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "deploy" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -212,7 +212,7 @@ test "6004: shared task with optional dependencies" {
     defer allocator.free(member_path);
 
     // lint should run even though optional dep 'format' doesn't exist
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "lint" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "lint" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -248,7 +248,7 @@ test "6005: shared task with environment variables" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "env-test" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "env-test" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -284,11 +284,17 @@ test "6006: shared task with timeout" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "timeout-test" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "timeout-test" }, member_path);
     defer result.deinit();
 
-    // Should timeout and fail
-    try std.testing.expect(result.exit_code != 0);
+    // Should timeout and fail with exit code 1
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Task output should show it failed (contains "(exit: 1)" or similar failure indicator)
+    const has_exit_1 = (std.mem.indexOf(u8, result.stdout, "(exit: 1)") != null) or
+                       (std.mem.indexOf(u8, result.stdout, "exit: 1") != null) or
+                       (std.mem.indexOf(u8, result.stderr, "(exit: 1)") != null) or
+                       (std.mem.indexOf(u8, result.stderr, "exit: 1") != null);
+    try std.testing.expect(has_exit_1);
 }
 
 test "6007: shared task with allow_failure" {
@@ -320,7 +326,7 @@ test "6007: shared task with allow_failure" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "fail-ok" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "fail-ok" }, member_path);
     defer result.deinit();
 
     // Should succeed despite task failure
@@ -460,7 +466,7 @@ test "6010: shared task cross-dependencies" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -541,7 +547,7 @@ test "6012: inherited task can depend on local task" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -614,7 +620,7 @@ test "6014: list shows inherited marker for tag-grouped view" {
     const member_path = try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, "member" });
     defer allocator.free(member_path);
 
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "list", "--tags" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "list", "--group-by-tags" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);

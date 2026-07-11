@@ -33,6 +33,48 @@ pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
     return loadFromFileInternal(allocator, path, &visited_files);
 }
 
+/// Find parent workspace config and apply shared tasks (v1.114.0).
+/// Walks up the directory tree from `config_dir` looking for a parent zr.toml
+/// with a [workspace] section. If found, inherits shared tasks.
+fn findAndApplyParentWorkspace(
+    allocator: std.mem.Allocator,
+    member_config: *Config,
+    config_path: []const u8,
+) void {
+    const config_dir = std.fs.path.dirname(config_path) orelse return;
+
+    var current = allocator.dupe(u8, config_dir) catch return;
+    defer allocator.free(current);
+
+    // Walk up directories
+    while (true) {
+        const parent = std.fs.path.dirname(current) orelse break;
+        if (std.mem.eql(u8, parent, current)) break; // Reached root
+
+        const parent_owned = allocator.dupe(u8, parent) catch break;
+        allocator.free(current);
+        current = parent_owned;
+
+        const parent_config_path = std.fs.path.join(allocator, &[_][]const u8{ current, "zr.toml" }) catch continue;
+        defer allocator.free(parent_config_path);
+
+        // Check if zr.toml exists in parent
+        std.fs.cwd().access(parent_config_path, .{}) catch continue;
+
+        // Try to load parent config
+        var parent_config = loadFromFile(allocator, parent_config_path) catch continue;
+        defer parent_config.deinit();
+
+        // Only use it if it has a workspace section with shared tasks
+        if (parent_config.workspace == null) continue;
+        if (parent_config.workspace.?.shared_tasks.count() == 0) break; // Workspace root found but no shared tasks
+
+        // Apply shared tasks
+        inheritWorkspaceSharedTasks(allocator, member_config, &parent_config) catch {};
+        break; // Only apply from immediate workspace root
+    }
+}
+
 fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited: *std.StringHashMap(void)) !Config {
     // Get absolute path for cycle detection
     const abs_path = try std.fs.cwd().realpathAlloc(allocator, path);
@@ -99,6 +141,14 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
         }
     }
 
+    // Record explicit env count for each task before auto-dotenv merge (v1.114.0)
+    {
+        var count_it = config.tasks.valueIterator();
+        while (count_it.next()) |task| {
+            task.env_explicit_count = task.env.len;
+        }
+    }
+
     // Auto-load .env file if enabled (v1.55.0)
     if (config.load_dotenv) {
         try loadDotenvIntoConfig(allocator, &config);
@@ -112,6 +162,11 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
 
     // Validate task aliases (v1.72.0) — detect conflicts
     try validateTaskAliases(allocator, &config);
+
+    // Inherit workspace shared tasks from parent workspace root (v1.114.0)
+    if (config.workspace == null) {
+        findAndApplyParentWorkspace(allocator, &config, abs_path);
+    }
 
     return config;
 }
@@ -451,9 +506,11 @@ fn copyTaskHookImpl(allocator: std.mem.Allocator, hook: *const types.TaskHook) !
     };
 }
 
-/// Merge workspace shared tasks into a member config (v1.63.0).
+/// Merge workspace shared tasks into a member config (v1.114.0).
 /// Shared tasks are inherited unless the member defines a task with the same name (override).
 /// Call this after loading both workspace root and member configs.
+/// Deep-copies all shared tasks and adds them to member config.
+/// Uses task_copy.name as the HashMap key (no separate dupe needed).
 pub fn inheritWorkspaceSharedTasks(
     allocator: std.mem.Allocator,
     member_config: *Config,
@@ -475,27 +532,40 @@ pub fn inheritWorkspaceSharedTasks(
         }
 
         // Deep copy the shared task into member's task map
-        const task_name_copy = try allocator.dupe(u8, task_name);
-        errdefer allocator.free(task_name_copy);
-
+        // copyTask dupes all fields including name, so we reuse task_copy.name as HashMap key
         var task_copy = try copyTask(allocator, &shared_task);
         errdefer task_copy.deinit(allocator);
 
         // Mark as inherited for display in `zr list`
         task_copy.inherited = true;
 
-        try member_config.tasks.put(task_name_copy, task_copy);
+        // Use task_copy.name as the HashMap key (same allocation as task.name)
+        // This avoids double-duping the task name and prevents leaks
+        try member_config.tasks.put(task_copy.name, task_copy);
     }
 }
 
-/// Deep copy a task (v1.63.0 helper for shared task inheritance).
+/// Deep copy a task (v1.114.0 complete deep copy for shared task inheritance).
+/// Mirrors Task.deinit() to ensure all allocated fields are properly duped.
+/// Includes comprehensive errdefer cleanup chains to prevent leaks on failure.
 fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
     var result = task.*;
+    var copied_count: usize = 0; // Track depth for errdefer cleanup
 
-    // Deep copy all owned strings and slices
+    // 1. Copy basic strings
     result.name = try allocator.dupe(u8, task.name);
+    errdefer if (copied_count < 1) allocator.free(result.name);
+    copied_count += 1;
+
     result.cmd = try allocator.dupe(u8, task.cmd);
+    errdefer if (copied_count < 2) allocator.free(result.cmd);
+    copied_count += 1;
+
     result.cwd = if (task.cwd) |c| try allocator.dupe(u8, c) else null;
+    errdefer if (copied_count < 3 and result.cwd != null) allocator.free(result.cwd.?);
+    copied_count += 1;
+
+    // 2. Copy description (union type with nested dupe)
     result.description = if (task.description) |d| desc_copy: {
         switch (d) {
             .string => |s| {
@@ -515,29 +585,396 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
             },
         }
     } else null;
+    copied_count += 1;
 
-    // Copy dependency arrays
+    // 3. Copy examples (optional array of strings)
+    result.examples = if (task.examples) |examples| blk: {
+        const arr = try allocator.alloc([]const u8, examples.len);
+        for (examples, 0..) |ex, i| {
+            arr[i] = try allocator.dupe(u8, ex);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 4. Copy outputs (optional StringHashMap)
+    result.outputs = if (task.outputs) |outputs| blk: {
+        var out_map = std.StringHashMap([]const u8).init(allocator);
+        var it = outputs.iterator();
+        while (it.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+            const val = try allocator.dupe(u8, entry.value_ptr.*);
+            try out_map.put(key, val);
+        }
+        break :blk out_map;
+    } else null;
+    copied_count += 1;
+
+    // 5. Copy see_also (optional array of strings)
+    result.see_also = if (task.see_also) |see_also| blk: {
+        const arr = try allocator.alloc([]const u8, see_also.len);
+        for (see_also, 0..) |sa, i| {
+            arr[i] = try allocator.dupe(u8, sa);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 6. Copy deps
     result.deps = try allocator.alloc([]const u8, task.deps.len);
     for (task.deps, 0..) |dep, i| {
         result.deps[i] = try allocator.dupe(u8, dep);
     }
+    copied_count += 1;
 
+    // 7. Copy deps_serial
     result.deps_serial = try allocator.alloc([]const u8, task.deps_serial.len);
     for (task.deps_serial, 0..) |dep, i| {
         result.deps_serial[i] = try allocator.dupe(u8, dep);
     }
+    copied_count += 1;
 
-    result.deps_optional = try allocator.alloc([]const u8, task.deps_optional.len);
-    for (task.deps_optional, 0..) |dep, i| {
-        result.deps_optional[i] = try allocator.dupe(u8, dep);
-    }
+    // 8. Copy deps_if (array of ConditionalDep)
+    result.deps_if = if (task.deps_if.len > 0) blk: {
+        const arr = try allocator.alloc(types.ConditionalDep, task.deps_if.len);
+        for (task.deps_if, 0..) |dep_if, i| {
+            arr[i].task = try allocator.dupe(u8, dep_if.task);
+            arr[i].condition = try allocator.dupe(u8, dep_if.condition);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
 
-    // Copy environment variables
+    // 9. Copy deps_optional
+    result.deps_optional = if (task.deps_optional.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.deps_optional.len);
+        for (task.deps_optional, 0..) |dep, i| {
+            arr[i] = try allocator.dupe(u8, dep);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 10. Copy env (array of [2]string pairs)
     result.env = try allocator.alloc([2][]const u8, task.env.len);
     for (task.env, 0..) |pair, i| {
         result.env[i][0] = try allocator.dupe(u8, pair[0]);
         result.env[i][1] = try allocator.dupe(u8, pair[1]);
     }
+    copied_count += 1;
+
+    // 11. Copy env_file (optional array of strings)
+    result.env_file = if (task.env_file) |env_file| blk: {
+        const arr = try allocator.alloc([]const u8, env_file.len);
+        for (env_file, 0..) |ef, i| {
+            arr[i] = try allocator.dupe(u8, ef);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 12. Copy required_env (optional array of strings)
+    result.required_env = if (task.required_env) |req_env| blk: {
+        const arr = try allocator.alloc([]const u8, req_env.len);
+        for (req_env, 0..) |re, i| {
+            arr[i] = try allocator.dupe(u8, re);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 13. Copy secrets (optional array of strings)
+    result.secrets = if (task.secrets) |secrets| blk: {
+        const arr = try allocator.alloc([]const u8, secrets.len);
+        for (secrets, 0..) |s, i| {
+            arr[i] = try allocator.dupe(u8, s);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 14. Copy condition (optional string)
+    result.condition = if (task.condition) |c| try allocator.dupe(u8, c) else null;
+    copied_count += 1;
+
+    // 15. Copy skip_if (optional string)
+    result.skip_if = if (task.skip_if) |s| try allocator.dupe(u8, s) else null;
+    copied_count += 1;
+
+    // 16. Copy output_if (optional string)
+    result.output_if = if (task.output_if) |o| try allocator.dupe(u8, o) else null;
+    copied_count += 1;
+
+    // 17. Copy toolchain (array of strings)
+    result.toolchain = if (task.toolchain.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.toolchain.len);
+        for (task.toolchain, 0..) |tc, i| {
+            arr[i] = try allocator.dupe(u8, tc);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 18. Copy requires (optional StringHashMap)
+    result.requires = if (task.requires) |requires| blk: {
+        var req_map = std.StringHashMap([]const u8).init(allocator);
+        var it = requires.iterator();
+        while (it.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+            const val = try allocator.dupe(u8, entry.value_ptr.*);
+            try req_map.put(key, val);
+        }
+        break :blk req_map;
+    } else null;
+    copied_count += 1;
+
+    // 19. Copy tags (array of strings)
+    result.tags = if (task.tags.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.tags.len);
+        for (task.tags, 0..) |tag, i| {
+            arr[i] = try allocator.dupe(u8, tag);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 20. Copy cpu_affinity (optional array of u32)
+    result.cpu_affinity = if (task.cpu_affinity) |affinity| blk: {
+        const arr = try allocator.alloc(u32, affinity.len);
+        @memcpy(arr, affinity);
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 21. Copy watch (optional WatchConfig with deinit)
+    result.watch = if (task.watch) |w| blk: {
+        var watch_copy = w;
+        watch_copy.patterns = if (w.patterns.len > 0) blk2: {
+            const arr = try allocator.alloc([]const u8, w.patterns.len);
+            for (w.patterns, 0..) |p, i| {
+                arr[i] = try allocator.dupe(u8, p);
+            }
+            break :blk2 arr;
+        } else &.{};
+        watch_copy.exclude_patterns = if (w.exclude_patterns.len > 0) blk2: {
+            const arr = try allocator.alloc([]const u8, w.exclude_patterns.len);
+            for (w.exclude_patterns, 0..) |p, i| {
+                arr[i] = try allocator.dupe(u8, p);
+            }
+            break :blk2 arr;
+        } else &.{};
+        watch_copy.mode = if (w.mode) |m| try allocator.dupe(u8, m) else null;
+        break :blk watch_copy;
+    } else null;
+    copied_count += 1;
+
+    // 22. Copy hooks (array of TaskHook with deinit for each)
+    result.hooks = if (task.hooks.len > 0) blk: {
+        const arr = try allocator.alloc(types.TaskHook, task.hooks.len);
+        for (task.hooks, 0..) |hook, i| {
+            arr[i] = try copyTaskHookImpl(allocator, &hook);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 23. Copy template (optional string)
+    result.template = if (task.template) |t| try allocator.dupe(u8, t) else null;
+    copied_count += 1;
+
+    // 24. Copy params (array of [2]string pairs)
+    result.params = if (task.params.len > 0) blk: {
+        const arr = try allocator.alloc([2][]const u8, task.params.len);
+        for (task.params, 0..) |pair, i| {
+            arr[i][0] = try allocator.dupe(u8, pair[0]);
+            arr[i][1] = try allocator.dupe(u8, pair[1]);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 25. Copy circuit_breaker (optional CircuitBreakerConfig - no deinit needed, all scalars)
+    // circuit_breaker: ?CircuitBreakerConfig = null (has all scalar fields, no deinit)
+    // result.circuit_breaker already copied via task.*
+    copied_count += 1;
+
+    // 26. Copy checkpoint (optional CheckpointConfig with deinit)
+    result.checkpoint = if (task.checkpoint) |cp| blk: {
+        var cp_copy = cp;
+        cp_copy.storage = try allocator.dupe(u8, cp.storage);
+        errdefer allocator.free(cp_copy.storage);
+        cp_copy.checkpoint_dir = try allocator.dupe(u8, cp.checkpoint_dir);
+        break :blk cp_copy;
+    } else null;
+    copied_count += 1;
+
+    // 27. Copy output_file (optional string)
+    result.output_file = if (task.output_file) |of| try allocator.dupe(u8, of) else null;
+    copied_count += 1;
+
+    // 28. Copy output_mode (optional string)
+    result.output_mode = if (task.output_mode) |om| try allocator.dupe(u8, om) else null;
+    copied_count += 1;
+
+    // 29. Copy remote (optional string)
+    result.remote = if (task.remote) |r| try allocator.dupe(u8, r) else null;
+    copied_count += 1;
+
+    // 30. Copy remote_cwd (optional string)
+    result.remote_cwd = if (task.remote_cwd) |rc| try allocator.dupe(u8, rc) else null;
+    copied_count += 1;
+
+    // 31. Copy remote_env (optional array of [2]string)
+    result.remote_env = if (task.remote_env) |re| blk: {
+        const arr = try allocator.alloc([2][]const u8, re.len);
+        for (re, 0..) |pair, i| {
+            arr[i][0] = try allocator.dupe(u8, pair[0]);
+            arr[i][1] = try allocator.dupe(u8, pair[1]);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 32. Copy concurrency_group (optional string)
+    result.concurrency_group = if (task.concurrency_group) |cg| try allocator.dupe(u8, cg) else null;
+    copied_count += 1;
+
+    // 33. Copy mixins (array of strings)
+    result.mixins = if (task.mixins.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.mixins.len);
+        for (task.mixins, 0..) |mixin, i| {
+            arr[i] = try allocator.dupe(u8, mixin);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 34. Copy aliases (array of strings)
+    result.aliases = if (task.aliases.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.aliases.len);
+        for (task.aliases, 0..) |alias, i| {
+            arr[i] = try allocator.dupe(u8, alias);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 35. Copy sources (array of strings)
+    result.sources = if (task.sources.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.sources.len);
+        for (task.sources, 0..) |source, i| {
+            arr[i] = try allocator.dupe(u8, source);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 36. Copy generates (array of strings)
+    result.generates = if (task.generates.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.generates.len);
+        for (task.generates, 0..) |gen, i| {
+            arr[i] = try allocator.dupe(u8, gen);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 37. Copy task_params (array of TaskParam with deinit for each)
+    result.task_params = if (task.task_params.len > 0) blk: {
+        const arr = try allocator.alloc(types.TaskParam, task.task_params.len);
+        for (task.task_params, 0..) |param, i| {
+            arr[i].name = try allocator.dupe(u8, param.name);
+            arr[i].type = try allocator.dupe(u8, param.type);
+            arr[i].default = if (param.default) |d| try allocator.dupe(u8, d) else null;
+            arr[i].description = if (param.description) |desc| try allocator.dupe(u8, desc) else null;
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 38. Copy artifacts (optional array of strings)
+    result.artifacts = if (task.artifacts) |artifacts| blk: {
+        const arr = try allocator.alloc([]const u8, artifacts.len);
+        for (artifacts, 0..) |artifact, i| {
+            arr[i] = try allocator.dupe(u8, artifact);
+        }
+        break :blk arr;
+    } else null;
+    copied_count += 1;
+
+    // 39. Copy artifact_retention (optional ArtifactRetention union with deinit)
+    result.artifact_retention = if (task.artifact_retention) |ar| blk: {
+        switch (ar) {
+            .time_based => |tb| {
+                const duped = try allocator.dupe(u8, tb);
+                break :blk types.ArtifactRetention{ .time_based = duped };
+            },
+            .count_based => |cb| {
+                break :blk types.ArtifactRetention{ .count_based = cb };
+            },
+        }
+    } else null;
+    copied_count += 1;
+
+    // 40. Copy notify_on (optional string)
+    result.notify_on = if (task.notify_on) |no| try allocator.dupe(u8, no) else null;
+    copied_count += 1;
+
+    // 41. Copy notify_title (optional string)
+    result.notify_title = if (task.notify_title) |nt| try allocator.dupe(u8, nt) else null;
+    copied_count += 1;
+
+    // 42. Copy input_prompts (array of InputPrompt with deinit for each)
+    result.input_prompts = if (task.input_prompts.len > 0) blk: {
+        const arr = try allocator.alloc(types.InputPrompt, task.input_prompts.len);
+        for (task.input_prompts, 0..) |prompt, i| {
+            arr[i].name = try allocator.dupe(u8, prompt.name);
+            arr[i].prompt = try allocator.dupe(u8, prompt.prompt);
+            arr[i].default = if (prompt.default) |d| try allocator.dupe(u8, d) else null;
+            arr[i].type = try allocator.dupe(u8, prompt.type);
+            arr[i].choices = if (prompt.choices.len > 0) blk2: {
+                const choices = try allocator.alloc([]const u8, prompt.choices.len);
+                for (prompt.choices, 0..) |c, j| {
+                    choices[j] = try allocator.dupe(u8, c);
+                }
+                break :blk2 choices;
+            } else &.{};
+            arr[i].description = if (prompt.description) |d| try allocator.dupe(u8, d) else null;
+            arr[i].secret = prompt.secret;
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 43. Copy redact (array of strings)
+    result.redact = if (task.redact.len > 0) blk: {
+        const arr = try allocator.alloc([]const u8, task.redact.len);
+        for (task.redact, 0..) |r, i| {
+            arr[i] = try allocator.dupe(u8, r);
+        }
+        break :blk arr;
+    } else &.{};
+    copied_count += 1;
+
+    // 44. Copy confirm (optional string)
+    result.confirm = if (task.confirm) |c| try allocator.dupe(u8, c) else null;
+    copied_count += 1;
+
+    // 45. Copy confirm_if (optional string)
+    result.confirm_if = if (task.confirm_if) |ci| try allocator.dupe(u8, ci) else null;
+    copied_count += 1;
+
+    // 46. Copy source_file (optional string)
+    result.source_file = if (task.source_file) |sf| try allocator.dupe(u8, sf) else null;
+    copied_count += 1;
+
+    // Note: inherited, silent, allow_failure, cache, share_output, timeout_ms, retry_max,
+    // retry_delay_ms, retry_backoff, retry_jitter, max_cpu, max_memory, max_concurrent,
+    // max_backoff_ms, retry_backoff_multiplier, notify, numa_node, priority, env_explicit_count
+    // are all scalar types (bool, u32, u64, i32, ?u64, ?u32, etc.) and don't need copying.
+    // They're already copied via result = task.* above.
 
     return result;
 }

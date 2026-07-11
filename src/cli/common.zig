@@ -64,7 +64,7 @@ pub fn loadConfig(
         switch (err) {
             error.FileNotFound => {
                 try color.printError(err_writer, use_color,
-                    "Config: {s} not found\n\n  Hint: Create a zr.toml file in the current directory\n",
+                    "Config: {s} not found\n\n  Hint: Run 'zr init' to create a new configuration file\n",
                     .{config_path},
                 );
             },

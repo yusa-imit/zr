@@ -11,25 +11,28 @@ const helpers = @import("helpers.zig");
 // Note: These are smoke tests - detailed mouse event tests are unit tests
 
 test "graph TUI: accepts --help flag" {
-    var result = try helpers.runCommand(testing.allocator, &.{ "zr", "graph", "--help" }, ".");
+    var result = try helpers.runZr(testing.allocator, &.{ "graph", "--help" }, null);
     defer result.deinit();
 
     try testing.expect(result.exit_code == 0);
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "graph") != null);
+    try testing.expect(std.mem.indexOf(u8, result.stdout, "graph") != null or
+        std.mem.indexOf(u8, result.stderr, "graph") != null);
 }
 
 test "live TUI: accepts --help flag" {
-    var result = try helpers.runCommand(testing.allocator, &.{ "zr", "live", "--help" }, ".");
+    var result = try helpers.runZr(testing.allocator, &.{ "live", "--help" }, null);
     defer result.deinit();
 
     try testing.expect(result.exit_code == 0);
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "live") != null);
+    try testing.expect(std.mem.indexOf(u8, result.stdout, "live") != null or
+        std.mem.indexOf(u8, result.stderr, "live") != null);
 }
 
 test "list TUI: accepts --help flag" {
-    var result = try helpers.runCommand(testing.allocator, &.{ "zr", "list", "--help" }, ".");
+    var result = try helpers.runZr(testing.allocator, &.{ "list", "--help" }, null);
     defer result.deinit();
 
     try testing.expect(result.exit_code == 0);
-    try testing.expect(std.mem.indexOf(u8, result.stdout, "list") != null);
+    try testing.expect(std.mem.indexOf(u8, result.stdout, "list") != null or
+        std.mem.indexOf(u8, result.stderr, "list") != null);
 }

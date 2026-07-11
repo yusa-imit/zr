@@ -1499,6 +1499,9 @@ pub const Task = struct {
     /// Default 0. Positive = higher priority (runs first), negative = lower priority (runs last).
     /// With --jobs 1, determines strict execution order within a level.
     priority: i32 = 0,
+    /// Number of env vars explicitly set in TOML (before auto-dotenv merge, v1.114.0).
+    /// Used to separate explicit task env from auto-dotenv vars when resolving env priority.
+    env_explicit_count: usize = 0,
 
     pub fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         allocator.free(self.name);

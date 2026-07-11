@@ -28,7 +28,7 @@ pub fn cmdUpgrade(allocator: std.mem.Allocator, args: []const []const u8, w: *st
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
             options.verbose = true;
         } else {
-            try ew.print("✗ [Upgrade]: unknown option '{s}'\n\n  Hint: Run 'zr upgrade --help' to see valid options\n", .{arg});
+            try ew.print("✗ [Upgrade]: Unknown option '{s}'\n\n  Hint: Run 'zr upgrade --help' to see valid options\n", .{arg});
             return 1;
         }
     }

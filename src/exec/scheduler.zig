@@ -606,6 +606,9 @@ const WorkerCtx = struct {
     env_file: []const []const u8,
     /// Working directory for resolving relative .env paths (v1.78.0).
     task_cwd: ?[]const u8,
+    /// Number of env vars explicitly set in TOML (before auto-dotenv merge, v1.114.0).
+    /// Used to give env_file correct priority over auto-dotenv vars.
+    env_explicit_count: usize = 0,
     /// Artifact patterns for collecting task outputs (v1.80.0).
     artifacts: ?[]const []const u8,
     /// Artifact retention policy (v1.80.0).
@@ -727,12 +730,15 @@ fn buildEnvWithToolchains(
 }
 
 /// Load environment variables from .env files and merge with task env.
-/// Priority order: task_env > env_file > base_env
+/// Priority order (highest to lowest): explicit_task_env > env_file > auto_dotenv > base_env
+/// task_env[0..explicit_count] = explicit task env (TOML [env] section)
+/// task_env[explicit_count..] = auto-dotenv merged vars (lower priority than env_file)
 /// Returns owned array (caller must free with toolchain_path.freeToolchainEnv if non-null).
 fn loadAndMergeEnvFiles(
     allocator: std.mem.Allocator,
     env_file_paths: []const []const u8,
     task_env: ?[]const [2][]const u8,
+    task_env_explicit_count: usize,
     base_env: ?[]const [2][]const u8,
     _cwd: ?[]const u8,
 ) ?[][2][]u8 {
@@ -741,6 +747,18 @@ fn loadAndMergeEnvFiles(
     // If no env files, return null (caller will use original env)
     if (env_file_paths.len == 0) {
         return null;
+    }
+
+    // Check for missing env files and warn (v1.114.0)
+    for (env_file_paths) |env_path| {
+        const is_abs = std.fs.path.isAbsolute(env_path);
+        const exists = if (is_abs)
+            if (std.fs.openFileAbsolute(env_path, .{})) |f| blk: { f.close(); break :blk true; } else |_| false
+        else
+            if (std.fs.cwd().openFile(env_path, .{})) |f| blk: { f.close(); break :blk true; } else |_| false;
+        if (!exists) {
+            std.debug.print("✗ [env_file]: file not found: {s}\n", .{env_path});
+        }
     }
 
     // Load all .env files and merge with override semantics (later files override earlier)
@@ -760,7 +778,13 @@ fn loadAndMergeEnvFiles(
     // Start with base_env (system env or other defaults)
     const start_env = base_env orelse &[_][2][]u8{};
 
-    // Build map of env vars for merging (file_env is base, then task_env overrides)
+    // Determine explicit vs auto-dotenv portions of task_env
+    const explicit_count = if (task_env) |te| @min(task_env_explicit_count, te.len) else 0;
+    const explicit_env: []const [2][]const u8 = if (task_env) |te| te[0..explicit_count] else &.{};
+    const dotenv_env: []const [2][]const u8 = if (task_env) |te| te[explicit_count..] else &.{};
+
+    // Build map of env vars with correct priority:
+    // base → dotenv → env_file → explicit_task_env
     var merged_map = std.StringHashMap([]const u8).init(allocator);
     defer {
         var it = merged_map.iterator();
@@ -771,22 +795,25 @@ fn loadAndMergeEnvFiles(
         merged_map.deinit();
     }
 
-    // First add base_env vars
+    // 1. Add base_env vars (lowest priority)
     for (start_env) |pair| {
         _ = merged_map.put(pair[0], pair[1]) catch {};
     }
 
-    // Then add .env file vars (override base)
+    // 2. Add auto-dotenv vars (override base, but lower priority than env_file)
+    for (dotenv_env) |pair| {
+        _ = merged_map.put(pair[0], pair[1]) catch {};
+    }
+
+    // 3. Add .env file vars (override dotenv)
     var it = file_env_map.iterator();
     while (it.next()) |entry| {
         _ = merged_map.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
     }
 
-    // Finally add task_env vars (highest priority, override both)
-    if (task_env) |te| {
-        for (te) |pair| {
-            _ = merged_map.put(pair[0], pair[1]) catch {};
-        }
+    // 4. Add explicit task env vars (highest priority, override everything)
+    for (explicit_env) |pair| {
+        _ = merged_map.put(pair[0], pair[1]) catch {};
     }
 
     // If no vars at all, return null
@@ -927,7 +954,7 @@ fn workerFn(ctx: WorkerCtx) void {
     }
 
     // Load .env files and merge with task env (v1.78.0)
-    const env_with_files = loadAndMergeEnvFiles(task_allocator, ctx.env_file, ctx.env, null, ctx.task_cwd);
+    const env_with_files = loadAndMergeEnvFiles(task_allocator, ctx.env_file, ctx.env, ctx.env_explicit_count, null, ctx.task_cwd);
     defer if (env_with_files) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
 
     // Check required environment variables (v1.84.0)
@@ -1269,6 +1296,12 @@ fn workerFn(ctx: WorkerCtx) void {
     } else ctx.cmd;
     defer if (effective_cmd.ptr != ctx.cmd.ptr) task_allocator.free(effective_cmd);
 
+    // Interpolate {{param}}/{{var}} placeholders in cwd (v1.114.0)
+    const effective_cwd = if ((ctx.runtime_params != null or ctx.config_vars != null) and ctx.cwd != null) blk: {
+        break :blk interpolateParams(task_allocator, ctx.cwd.?, ctx.runtime_params, ctx.config_vars, ctx.task_outputs) catch ctx.cwd.?;
+    } else ctx.cwd;
+    defer if (effective_cwd != null and ctx.cwd != null and effective_cwd.?.ptr != ctx.cwd.?.ptr) task_allocator.free(effective_cwd.?);
+
     // Interpolate env values (not keys)
     var interp_env_list = std.ArrayList([2][]const u8){};
     defer {
@@ -1400,7 +1433,7 @@ fn workerFn(ctx: WorkerCtx) void {
         const remote_task = types.Task{
             .name = ctx.task_name,
             .cmd = effective_cmd,
-            .cwd = ctx.remote_cwd orelse ctx.cwd,
+            .cwd = ctx.remote_cwd orelse effective_cwd,
             .description = null,
             .deps = &.{},
             .deps_serial = &.{},
@@ -1464,7 +1497,7 @@ fn workerFn(ctx: WorkerCtx) void {
         };
     } else process.run(task_allocator, .{
         .cmd = effective_cmd,
-        .cwd = ctx.cwd,
+        .cwd = effective_cwd,
         .env = effective_env,
         .inherit_stdio = inherit_stdio_mode,
         .timeout_ms = ctx.timeout_ms,
@@ -1556,7 +1589,7 @@ fn workerFn(ctx: WorkerCtx) void {
                 }
                 proc_result = process.run(task_allocator, .{
                     .cmd = effective_cmd,
-                    .cwd = ctx.cwd,
+                    .cwd = effective_cwd,
                     .env = effective_env,
                     .inherit_stdio = inherit_stdio_mode,
                     .timeout_ms = ctx.timeout_ms,
@@ -1630,7 +1663,7 @@ fn workerFn(ctx: WorkerCtx) void {
                 const artifact_task = loader.Task{
                     .name = ctx.task_name,
                     .cmd = effective_cmd,
-                    .cwd = ctx.cwd,
+                    .cwd = effective_cwd,
                     .deps = &.{},
                     .deps_serial = &.{},
                     .env = &.{},
@@ -1880,7 +1913,7 @@ fn workerFn(ctx: WorkerCtx) void {
             rm.captureFailure(
                 ctx.task_name,
                 ctx.cmd,
-                ctx.cwd,
+                effective_cwd,
                 ctx.env,
                 proc_result.exit_code,
                 stdout_buf,
@@ -2868,6 +2901,7 @@ pub fn run(
                 .executed_tasks = &executed_tasks,
                 .env_file = task.env_file orelse &[_][]const u8{},
                 .task_cwd = task.cwd orelse sched_config.project_root,
+                .env_explicit_count = task.env_explicit_count,
                 .artifacts = task.artifacts,
                 .artifact_retention = task.artifact_retention,
                 .compress_artifacts = task.compress_artifacts,
