@@ -203,7 +203,11 @@ pub fn resolveMixins(allocator: std.mem.Allocator, config: *Config) !void {
 
             // Check for circular dependencies (cycle detection)
             var visited = std.StringHashMap(void).init(allocator);
-            defer visited.deinit();
+            defer {
+                var vit = visited.iterator();
+                while (vit.next()) |e| allocator.free(e.key_ptr.*);
+                visited.deinit();
+            }
             if (try detectMixinCycle(allocator, config, mixin_name, &visited)) {
                 std.debug.print("error: Circular mixin reference detected involving '{s}'\n", .{mixin_name});
                 return error.CircularMixin;
@@ -227,16 +231,9 @@ fn detectMixinCycle(
         return true;
     }
 
-    // Mark as visited
+    // Mark as visited. Ownership of the duped key belongs to `visited`;
+    // the caller (resolveMixins) frees all entries once the DFS completes.
     try visited.put(try allocator.dupe(u8, mixin_name), {});
-    defer {
-        var it = visited.iterator();
-        while (it.next()) |e| {
-            if (!std.mem.eql(u8, e.key_ptr.*, mixin_name)) {
-                allocator.free(e.key_ptr.*);
-            }
-        }
-    }
 
     // Get the mixin
     const mixin = config.mixins.get(mixin_name) orelse return false;
