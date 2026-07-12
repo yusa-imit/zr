@@ -1681,6 +1681,7 @@ fn run(
                     "  --last-run-tags      Show runtime tags (+tag) from most recent run per task\n" ++
                     "  --verbose            Show detailed task metadata\n" ++
                     "  --format json        Output as JSON\n" ++
+                    "  --json               Shorthand for --format json\n" ++
                     "  --members            List workspace members only\n" ++
                     "  --all, -a            Show all tasks including internal ones\n" ++
                     "  -h, --help           Show this help\n",
@@ -1776,6 +1777,8 @@ fn run(
                 show_source = true;
             } else if (std.mem.eql(u8, arg, "--last-run-tags")) {
                 show_last_run_tags = true;
+            } else if (std.mem.eql(u8, arg, "--json")) {
+                json_output = true;
             } else if (!std.mem.startsWith(u8, arg, "--")) {
                 // First non-flag argument is the filter pattern
                 filter_pattern = arg;

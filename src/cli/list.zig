@@ -426,6 +426,13 @@ pub fn cmdList(
                     try obj.writer.print("\"{s}\"", .{alias});
                 }
                 try obj.writer.writeAll("]");
+                // Add tags array
+                try obj.writer.writeAll(",\"tags\":[");
+                for (task.tags, 0..) |tag, i| {
+                    if (i > 0) try obj.writer.writeAll(",");
+                    try obj.writer.print("\"{s}\"", .{tag});
+                }
+                try obj.writer.writeAll("]");
                 try obj.addNumber("deps_count", task.deps.len);
 
                 // Add duration estimate if available
