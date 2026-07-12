@@ -199,6 +199,48 @@ fn interpolateParams(
     return try result.toOwnedSlice(allocator);
 }
 
+/// Substitute `${matrix.KEY}` placeholders in `input` with the corresponding
+/// `MATRIX_KEY` value from extra_env (workflow matrix combination variables,
+/// see cmdWorkflow in cli/run.zig). Unresolved placeholders are left as-is.
+/// Returns an allocated string; caller must free.
+pub fn interpolateMatrixEnv(allocator: std.mem.Allocator, input: []const u8, extra_env: ?[]const [2][]const u8) ![]const u8 {
+    if (extra_env == null or std.mem.indexOf(u8, input, "${matrix.") == null) {
+        return allocator.dupe(u8, input);
+    }
+    const extra = extra_env.?;
+
+    var result: std.ArrayList(u8) = .{};
+    errdefer result.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < input.len) {
+        if (std.mem.startsWith(u8, input[i..], "${matrix.")) {
+            const start = i + "${matrix.".len;
+            if (std.mem.indexOfScalarPos(u8, input, start, '}')) |close| {
+                const key = input[start..close];
+                var found = false;
+                for (extra) |pair| {
+                    if (pair[0].len > "MATRIX_".len and
+                        std.mem.startsWith(u8, pair[0], "MATRIX_") and
+                        std.mem.eql(u8, pair[0]["MATRIX_".len..], key))
+                    {
+                        try result.appendSlice(allocator, pair[1]);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) try result.appendSlice(allocator, input[i .. close + 1]);
+                i = close + 1;
+                continue;
+            }
+        }
+        try result.append(allocator, input[i]);
+        i += 1;
+    }
+
+    return result.toOwnedSlice(allocator);
+}
+
 /// Circuit breaker state for a task (v1.30.0).
 /// Tracks failure rate and determines when to stop retrying.
 const CircuitBreakerState = struct {
@@ -1156,6 +1198,8 @@ fn workerFn(ctx: WorkerCtx) void {
     const capture_for_share = ctx.share_output and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache;
     // Track whether buffer mode was enabled for output redaction (v1.89.0) or secrets masking (v1.98.0)
     const capture_for_redact = (ctx.redact_names.len > 0 or ctx.secrets.len > 0) and !ctx.silent and !ctx.filter_options.isEnabled() and ctx.output_mode == null and !ctx.cache and !ctx.share_output;
+    // Track whether buffer mode was enabled purely for filtering (grep/grep-v/highlight/context)
+    const capture_for_filter = ctx.filter_options.isEnabled() and !ctx.silent and !ctx.cache and !ctx.share_output and ctx.output_mode == null;
     if (need_capture) {
         const capture_config = output_capture.OutputCaptureConfig{
             .mode = ctx.output_mode orelse .buffer, // Use buffer mode for filtering/silent/cache
@@ -1291,10 +1335,14 @@ fn workerFn(ctx: WorkerCtx) void {
     const proc_env: ?[]const [2][]const u8 = if (final_env) |env| env else null;
 
     // Interpolate {{param}}/{{var}} placeholders in cmd (v1.84.0)
-    const effective_cmd = if (ctx.runtime_params != null or ctx.config_vars != null or ctx.task_outputs != null) blk: {
+    const cmd_after_params = if (ctx.runtime_params != null or ctx.config_vars != null or ctx.task_outputs != null) blk: {
         break :blk interpolateParams(task_allocator, ctx.cmd, ctx.runtime_params, ctx.config_vars, ctx.task_outputs) catch ctx.cmd;
     } else ctx.cmd;
-    defer if (effective_cmd.ptr != ctx.cmd.ptr) task_allocator.free(effective_cmd);
+    defer if (cmd_after_params.ptr != ctx.cmd.ptr) task_allocator.free(cmd_after_params);
+
+    // Interpolate ${matrix.KEY} placeholders using workflow matrix combination vars (v1.30.0 matrix)
+    const effective_cmd = interpolateMatrixEnv(task_allocator, cmd_after_params, ctx.extra_env) catch cmd_after_params;
+    defer if (effective_cmd.ptr != cmd_after_params.ptr) task_allocator.free(effective_cmd);
 
     // Interpolate {{param}}/{{var}} placeholders in cwd (v1.114.0)
     const effective_cwd = if ((ctx.runtime_params != null or ctx.config_vars != null) and ctx.cwd != null) blk: {
@@ -1748,6 +1796,22 @@ fn workerFn(ctx: WorkerCtx) void {
 
     // If share_output, relay output to stdout AND store trimmed output for downstream tasks (v1.87.0)
     if (capture_for_share) {
+        if (output_cap) |*oc| {
+            if (oc.config.mode == .buffer) {
+                if (oc.getBuffer()) |buffered_output| {
+                    defer task_allocator.free(buffered_output);
+                    if (buffered_output.len > 0) {
+                        const stdout_f = std.fs.File.stdout();
+                        if (stdout_f.isTty()) stdout_f.writeAll("\r\x1b[K") catch {};
+                        stdout_f.writeAll(buffered_output) catch {};
+                    }
+                } else |_| {}
+            }
+        }
+    }
+
+    // If we captured output purely for filtering (grep/grep-v/highlight/context), relay filtered output to stdout
+    if (capture_for_filter) {
         if (output_cap) |*oc| {
             if (oc.config.mode == .buffer) {
                 if (oc.getBuffer()) |buffered_output| {

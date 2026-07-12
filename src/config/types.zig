@@ -790,6 +790,7 @@ pub const Config = struct {
         description: ?[]const u8,
         stages: []const Stage,
         retry_budget: ?u32,
+        matrix: ?MatrixConfig,
     ) !void {
         const wf_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(wf_name);
@@ -836,11 +837,84 @@ pub const Config = struct {
             stages_duped += 1;
         }
 
+        var wf_matrix: ?MatrixConfig = null;
+        if (matrix) |m| {
+            // Dupe matrix dimensions
+            const m_dims = try self.allocator.alloc(MatrixDim, m.dimensions.len);
+            var dims_duped: usize = 0;
+            errdefer {
+                for (m_dims[0..dims_duped]) |*d| d.deinit(self.allocator);
+                self.allocator.free(m_dims);
+            }
+            for (m.dimensions, 0..) |dim, i| {
+                const d_key = try self.allocator.dupe(u8, dim.key);
+                errdefer self.allocator.free(d_key);
+
+                const d_values = try self.allocator.alloc([]const u8, dim.values.len);
+                var values_duped: usize = 0;
+                errdefer {
+                    for (d_values[0..values_duped]) |v| self.allocator.free(v);
+                    self.allocator.free(d_values);
+                }
+                for (dim.values, 0..) |v, j| {
+                    d_values[j] = try self.allocator.dupe(u8, v);
+                    values_duped += 1;
+                }
+
+                m_dims[i] = MatrixDim{
+                    .key = d_key,
+                    .values = d_values,
+                };
+                dims_duped += 1;
+            }
+
+            // Dupe matrix exclusions
+            const m_exclude = try self.allocator.alloc(MatrixExclusion, m.exclude.len);
+            var exclude_duped: usize = 0;
+            errdefer {
+                for (m_exclude[0..exclude_duped]) |*e| e.deinit(self.allocator);
+                self.allocator.free(m_exclude);
+            }
+            for (m.exclude, 0..) |excl, i| {
+                var conds = std.StringHashMap([]const u8).init(self.allocator);
+                errdefer {
+                    var it = conds.iterator();
+                    while (it.next()) |entry| {
+                        self.allocator.free(entry.key_ptr.*);
+                        self.allocator.free(entry.value_ptr.*);
+                    }
+                    conds.deinit();
+                }
+                var it = excl.conditions.iterator();
+                while (it.next()) |entry| {
+                    const ek = try self.allocator.dupe(u8, entry.key_ptr.*);
+                    errdefer self.allocator.free(ek);
+                    const ev = try self.allocator.dupe(u8, entry.value_ptr.*);
+                    errdefer self.allocator.free(ev);
+                    try conds.put(ek, ev);
+                }
+                m_exclude[i] = MatrixExclusion{
+                    .conditions = conds,
+                };
+                exclude_duped += 1;
+            }
+
+            wf_matrix = MatrixConfig{
+                .dimensions = m_dims,
+                .exclude = m_exclude,
+            };
+        }
+        errdefer if (wf_matrix) |*m| {
+            var matrix_mut = m.*;
+            matrix_mut.deinit(self.allocator);
+        };
+
         const wf = Workflow{
             .name = wf_name,
             .description = wf_desc,
             .stages = wf_stages,
             .retry_budget = retry_budget,
+            .matrix = wf_matrix,
         };
 
         try self.workflows.put(wf_name, wf);

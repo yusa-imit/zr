@@ -1549,27 +1549,49 @@ pub fn cmdWorkflow(
     // If --matrix-show, display all combinations and exit
     if (matrix_show) {
         if (wf.matrix == null) {
-            try color.printWarning(w, use_color, "workflow '{s}' has no matrix configuration\n", .{wf_name});
+            try color.printWarning(err_writer, use_color, "workflow '{s}' has no matrix configuration\n", .{wf_name});
             return 0;
         }
 
-        try color.printBold(w, use_color, "Matrix combinations for workflow: {s}\n", .{wf_name});
+        try color.printBold(err_writer, use_color, "Matrix combinations for workflow: {s}\n", .{wf_name});
         if (wf.description) |desc| {
-            try color.printDim(w, use_color, "  {s}\n", .{desc});
+            try color.printDim(err_writer, use_color, "  {s}\n", .{desc});
         }
-        try w.print("\n", .{});
+        try err_writer.print("\n", .{});
 
+        var key_buf: [32][]const u8 = undefined;
         for (combinations, 0..) |*combo, idx| {
-            try color.printInfo(w, use_color, "Combination {d}:\n", .{idx + 1});
-            var iter = combo.variables.iterator();
-            while (iter.next()) |entry| {
-                try w.print("  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            var key_count: usize = 0;
+            var iter = combo.variables.keyIterator();
+            while (iter.next()) |key_ptr| {
+                if (key_count < key_buf.len) {
+                    key_buf[key_count] = key_ptr.*;
+                    key_count += 1;
+                }
             }
-            try w.print("\n", .{});
+            const keys = key_buf[0..key_count];
+            std.mem.sort([]const u8, keys, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.lessThan(u8, a, b);
+                }
+            }.lessThan);
+
+            try color.printInfo(err_writer, use_color, "Combination {d}:\n", .{idx + 1});
+            for (keys, 0..) |key, i| {
+                const value = combo.variables.get(key).?;
+                if (i > 0) try err_writer.writeAll(":");
+                try err_writer.print("{s}={s}", .{ key, value });
+            }
+            try err_writer.print("\n", .{});
+            for (keys) |key| {
+                const value = combo.variables.get(key).?;
+                try err_writer.print("  {s}: {s}\n", .{ key, value });
+            }
+            try err_writer.print("\n", .{});
         }
 
-        try color.printDim(w, use_color, "Total combinations: {d}\n", .{combinations.len});
-        try color.printDim(w, use_color, "\nNo tasks were executed. Use 'zr workflow {s}' to run.\n", .{wf_name});
+        try color.printDim(err_writer, use_color, "{d} combinations total\n", .{combinations.len});
+        try color.printDim(err_writer, use_color, "\nNo tasks were executed. Use 'zr workflow {s}' to run.\n", .{wf_name});
         return 0;
     }
 
@@ -1579,25 +1601,63 @@ pub fn cmdWorkflow(
         if (wf.description) |desc| {
             try color.printDim(w, use_color, "  {s}\n", .{desc});
         }
-        for (wf.stages) |stage| {
-            try color.printInfo(w, use_color, "\nStage: {s}\n", .{stage.name});
-            if (stage.tasks.len == 0) {
-                try color.printDim(w, use_color, "  (no tasks)\n", .{});
-                continue;
-            }
-            var plan = scheduler.planDryRun(allocator, &config, stage.tasks, false) catch |err| {
-                switch (err) {
-                    error.TaskNotFound => try color.printError(err_writer, use_color,
-                        "workflow: A task in stage '{s}' was not found\n", .{stage.name}),
-                    error.CycleDetected => try color.printError(err_writer, use_color,
-                        "workflow: Cycle detected in stage '{s}'\n", .{stage.name}),
-                    else => try color.printError(err_writer, use_color,
-                        "workflow: Error in stage '{s}': {s}\n", .{ stage.name, @errorName(err) }),
+
+        const dry_has_matrix = wf.matrix != null and combinations.len > 0;
+        const dry_num_combinations = if (dry_has_matrix) combinations.len else 1;
+
+        for (0..dry_num_combinations) |combo_idx| {
+            var extra_env_list: std.ArrayList([2][]const u8) = .{};
+            defer {
+                for (extra_env_list.items) |pair| {
+                    allocator.free(pair[0]);
+                    allocator.free(pair[1]);
                 }
-                return 1;
-            };
-            defer plan.deinit();
-            try printDryRunPlan(allocator, w, use_color, plan, &config);
+                extra_env_list.deinit(allocator);
+            }
+
+            if (dry_has_matrix) {
+                const combo = &combinations[combo_idx];
+                try color.printInfo(w, use_color, "\n=== Matrix combination {d}/{d} ===\n", .{ combo_idx + 1, dry_num_combinations });
+                var iter = combo.variables.iterator();
+                while (iter.next()) |entry| {
+                    try color.printDim(w, use_color, "  {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                    const env_key = try std.fmt.allocPrint(allocator, "MATRIX_{s}", .{entry.key_ptr.*});
+                    const env_value = try allocator.dupe(u8, entry.value_ptr.*);
+                    try extra_env_list.append(allocator, .{ env_key, env_value });
+                }
+            }
+            const extra_env_slice: ?[][2][]const u8 = if (extra_env_list.items.len > 0) extra_env_list.items else null;
+
+            for (wf.stages) |stage| {
+                try color.printInfo(w, use_color, "\nStage: {s}\n", .{stage.name});
+                if (stage.tasks.len == 0) {
+                    try color.printDim(w, use_color, "  (no tasks)\n", .{});
+                    continue;
+                }
+                var plan = scheduler.planDryRun(allocator, &config, stage.tasks, false) catch |err| {
+                    switch (err) {
+                        error.TaskNotFound => try color.printError(err_writer, use_color,
+                            "workflow: A task in stage '{s}' was not found\n", .{stage.name}),
+                        error.CycleDetected => try color.printError(err_writer, use_color,
+                            "workflow: Cycle detected in stage '{s}'\n", .{stage.name}),
+                        else => try color.printError(err_writer, use_color,
+                            "workflow: Error in stage '{s}': {s}\n", .{ stage.name, @errorName(err) }),
+                    }
+                    return 1;
+                };
+                defer plan.deinit();
+                try printDryRunPlan(allocator, w, use_color, plan, &config);
+
+                if (dry_has_matrix) {
+                    for (stage.tasks) |task_name| {
+                        if (config.tasks.get(task_name)) |task| {
+                            const interpolated = scheduler.interpolateMatrixEnv(allocator, task.cmd, extra_env_slice) catch task.cmd;
+                            defer if (interpolated.ptr != task.cmd.ptr) allocator.free(interpolated);
+                            try color.printDim(w, use_color, "    $ {s}\n", .{interpolated});
+                        }
+                    }
+                }
+            }
         }
         try color.printDim(w, use_color, "\nNo tasks were executed.\n", .{});
         return 0;

@@ -544,11 +544,187 @@ fn stripQuotes(s: []const u8) []const u8 {
     return trimmed;
 }
 
+/// Parse inline workflow matrix: matrix = { os = ["linux", "macos"], version = ["1.0", "2.0"] }
+fn parseInlineWorkflowMatrix(allocator: std.mem.Allocator, raw: []const u8, matrix_out: *?types.MatrixConfig) !void {
+    const inner_full = std.mem.trim(u8, raw, " \t");
+    if (!std.mem.startsWith(u8, inner_full, "{") or !std.mem.endsWith(u8, inner_full, "}")) return;
+    const inner = inner_full[1 .. inner_full.len - 1];
+
+    var dims: std.ArrayListUnmanaged(MatrixDim) = .{};
+    errdefer {
+        for (dims.items) |*d| d.deinit(allocator);
+        dims.deinit(allocator);
+    }
+
+    var i: usize = 0;
+    while (i < inner.len) {
+        // Skip whitespace and commas between key=value pairs
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t' or inner[i] == ',')) i += 1;
+        if (i >= inner.len) break;
+
+        // Read key until '='
+        const key_start = i;
+        while (i < inner.len and inner[i] != '=') i += 1;
+        const key = std.mem.trim(u8, inner[key_start..i], " \t\"");
+        if (i >= inner.len or key.len == 0) break;
+        i += 1; // skip '='
+
+        // Skip whitespace before '['
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) i += 1;
+        if (i >= inner.len or inner[i] != '[') break;
+        i += 1; // skip '['
+
+        // Find matching ']', tracking bracket depth and string quotes
+        const arr_start = i;
+        var depth: usize = 1;
+        var in_str: bool = false;
+        while (i < inner.len and depth > 0) {
+            const ch = inner[i];
+            if (ch == '"' and (i == 0 or inner[i - 1] != '\\')) in_str = !in_str;
+            if (!in_str) {
+                if (ch == '[') depth += 1 else if (ch == ']') depth -= 1;
+            }
+            if (depth > 0) i += 1;
+        }
+        const arr_content = inner[arr_start..i];
+        i += 1; // skip ']'
+
+        // Parse comma-separated quoted values inside the array
+        var values: std.ArrayListUnmanaged([]const u8) = .{};
+        errdefer {
+            for (values.items) |v| allocator.free(v);
+            values.deinit(allocator);
+        }
+        var val_it = std.mem.splitScalar(u8, arr_content, ',');
+        while (val_it.next()) |item| {
+            const trimmed_item = std.mem.trim(u8, item, " \t\"");
+            if (trimmed_item.len > 0) {
+                try values.append(allocator, try allocator.dupe(u8, trimmed_item));
+            }
+        }
+        if (values.items.len == 0) {
+            values.deinit(allocator);
+            continue;
+        }
+
+        const duped_key = try allocator.dupe(u8, key);
+        errdefer allocator.free(duped_key);
+        try dims.append(allocator, MatrixDim{
+            .key = duped_key,
+            .values = try values.toOwnedSlice(allocator),
+        });
+    }
+
+    if (dims.items.len > 0) {
+        matrix_out.* = types.MatrixConfig{
+            .dimensions = try dims.toOwnedSlice(allocator),
+            .exclude = &.{},
+        };
+    } else {
+        dims.deinit(allocator);
+    }
+}
+
+/// Finalize workflow matrix by collecting all pending exclusions
+fn finalizeWorkflowMatrix(allocator: std.mem.Allocator, workflow_matrix: *?types.MatrixConfig, pending_exclusions: *std.ArrayList(types.MatrixExclusion), current_exclusion: *std.StringHashMap([]const u8)) !void {
+    // Flush any pending exclusion
+    if (current_exclusion.count() > 0) {
+        const excl = types.MatrixExclusion{
+            .conditions = current_exclusion.*,
+        };
+        try pending_exclusions.append(allocator, excl);
+        current_exclusion.* = std.StringHashMap([]const u8).init(allocator);
+    }
+
+    // If we have exclusions and a matrix, apply them
+    if (pending_exclusions.items.len > 0 and workflow_matrix.* != null) {
+        const excl_array = try allocator.alloc(types.MatrixExclusion, pending_exclusions.items.len);
+        for (pending_exclusions.items, 0..) |excl, i| {
+            excl_array[i] = excl;
+        }
+        workflow_matrix.*.?.exclude = excl_array;
+        pending_exclusions.clearRetainingCapacity(); // Don't deinit items, they're now owned by workflow_matrix
+    } else {
+        // Clear pending exclusions
+        for (pending_exclusions.items) |*excl| excl.deinit(allocator);
+        pending_exclusions.clearRetainingCapacity();
+    }
+}
+
+/// Net bracket depth contributed by `s` (counting `[`/`{` as +1 and `]`/`}` as -1),
+/// ignoring brackets that appear inside double-quoted strings (e.g. `${matrix.x}`).
+fn bracketDelta(s: []const u8) i32 {
+    var depth: i32 = 0;
+    var in_str = false;
+    for (s, 0..) |c, i| {
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) in_str = !in_str;
+        if (!in_str) {
+            if (c == '[' or c == '{') depth += 1;
+            if (c == ']' or c == '}') depth -= 1;
+        }
+    }
+    return depth;
+}
+
+/// Join `key = [...]` / `key = {...}` values that span multiple physical lines
+/// into a single logical line, so the line-based parser below (which expects
+/// each key=value pair on one line) can handle multi-line TOML arrays/tables.
+/// Section headers, comments, and already-balanced lines pass through unchanged.
+fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .{};
+    errdefer out.deinit(allocator);
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |raw_line| {
+        const trimmed = std.mem.trim(u8, raw_line, " \t\r");
+
+        if (trimmed.len == 0 or trimmed[0] == '#' or trimmed[0] == '[') {
+            try out.appendSlice(allocator, trimmed);
+            try out.append(allocator, '\n');
+            continue;
+        }
+
+        const eq_idx = std.mem.indexOf(u8, trimmed, "=") orelse {
+            try out.appendSlice(allocator, trimmed);
+            try out.append(allocator, '\n');
+            continue;
+        };
+
+        var depth = bracketDelta(trimmed[eq_idx + 1 ..]);
+        if (depth <= 0) {
+            try out.appendSlice(allocator, trimmed);
+            try out.append(allocator, '\n');
+            continue;
+        }
+
+        var joined: std.ArrayList(u8) = .{};
+        defer joined.deinit(allocator);
+        try joined.appendSlice(allocator, trimmed);
+
+        while (depth > 0) {
+            const next_line = lines.next() orelse break;
+            const next_trimmed = std.mem.trim(u8, next_line, " \t\r");
+            if (next_trimmed.len == 0 or next_trimmed[0] == '#') continue;
+            try joined.append(allocator, ' ');
+            try joined.appendSlice(allocator, next_trimmed);
+            depth += bracketDelta(next_trimmed);
+        }
+
+        try out.appendSlice(allocator, joined.items);
+        try out.append(allocator, '\n');
+    }
+
+    return out.toOwnedSlice(allocator);
+}
+
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var config = Config.init(allocator);
     errdefer config.deinit();
 
-    var lines = std.mem.splitScalar(u8, content, '\n');
+    const joined_content = try joinMultilineValues(allocator, content);
+    defer allocator.free(joined_content);
+
+    var lines = std.mem.splitScalar(u8, joined_content, '\n');
 
     // These are non-owning slices into `content` — addTask dupes them
     var current_task: ?[]const u8 = null;
@@ -819,6 +995,25 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var current_workflow: ?[]const u8 = null;
     var workflow_desc: ?[]const u8 = null;
     var workflow_retry_budget: ?u32 = null;
+    var workflow_matrix: ?types.MatrixConfig = null;
+    var in_workflow_matrix: bool = false; // true when inside [workflows.X.matrix] section
+    var in_workflow_matrix_exclude: bool = false; // true when inside [[workflows.X.matrix.exclude]]
+    var pending_workflow_matrix_buffer = std.ArrayList(u8){}; // Buffer for [workflows.X.matrix] subsection
+    defer pending_workflow_matrix_buffer.deinit(allocator);
+    var current_workflow_matrix_exclusion = std.StringHashMap([]const u8).init(allocator); // Current exclusion rule being built
+    defer {
+        var it = current_workflow_matrix_exclusion.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        current_workflow_matrix_exclusion.deinit();
+    }
+    var pending_workflow_matrix_exclusions = std.ArrayList(types.MatrixExclusion){}; // Collected exclusion rules
+    defer {
+        for (pending_workflow_matrix_exclusions.items) |*excl| excl.deinit(allocator);
+        pending_workflow_matrix_exclusions.deinit(allocator);
+    }
     // Stages accumulate here; each Stage is owned (duped) when built
     var workflow_stages = std.ArrayList(Stage){};
     defer {
@@ -1030,6 +1225,43 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_approval = false;
             stage_on_failure = null;
             stage_condition = null;
+        } else if (std.mem.startsWith(u8, trimmed, "[[workflows.") and std.mem.endsWith(u8, trimmed, ".matrix.exclude]]")) {
+            in_workspace = false;
+            // Section: [[workflows.X.matrix.exclude]] — matrix exclusion rule array entry
+            // Flush previous exclusion if any
+            if (current_workflow_matrix_exclusion.count() > 0) {
+                const excl = types.MatrixExclusion{
+                    .conditions = current_workflow_matrix_exclusion,
+                };
+                try pending_workflow_matrix_exclusions.append(allocator, excl);
+                current_workflow_matrix_exclusion = std.StringHashMap([]const u8).init(allocator);
+            }
+            in_workflow_matrix = true;
+            in_workflow_matrix_exclude = true;
+            // Will parse key=value pairs into current_workflow_matrix_exclusion
+        } else if (std.mem.startsWith(u8, trimmed, "[workflows.") and std.mem.endsWith(u8, trimmed, ".matrix]") and !std.mem.startsWith(u8, trimmed, "[[")) {
+            in_workspace = false;
+            // Section: [workflows.X.matrix] — table form for workflow matrix
+            // Flush any pending stage
+            _ = try flushPendingStage(
+                allocator,
+                &workflow_stages,
+                stage_name,
+                &stage_tasks,
+                stage_parallel,
+                stage_fail_fast,
+                stage_condition,
+                stage_approval,
+                stage_on_failure,
+            );
+            stage_name = null;
+            stage_tasks.clearRetainingCapacity();
+            stage_parallel = true;
+            stage_fail_fast = false;
+            stage_approval = false;
+            stage_on_failure = null;
+            stage_condition = null;
+            in_workflow_matrix = true;
         } else if (std.mem.startsWith(u8, trimmed, "[workflows.") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             // Flush pending stage (if any, with auto-generated name if needed)
@@ -1054,7 +1286,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_on_failure = null;
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_workflow_matrix_exclusions, &current_workflow_matrix_exclusion);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
             }
@@ -1117,6 +1355,15 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return err;
             };
             workflow_desc = null; workflow_retry_budget = null;
+            if (workflow_matrix) |*m| {
+                var matrix_mut = m.*;
+                matrix_mut.deinit(allocator);
+            }
+            workflow_matrix = null;
+            in_workflow_matrix = false;
+            pending_workflow_matrix_buffer.clearRetainingCapacity();
+            for (pending_workflow_matrix_exclusions.items) |*excl| excl.deinit(allocator);
+            pending_workflow_matrix_exclusions.clearRetainingCapacity();
         } else if (std.mem.startsWith(u8, trimmed, "[profiles.") and std.mem.endsWith(u8, trimmed, ".vars]") and !std.mem.startsWith(u8, trimmed, "[[")) {
             in_workspace = false;
             // Section: [profiles.X.vars] — vars override section within profile X (v1.86.0)
@@ -1254,7 +1501,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_workflow_matrix_exclusions, &current_workflow_matrix_exclusion);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
                 current_workflow = null;
@@ -1287,7 +1540,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_approval = false;
             stage_on_failure = null;
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
             }
@@ -1402,7 +1660,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 current_task = null;
             }
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
             }
@@ -1455,7 +1718,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 current_task = null;
             }
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
             }
@@ -1509,7 +1777,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 current_task = null;
             }
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
             }
@@ -2086,7 +2359,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             stage_on_failure = null;
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
-                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+                try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_workflow_matrix_exclusions, &current_workflow_matrix_exclusion);
+                try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+                if (workflow_matrix) |*wm| {
+                    var wm_mut = wm.*;
+                    wm_mut.deinit(allocator);
+                }
+                workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
                 current_workflow = null;
@@ -2706,6 +2985,64 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "retry_budget") and stage_name == null) {
                     // Workflow-level retry budget (v1.30.0)
                     workflow_retry_budget = std.fmt.parseInt(u32, value, 10) catch null;
+                } else if (std.mem.eql(u8, key, "matrix") and stage_name == null and !in_workflow_matrix) {
+                    // Workflow-level inline matrix: matrix = { os = ["linux", "macos"], version = ["1.0", "2.0"] }
+                    try parseInlineWorkflowMatrix(allocator, value, &workflow_matrix);
+                } else if (in_workflow_matrix and stage_name == null) {
+                    if (in_workflow_matrix_exclude) {
+                        // Inside [[workflows.X.matrix.exclude]] — parse exclusion conditions
+                        const duped_key = try allocator.dupe(u8, key);
+                        errdefer allocator.free(duped_key);
+                        const duped_val = try allocator.dupe(u8, stripQuotes(value));
+                        errdefer allocator.free(duped_val);
+                        try current_workflow_matrix_exclusion.put(duped_key, duped_val);
+                    } else if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
+                        // Inside [workflows.X.matrix] table section
+                        // Parse key=value pairs: os = ["linux", "macos"]
+                        // Array of values for this dimension
+                        const array_content = value[1 .. value.len - 1];
+                        var values = std.ArrayListUnmanaged([]const u8){};
+                        errdefer {
+                            for (values.items) |v| allocator.free(v);
+                            values.deinit(allocator);
+                        }
+                        var val_it = std.mem.splitScalar(u8, array_content, ',');
+                        while (val_it.next()) |item| {
+                            const trimmed_item = std.mem.trim(u8, item, " \t\"");
+                            if (trimmed_item.len > 0) {
+                                try values.append(allocator, try allocator.dupe(u8, trimmed_item));
+                            }
+                        }
+                        if (values.items.len > 0) {
+                            const duped_key = try allocator.dupe(u8, key);
+                            errdefer allocator.free(duped_key);
+
+                            if (workflow_matrix == null) {
+                                workflow_matrix = types.MatrixConfig{
+                                    .dimensions = &.{},
+                                    .exclude = &.{},
+                                };
+                            }
+
+                            // Append to existing dimensions or create new one
+                            var dims_list: std.ArrayListUnmanaged(types.MatrixDim) = .{};
+                            defer dims_list.deinit(allocator);
+
+                            if (workflow_matrix.?.dimensions.len > 0) {
+                                for (workflow_matrix.?.dimensions) |d| {
+                                    try dims_list.append(allocator, d);
+                                }
+                                allocator.free(workflow_matrix.?.dimensions);
+                            }
+
+                            try dims_list.append(allocator, types.MatrixDim{
+                                .key = duped_key,
+                                .values = try values.toOwnedSlice(allocator),
+                            });
+
+                            workflow_matrix.?.dimensions = try dims_list.toOwnedSlice(allocator);
+                        }
+                    }
                 }
             } else if (in_tools) {
                 // Inside [tools] section — parse tool = "version" pairs
@@ -4415,7 +4752,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending workflow
     if (current_workflow) |wf_name_slice| {
-        try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget);
+        try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_workflow_matrix_exclusions, &current_workflow_matrix_exclusion);
+        try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
+        if (workflow_matrix) |*wm| {
+            var wm_mut = wm.*;
+            wm_mut.deinit(allocator);
+        }
+        workflow_matrix = null;
         for (workflow_stages.items) |*s| s.deinit(allocator);
         workflow_stages.clearRetainingCapacity();
     }
