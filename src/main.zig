@@ -276,11 +276,11 @@ pub fn main() !void {
 
     var out_buf: [8192]u8 = undefined;
     const stdout = std.fs.File.stdout();
-    var out_writer = stdout.writer(&out_buf);
+    var out_writer = stdout.writerStreaming(&out_buf);
 
     var err_buf: [4096]u8 = undefined;
     const stderr_file = std.fs.File.stderr();
-    var err_writer = stderr_file.writer(&err_buf);
+    var err_writer = stderr_file.writerStreaming(&err_buf);
 
     const use_color = color.isTty(stdout);
     const result = run(allocator, args, &out_writer.interface, &err_writer.interface, use_color);
