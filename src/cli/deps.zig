@@ -110,9 +110,22 @@ fn handleCheck(allocator: std.mem.Allocator, args: []const []const u8, w: *std.I
     }
 
     // Check each dependency
+    if (!json_output) {
+        if (task_filter) |filter| {
+            try w.print("Checking dependencies for task '{s}'...\n", .{filter});
+        } else {
+            try w.print("Checking dependencies...\n", .{});
+        }
+    }
+
     var all_satisfied = true;
     var results: std.ArrayList(CheckResult) = .{};
-    defer results.deinit(allocator);
+    defer {
+        for (results.items) |result| {
+            if (result.installed) |installed| allocator.free(installed);
+        }
+        results.deinit(allocator);
+    }
 
     var dep_iter = dep_map.iterator();
     while (dep_iter.next()) |entry| {
