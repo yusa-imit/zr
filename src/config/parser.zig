@@ -19,6 +19,75 @@ const addTaskImpl = types.addTaskImpl;
 const addMatrixTask = matrix.addMatrixTask;
 const toolchain_types = @import("../toolchain/types.zig");
 
+/// Parse a `params = [{ name = "env", default = "dev", description = "..." }, ...]`
+/// array-of-inline-tables value (v1.75.0 runtime task parameters) into `out`.
+fn parseTaskParamsArray(
+    allocator: std.mem.Allocator,
+    value: []const u8,
+    out: *std.ArrayList(types.TaskParam),
+) !void {
+    const params_trimmed = std.mem.trim(u8, value, " \t");
+    if (!std.mem.startsWith(u8, params_trimmed, "[") or !std.mem.endsWith(u8, params_trimmed, "]")) return;
+    const params_str = params_trimmed[1 .. params_trimmed.len - 1];
+
+    // Split by top-level },{ to get individual inline tables
+    var param_tables = std.ArrayList([]const u8){};
+    defer param_tables.deinit(allocator);
+
+    var depth: u32 = 0;
+    var start: usize = 0;
+    for (params_str, 0..) |ch, i| {
+        if (ch == '{') depth += 1;
+        if (ch == '}') {
+            depth -= 1;
+            if (depth == 0) {
+                const table_str = std.mem.trim(u8, params_str[start .. i + 1], " \t,");
+                try param_tables.append(allocator, table_str);
+                start = i + 1;
+            }
+        }
+    }
+
+    // Parse each inline table
+    for (param_tables.items) |table_str| {
+        if (!std.mem.startsWith(u8, table_str, "{") or !std.mem.endsWith(u8, table_str, "}")) continue;
+        const inner = table_str[1 .. table_str.len - 1];
+
+        var param_name: ?[]const u8 = null;
+        var param_type: []const u8 = "string";
+        var param_default: ?[]const u8 = null;
+        var param_description: ?[]const u8 = null;
+
+        // Parse key=value pairs
+        var pairs = std.mem.splitScalar(u8, inner, ',');
+        while (pairs.next()) |pair_str| {
+            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+            const k = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+            const v = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+
+            if (std.mem.eql(u8, k, "name")) {
+                param_name = v;
+            } else if (std.mem.eql(u8, k, "type")) {
+                param_type = v;
+            } else if (std.mem.eql(u8, k, "default")) {
+                param_default = v;
+            } else if (std.mem.eql(u8, k, "description")) {
+                param_description = v;
+            }
+        }
+
+        if (param_name) |name| {
+            const param = types.TaskParam{
+                .name = try allocator.dupe(u8, name),
+                .type = try allocator.dupe(u8, param_type),
+                .default = if (param_default) |d| try allocator.dupe(u8, d) else null,
+                .description = if (param_description) |desc| try allocator.dupe(u8, desc) else null,
+            };
+            try out.append(allocator, param);
+        }
+    }
+}
+
 /// If the current task state represents a group config (no cmd, no deps, has env/cwd/timeout),
 /// store it in config.group_configs and return true. Otherwise return false.
 fn tryAddGroupConfig(
@@ -3843,8 +3912,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     // Task template reference (v1.29.0)
                     task_template = value;
                 } else if (std.mem.eql(u8, key, "params")) {
-                    // Task template parameters (v1.29.0)
-                    // Parse inline table: { port = "3000", host = "localhost" }
+                    // `params` is overloaded: an inline table applies template parameters
+                    // (v1.29.0), while an array of inline tables defines runtime task
+                    // parameters (v1.75.0, documented at docs/guides/parameterized-tasks.md).
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
                         const pairs_str = inner[1 .. inner.len - 1];
@@ -3858,6 +3928,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                 try task_params.append(allocator, .{ param_key, param_val });
                             }
                         }
+                    } else if (std.mem.startsWith(u8, inner, "[")) {
+                        try parseTaskParamsArray(allocator, value, &task_task_params);
                     }
                 } else if (std.mem.eql(u8, key, "output_file")) {
                     // Output file path for streaming task output (v1.37.0)
@@ -4074,69 +4146,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         task_confirm_if = try allocator.dupe(u8, confirm_if_trimmed);
                     }
                 } else if (std.mem.eql(u8, key, "task_params")) {
-                    // Runtime task parameters (v1.75.0)
-                    // Parse array: [{ name = "env", default = "dev", description = "..." }, ...]
-                    // Simplified inline table array parser (supports basic inline tables)
-                    const params_trimmed = std.mem.trim(u8, value, " \t");
-                    if (std.mem.startsWith(u8, params_trimmed, "[") and std.mem.endsWith(u8, params_trimmed, "]")) {
-                        const params_str = params_trimmed[1 .. params_trimmed.len - 1];
-                        // Split by },{ to get individual inline tables
-                        var param_tables = std.ArrayList([]const u8){};
-                        defer param_tables.deinit(allocator);
-
-                        var depth: u32 = 0;
-                        var start: usize = 0;
-                        for (params_str, 0..) |ch, i| {
-                            if (ch == '{') depth += 1;
-                            if (ch == '}') {
-                                depth -= 1;
-                                if (depth == 0) {
-                                    const table_str = std.mem.trim(u8, params_str[start..i + 1], " \t,");
-                                    try param_tables.append(allocator, table_str);
-                                    start = i + 1;
-                                }
-                            }
-                        }
-
-                        // Parse each inline table
-                        for (param_tables.items) |table_str| {
-                            if (!std.mem.startsWith(u8, table_str, "{") or !std.mem.endsWith(u8, table_str, "}")) continue;
-                            const inner = table_str[1 .. table_str.len - 1];
-
-                            var param_name: ?[]const u8 = null;
-                            var param_type: []const u8 = "string";
-                            var param_default: ?[]const u8 = null;
-                            var param_description: ?[]const u8 = null;
-
-                            // Parse key=value pairs
-                            var pairs = std.mem.splitScalar(u8, inner, ',');
-                            while (pairs.next()) |pair_str| {
-                                const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
-                                const k = std.mem.trim(u8, pair_str[0..eq], " \t\"");
-                                const v = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
-
-                                if (std.mem.eql(u8, k, "name")) {
-                                    param_name = v;
-                                } else if (std.mem.eql(u8, k, "type")) {
-                                    param_type = v;
-                                } else if (std.mem.eql(u8, k, "default")) {
-                                    param_default = v;
-                                } else if (std.mem.eql(u8, k, "description")) {
-                                    param_description = v;
-                                }
-                            }
-
-                            if (param_name) |name| {
-                                const param = types.TaskParam{
-                                    .name = try allocator.dupe(u8, name),
-                                    .type = try allocator.dupe(u8, param_type),
-                                    .default = if (param_default) |d| try allocator.dupe(u8, d) else null,
-                                    .description = if (param_description) |desc| try allocator.dupe(u8, desc) else null,
-                                };
-                                try task_task_params.append(allocator, param);
-                            }
-                        }
-                    }
+                    // Runtime task parameters (v1.75.0) — undocumented alias of the
+                    // array-of-tables form of `params`; kept for backward compatibility.
+                    try parseTaskParamsArray(allocator, value, &task_task_params);
                 } else if (std.mem.eql(u8, key, "input_prompt")) {
                     // v1.88.0: Interactive input prompts
                     // Parse array: [{name="ENV", prompt="...", default="staging", type="string", choices=["a","b"]}]
