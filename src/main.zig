@@ -754,7 +754,7 @@ fn run(
         "estimate",   "show",       "schedule",   "secrets",    "mcp",
         "explain",    "lsp",        "add",        "edit",       "failures",
         "template",   "which",      "ci",         "deps",       "artifacts",
-        "tags",       "status",
+        "tags",       "status",     "help",       "man",
     };
     var is_builtin = false;
     for (known_commands) |known| {
@@ -1779,6 +1779,23 @@ fn run(
                 show_last_run_tags = true;
             } else if (std.mem.eql(u8, arg, "--json")) {
                 json_output = true;
+            } else if (std.mem.startsWith(u8, arg, "--format=") or std.mem.eql(u8, arg, "--format")) {
+                const format_value = if (std.mem.startsWith(u8, arg, "--format=")) blk: {
+                    break :blk arg["--format=".len..];
+                } else blk: {
+                    i += 1;
+                    if (i >= effective_args.len) {
+                        try color.printError(ew, effective_color, "list: --format requires a value\n\n  Hint: zr list --format <text|json>\n", .{});
+                        return 1;
+                    }
+                    break :blk effective_args[i];
+                };
+                if (std.mem.eql(u8, format_value, "json")) {
+                    json_output = true;
+                } else if (!std.mem.eql(u8, format_value, "text")) {
+                    try color.printError(ew, effective_color, "list: unknown format '{s}'\n\n  Hint: Supported formats: text, json\n", .{format_value});
+                    return 1;
+                }
             } else if (!std.mem.startsWith(u8, arg, "--")) {
                 // First non-flag argument is the filter pattern
                 filter_pattern = arg;

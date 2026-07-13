@@ -73,10 +73,11 @@ test "publish: --bump requires value" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--bump" }, tmp_path);
     defer result.deinit();
-    // NOTE: cmdPublish prints errors but returns void (exit 0)
-    // Check that error message about missing bump value is printed
+    // Verify error exit code is set
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Check that error message uses new error format and mentions --bump requirement
     const output = if (result.stderr.len > 0) result.stderr else result.stdout;
-    try std.testing.expect(std.mem.indexOf(u8, output, "Error") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "✗") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "bump") != null);
 }
 
@@ -93,9 +94,10 @@ test "publish: invalid bump type shows error" {
 
     var result = try runZr(allocator, &.{ "--config", config, "publish", "--bump", "invalid" }, tmp_path);
     defer result.deinit();
-    // NOTE: cmdPublish prints errors but returns void (exit 0)
-    // Check that error message about invalid bump type is printed
+    // Verify error exit code is set
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    // Check that error message uses new error format and mentions invalid bump type
     const output = if (result.stderr.len > 0) result.stderr else result.stdout;
-    try std.testing.expect(std.mem.indexOf(u8, output, "Error") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "Invalid") != null or std.mem.indexOf(u8, output, "bump") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "✗") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Invalid") != null or std.mem.indexOf(u8, output, "invalid") != null);
 }

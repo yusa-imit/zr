@@ -3679,6 +3679,19 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (in_task_description and current_task != null) {
+                // Inside [tasks.X.description] section — parse short and long fields
+                if (std.mem.eql(u8, key, "short")) {
+                    task_desc_short = value;
+                } else if (std.mem.eql(u8, key, "long")) {
+                    task_desc_long = value;
+                }
+            } else if (in_task_outputs and current_task != null) {
+                // Inside [tasks.X.outputs] section — parse key=value pairs for output paths
+                // Example: "dist/" = "Compiled binaries"
+                // key is already trimmed, value is the description
+                try task_outputs_keys.append(allocator, key);
+                try task_outputs_values.append(allocator, value);
             } else if (current_task != null) {
                 // Task-level key=value parsing
                 if (std.mem.eql(u8, key, "cmd")) {
@@ -4345,19 +4358,6 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
-            } else if (in_task_description and current_task != null) {
-                // Inside [tasks.X.description] section — parse short and long fields
-                if (std.mem.eql(u8, key, "short")) {
-                    task_desc_short = value;
-                } else if (std.mem.eql(u8, key, "long")) {
-                    task_desc_long = value;
-                }
-            } else if (in_task_outputs and current_task != null) {
-                // Inside [tasks.X.outputs] section — parse key=value pairs for output paths
-                // Example: "dist/" = "Compiled binaries"
-                // key is already trimmed, value is the description
-                try task_outputs_keys.append(allocator, key);
-                try task_outputs_values.append(allocator, value);
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)
                 if (std.mem.eql(u8, key, "cmd")) {

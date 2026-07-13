@@ -156,9 +156,11 @@ test "121: list --tags with multiple tags filters correctly" {
     var result = try runZr(allocator, &.{ "--config", config, "list", "--tags=ci,build" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Should show build and test (both have ci tag), but not deploy
+    // Filter: --tags=ci,build (both tags required, AND logic)
+    // build has both "ci" AND "build", should appear
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    // test has "ci" but NOT "build", should NOT appear
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") == null);
 }
 
 test "150: list command with multiple flag combinations" {
@@ -441,7 +443,7 @@ test "273: list with complex filters --tags=build,test --format=json --tree" {
         \\
         \\[tasks.test]
         \\cmd = "echo testing"
-        \\tags = ["test", "ci"]
+        \\tags = ["test", "ci", "build"]
         \\deps = ["build"]
         \\
         \\[tasks.lint]
@@ -457,8 +459,10 @@ test "273: list with complex filters --tags=build,test --format=json --tree" {
     var result = try runZr(allocator, &.{ "list", "--tags=build,test", "--format=json", "--tree" }, tmp_path);
     defer result.deinit();
     try std.testing.expect(result.exit_code == 0);
-    // Should output JSON and include build/test but not lint
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null or std.mem.indexOf(u8, result.stdout, "test") != null);
+    // Filter: --tags=build,test (both tags required, AND logic)
+    // Only "test" has both "build" AND "test" tags, "build" and "lint" should not match
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"test\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"lint\"") == null);
 }
 
 test "286: list with no tasks in config displays empty message" {
@@ -481,7 +485,7 @@ test "286: list with no tasks in config displays empty message" {
     // Should handle empty task list gracefully
 }
 
-test "293: list with --format=yaml outputs valid YAML structure" {
+test "293: list with --format=yaml rejects unsupported format" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -501,12 +505,12 @@ test "293: list with --format=yaml outputs valid YAML structure" {
     defer zr_toml.close();
     try zr_toml.writeAll(yaml_test_toml);
 
+    // "list" only supports text/json — yaml is not implemented and must error,
+    // consistently whether passed as --format=yaml or --format yaml.
     var result = try runZr(allocator, &.{ "list", "--format=yaml" }, tmp_path);
     defer result.deinit();
-    try std.testing.expect(result.exit_code == 0);
-    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    // YAML output should contain build task
-    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null);
+    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "unknown format") != null);
 }
 
 test "304: list with --format=json and no tasks shows empty list" {
@@ -831,7 +835,7 @@ test "467: list with --format=yaml outputs YAML format" {
     try std.testing.expect(output.len > 0);
 }
 
-test "478: list with multiple --tags filters applies OR logic" {
+test "478: list with multiple --tags filters applies AND logic" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -841,15 +845,15 @@ test "478: list with multiple --tags filters applies OR logic" {
     const multi_tag_toml =
         \\[tasks.build]
         \\cmd = "echo building"
-        \\tags = ["build", "prod"]
+        \\tags = ["ci", "prod"]
         \\
         \\[tasks.test]
         \\cmd = "echo testing"
-        \\tags = ["test", "ci"]
+        \\tags = ["ci", "build"]
         \\
         \\[tasks.deploy]
         \\cmd = "echo deploying"
-        \\tags = ["prod", "ci"]
+        \\tags = ["ci", "prod", "build"]
         \\
     ;
 
@@ -860,10 +864,13 @@ test "478: list with multiple --tags filters applies OR logic" {
     var result = try runZr(allocator, &.{ "list", "--tags=build,ci" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Should show build (has "build"), test (has "ci"), and deploy (has "ci")
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    // Filter: --tags=build,ci (both tags required, AND logic)
+    // deploy has both "build" AND "ci", should appear
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "deploy") != null);
+    // test has both "build" AND "ci", should appear
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    // build has "ci" and "prod" but NOT "build" tag, should NOT appear
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") == null);
 }
 
 test "507: list with --format json produces parseable JSON output" {
@@ -1036,7 +1043,7 @@ test "684: list with --format json shows structured task data" {
     try std.testing.expect(std.mem.indexOf(u8, output, "build") != null or std.mem.indexOf(u8, output, "test") != null);
 }
 
-test "688: list with --tags and multiple OR conditions filters correctly" {
+test "688: list with --tags requires all tags (AND logic)" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1054,7 +1061,7 @@ test "688: list with --tags and multiple OR conditions filters correctly" {
         \\
         \\[tasks.deploy]
         \\cmd = "echo deploy"
-        \\tags = ["frontend", "prod"]
+        \\tags = ["frontend", "prod", "backend"]
         \\
         \\[tasks.lint]
         \\cmd = "echo lint"
@@ -1068,13 +1075,17 @@ test "688: list with --tags and multiple OR conditions filters correctly" {
     var result = try runZr(allocator, &.{ "--config", config, "list", "--tags", "backend,frontend" }, tmp_path);
     defer result.deinit();
 
-    // Should list all tasks with either backend OR frontend tags
+    // Filter: --tags backend,frontend (both tags required, AND logic)
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(output.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, output, "build") != null or
-        std.mem.indexOf(u8, output, "test") != null or
-        std.mem.indexOf(u8, output, "deploy") != null or
-        std.mem.indexOf(u8, output, "lint") != null);
+    // deploy has both "backend" AND "frontend", should appear
+    try std.testing.expect(std.mem.indexOf(u8, output, "deploy") != null);
+    // build only has "backend" (missing "frontend"), should NOT appear
+    try std.testing.expect(std.mem.indexOf(u8, output, "build") == null);
+    // test only has "backend" (missing "frontend"), should NOT appear
+    try std.testing.expect(std.mem.indexOf(u8, output, "test") == null);
+    // lint only has "frontend" (missing "backend"), should NOT appear
+    try std.testing.expect(std.mem.indexOf(u8, output, "lint") == null);
 }
 
 test "710: list with missing closing bracket is lenient" {
