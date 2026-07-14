@@ -950,6 +950,7 @@ fn workerFn(ctx: WorkerCtx) void {
         ctx.semaphore.post();
         ctx.allocator.free(ctx.task_name);
         if (ctx.cache_key) |k| ctx.allocator.free(k);
+        ctx.allocator.free(ctx.task_deps);
     }
 
     // Set CPU affinity if specified (v1.13.0)
@@ -2903,6 +2904,9 @@ pub fn run(
 
             // Collect all dependencies for dependency propagation (v1.74.0)
             // Includes deps, deps_serial, deps_if (conditional), deps_optional
+            // Owned by the spawned worker (freed in workerFn's defer) since the worker
+            // thread outlives this loop iteration — a stack-scoped ArrayList would be
+            // deinit'd before the thread reads it, causing a use-after-free.
             var all_deps = std.ArrayList([]const u8){};
             defer all_deps.deinit(allocator);
             try all_deps.appendSlice(allocator, task.deps);
@@ -2911,6 +2915,7 @@ pub fn run(
                 try all_deps.append(allocator, cond_dep.task);
             }
             try all_deps.appendSlice(allocator, task.deps_optional);
+            const owned_task_deps = try allocator.dupe([]const u8, all_deps.items);
 
             const ctx = WorkerCtx{
                 .allocator = allocator,
@@ -2961,7 +2966,7 @@ pub fn run(
                 .sources = task.sources,
                 .generates = task.generates,
                 .force_run = sched_config.force_run,
-                .task_deps = all_deps.items,
+                .task_deps = owned_task_deps,
                 .executed_tasks = &executed_tasks,
                 .env_file = task.env_file orelse &[_][]const u8{},
                 .task_cwd = task.cwd orelse sched_config.project_root,
@@ -2988,6 +2993,7 @@ pub fn run(
                 concurrency_sem.post();
                 allocator.free(owned_task_name);
                 if (cache_key) |k| allocator.free(k);
+                allocator.free(owned_task_deps);
                 failed.store(true, .release);
                 break;
             };
