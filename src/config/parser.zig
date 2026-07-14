@@ -1572,6 +1572,25 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
             }
+            // Flush pending stage (if any, with auto-generated name if needed) before the workflow itself
+            _ = try flushPendingStage(
+                allocator,
+                &workflow_stages,
+                stage_name,
+                &stage_tasks,
+                stage_parallel,
+                stage_fail_fast,
+                stage_condition,
+                stage_approval,
+                stage_on_failure,
+            );
+            stage_name = null;
+            stage_tasks.clearRetainingCapacity();
+            stage_parallel = true;
+            stage_fail_fast = false;
+            stage_condition = null;
+            stage_approval = false;
+            stage_on_failure = null;
             // Flush pending workflow (if any)
             if (current_workflow) |wf_name_slice| {
                 try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_workflow_matrix_exclusions, &current_workflow_matrix_exclusion);
@@ -1732,6 +1751,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
             }
+            _ = try flushPendingStage(
+                allocator,
+                &workflow_stages,
+                stage_name,
+                &stage_tasks,
+                stage_parallel,
+                stage_fail_fast,
+                stage_condition,
+                stage_approval,
+                stage_on_failure,
+            );
+            stage_name = null;
+            stage_tasks.clearRetainingCapacity();
+            stage_parallel = true;
+            stage_fail_fast = false;
+            stage_condition = null;
+            stage_approval = false;
+            stage_on_failure = null;
             if (current_workflow) |wf_name_slice| {
                 try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
                 if (workflow_matrix) |*wm| {
@@ -1790,6 +1827,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
             }
+            _ = try flushPendingStage(
+                allocator,
+                &workflow_stages,
+                stage_name,
+                &stage_tasks,
+                stage_parallel,
+                stage_fail_fast,
+                stage_condition,
+                stage_approval,
+                stage_on_failure,
+            );
+            stage_name = null;
+            stage_tasks.clearRetainingCapacity();
+            stage_parallel = true;
+            stage_fail_fast = false;
+            stage_condition = null;
+            stage_approval = false;
+            stage_on_failure = null;
             if (current_workflow) |wf_name_slice| {
                 try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
                 if (workflow_matrix) |*wm| {
@@ -1849,6 +1904,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
             }
+            _ = try flushPendingStage(
+                allocator,
+                &workflow_stages,
+                stage_name,
+                &stage_tasks,
+                stage_parallel,
+                stage_fail_fast,
+                stage_condition,
+                stage_approval,
+                stage_on_failure,
+            );
+            stage_name = null;
+            stage_tasks.clearRetainingCapacity();
+            stage_parallel = true;
+            stage_fail_fast = false;
+            stage_condition = null;
+            stage_approval = false;
+            stage_on_failure = null;
             if (current_workflow) |wf_name_slice| {
                 try config.addWorkflow(wf_name_slice, workflow_desc, workflow_stages.items, workflow_retry_budget, workflow_matrix);
                 if (workflow_matrix) |*wm| {
