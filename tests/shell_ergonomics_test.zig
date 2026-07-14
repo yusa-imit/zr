@@ -10,11 +10,11 @@ test "smart no-args: runs default task if it exists" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.default]
-        \\script = "echo running default"
+        \\[tasks.default]
+        \\cmd = "echo running default"
         \\
-        \\[task.build]
-        \\script = "echo building"
+        \\[tasks.build]
+        \\cmd = "echo building"
     });
 
     const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
@@ -32,8 +32,8 @@ test "smart no-args: runs single task if only one exists" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.build]
-        \\script = "echo building only task"
+        \\[tasks.build]
+        \\cmd = "echo building only task"
     });
 
     const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
@@ -93,8 +93,8 @@ test "history shortcut: !-N validates index format" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.test]
-        \\script = "echo test"
+        \\[tasks.test]
+        \\cmd = "echo test"
     });
 
     const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
@@ -118,8 +118,8 @@ test "history shortcut: unknown ! syntax fails gracefully" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.test]
-        \\script = "echo test"
+        \\[tasks.test]
+        \\cmd = "echo test"
     });
 
     const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
@@ -141,13 +141,13 @@ test "workflow shorthand: w/<name> runs workflow" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.build]
-        \\script = "echo building"
+        \\[tasks.build]
+        \\cmd = "echo building"
         \\
-        \\[task.test]
-        \\script = "echo testing"
+        \\[tasks.test]
+        \\cmd = "echo testing"
         \\
-        \\[workflow.ci]
+        \\[workflows.ci]
         \\tasks = ["build", "test"]
     });
 
@@ -167,7 +167,7 @@ test "workflow shorthand: w/ without name fails" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[workflow.ci]
+        \\[workflows.ci]
         \\tasks = ["build"]
     });
 
@@ -186,7 +186,7 @@ test "workflow shorthand: w/<nonexistent> fails gracefully" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[workflow.ci]
+        \\[workflows.ci]
         \\tasks = ["build"]
     });
 
@@ -210,8 +210,8 @@ test "combined: smart no-args respects --dry-run flag" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.default]
-        \\script = "echo running default"
+        \\[tasks.default]
+        \\cmd = "echo running default"
     });
 
     const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
@@ -230,10 +230,10 @@ test "combined: workflow shorthand respects --profile flag" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data =
-        \\[task.build]
-        \\script = "echo building"
+        \\[tasks.build]
+        \\cmd = "echo building"
         \\
-        \\[workflow.ci]
+        \\[workflows.ci]
         \\tasks = ["build"]
         \\
         \\[profiles.prod]

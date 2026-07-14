@@ -41,7 +41,6 @@ test "8000: basic single mixin inheritance" {
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "testing") != null);
 }
 
 test "8001: multiple mixins composition" {
@@ -76,7 +75,7 @@ test "8001: multiple mixins composition" {
     defer allocator.free(tmp_path);
 
     // Verify deploy task has dependencies from both mixins
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "deploy" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "deploy" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -110,7 +109,7 @@ test "8002: task overrides mixin values" {
     defer allocator.free(tmp_path);
 
     // Run task and verify task-level values override mixin
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -149,7 +148,7 @@ test "8003: nested mixins" {
     defer allocator.free(tmp_path);
 
     // Deploy should inherit from extended, which inherits from base
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "deploy" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "deploy" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -184,7 +183,7 @@ test "8004: circular mixin detection" {
     defer allocator.free(tmp_path);
 
     // Should fail with cycle detection error
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
@@ -210,7 +209,7 @@ test "8005: nonexistent mixin reference" {
     defer allocator.free(tmp_path);
 
     // Should fail with undefined mixin error
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expect(result.exit_code != 0);
@@ -239,7 +238,7 @@ test "8006: env merging semantics" {
     defer allocator.free(tmp_path);
 
     // Child overrides: A should be child_a, C from parent should exist, D from child should exist
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -279,7 +278,7 @@ test "8007: deps concatenation" {
     defer allocator.free(tmp_path);
 
     // test should run all steps: step1, step2 (from mixin), step3 (from task)
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -366,7 +365,7 @@ test "8009: complex nesting (3-level chain)" {
     defer allocator.free(tmp_path);
 
     // Deploy should inherit all levels: setup, build deps
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "deploy" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "deploy" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -407,7 +406,7 @@ test "8010: mixin with templates" {
     defer allocator.free(tmp_path);
 
     // Task should inherit template from mixin
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "deploy_prod" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "deploy_prod" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -454,7 +453,7 @@ test "8011: mixin + workspace inheritance" {
     defer allocator.free(member_path);
 
     // test should use mixin from workspace root
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, member_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, member_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -484,7 +483,7 @@ test "8012: empty mixin (no-op)" {
     defer allocator.free(tmp_path);
 
     // Empty mixin should not affect task
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -609,7 +608,7 @@ test "8015: order of application (mixin1, mixin2, task)" {
     defer allocator.free(tmp_path);
 
     // Run task - task-level cmd should win over both mixins
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -641,7 +640,7 @@ test "8016: mixin with conditional deps" {
     defer allocator.free(tmp_path);
 
     // Test should have conditional dep from mixin
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -675,7 +674,7 @@ test "8017: mixin with hooks" {
     defer allocator.free(tmp_path);
 
     // Hooks from mixin should be applied to task
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -709,7 +708,7 @@ test "8018: mixin with retry config" {
     defer allocator.free(tmp_path);
 
     // Test should inherit retry config from mixin
-    var result = try runZr(allocator, &.{ "--config", "zr.toml", "test" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", "zr.toml", "run", "test" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);

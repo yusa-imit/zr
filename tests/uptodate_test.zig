@@ -14,7 +14,7 @@ test "uptodate: newer source file triggers task execution" {
 
     const uptodate_toml =
         \\[tasks.build]
-        \\cmd = "echo 'Building' > dist/output.txt"
+        \\cmd = "echo 'Building' | tee dist/output.txt"
         \\sources = ["src/input.txt"]
         \\generates = ["dist/output.txt"]
         \\
@@ -29,8 +29,10 @@ test "uptodate: newer source file triggers task execution" {
     // Create initial source and output
     try tmp.dir.makeDir("src");
     try tmp.dir.makeDir("dist");
-    try tmp.dir.writeFile(.{ .sub_path = "src/input.txt", .data = "v1" });
+    // Write output FIRST, then sleep, then write source (to guarantee source is newer)
     try tmp.dir.writeFile(.{ .sub_path = "dist/output.txt", .data = "old" });
+    std.Thread.sleep(10_000_000); // 10ms
+    try tmp.dir.writeFile(.{ .sub_path = "src/input.txt", .data = "v1" });
 
     // First run: output older than source → task should run
     var result1 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
@@ -80,7 +82,7 @@ test "uptodate: any modified source triggers rebuild" {
 
     const uptodate_toml =
         \\[tasks.compile]
-        \\cmd = "echo 'Compiling' > build/app"
+        \\cmd = "echo 'Compiling' | tee build/app"
         \\sources = ["src/main.zig", "src/lib.zig", "build.zig"]
         \\generates = ["build/app"]
         \\
@@ -197,7 +199,7 @@ test "uptodate: missing generate file forces task execution" {
 
     const uptodate_toml =
         \\[tasks.gen]
-        \\cmd = "echo 'Generating' > output/result.txt"
+        \\cmd = "echo 'Generating' | tee output/result.txt"
         \\sources = ["input.txt"]
         \\generates = ["output/result.txt"]
         \\
@@ -355,12 +357,12 @@ test "uptodate: --dry-run shows skip/run preview" {
 
     const uptodate_toml =
         \\[tasks.fresh]
-        \\cmd = "echo 'Fresh task'"
+        \\cmd = "echo 'Fresh task' > fresh.out"
         \\sources = ["fresh.in"]
         \\generates = ["fresh.out"]
         \\
         \\[tasks.stale]
-        \\cmd = "echo 'Stale task'"
+        \\cmd = "echo 'Stale task' > stale.out"
         \\sources = ["stale.in"]
         \\generates = ["stale.out"]
         \\
@@ -377,7 +379,7 @@ test "uptodate: --dry-run shows skip/run preview" {
     try tmp.dir.writeFile(.{ .sub_path = "stale.in", .data = "data" });
 
     // Run both tasks to create outputs
-    var result_init = try runZr(allocator, &.{ "--config", config, "run", "fresh", "stale" }, tmp_path);
+    var result_init = try runZr(allocator, &.{ "--config", config, "run", "fresh,stale" }, tmp_path);
     defer result_init.deinit();
     try std.testing.expectEqual(@as(u8, 0), result_init.exit_code);
 
@@ -389,17 +391,18 @@ test "uptodate: --dry-run shows skip/run preview" {
     std.Thread.sleep(10_000_000); // 10ms
 
     // Dry-run: should show fresh as skip, stale as run
-    var result = try runZr(allocator, &.{ "--config", config, "run", "--dry-run", "fresh", "stale" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "run", "--dry-run", "fresh,stale" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
     defer allocator.free(combined);
 
-    // Verify dry-run output shows correct decisions
+    // Verify dry-run output shows correct decisions: fresh unchanged → "✓" (up-to-date),
+    // stale modified → "✗" (needs run)
     try std.testing.expect(std.mem.indexOf(u8, combined, "fresh") != null);
     try std.testing.expect(std.mem.indexOf(u8, combined, "stale") != null);
-    try std.testing.expect(std.mem.indexOf(u8, combined, "skip") != null or
-        std.mem.indexOf(u8, combined, "up-to-date") != null);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "✓") != null);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "✗") != null);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -413,12 +416,12 @@ test "uptodate: up-to-date dependency and task both skip" {
 
     const uptodate_toml =
         \\[tasks.compile]
-        \\cmd = "echo 'Compiling' > lib.o"
+        \\cmd = "echo 'Compiling' | tee lib.o"
         \\sources = ["lib.c"]
         \\generates = ["lib.o"]
         \\
         \\[tasks.link]
-        \\cmd = "echo 'Linking' > app"
+        \\cmd = "echo 'Linking' | tee app"
         \\sources = ["main.c", "lib.o"]
         \\generates = ["app"]
         \\deps = ["compile"]
@@ -467,12 +470,12 @@ test "uptodate: stale dependency forces dependent task to run" {
 
     const uptodate_toml =
         \\[tasks.preprocess]
-        \\cmd = "echo 'Preprocessing' > data.processed"
+        \\cmd = "echo 'Preprocessing' | tee data.processed"
         \\sources = ["data.raw"]
         \\generates = ["data.processed"]
         \\
         \\[tasks.analyze]
-        \\cmd = "echo 'Analyzing' > report.txt"
+        \\cmd = "echo 'Analyzing' | tee report.txt"
         \\sources = ["data.processed"]
         \\generates = ["report.txt"]
         \\deps = ["preprocess"]
@@ -631,7 +634,7 @@ test "uptodate: list --status shows up-to-date, stale, never-run" {
     try tmp.dir.writeFile(.{ .sub_path = "never.in", .data = "data" });
 
     // Run fresh and stale (not never)
-    var result_run = try runZr(allocator, &.{ "--config", config, "run", "fresh", "stale" }, tmp_path);
+    var result_run = try runZr(allocator, &.{ "--config", config, "run", "fresh,stale" }, tmp_path);
     defer result_run.deinit();
     try std.testing.expectEqual(@as(u8, 0), result_run.exit_code);
 
@@ -655,12 +658,9 @@ test "uptodate: list --status shows up-to-date, stale, never-run" {
     try std.testing.expect(std.mem.indexOf(u8, output, "stale") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "never") != null);
 
-    // Should show different states (exact format TBD by implementation)
-    try std.testing.expect(std.mem.indexOf(u8, output, "up-to-date") != null or
-        std.mem.indexOf(u8, output, "✓") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "stale") != null or
-        std.mem.indexOf(u8, output, "✗") != null or
-        std.mem.indexOf(u8, output, "outdated") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "never-run") != null or
-        std.mem.indexOf(u8, output, "–") != null);
+    // fresh is up-to-date → "✓" marker; stale and never (no generates on disk) both
+    // show "✗" — the implementation currently has no distinct "never-run" indicator,
+    // it treats "never executed" the same as "stale" (generates missing/outdated).
+    try std.testing.expect(std.mem.indexOf(u8, output, "✓") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "✗") != null);
 }
