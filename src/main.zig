@@ -740,6 +740,88 @@ fn run(
         return 0;
     }
 
+    // Workflow shorthand: w/<workflow> → workflow <workflow>
+    // Must run before the is_builtin/alias gate below, since "w/foo" is neither
+    // a known command nor an alias and would otherwise hit the unknown-command error.
+    if (std.mem.startsWith(u8, cmd, "w/")) {
+        const workflow_name = cmd[2..]; // Skip "w/"
+        if (workflow_name.len == 0) {
+            try color.printError(ew, effective_color, "w/: missing workflow name\n\n  Hint: zr w/<workflow-name>\n", .{});
+            return 1;
+        }
+        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent, &.{});
+    }
+
+    // History-based shortcuts: !! (last task), !-N (Nth-to-last task)
+    // Must also run before the is_builtin/alias gate for the same reason as w/ above.
+    if (std.mem.startsWith(u8, cmd, "!")) {
+        // Validate syntax before touching the history store — a malformed index
+        // (e.g. !-0, !-abc) or unknown syntax should fail the same way regardless
+        // of whether any history has been recorded yet.
+        var target_index: usize = 0;
+        if (std.mem.eql(u8, cmd, "!!")) {
+            // Last task (index 0 in reverse order)
+            target_index = 0;
+        } else if (std.mem.startsWith(u8, cmd, "!-")) {
+            // !-N → Nth-to-last task
+            const offset_str = cmd[2..];
+            const offset = std.fmt.parseInt(usize, offset_str, 10) catch {
+                try color.printError(ew, effective_color, "Invalid history index: {s}\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{cmd});
+                return 1;
+            };
+            if (offset == 0) {
+                try color.printError(ew, effective_color, "Invalid history index: !-0\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{});
+                return 1;
+            }
+            target_index = offset - 1; // !-1 == last (index 0), !-2 == 2nd-to-last (index 1)
+        } else {
+            // Unknown history syntax
+            try color.printError(ew, effective_color, "Unknown history syntax: {s}\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{cmd});
+            return 1;
+        }
+
+        // Get history file path
+        const home = try std.process.getEnvVarOwned(allocator, "HOME");
+        defer allocator.free(home);
+        const history_path = try std.fs.path.join(allocator, &[_][]const u8{
+            home,
+            ".zr_history",
+        });
+        defer allocator.free(history_path);
+
+        const store = try history.Store.init(allocator, history_path);
+        defer store.deinit();
+
+        var records = try store.loadLast(allocator, 100); // Load last 100 for indexing
+        defer {
+            for (records.items) |r| r.deinit(allocator);
+            records.deinit(allocator);
+        }
+
+        if (records.items.len == 0) {
+            try color.printError(ew, effective_color, "No task history found\n\n  Hint: Run a task first to populate history\n", .{});
+            return 1;
+        }
+
+        if (target_index >= records.items.len) {
+            try color.printError(ew, effective_color, "History index out of range: only {d} tasks in history\n", .{records.items.len});
+            return 1;
+        }
+
+        // Reverse index (loadLast returns newest first)
+        const task_name = records.items[records.items.len - 1 - target_index].task_name;
+
+        // Print info message
+        try color.printInfo(effective_w, effective_color, "Re-running: {s}\n", .{task_name});
+
+        // Re-run the task (use 'run' command with the task name)
+        var empty_params = std.StringHashMap([]const u8).init(allocator);
+        defer empty_params.deinit();
+        var empty_cli_env4 = std.StringHashMap([]const u8).init(allocator);
+        defer empty_cli_env4.deinit();
+        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env4, &.{}, &.{}, null, false, true, false);
+    }
+
     // Alias expansion: if cmd is not a known built-in, check if it's an alias
     const known_commands = [_][]const u8{
         "run",        "watch",      "workflow",   "list",
@@ -850,80 +932,6 @@ fn run(
             try printUnknownCommandError(allocator, cmd, &known_commands, ew, effective_color);
             return 1;
         }
-    }
-
-    // Workflow shorthand: w/<workflow> → workflow <workflow>
-    if (std.mem.startsWith(u8, cmd, "w/")) {
-        const workflow_name = cmd[2..]; // Skip "w/"
-        if (workflow_name.len == 0) {
-            try color.printError(ew, effective_color, "w/: missing workflow name\n\n  Hint: zr w/<workflow-name>\n", .{});
-            return 1;
-        }
-        return run_cmd.cmdWorkflow(allocator, workflow_name, profile_name, dry_run, max_jobs, config_path, false, effective_w, ew, effective_color, filter_options, silent, &.{});
-    }
-
-    // History-based shortcuts: !! (last task), !-N (Nth-to-last task)
-    if (std.mem.startsWith(u8, cmd, "!")) {
-        // Get history file path
-        const history_path = try std.fs.path.join(allocator, &[_][]const u8{
-            try std.process.getEnvVarOwned(allocator, "HOME"),
-            ".zr_history",
-        });
-        defer allocator.free(history_path);
-
-        const store = try history.Store.init(allocator, history_path);
-        defer store.deinit();
-
-        var records = try store.loadLast(allocator, 100); // Load last 100 for indexing
-        defer {
-            for (records.items) |r| r.deinit(allocator);
-            records.deinit(allocator);
-        }
-
-        if (records.items.len == 0) {
-            try color.printError(ew, effective_color, "No task history found\n\n  Hint: Run a task first to populate history\n", .{});
-            return 1;
-        }
-
-        var target_index: usize = 0;
-        if (std.mem.eql(u8, cmd, "!!")) {
-            // Last task (index 0 in reverse order)
-            target_index = 0;
-        } else if (std.mem.startsWith(u8, cmd, "!-")) {
-            // !-N → Nth-to-last task
-            const offset_str = cmd[2..];
-            const offset = std.fmt.parseInt(usize, offset_str, 10) catch {
-                try color.printError(ew, effective_color, "Invalid history index: {s}\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{cmd});
-                return 1;
-            };
-            if (offset == 0) {
-                try color.printError(ew, effective_color, "Invalid history index: !-0\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{});
-                return 1;
-            }
-            target_index = offset - 1; // !-1 == last (index 0), !-2 == 2nd-to-last (index 1)
-        } else {
-            // Unknown history syntax
-            try color.printError(ew, effective_color, "Unknown history syntax: {s}\n\n  Hint: Use !! for last task or !-N for Nth-to-last (e.g., !-2)\n", .{cmd});
-            return 1;
-        }
-
-        if (target_index >= records.items.len) {
-            try color.printError(ew, effective_color, "History index out of range: only {d} tasks in history\n", .{records.items.len});
-            return 1;
-        }
-
-        // Reverse index (loadLast returns newest first)
-        const task_name = records.items[records.items.len - 1 - target_index].task_name;
-
-        // Print info message
-        try color.printInfo(effective_w, effective_color, "Re-running: {s}\n", .{task_name});
-
-        // Re-run the task (use 'run' command with the task name)
-        var empty_params = std.StringHashMap([]const u8).init(allocator);
-        defer empty_params.deinit();
-        var empty_cli_env4 = std.StringHashMap([]const u8).init(allocator);
-        defer empty_cli_env4.deinit();
-        return run_cmd.cmdRun(allocator, task_name, profile_name, dry_run, force_run, max_jobs, config_path, json_output, enable_monitor, effective_w, ew, effective_color, null, filter_options, silent, show_env, empty_params, &.{}, false, false, false, std.StringHashMap([]const u8).init(allocator), false, false, empty_cli_env4, &.{}, &.{}, null, false, true, false);
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
