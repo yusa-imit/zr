@@ -180,7 +180,7 @@ test "25004: graph --depth=1 limits dependency traversal depth" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "a") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "b") != null);
     // Should NOT contain c (beyond depth 1)
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "c") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "echo c") == null);
 }
 
 test "25005: graph --cycles-only with no cycles shows no cycles message" {

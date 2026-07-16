@@ -178,10 +178,7 @@ test "3922: graph --type=tasks --format=json with conditional dependencies" {
     const toml =
         \\[tasks.main]
         \\cmd = "echo main"
-        \\
-        \\[[tasks.main.deps_if]]
-        \\task = "optional"
-        \\condition = "env.DEBUG == 'true'"
+        \\deps_if = [{ task = "optional", condition = "env.DEBUG == 'true'" }]
         \\
         \\[tasks.optional]
         \\cmd = "echo optional"

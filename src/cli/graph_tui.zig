@@ -81,6 +81,14 @@ fn enterRawMode() !if (IS_POSIX) std.posix.termios else void {
     if (comptime !IS_POSIX) return;
 
     const stdin = std.fs.File.stdin();
+
+    // Check if stdin is a terminal before calling tcgetattr.
+    // On closed/invalid fd (EBADF), tcgetattr would panic with unreachable.
+    // isatty safely returns false for any error including closed fd.
+    if (!std.posix.isatty(stdin.handle)) {
+        return error.NotATerminal;
+    }
+
     const original = try std.posix.tcgetattr(stdin.handle);
     var raw = original;
 

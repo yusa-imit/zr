@@ -1,6 +1,7 @@
 const std = @import("std");
 const helpers = @import("helpers.zig");
 const runZr = helpers.runZr;
+const runZrEnv = helpers.runZrEnv;
 const writeTmpConfig = helpers.writeTmpConfig;
 const DEPS_TOML = helpers.DEPS_TOML;
 
@@ -1152,7 +1153,15 @@ test "552: graph with --affected but no git repo shows appropriate error" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    var result = try runZr(allocator, &.{ "--config", config, "graph", "--affected", "HEAD" }, tmp_path);
+    // Use GIT_CEILING_DIRECTORIES to prevent git from walking up to zr's own .git.
+    // Git only honors a ceiling entry when it is a *parent* of the search start —
+    // setting it to tmp_path itself has no effect since tmp_path has no .git yet.
+    const parent_path = std.fs.path.dirname(tmp_path) orelse tmp_path;
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+    try env_map.put("GIT_CEILING_DIRECTORIES", parent_path);
+
+    var result = try runZrEnv(allocator, &.{ "--config", config, "graph", "--affected", "HEAD" }, tmp_path, &env_map);
     defer result.deinit();
     // Should fail with error about git not available / not a git repo
     try std.testing.expect(result.exit_code != 0);
