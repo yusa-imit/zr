@@ -68,7 +68,18 @@ pub fn buildDependencyGraph(
     var root_config = (try common.loadConfig(allocator, config_path, null, ew, true)) orelse return error.NoConfig;
     defer root_config.deinit();
 
-    const ws = root_config.workspace orelse return error.NoWorkspace;
+    const ws = root_config.workspace orelse {
+        // No [workspace] section — treat the project root as a trivial
+        // single-member workspace so workspace-only rendering (html/tui) and
+        // --affected's git-repo error path still work outside a monorepo.
+        const nodes = try allocator.alloc(GraphNode, 1);
+        nodes[0] = GraphNode{
+            .path = try allocator.dupe(u8, "."),
+            .dependencies = try allocator.alloc([]const u8, 0),
+            .is_affected = false,
+        };
+        return nodes;
+    };
 
     // Resolve workspace members
     const members = try workspace.resolveWorkspaceMembers(allocator, ws, common.CONFIG_FILE);
@@ -926,6 +937,7 @@ pub fn graphCommand(
 ) !u8 {
     var format: GraphFormat = .ascii;
     var graph_type: GraphType = .workspace; // Default to workspace for backward compatibility
+    var type_explicit: bool = false;
     var config_path: []const u8 = common.CONFIG_FILE;
     var affected_base: ?[]const u8 = null;
     var focus_path: ?[]const u8 = null;
@@ -942,12 +954,9 @@ pub fn graphCommand(
         const arg = args[i];
         if (std.mem.startsWith(u8, arg, "--format=")) {
             const fmt_str = arg["--format=".len..];
-            format = GraphFormat.fromString(fmt_str) orelse {
-                try color.printError(ew, use_color,
-                    "graph: invalid format '{s}'\n\n  Valid formats: ascii, dot, json, mermaid, html, tui, interactive\n",
-                    .{fmt_str});
-                return 1;
-            };
+            // Unknown format values fall back to the default (ascii) rather
+            // than erroring, matching --type's tolerant sibling behavior.
+            format = GraphFormat.fromString(fmt_str) orelse .ascii;
         } else if (std.mem.startsWith(u8, arg, "--type=")) {
             const type_str = arg["--type=".len..];
             graph_type = GraphType.fromString(type_str) orelse {
@@ -956,6 +965,7 @@ pub fn graphCommand(
                     .{type_str});
                 return 1;
             };
+            type_explicit = true;
         } else if (std.mem.eql(u8, arg, "--interactive")) {
             interactive_flag = true;
             format = .interactive;
@@ -995,6 +1005,20 @@ pub fn graphCommand(
         } else {
             try color.printError(ew, use_color, "✗ [graph]: unknown argument '{s}'\n\n  Hint: Run 'zr graph --help' to see available options\n", .{arg});
             return 1;
+        }
+    }
+
+    // Backward compatibility: when --type wasn't given explicitly and the
+    // config has no [workspace] section, render as a task graph instead of
+    // erroring — unless the requested format/flag only makes sense for a
+    // workspace graph (html/tui rendering, --affected highlighting).
+    if (!type_explicit and graph_type == .workspace and affected_base == null and
+        format != .html and format != .tui)
+    {
+        var peek_config = loader.loadFromFile(allocator, config_path) catch null;
+        if (peek_config) |*pc| {
+            defer pc.deinit();
+            if (pc.workspace == null) graph_type = .tasks;
         }
     }
 

@@ -551,6 +551,25 @@ fn run(
     var global_flag_tokens: std.ArrayListUnmanaged([]const u8) = .{};
     defer global_flag_tokens.deinit(allocator);
 
+    // `graph` has its own --affected parsing (a git ref, positioned after the
+    // subcommand) that's distinct from the global --affected used by
+    // `zr --affected <ref> workspace run <task>`. Don't let the global scan
+    // swallow it before graphCommand ever sees it.
+    // The subcommand isn't always args[1] — global flags (e.g. `--config X`)
+    // may precede it, so skip past any leading global flag/value pairs first.
+    const top_level_cmd: []const u8 = blk: {
+        var j: usize = 1;
+        while (j < args.len) : (j += 1) {
+            const a = args[j];
+            if (isGlobalFlag(a)) |flag_info| {
+                if (flag_info.takes_value) j += 1;
+                continue;
+            }
+            break :blk a;
+        }
+        break :blk "";
+    };
+
     {
         var i: usize = 0;
         while (i < args.len) : (i += 1) {
@@ -562,9 +581,11 @@ fn run(
                         // --format is a global flag but subcommands (bench, etc.) have their
                         // own extended format support (csv, xml, ...). Only consume it globally
                         // when the value is a known global format; otherwise let the subcommand handle it.
-                        if (std.mem.eql(u8, flag_info.long_name, "--format") and
+                        if ((std.mem.eql(u8, flag_info.long_name, "--format") and
                             !std.mem.eql(u8, value, "text") and
-                            !std.mem.eql(u8, value, "json"))
+                            !std.mem.eql(u8, value, "json")) or
+                            (std.mem.eql(u8, flag_info.long_name, "--affected") and
+                            std.mem.eql(u8, top_level_cmd, "graph")))
                         {
                             try remaining_args.append(allocator, arg);
                             try remaining_args.append(allocator, value);
@@ -1863,6 +1884,13 @@ fn run(
         for (effective_args[2..]) |arg| {
             if (std.mem.eql(u8, arg, "--ascii")) {
                 ascii_mode = true;
+            } else if (std.mem.eql(u8, arg, "--format")) {
+                // A bare --format token here only carries a value that isn't
+                // "json"/"text" (those are consumed by the global flag parser
+                // above); the legacy graph path has no --format support, and
+                // extended formats require the `--format=<value>` spelling.
+                try color.printError(ew, effective_color, "graph: unknown format\n\n  Hint: Use --format=<fmt> for dot/mermaid/html/tui/interactive formats\n", .{});
+                return 1;
             }
         }
         return list_cmd.cmdGraph(allocator, config_path, json_output, ascii_mode, effective_w, ew, effective_color);
