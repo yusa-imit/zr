@@ -409,15 +409,23 @@ const GlobalFlagParser = sailor.arg.Parser(&global_flags);
 const GlobalFlagInfo = struct {
     long_name: []const u8,
     takes_value: bool,
+    inline_value: ?[]const u8 = null,
 };
 
 /// Check if an arg token is a known global flag.
 /// Returns flag info if recognized, null otherwise (passed through to subcommand).
+/// Supports both `--flag value` and `--flag=value` forms for value-taking flags.
 fn isGlobalFlag(arg: []const u8) ?GlobalFlagInfo {
     if (std.mem.startsWith(u8, arg, "--")) {
-        const name = arg[2..];
+        const rest = arg[2..];
+        const eq_pos = std.mem.indexOfScalar(u8, rest, '=');
+        const name = if (eq_pos) |pos| rest[0..pos] else rest;
         inline for (global_flags) |flag| {
             if (std.mem.eql(u8, name, flag.name)) {
+                if (eq_pos) |pos| {
+                    if (flag.type == .bool) return null; // bool flags don't take `=value`
+                    return .{ .long_name = "--" ++ flag.name, .takes_value = true, .inline_value = rest[pos + 1 ..] };
+                }
                 return .{ .long_name = "--" ++ flag.name, .takes_value = flag.type != .bool };
             }
         }
@@ -562,7 +570,7 @@ fn run(
         while (j < args.len) : (j += 1) {
             const a = args[j];
             if (isGlobalFlag(a)) |flag_info| {
-                if (flag_info.takes_value) j += 1;
+                if (flag_info.takes_value and flag_info.inline_value == null) j += 1;
                 continue;
             }
             break :blk a;
@@ -576,7 +584,20 @@ fn run(
             const arg = args[i];
             if (isGlobalFlag(arg)) |flag_info| {
                 if (flag_info.takes_value) {
-                    if (i + 1 < args.len) {
+                    if (flag_info.inline_value) |value| {
+                        // `--flag=value` form — value is embedded in this single token.
+                        if ((std.mem.eql(u8, flag_info.long_name, "--format") and
+                            !std.mem.eql(u8, value, "text") and
+                            !std.mem.eql(u8, value, "json")) or
+                            (std.mem.eql(u8, flag_info.long_name, "--affected") and
+                            std.mem.eql(u8, top_level_cmd, "graph")))
+                        {
+                            try remaining_args.append(allocator, arg);
+                        } else {
+                            try global_flag_tokens.append(allocator, flag_info.long_name);
+                            try global_flag_tokens.append(allocator, value);
+                        }
+                    } else if (i + 1 < args.len) {
                         const value = args[i + 1];
                         // --format is a global flag but subcommands (bench, etc.) have their
                         // own extended format support (csv, xml, ...). Only consume it globally
