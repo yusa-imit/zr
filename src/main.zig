@@ -1386,6 +1386,39 @@ fn run(
             } else if (std.mem.eql(u8, arg, "--explain")) {
                 // --explain flag is handled separately below
                 continue;
+            } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                // `zr run <task> --help` — show the task's description and declared params.
+                var help_config = (try common.loadConfig(allocator, config_path, profile_name, ew, effective_color)) orelse return 1;
+                defer help_config.deinit();
+                const task = help_config.tasks.get(task_name) orelse {
+                    try color.printError(ew, effective_color, "run: Unknown task '{s}'\n", .{task_name});
+                    return 1;
+                };
+                try effective_w.print("Usage: zr run {s} [PARAMS...]\n\n", .{task_name});
+                if (task.description) |desc| {
+                    try effective_w.print("{s}\n\n", .{desc.getShort()});
+                }
+                if (task.task_params.len > 0) {
+                    try color.printBold(effective_w, effective_color, "Params:\n", .{});
+                    for (task.task_params) |param| {
+                        try effective_w.print("  {s}", .{param.name});
+                        if (param.type.len > 0 and !std.mem.eql(u8, param.type, "string")) {
+                            try effective_w.print(" ({s})", .{param.type});
+                        }
+                        if (param.default) |default| {
+                            try effective_w.print(" [default: {s}]", .{default});
+                        } else {
+                            try effective_w.print(" (required)", .{});
+                        }
+                        if (param.description) |pdesc| {
+                            try effective_w.print(" — {s}", .{pdesc});
+                        }
+                        try effective_w.print("\n", .{});
+                    }
+                } else {
+                    try effective_w.print("(no declared params)\n", .{});
+                }
+                return 0;
             } else if (std.mem.eql(u8, arg, "--junit")) {
                 i += 1;
                 if (i >= effective_args.len) {

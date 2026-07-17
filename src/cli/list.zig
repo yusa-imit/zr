@@ -944,6 +944,18 @@ pub fn cmdList(
             if (show_source and task.source_file != null) {
                 try color.printDim(w, use_color, " [{s}]", .{task.source_file.?});
             }
+            // Show declared params as a compact hint, e.g. "(env=dev, region=us-east-1)"
+            if (task.task_params.len > 0) {
+                try color.printDim(w, use_color, " (", .{});
+                for (task.task_params, 0..) |param, pi| {
+                    if (pi > 0) try color.printDim(w, use_color, ", ", .{});
+                    try color.printDim(w, use_color, "{s}", .{param.name});
+                    if (param.default) |default| {
+                        try color.printDim(w, use_color, "={s}", .{default});
+                    }
+                }
+                try color.printDim(w, use_color, ")", .{});
+            }
             if (task.description) |desc| {
                 try color.printDim(w, use_color, " {s}", .{desc.getShort()});
             }
