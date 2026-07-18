@@ -72,14 +72,17 @@ fn getChangedFiles(
     base_ref: []const u8,
     cwd: []const u8,
 ) ![][]const u8 {
-    // Build git command: git diff --name-only <base_ref>...HEAD
+    // Build git command: git diff --name-only <base_ref>
+    // Two-dot form diffs base_ref's tree against the working tree directly, so it
+    // picks up both commits since base_ref AND uncommitted local changes. The
+    // previous `<base_ref>...HEAD` (merge-base) form only compared committed
+    // history and silently ignored any uncommitted working-tree changes.
     const args = [_][]const u8{
         "git",
         "diff",
         "--name-only",
-        try std.fmt.allocPrint(allocator, "{s}...HEAD", .{base_ref}),
+        base_ref,
     };
-    defer allocator.free(args[3]);
 
     var child = std.process.Child.init(&args, allocator);
     child.cwd = cwd;
