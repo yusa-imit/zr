@@ -357,7 +357,7 @@ pub fn cmdValidate(
                 var diag_ctx = expr.DiagContext.init(allocator);
                 defer diag_ctx.deinit();
 
-                const result = expr.evalConditionWithDiag(allocator, condition, null, null, &diag_ctx) catch |err| {
+                expr.checkExpressionSyntax(allocator, condition, &diag_ctx) catch |err| {
                     try color.printError(err_writer, use_color,
                         "✗ Task '{s}': invalid expression syntax in 'condition'\n",
                         .{task_name},
@@ -369,7 +369,6 @@ pub fn cmdValidate(
                     error_count += 1;
                     continue;
                 };
-                _ = result; // Parsed successfully
             }
 
             // Validate conditional dependencies
@@ -377,7 +376,7 @@ pub fn cmdValidate(
                 var diag_ctx = expr.DiagContext.init(allocator);
                 defer diag_ctx.deinit();
 
-                const result = expr.evalConditionWithDiag(allocator, dep_if.condition, null, null, &diag_ctx) catch |err| {
+                expr.checkExpressionSyntax(allocator, dep_if.condition, &diag_ctx) catch |err| {
                     try color.printError(err_writer, use_color,
                         "✗ Task '{s}': invalid expression syntax in 'deps_if' condition\n",
                         .{task_name},
@@ -389,7 +388,6 @@ pub fn cmdValidate(
                     error_count += 1;
                     continue;
                 };
-                _ = result;
             }
         }
     }

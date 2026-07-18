@@ -93,6 +93,28 @@ pub fn evalConditionWithDiag(
     };
 }
 
+/// Validate expression syntax without the fail-open behavior of `evalConditionWithDiag`.
+/// `evalConditionWithDiag` treats `error.InvalidExpression` as "condition passes" so that
+/// runtime task execution never blocks on a malformed condition. Static validators (e.g.
+/// `zr validate`) need the opposite: they must surface parse errors to the caller so they
+/// can be reported. This function calls the same parser but propagates the error instead
+/// of swallowing it.
+pub fn checkExpressionSyntax(
+    allocator: std.mem.Allocator,
+    expr: []const u8,
+    diag: ?*DiagContext,
+) EvalError!void {
+    const ctx = ExprContext{
+        .allocator = allocator,
+        .task_env = null,
+        .runtime_state = null,
+        .diag = diag,
+        .task_params = null,
+        .task_tags = null,
+    };
+    _ = try evalOr(&ctx, expr);
+}
+
 /// Evaluate a conditional dependency expression with full context.
 /// This is the primary entry point for evaluating deps_if conditions in the scheduler.
 /// Supports params.param_name, has_tag('tag'), and all other expression features.
@@ -273,12 +295,6 @@ fn evalPlatformCheck(ctx: *const ExprContext, expr: []const u8) !bool {
     }
 
     const after_platform = std.mem.trim(u8, expr["platform".len..], " \t");
-    if (!std.mem.startsWith(u8, after_platform, "==")) {
-        return error.InvalidExpression;
-    }
-
-    const rhs_raw = std.mem.trim(u8, after_platform["==".len..], " \t");
-    const rhs = stripQuotes(rhs_raw);
 
     const current_os = switch (builtin.os.tag) {
         .linux => "linux",
@@ -286,6 +302,18 @@ fn evalPlatformCheck(ctx: *const ExprContext, expr: []const u8) !bool {
         .windows => "windows",
         else => "unknown",
     };
+
+    // Boolean property form: platform.is_linux | platform.is_macos | platform.is_windows
+    if (std.mem.eql(u8, after_platform, ".is_linux")) return std.mem.eql(u8, current_os, "linux");
+    if (std.mem.eql(u8, after_platform, ".is_macos")) return std.mem.eql(u8, current_os, "darwin");
+    if (std.mem.eql(u8, after_platform, ".is_windows")) return std.mem.eql(u8, current_os, "windows");
+
+    if (!std.mem.startsWith(u8, after_platform, "==")) {
+        return error.InvalidExpression;
+    }
+
+    const rhs_raw = std.mem.trim(u8, after_platform["==".len..], " \t");
+    const rhs = stripQuotes(rhs_raw);
 
     return std.mem.eql(u8, current_os, rhs);
 }
@@ -298,18 +326,23 @@ fn evalArchCheck(ctx: *const ExprContext, expr: []const u8) !bool {
     }
 
     const after_arch = std.mem.trim(u8, expr["arch".len..], " \t");
-    if (!std.mem.startsWith(u8, after_arch, "==")) {
-        return error.InvalidExpression;
-    }
-
-    const rhs_raw = std.mem.trim(u8, after_arch["==".len..], " \t");
-    const rhs = stripQuotes(rhs_raw);
 
     const current_arch = switch (builtin.cpu.arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
         else => "unknown",
     };
+
+    // Boolean property form: arch.is_x86_64 | arch.is_aarch64
+    if (std.mem.eql(u8, after_arch, ".is_x86_64")) return std.mem.eql(u8, current_arch, "x86_64");
+    if (std.mem.eql(u8, after_arch, ".is_aarch64")) return std.mem.eql(u8, current_arch, "aarch64");
+
+    if (!std.mem.startsWith(u8, after_arch, "==")) {
+        return error.InvalidExpression;
+    }
+
+    const rhs_raw = std.mem.trim(u8, after_arch["==".len..], " \t");
+    const rhs = stripQuotes(rhs_raw);
 
     return std.mem.eql(u8, current_arch, rhs);
 }
@@ -1176,6 +1209,51 @@ test "evalCondition: arch check" {
     );
     defer allocator.free(wrong_expr);
     try std.testing.expect(!try evalCondition(allocator, wrong_expr, null));
+}
+
+test "evalCondition: platform.is_linux/is_macos/is_windows boolean properties" {
+    const allocator = std.testing.allocator;
+
+    const expect_linux = builtin.os.tag == .linux;
+    const expect_macos = builtin.os.tag == .macos;
+    const expect_windows = builtin.os.tag == .windows;
+
+    try std.testing.expectEqual(expect_linux, try evalCondition(allocator, "platform.is_linux", null));
+    try std.testing.expectEqual(expect_macos, try evalCondition(allocator, "platform.is_macos", null));
+    try std.testing.expectEqual(expect_windows, try evalCondition(allocator, "platform.is_windows", null));
+}
+
+test "evalCondition: checkExpressionSyntax accepts platform.is_linux without fail-open" {
+    const allocator = std.testing.allocator;
+    var diag_ctx = DiagContext.init(allocator);
+    defer diag_ctx.deinit();
+
+    // Before the fix this dotted form was unrecognized by evalPlatformCheck and
+    // only appeared valid because evalConditionWithDiag fails open (returns true
+    // on error.InvalidExpression). checkExpressionSyntax must not swallow errors,
+    // so a real parse failure here would surface instead of being masked.
+    try checkExpressionSyntax(allocator, "platform.is_linux && arch.is_x86_64 || arch.is_aarch64", &diag_ctx);
+}
+
+test "evalCondition: arch.is_x86_64/is_aarch64 boolean properties" {
+    const allocator = std.testing.allocator;
+
+    const expect_x86_64 = builtin.cpu.arch == .x86_64;
+    const expect_aarch64 = builtin.cpu.arch == .aarch64;
+
+    try std.testing.expectEqual(expect_x86_64, try evalCondition(allocator, "arch.is_x86_64", null));
+    try std.testing.expectEqual(expect_aarch64, try evalCondition(allocator, "arch.is_aarch64", null));
+}
+
+test "evalCondition: platform.is_unknown_property is still a syntax error" {
+    const allocator = std.testing.allocator;
+    var diag_ctx = DiagContext.init(allocator);
+    defer diag_ctx.deinit();
+
+    try std.testing.expectError(
+        error.InvalidExpression,
+        checkExpressionSyntax(allocator, "platform.is_bogus", &diag_ctx),
+    );
 }
 
 test "evalCondition: file.exists" {

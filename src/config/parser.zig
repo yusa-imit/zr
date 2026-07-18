@@ -437,7 +437,10 @@ fn validateSectionHeader(line: []const u8, prefix: []const u8) ParseError![]cons
         std.debug.print("  Expected closing bracket ']' after '{s}'\n", .{prefix});
         return error.MalformedSectionHeader;
     };
-    return line[start..][0..end];
+    // Quoted TOML keys (e.g. [tasks."test:unit"]) must have their surrounding
+    // quotes stripped so the stored name matches the literal key ("test:unit",
+    // not "\"test:unit\""). Bare keys are returned unchanged.
+    return stripQuotes(line[start..][0..end]);
 }
 
 /// Duplicate dependency slice array (for workspace shared tasks, v1.63.0)
@@ -2228,7 +2231,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_watch = trimmed["[tasks.".len .. watch_idx];
+            const before_watch = stripQuotes(trimmed["[tasks.".len .. watch_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2259,7 +2262,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_retry = trimmed["[tasks.".len .. retry_idx];
+            const before_retry = stripQuotes(trimmed["[tasks.".len .. retry_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2293,7 +2296,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_matrix = trimmed["[tasks.".len .. matrix_idx];
+            const before_matrix = stripQuotes(trimmed["[tasks.".len .. matrix_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_matrix;
@@ -2318,7 +2321,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_env = trimmed["[tasks.".len .. env_idx];
+            const before_env = stripQuotes(trimmed["[tasks.".len .. env_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_env;
@@ -2343,7 +2346,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_toolchain = trimmed["[tasks.".len .. toolchain_idx];
+            const before_toolchain = stripQuotes(trimmed["[tasks.".len .. toolchain_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_toolchain;
@@ -2372,7 +2375,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_desc = trimmed["[tasks.".len .. desc_idx];
+            const before_desc = stripQuotes(trimmed["[tasks.".len .. desc_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2407,7 +2410,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_outputs = trimmed["[tasks.".len .. outputs_idx];
+            const before_outputs = stripQuotes(trimmed["[tasks.".len .. outputs_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2454,7 +2457,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_hooks = trimmed["[[tasks.".len .. hooks_idx];
+            const before_hooks = stripQuotes(trimmed["[[tasks.".len .. hooks_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             // UNLESS we're already in that task (hooks after task definition)
