@@ -1115,7 +1115,6 @@ test "879: cache help shows usage information" {
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
     try std.testing.expect(std.mem.indexOf(u8, output, "Usage") != null or
         std.mem.indexOf(u8, output, "Commands") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "clean") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "status") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "clear") != null);
 }

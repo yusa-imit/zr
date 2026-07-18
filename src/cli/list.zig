@@ -6,7 +6,6 @@ const cycle_detect = @import("../graph/cycle_detect.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
 const cache_store = @import("../cache/store.zig");
 const exec_cache_store = @import("../exec/cache_store.zig");
-const cache_key_mod = @import("../exec/cache_key.zig");
 const graph_ascii = @import("../graph/ascii.zig");
 const loader = @import("../config/loader.zig");
 const workspace_cmd = @import("workspace.zig");
@@ -29,18 +28,21 @@ fn getTaskStatus(allocator: std.mem.Allocator, task: types.Task, cwd: ?[]const u
 /// Note: This is a simplified check (just checks if manifest exists).
 /// In the future, could show hit rate, timestamp, etc.
 fn getCacheStatus(allocator: std.mem.Allocator, task: *const types.Task, _: []const u8) !?[]const u8 {
-    // Generate cache key for the task
-    var key_gen = cache_key_mod.CacheKeyGenerator.init(allocator);
-
-    // For list command, we use minimal inputs (no env vars or runtime params)
-    // This shows if cache *could* exist for this task configuration
-    const empty_env: []const []const u8 = &[_][]const u8{};
-    var empty_params = std.StringHashMap([]const u8).init(allocator);
-    defer empty_params.deinit();
-
-    const cache_key = key_gen.generate(task, ".", empty_env, empty_params) catch {
-        return null; // Cache key generation failed, assume no cache
-    };
+    // Must match the key algorithm the scheduler actually uses when writing
+    // the cache (see scheduler.zig's computeKey/computeKeyWithSources call),
+    // not exec/cache_key.zig's CacheKeyGenerator — that's a separate, unrelated
+    // scheme and never matches what's on disk.
+    const task_env_slice: ?[]const [2][]const u8 = if (task.env.len > 0) task.env else null;
+    const cache_key = if (task.sources.len > 0)
+        cache_store.CacheStore.computeKeyWithSources(
+            allocator,
+            task.cmd,
+            task_env_slice,
+            task.sources,
+            ".",
+        ) catch return null
+    else
+        cache_store.CacheStore.computeKey(allocator, task.cmd, task_env_slice) catch return null;
     defer allocator.free(cache_key);
 
     // Check if manifest exists at .zr/cache/<cache_key>/manifest.json
@@ -1205,7 +1207,7 @@ pub fn cmdCache(
 ) !u8 {
     const sub = if (args.len >= 3) args[2] else "";
 
-    if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
+    if (std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h") or std.mem.eql(u8, sub, "help")) {
         try color.printBold(w, use_color, "zr cache - Task result cache management\n\n", .{});
         try w.writeAll("Usage:\n");
         try w.writeAll("  zr cache clear [--workspace] [--member <path>]   Clear cached task results\n");
