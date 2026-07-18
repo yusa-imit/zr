@@ -695,7 +695,7 @@ pub const Config = struct {
         description: ?[]const u8,
         deps: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with all fields (for tests or programmatic use with full options).
@@ -709,7 +709,7 @@ pub const Config = struct {
         timeout_ms: ?u64,
         allow_failure: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, timeout_ms, allow_failure, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with deps_serial (for tests or programmatic use).
@@ -722,7 +722,7 @@ pub const Config = struct {
         deps: []const []const u8,
         deps_serial: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, deps_serial, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, deps_serial, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with env pairs (for tests or programmatic use with env overrides).
@@ -735,7 +735,7 @@ pub const Config = struct {
         deps: []const []const u8,
         env: []const [2][]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, env, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, env, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with retry settings (for tests or programmatic use).
@@ -750,7 +750,7 @@ pub const Config = struct {
         retry_delay_ms: u64,
         retry_backoff: bool,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, cwd, description, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, retry_max, retry_delay_ms, retry_backoff, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with a condition expression (for tests or programmatic use).
@@ -760,7 +760,7 @@ pub const Config = struct {
         cmd: []const u8,
         condition: ?[]const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, condition, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with conditional dependencies (for tests or programmatic use).
@@ -770,7 +770,7 @@ pub const Config = struct {
         cmd: []const u8,
         deps_if: []const ConditionalDep,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, deps_if, &[_][]const u8{}, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a task with optional dependencies (for tests or programmatic use).
@@ -780,7 +780,7 @@ pub const Config = struct {
         cmd: []const u8,
         deps_optional: []const []const u8,
     ) !void {
-        return addTaskImpl(self, self.allocator, name, cmd, null, null, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0);
+        return addTaskImpl(self, self.allocator, name, cmd, null, null, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, &[_]ConditionalDep{}, deps_optional, &[_][2][]const u8{}, null, false, 0, 0, false, null, null, null, 0, false, null, null, &[_][]const u8{}, &[_][]const u8{}, &[_]u32{}, &[_][2][]const u8{}, null, null, &[_][]const u8{}, &[_][]const u8{}, null, &[_]TaskHook{}, null, &[_][2][]const u8{}, null, null, null, null, &[_][2][]const u8{}, &[_][]const u8{}, &[_][]const u8{}, false, &[_][]const u8{}, &[_][]const u8{}, &[_]TaskParam{}, &[_][]const u8{}, &[_][]const u8{}, null, false, false, null, null, &[_][]const u8{}, &[_][]const u8{}, false, &[_]InputPrompt{}, &[_][]const u8{}, null, null, false, 0, null, false, null, &[_]u8{}, &[_][]const u8{});
     }
 
     /// Add a workflow (for tests or programmatic use).
@@ -1033,6 +1033,11 @@ pub const Config = struct {
             null, // confirm_if not supported in templates yet
             false, // internal not supported in templates yet
             0, // priority not supported in templates yet
+            null, // retry_backoff_multiplier not supported in templates yet
+            false, // retry_jitter not supported in templates yet
+            null, // max_backoff_ms not supported in templates yet
+            &[_]u8{}, // retry_on_codes not supported in templates yet
+            &[_][]const u8{}, // retry_on_patterns not supported in templates yet
         );
 
         // Free the allocated strings (addTaskImpl dupes them)
@@ -2415,6 +2420,11 @@ pub fn addTaskImpl(
     confirm_if: ?[]const u8,
     internal: bool,
     priority: i32,
+    retry_backoff_multiplier: ?f64,
+    retry_jitter: bool,
+    max_backoff_ms: ?u64,
+    retry_on_codes: []const u8,
+    retry_on_patterns: []const []const u8,
 ) !void {
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
@@ -2962,6 +2972,20 @@ pub fn addTaskImpl(
         allocator.free(arr);
     };
 
+    const task_retry_on_codes = try allocator.dupe(u8, retry_on_codes);
+    errdefer if (task_retry_on_codes.len > 0) allocator.free(task_retry_on_codes);
+
+    const task_retry_on_patterns = try allocator.alloc([]const u8, retry_on_patterns.len);
+    var retry_patterns_duped: usize = 0;
+    errdefer {
+        for (task_retry_on_patterns[0..retry_patterns_duped]) |p| allocator.free(p);
+        if (task_retry_on_patterns.len > 0) allocator.free(task_retry_on_patterns);
+    }
+    for (retry_on_patterns, 0..) |p, i| {
+        task_retry_on_patterns[i] = try allocator.dupe(u8, p);
+        retry_patterns_duped += 1;
+    }
+
     var task = Task{
         .name = task_name,
         .cmd = task_cmd,
@@ -2980,6 +3004,11 @@ pub fn addTaskImpl(
         .retry_max = retry_max,
         .retry_delay_ms = retry_delay_ms,
         .retry_backoff = retry_backoff,
+        .retry_backoff_multiplier = retry_backoff_multiplier,
+        .retry_jitter = retry_jitter,
+        .max_backoff_ms = max_backoff_ms,
+        .retry_on_codes = task_retry_on_codes,
+        .retry_on_patterns = task_retry_on_patterns,
         .condition = task_condition,
         .skip_if = task_skip_if,
         .output_if = task_output_if,
@@ -3334,6 +3363,11 @@ test "applyTemplateToTask: automatic template application" {
         null, // confirm_if
         false, // internal
         0, // priority
+        null, // retry_backoff_multiplier
+        false, // retry_jitter
+        null, // max_backoff_ms
+        &[_]u8{}, // retry_on_codes
+        &[_][]const u8{}, // retry_on_patterns
     );
 
     // Verify the task was created with template-expanded fields
@@ -3443,6 +3477,11 @@ test "applyTemplateToTask: task overrides template defaults" {
         null, // confirm_if
         false, // internal
         0, // priority
+        null, // retry_backoff_multiplier
+        false, // retry_jitter
+        null, // max_backoff_ms
+        &[_]u8{}, // retry_on_codes
+        &[_][]const u8{}, // retry_on_patterns
     );
 
     // Verify task uses explicit values, not template defaults
