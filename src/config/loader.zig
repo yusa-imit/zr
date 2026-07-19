@@ -1102,7 +1102,15 @@ fn mergeEnvIntoTask(allocator: std.mem.Allocator, task: *Task, env_map: *std.Str
 /// Main config's definitions override imported ones (no overwriting).
 /// Transfers ownership from imported to main (imported will be left empty).
 fn mergeConfigs(allocator: std.mem.Allocator, main: *Config, imported: *Config) !void {
-    _ = allocator;
+    // Merge vars (main takes precedence; copy imported vars main doesn't already have)
+    var vars_it = imported.vars.iterator();
+    while (vars_it.next()) |entry| {
+        if (!main.vars.contains(entry.key_ptr.*)) {
+            const key_copy = try allocator.dupe(u8, entry.key_ptr.*);
+            const val_copy = try allocator.dupe(u8, entry.value_ptr.*);
+            try main.vars.put(key_copy, val_copy);
+        }
+    }
 
     // Merge tasks (transfer ownership if not in main)
     var task_it = imported.tasks.iterator();
