@@ -109,7 +109,7 @@ test "28002: var merge - vars from included file available, root wins on conflic
         \\HOST = "localhost"
         \\
         \\[tasks.connect]
-        \\cmd = "echo DATABASE=$DATABASE HOST=$HOST PORT=$PORT TIMEOUT=$TIMEOUT"
+        \\cmd = "echo DATABASE={{DATABASE}} HOST={{HOST}} PORT={{PORT}} TIMEOUT={{TIMEOUT}}"
     );
     defer allocator.free(config);
 

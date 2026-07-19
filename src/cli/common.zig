@@ -68,6 +68,12 @@ pub fn loadConfig(
                     .{config_path},
                 );
             },
+            error.CircularImport => {
+                try color.printError(err_writer, use_color,
+                    "Config: circular import detected while loading {s}\n\n  Hint: Check the [imports] chains for a cycle\n",
+                    .{config_path},
+                );
+            },
             else => {
                 try color.printError(err_writer, use_color,
                     "Config: Failed to load {s}: {s}\n",

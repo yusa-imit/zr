@@ -109,8 +109,15 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
 
         // Load each imported file
         for (config.imports) |import_rel_path| {
-            // Resolve relative path from main config's directory
-            const import_path = try std.fs.path.join(allocator, &[_][]const u8{ main_dir, import_rel_path });
+            // Absolute import paths are used as-is; relative paths are resolved
+            // from the main config's directory. std.fs.path.join does not
+            // special-case an absolute second component, so joining an
+            // already-absolute import path with main_dir would silently
+            // produce a bogus, nonexistent double path.
+            const import_path = if (std.fs.path.isAbsolute(import_rel_path))
+                try allocator.dupe(u8, import_rel_path)
+            else
+                try std.fs.path.join(allocator, &[_][]const u8{ main_dir, import_rel_path });
             defer allocator.free(import_path);
 
             // Load imported config recursively

@@ -424,8 +424,9 @@ test "imports: workflows can be imported" {
     const config = try writeTmpConfig(allocator, tmp.dir, main_toml);
     defer allocator.free(config);
 
-    // List should show the imported workflow
-    var result = try runZr(allocator, &.{ "--config", config, "list", "workflows" }, tmp_path);
+    // List should show the imported workflow (zr has no "list workflows"
+    // subcommand — plain "list" always includes a Workflows: section)
+    var result = try runZr(allocator, &.{ "--config", config, "list" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -440,13 +441,14 @@ test "imports: profiles can be imported" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create imported file with profile
+    // Create imported file with profile (dotted-table syntax — see
+    // 21000_settings_test.zig for the established [profiles.<name>] form;
+    // [[profiles]] array-of-tables is not what the parser expects)
     const common_toml =
         \\[tasks.build]
         \\cmd = "echo build"
         \\
-        \\[[profiles]]
-        \\name = "dev"
+        \\[profiles.dev]
         \\description = "Development profile"
         \\
     ;
@@ -465,7 +467,7 @@ test "imports: profiles can be imported" {
     defer allocator.free(config);
 
     // List should show the imported profile
-    var result = try runZr(allocator, &.{ "--config", config, "list", "profiles" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "list", "--profiles" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);

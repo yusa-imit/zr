@@ -39,10 +39,14 @@ pub const OutputCapture = struct {
     file: ?std.fs.File = null,
     /// Temporary uncompressed file path (for post-compression via gzip command).
     temp_path: ?[]const u8 = null,
-    /// In-memory buffer for buffer mode (ArrayList of lines).
-    buffer: std.ArrayList([]const u8) = .{},
-    /// Current buffer size in bytes (for buffer mode).
-    buffer_size_bytes: usize = 0,
+    /// In-memory buffer for stdout (ArrayList of lines).
+    stdout_buffer: std.ArrayList([]const u8) = .{},
+    /// In-memory buffer for stderr (ArrayList of lines).
+    stderr_buffer: std.ArrayList([]const u8) = .{},
+    /// Current stdout buffer size in bytes (for buffer mode).
+    stdout_buffer_size_bytes: usize = 0,
+    /// Current stderr buffer size in bytes (for buffer mode).
+    stderr_buffer_size_bytes: usize = 0,
     /// Mutex for thread-safe writes.
     mutex: std.Thread.Mutex = .{},
     /// Optional line filter for grep/highlight functionality.
@@ -53,7 +57,8 @@ pub const OutputCapture = struct {
         var self: OutputCapture = .{
             .allocator = allocator,
             .config = config,
-            .buffer = std.ArrayList([]const u8){},
+            .stdout_buffer = std.ArrayList([]const u8){},
+            .stderr_buffer = std.ArrayList([]const u8){},
         };
 
         // Initialize line filter if filtering is enabled
@@ -138,10 +143,14 @@ pub const OutputCapture = struct {
         }
 
         // Free buffered lines
-        for (self.buffer.items) |line| {
+        for (self.stdout_buffer.items) |line| {
             self.allocator.free(line);
         }
-        self.buffer.deinit(self.allocator);
+        self.stdout_buffer.deinit(self.allocator);
+        for (self.stderr_buffer.items) |line| {
+            self.allocator.free(line);
+        }
+        self.stderr_buffer.deinit(self.allocator);
     }
 
     /// Write a line of output (from stdout or stderr).
@@ -173,7 +182,7 @@ pub const OutputCapture = struct {
                         try self.writeToFileRaw(filtered_line);
                     },
                     .buffer => {
-                        try self.writeToBuffer(filtered_line);
+                        try self.writeToBuffer(filtered_line, is_stderr);
                     },
                     .discard => {
                         // No-op
@@ -187,7 +196,7 @@ pub const OutputCapture = struct {
                     try self.writeToFile(line, is_stderr);
                 },
                 .buffer => {
-                    try self.writeToBuffer(line);
+                    try self.writeToBuffer(line, is_stderr);
                 },
                 .discard => {
                     // No-op
@@ -196,7 +205,7 @@ pub const OutputCapture = struct {
         }
     }
 
-    /// Retrieve buffered output as a single string. Buffer mode only.
+    /// Retrieve buffered stdout as a single string. Buffer mode only.
     /// Caller owns the returned string and must free it.
     pub fn getBuffer(self: *OutputCapture) ![]const u8 {
         self.mutex.lock();
@@ -208,16 +217,35 @@ pub const OutputCapture = struct {
 
         // Concatenate all lines with newlines
         var result = std.ArrayList(u8){};
-        for (self.buffer.items) |line| {
+        for (self.stdout_buffer.items) |line| {
             try result.appendSlice(self.allocator, line);
             try result.append(self.allocator, '\n');
         }
         return result.toOwnedSlice(self.allocator);
     }
 
-    /// Retrieve the number of buffered lines. Buffer mode only.
+    /// Retrieve buffered stderr as a single string. Buffer mode only.
+    /// Caller owns the returned string and must free it.
+    pub fn getStderrBuffer(self: *OutputCapture) ![]const u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.config.mode != .buffer) {
+            return error.NotBufferMode;
+        }
+
+        // Concatenate all lines with newlines
+        var result = std.ArrayList(u8){};
+        for (self.stderr_buffer.items) |line| {
+            try result.appendSlice(self.allocator, line);
+            try result.append(self.allocator, '\n');
+        }
+        return result.toOwnedSlice(self.allocator);
+    }
+
+    /// Retrieve the total number of buffered lines (stdout + stderr). Buffer mode only.
     pub fn getLineCount(self: *const OutputCapture) usize {
-        return self.buffer.items.len;
+        return self.stdout_buffer.items.len + self.stderr_buffer.items.len;
     }
 
     /// Clear the buffer. Buffer mode only.
@@ -225,11 +253,17 @@ pub const OutputCapture = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        for (self.buffer.items) |line| {
+        for (self.stdout_buffer.items) |line| {
             self.allocator.free(line);
         }
-        self.buffer.clearRetainingCapacity();
-        self.buffer_size_bytes = 0;
+        self.stdout_buffer.clearRetainingCapacity();
+        self.stdout_buffer_size_bytes = 0;
+
+        for (self.stderr_buffer.items) |line| {
+            self.allocator.free(line);
+        }
+        self.stderr_buffer.clearRetainingCapacity();
+        self.stderr_buffer_size_bytes = 0;
     }
 
     // --- Private implementation helpers ---
@@ -251,23 +285,26 @@ pub const OutputCapture = struct {
         }
     }
 
-    fn writeToBuffer(self: *OutputCapture, line: []const u8) !void {
+    fn writeToBuffer(self: *OutputCapture, line: []const u8, is_stderr: bool) !void {
         const line_copy = try self.allocator.dupe(u8, line);
         const line_size = line.len + 1; // +1 for newline
 
-        // If buffer limit exceeded, drop oldest lines
+        const buffer = if (is_stderr) &self.stderr_buffer else &self.stdout_buffer;
+        const buffer_size = if (is_stderr) &self.stderr_buffer_size_bytes else &self.stdout_buffer_size_bytes;
+
+        // If buffer limit exceeded, drop oldest lines (applied per-buffer or globally, whichever is more sane)
+        // For simplicity, we apply the limit to each buffer independently
         if (self.config.max_buffer_size > 0) {
-            while (self.buffer_size_bytes + line_size > self.config.max_buffer_size and
-                   self.buffer.items.len > 0)
+            while (buffer_size.* + line_size > self.config.max_buffer_size and buffer.items.len > 0)
             {
-                const removed = self.buffer.orderedRemove(0);
-                self.buffer_size_bytes -= removed.len + 1;
+                const removed = buffer.orderedRemove(0);
+                buffer_size.* -= removed.len + 1;
                 self.allocator.free(removed);
             }
         }
 
-        try self.buffer.append(self.allocator, line_copy);
-        self.buffer_size_bytes += line_size;
+        try buffer.append(self.allocator, line_copy);
+        buffer_size.* += line_size;
     }
 };
 
@@ -297,7 +334,8 @@ test "OutputCapture: init buffer mode" {
 
     try std.testing.expectEqual(OutputMode.buffer, capture.config.mode);
     try std.testing.expect(capture.file == null);
-    try std.testing.expectEqual(@as(usize, 0), capture.buffer.items.len);
+    try std.testing.expectEqual(@as(usize, 0), capture.stdout_buffer.items.len);
+    try std.testing.expectEqual(@as(usize, 0), capture.stderr_buffer.items.len);
 }
 
 test "OutputCapture: init stream mode requires output_file" {
@@ -587,8 +625,19 @@ test "OutputCapture: distinguishes stdout from stderr" {
     try capture.writeLine("stdout line", false);
     try capture.writeLine("stderr line", true);
 
-    // Both should be captured (buffer mode doesn't distinguish)
+    // Both should be captured
     try std.testing.expectEqual(@as(usize, 2), capture.getLineCount());
+
+    // Verify they're in separate buffers
+    const stdout = try capture.getBuffer();
+    defer allocator.free(stdout);
+    const stderr = try capture.getStderrBuffer();
+    defer allocator.free(stderr);
+
+    try std.testing.expect(std.mem.containsAtLeast(u8, stdout, 1, "stdout line"));
+    try std.testing.expect(!std.mem.containsAtLeast(u8, stdout, 1, "stderr line"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, stderr, 1, "stderr line"));
+    try std.testing.expect(!std.mem.containsAtLeast(u8, stderr, 1, "stdout line"));
 }
 
 test "OutputCapture: handles special characters in lines" {
@@ -619,17 +668,22 @@ test "OutputCapture: buffer_size_bytes tracks correctly" {
     var capture = try OutputCapture.init(allocator, config);
     defer capture.deinit();
 
-    try std.testing.expectEqual(@as(usize, 0), capture.buffer_size_bytes);
+    try std.testing.expectEqual(@as(usize, 0), capture.stdout_buffer_size_bytes);
+    try std.testing.expectEqual(@as(usize, 0), capture.stderr_buffer_size_bytes);
 
     try capture.writeLine("hello", false);
     const expected_size = 5 + 1; // "hello" + newline
-    try std.testing.expectEqual(expected_size, capture.buffer_size_bytes);
+    try std.testing.expectEqual(expected_size, capture.stdout_buffer_size_bytes);
 
     try capture.writeLine("world", false);
-    try std.testing.expectEqual(expected_size * 2, capture.buffer_size_bytes);
+    try std.testing.expectEqual(expected_size * 2, capture.stdout_buffer_size_bytes);
+
+    try capture.writeLine("stderr msg", true);
+    try std.testing.expectEqual(10 + 1, capture.stderr_buffer_size_bytes);
 
     capture.clearBuffer();
-    try std.testing.expectEqual(@as(usize, 0), capture.buffer_size_bytes);
+    try std.testing.expectEqual(@as(usize, 0), capture.stdout_buffer_size_bytes);
+    try std.testing.expectEqual(@as(usize, 0), capture.stderr_buffer_size_bytes);
 }
 
 test "OutputCapture: multiple init/deinit cycles" {
@@ -644,17 +698,17 @@ test "OutputCapture: multiple init/deinit cycles" {
 
         // Verify init worked correctly
         try std.testing.expectEqual(OutputMode.buffer, capture.config.mode);
-        try std.testing.expectEqual(@as(usize, 0), capture.buffer_size_bytes);
+        try std.testing.expectEqual(@as(usize, 0), capture.stdout_buffer_size_bytes);
 
         // Verify write works
         try capture.writeLine("test", false);
-        try std.testing.expectEqual(@as(usize, 5), capture.buffer_size_bytes); // "test\n"
+        try std.testing.expectEqual(@as(usize, 5), capture.stdout_buffer_size_bytes); // "test\n"
 
         // Verify we can write multiple times
         const expected_msg = try std.fmt.allocPrint(allocator, "cycle{d}", .{i});
         defer allocator.free(expected_msg);
         try capture.writeLine(expected_msg, false);
-        try std.testing.expect(capture.buffer_size_bytes > 5);
+        try std.testing.expect(capture.stdout_buffer_size_bytes > 5);
 
         capture.deinit();
     }

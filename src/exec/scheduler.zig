@@ -1962,15 +1962,18 @@ fn workerFn(ctx: WorkerCtx) void {
 
             // Get captured output if available (v1.37.0)
             var stdout_buf: []const u8 = &[_]u8{};
-            const stderr_buf: []const u8 = &[_]u8{};
-            var needs_free = false;
-            defer if (needs_free) task_allocator.free(stdout_buf);
+            var stderr_buf: []const u8 = &[_]u8{};
+            var stdout_needs_free = false;
+            var stderr_needs_free = false;
+            defer if (stdout_needs_free) task_allocator.free(stdout_buf);
+            defer if (stderr_needs_free) task_allocator.free(stderr_buf);
 
             if (output_cap) |*oc| {
                 if (oc.config.mode == .buffer) {
                     stdout_buf = oc.getBuffer() catch &[_]u8{};
-                    needs_free = (stdout_buf.len > 0);
-                    // Note: we don't separate stdout/stderr in buffer mode yet
+                    stdout_needs_free = (stdout_buf.len > 0);
+                    stderr_buf = oc.getStderrBuffer() catch &[_]u8{};
+                    stderr_needs_free = (stderr_buf.len > 0);
                 }
             }
 
@@ -2007,14 +2010,21 @@ fn workerFn(ctx: WorkerCtx) void {
             defer local_store.deinit();
             var cached_stdout: []const u8 = &[_]u8{};
             var cached_stdout_needs_free = false;
+            var cached_stderr: []const u8 = &[_]u8{};
+            var cached_stderr_needs_free = false;
             defer if (cached_stdout_needs_free) task_allocator.free(cached_stdout);
+            defer if (cached_stderr_needs_free) task_allocator.free(cached_stderr);
             if (output_cap) |*oc| {
                 if (oc.getBuffer()) |buf| {
                     cached_stdout = buf;
                     cached_stdout_needs_free = true;
                 } else |_| {}
+                if (oc.getStderrBuffer()) |buf| {
+                    cached_stderr = buf;
+                    cached_stderr_needs_free = true;
+                } else |_| {}
             }
-            local_store.store(key, ctx.task_name, proc_result.exit_code, proc_result.duration_ms, cached_stdout, "") catch {};
+            local_store.store(key, ctx.task_name, proc_result.exit_code, proc_result.duration_ms, cached_stdout, cached_stderr) catch {};
             // Push to remote cache (Phase 7)
             if (ctx.cache_remote_config) |remote_cfg| {
                 var remote_cache = cache_remote.RemoteCache.init(task_allocator, remote_cfg.*);

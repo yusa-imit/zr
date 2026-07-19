@@ -149,13 +149,14 @@ pub fn cmdValidate(
             }
         }
 
-        // Strict mode: warn about missing descriptions
+        // Strict mode: note missing descriptions. This is a style nit, not a
+        // correctness problem, so it's surfaced but doesn't fail --strict
+        // (unlike warning_count-tracked issues below).
         if (options.strict and task.description == null and has_cmd) {
             if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
             try err_writer.print("⚠ Task '{s}': missing description (--strict)\n", .{task_name});
             if (use_color) try err_writer.writeAll(color.Code.reset);
             try color.printDim(err_writer, use_color, "  Hint: Add 'description = \"...\"' for better documentation\n\n", .{});
-            warning_count += 1;
         }
     }
 
@@ -334,13 +335,13 @@ pub fn cmdValidate(
         while (unused_iter.next()) |entry| {
             const task_name = entry.key_ptr.*;
             if (!referenced_tasks.contains(task_name) and entry.value_ptr.deps.len == 0) {
-                // Task is standalone (not referenced anywhere, has no deps)
-                // This is not necessarily bad, but worth noting in strict mode
+                // Task is standalone (not referenced anywhere, has no deps).
+                // Genuinely fine (see hint below) — noted in strict mode but
+                // does not fail --strict, unlike warning_count-tracked issues.
                 if (use_color) try err_writer.writeAll(color.Code.bright_yellow);
                 try err_writer.print("⚠ Task '{s}': not referenced by any other task or workflow (--strict)\n", .{task_name});
                 if (use_color) try err_writer.writeAll(color.Code.reset);
                 try color.printDim(err_writer, use_color, "  This is fine if it's meant to be run directly via 'zr run {s}'\n\n", .{task_name});
-                warning_count += 1;
             }
         }
     }
@@ -839,11 +840,22 @@ test "cmdValidate: strict mode treats warnings as errors" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const toml =
-        \\[tasks.build]
-        \\cmd = "echo build"
-    ;
-    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+    // A single standalone task with no description only trips the two
+    // style-nit strict notices (missing description / not referenced),
+    // which are informational and don't fail --strict — see integration
+    // tests 220/238/408/607/661 in tests/validate_test.zig, all of which
+    // expect --strict to pass on similarly minimal configs. Use a deep
+    // dependency chain (>10 levels) instead: a real warning_count-tracked
+    // issue that genuinely should fail --strict.
+    var toml_buf = std.ArrayList(u8){};
+    defer toml_buf.deinit(allocator);
+    const w = toml_buf.writer(allocator);
+    try w.writeAll("[tasks.task0]\ncmd = \"echo task0\"\n\n");
+    var i: usize = 1;
+    while (i < 12) : (i += 1) {
+        try w.print("[tasks.task{d}]\ncmd = \"echo task{d}\"\ndeps = [\"task{d}\"]\n\n", .{ i, i, i - 1 });
+    }
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml_buf.items });
 
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
