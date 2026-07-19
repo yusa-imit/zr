@@ -1942,8 +1942,12 @@ fn workerFn(ctx: WorkerCtx) void {
     };
 
     // Mark this task as executed for dependency propagation (v1.74.0)
-    // This ensures dependent tasks with up-to-date outputs will still run
-    ctx.executed_tasks.put(ctx.task_name, {}) catch {};
+    // This ensures dependent tasks with up-to-date outputs will still run.
+    // Must dupe: ctx.task_name is freed by this worker's defer on return, but
+    // executed_tasks outlives the worker (read by later-dispatched workers).
+    if (ctx.allocator.dupe(u8, ctx.task_name)) |name_dupe| {
+        ctx.executed_tasks.put(name_dupe, {}) catch ctx.allocator.free(name_dupe);
+    } else |_| {}
 
     // Record completion event (v1.14.0)
     if (ctx.timeline_tracker) |tt| {
@@ -2661,7 +2665,11 @@ pub fn run(
     // Tracks tasks that actually executed (not skipped due to up-to-date or cache).
     // Used for dependency propagation: if a dependency ran, dependent tasks must run too.
     var executed_tasks = std.StringHashMap(void).init(allocator);
-    defer executed_tasks.deinit();
+    defer {
+        var et_it = executed_tasks.keyIterator();
+        while (et_it.next()) |k| allocator.free(k.*);
+        executed_tasks.deinit();
+    }
 
     // Initialize circuit breaker states for tasks that have circuit_breaker config (v1.30.0)
     var circuit_breakers = std.StringHashMap(CircuitBreakerState).init(allocator);
