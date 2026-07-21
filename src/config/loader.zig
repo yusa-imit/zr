@@ -33,9 +33,9 @@ pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
     return loadFromFileInternal(allocator, path, &visited_files);
 }
 
-/// Find parent workspace config and apply shared tasks (v1.114.0).
+/// Find parent workspace config and apply shared tasks, mixins, and templates (v1.114.0, v1.115.0).
 /// Walks up the directory tree from `config_dir` looking for a parent zr.toml
-/// with a [workspace] section. If found, inherits shared tasks.
+/// with a [workspace] section. If found, inherits shared tasks, mixins, and templates.
 fn findAndApplyParentWorkspace(
     allocator: std.mem.Allocator,
     member_config: *Config,
@@ -71,6 +71,8 @@ fn findAndApplyParentWorkspace(
 
         // Apply shared tasks
         inheritWorkspaceSharedTasks(allocator, member_config, &parent_config) catch {};
+        // Apply workspace mixins and templates (v1.115.0)
+        inheritWorkspaceMixinsAndTemplates(allocator, member_config, &parent_config) catch {};
         break; // Only apply from immediate workspace root
     }
 }
@@ -164,16 +166,17 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
     // Apply variable substitution to all task fields (v1.55.0)
     try applyVariableSubstitution(allocator, &config);
 
+    // Inherit workspace shared tasks, mixins, and templates from parent workspace root (v1.114.0, v1.115.0)
+    // Call this BEFORE resolveMixins so that workspace mixins are available when resolving task mixins
+    if (config.workspace == null) {
+        findAndApplyParentWorkspace(allocator, &config, abs_path);
+    }
+
     // Resolve task mixins (v1.67.0) — apply mixin fields to tasks
     try resolveMixins(allocator, &config);
 
     // Validate task aliases (v1.72.0) — detect conflicts
     try validateTaskAliases(allocator, &config);
-
-    // Inherit workspace shared tasks from parent workspace root (v1.114.0)
-    if (config.workspace == null) {
-        findAndApplyParentWorkspace(allocator, &config, abs_path);
-    }
 
     return config;
 }
@@ -182,7 +185,11 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
 /// Resolves nested mixins with DAG cycle detection.
 /// Call this after parseToml(), before inheritWorkspaceSharedTasks().
 pub fn resolveMixins(allocator: std.mem.Allocator, config: *Config) !void {
-    // Iterate over all tasks and resolve their mixins
+    // First pass: resolve nested mixins within each mixin (v1.115.0)
+    // This ensures that when we apply a mixin to a task, all nested mixin fields are already included
+    try resolveNestedMixins(allocator, config);
+
+    // Second pass: apply resolved mixins to tasks
     var task_it = config.tasks.iterator();
     while (task_it.next()) |entry| {
         const task_name = entry.key_ptr.*;
@@ -216,12 +223,60 @@ pub fn resolveMixins(allocator: std.mem.Allocator, config: *Config) !void {
                 visited.deinit();
             }
             if (try detectMixinCycle(allocator, config, mixin_name, &visited)) {
-                std.debug.print("error: Circular mixin reference detected involving '{s}'\n", .{mixin_name});
+                std.debug.print("error: Cyclic mixin reference detected involving '{s}'\n", .{mixin_name});
                 return error.CircularMixin;
             }
 
             // Apply mixin fields to task
             try applyMixinToTask(allocator, task, mixin);
+        }
+    }
+}
+
+/// Resolve nested mixins within each mixin (v1.115.0).
+/// Applies nested mixin fields to parent mixins so that when a mixin is applied to a task,
+/// all accumulated fields from nested mixins are already included.
+fn resolveNestedMixins(allocator: std.mem.Allocator, config: *Config) !void {
+    var mixin_it = config.mixins.iterator();
+    while (mixin_it.next()) |entry| {
+        const mixin_name = entry.key_ptr.*;
+        const mixin = entry.value_ptr;
+
+        if (mixin.mixins.len == 0) continue;
+
+        // Apply nested mixins left-to-right
+        for (mixin.mixins) |nested_mixin_name| {
+            // Validate nested mixin exists
+            var nested_it = config.mixins.iterator();
+            var found_nested_mixin: ?*types.Mixin = null;
+            while (nested_it.next()) |nentry| {
+                if (std.mem.eql(u8, nentry.key_ptr.*, nested_mixin_name)) {
+                    found_nested_mixin = nentry.value_ptr;
+                    break;
+                }
+            }
+
+            if (found_nested_mixin == null) {
+                std.debug.print("error: Nested mixin '{s}' referenced by mixin '{s}' not found\n", .{ nested_mixin_name, mixin_name });
+                return error.UndefinedMixin;
+            }
+
+            const nested_mixin = found_nested_mixin.?;
+
+            // Check for circular dependencies
+            var visited = std.StringHashMap(void).init(allocator);
+            defer {
+                var vit = visited.iterator();
+                while (vit.next()) |e| allocator.free(e.key_ptr.*);
+                visited.deinit();
+            }
+            if (try detectMixinCycle(allocator, config, nested_mixin_name, &visited)) {
+                std.debug.print("error: Cyclic mixin reference detected involving '{s}'\n", .{nested_mixin_name});
+                return error.CircularMixin;
+            }
+
+            // Apply nested mixin fields to this mixin
+            try applyMixinToMixin(allocator, mixin, nested_mixin);
         }
     }
 }
@@ -479,6 +534,229 @@ fn applyMixinToTask(allocator: std.mem.Allocator, task: *Task, mixin: *const typ
     }
 }
 
+/// Apply a nested mixin's fields to a parent mixin (v1.115.0).
+/// Similar to applyMixinToTask but for mixin-to-mixin composition.
+fn applyMixinToMixin(allocator: std.mem.Allocator, parent_mixin: *types.Mixin, nested_mixin: *const types.Mixin) !void {
+    // Merge env: parent mixin overrides nested mixin
+    if (nested_mixin.env.len > 0) {
+        var merged_env = std.StringHashMap([]const u8).init(allocator);
+        defer merged_env.deinit();
+
+        // First, add nested mixin env to map
+        for (nested_mixin.env) |pair| {
+            try merged_env.put(pair[0], pair[1]);
+        }
+
+        // Then overlay parent mixin env (overriding nested values)
+        for (parent_mixin.env) |pair| {
+            try merged_env.put(pair[0], pair[1]);
+        }
+
+        // Rebuild parent_mixin.env from merged map
+        if (merged_env.count() > parent_mixin.env.len) {
+            const new_env = try allocator.alloc([2][]const u8, merged_env.count());
+            var idx: usize = 0;
+            var it = merged_env.iterator();
+            while (it.next()) |e| {
+                new_env[idx][0] = try allocator.dupe(u8, e.key_ptr.*);
+                new_env[idx][1] = try allocator.dupe(u8, e.value_ptr.*);
+                idx += 1;
+            }
+
+            // Free old env
+            for (parent_mixin.env) |pair| {
+                allocator.free(pair[0]);
+                allocator.free(pair[1]);
+            }
+            if (parent_mixin.env.len > 0) allocator.free(parent_mixin.env);
+
+            parent_mixin.env = new_env;
+        }
+    }
+
+    // Concatenate deps: nested first, then parent
+    if (nested_mixin.deps.len > 0) {
+        const new_deps = try allocator.alloc([]const u8, nested_mixin.deps.len + parent_mixin.deps.len);
+        var idx: usize = 0;
+
+        for (nested_mixin.deps) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+        for (parent_mixin.deps) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+
+        // Free old deps
+        for (parent_mixin.deps) |dep| {
+            allocator.free(dep);
+        }
+        if (parent_mixin.deps.len > 0) allocator.free(parent_mixin.deps);
+
+        parent_mixin.deps = new_deps;
+    }
+
+    // Concatenate deps_serial
+    if (nested_mixin.deps_serial.len > 0) {
+        const new_deps = try allocator.alloc([]const u8, nested_mixin.deps_serial.len + parent_mixin.deps_serial.len);
+        var idx: usize = 0;
+
+        for (nested_mixin.deps_serial) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+        for (parent_mixin.deps_serial) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+
+        // Free old deps_serial
+        for (parent_mixin.deps_serial) |dep| {
+            allocator.free(dep);
+        }
+        if (parent_mixin.deps_serial.len > 0) allocator.free(parent_mixin.deps_serial);
+
+        parent_mixin.deps_serial = new_deps;
+    }
+
+    // Concatenate deps_optional
+    if (nested_mixin.deps_optional.len > 0) {
+        const new_deps = try allocator.alloc([]const u8, nested_mixin.deps_optional.len + parent_mixin.deps_optional.len);
+        var idx: usize = 0;
+
+        for (nested_mixin.deps_optional) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+        for (parent_mixin.deps_optional) |dep| {
+            new_deps[idx] = try allocator.dupe(u8, dep);
+            idx += 1;
+        }
+
+        // Free old deps_optional
+        for (parent_mixin.deps_optional) |dep| {
+            allocator.free(dep);
+        }
+        if (parent_mixin.deps_optional.len > 0) allocator.free(parent_mixin.deps_optional);
+
+        parent_mixin.deps_optional = new_deps;
+    }
+
+    // Concatenate deps_if
+    if (nested_mixin.deps_if.len > 0) {
+        const new_deps_if = try allocator.alloc(types.ConditionalDep, nested_mixin.deps_if.len + parent_mixin.deps_if.len);
+        var idx: usize = 0;
+
+        for (nested_mixin.deps_if) |dep| {
+            new_deps_if[idx].task = try allocator.dupe(u8, dep.task);
+            new_deps_if[idx].condition = try allocator.dupe(u8, dep.condition);
+            idx += 1;
+        }
+        for (parent_mixin.deps_if) |dep| {
+            new_deps_if[idx].task = try allocator.dupe(u8, dep.task);
+            new_deps_if[idx].condition = try allocator.dupe(u8, dep.condition);
+            idx += 1;
+        }
+
+        // Free old deps_if
+        for (parent_mixin.deps_if) |*dep| {
+            dep.deinit(allocator);
+        }
+        if (parent_mixin.deps_if.len > 0) allocator.free(parent_mixin.deps_if);
+
+        parent_mixin.deps_if = new_deps_if;
+    }
+
+    // Union tags: combine and deduplicate
+    if (nested_mixin.tags.len > 0) {
+        var tag_map = std.StringHashMap(void).init(allocator);
+        defer tag_map.deinit();
+
+        // Add nested mixin tags
+        for (nested_mixin.tags) |tag| {
+            try tag_map.put(tag, {});
+        }
+        // Add parent mixin tags
+        for (parent_mixin.tags) |tag| {
+            try tag_map.put(tag, {});
+        }
+
+        if (tag_map.count() > parent_mixin.tags.len) {
+            const new_tags = try allocator.alloc([]const u8, tag_map.count());
+            var idx: usize = 0;
+            var it = tag_map.iterator();
+            while (it.next()) |e| {
+                new_tags[idx] = try allocator.dupe(u8, e.key_ptr.*);
+                idx += 1;
+            }
+
+            // Free old tags
+            for (parent_mixin.tags) |tag| {
+                allocator.free(tag);
+            }
+            if (parent_mixin.tags.len > 0) allocator.free(parent_mixin.tags);
+
+            parent_mixin.tags = new_tags;
+        }
+    }
+
+    // Concatenate hooks: nested first, then parent
+    if (nested_mixin.hooks.len > 0) {
+        const new_hooks = try allocator.alloc(types.TaskHook, nested_mixin.hooks.len + parent_mixin.hooks.len);
+        var idx: usize = 0;
+
+        for (nested_mixin.hooks) |hook| {
+            new_hooks[idx] = try copyTaskHookImpl(allocator, &hook);
+            idx += 1;
+        }
+        for (parent_mixin.hooks) |hook| {
+            new_hooks[idx] = try copyTaskHookImpl(allocator, &hook);
+            idx += 1;
+        }
+
+        // Free old hooks
+        for (parent_mixin.hooks) |*hook| {
+            hook.deinit(allocator);
+        }
+        if (parent_mixin.hooks.len > 0) allocator.free(parent_mixin.hooks);
+
+        parent_mixin.hooks = new_hooks;
+    }
+
+    // Override fields: parent mixin wins if set
+    if (nested_mixin.cmd != null and parent_mixin.cmd == null) {
+        parent_mixin.cmd = try allocator.dupe(u8, nested_mixin.cmd.?);
+    }
+    if (nested_mixin.cwd != null and parent_mixin.cwd == null) {
+        parent_mixin.cwd = try allocator.dupe(u8, nested_mixin.cwd.?);
+    }
+    if (nested_mixin.description != null and parent_mixin.description == null) {
+        parent_mixin.description = try allocator.dupe(u8, nested_mixin.description.?);
+    }
+    if (nested_mixin.timeout_ms != null and parent_mixin.timeout_ms == null) {
+        parent_mixin.timeout_ms = nested_mixin.timeout_ms;
+    }
+    if (nested_mixin.retry_max > 0 and parent_mixin.retry_max == 0) {
+        parent_mixin.retry_max = nested_mixin.retry_max;
+    }
+    if (nested_mixin.retry_delay_ms > 0 and parent_mixin.retry_delay_ms == 0) {
+        parent_mixin.retry_delay_ms = nested_mixin.retry_delay_ms;
+    }
+    if (nested_mixin.retry_backoff_multiplier != null and parent_mixin.retry_backoff_multiplier == null) {
+        parent_mixin.retry_backoff_multiplier = nested_mixin.retry_backoff_multiplier;
+    }
+    if (nested_mixin.retry_jitter and !parent_mixin.retry_jitter) {
+        parent_mixin.retry_jitter = true;
+    }
+    if (nested_mixin.max_backoff_ms != null and parent_mixin.max_backoff_ms == null) {
+        parent_mixin.max_backoff_ms = nested_mixin.max_backoff_ms;
+    }
+    if (nested_mixin.template != null and parent_mixin.template == null) {
+        parent_mixin.template = try allocator.dupe(u8, nested_mixin.template.?);
+    }
+}
+
 /// Helper to copy a TaskHook in mixin resolution (v1.67.0).
 fn copyTaskHookImpl(allocator: std.mem.Allocator, hook: *const types.TaskHook) !types.TaskHook {
     const cmd = try allocator.dupe(u8, hook.cmd);
@@ -547,6 +825,218 @@ pub fn inheritWorkspaceSharedTasks(
         // This avoids double-duping the task name and prevents leaks
         try member_config.tasks.put(task_copy.name, task_copy);
     }
+}
+
+/// Inherit workspace mixins and templates into member config (v1.115.0).
+/// Workspace mixins and templates are inherited unless the member defines a mixin/template with the same name.
+fn inheritWorkspaceMixinsAndTemplates(
+    allocator: std.mem.Allocator,
+    member_config: *Config,
+    workspace_config: *const Config,
+) !void {
+    if (workspace_config.workspace == null) return;
+
+    // Inherit mixins from workspace
+    var mixin_it = workspace_config.mixins.iterator();
+    while (mixin_it.next()) |entry| {
+        const mixin_name = entry.key_ptr.*;
+        const workspace_mixin = entry.value_ptr.*;
+
+        // Skip if member already defines this mixin (member overrides workspace)
+        if (member_config.mixins.contains(mixin_name)) {
+            continue;
+        }
+
+        // Deep copy the workspace mixin into member's mixin map
+        var mixin_copy = try copyMixin(allocator, &workspace_mixin);
+        errdefer mixin_copy.deinit(allocator);
+
+        try member_config.mixins.put(mixin_copy.name, mixin_copy);
+    }
+
+    // Inherit templates from workspace
+    var template_it = workspace_config.templates.iterator();
+    while (template_it.next()) |entry| {
+        const template_name = entry.key_ptr.*;
+        const workspace_template = entry.value_ptr.*;
+
+        // Skip if member already defines this template (member overrides workspace)
+        if (member_config.templates.contains(template_name)) {
+            continue;
+        }
+
+        // Deep copy the workspace template into member's template map
+        var template_copy = try copyTemplate(allocator, &workspace_template);
+        errdefer template_copy.deinit(allocator);
+
+        try member_config.templates.put(template_copy.name, template_copy);
+    }
+}
+
+/// Deep copy a mixin (v1.115.0).
+fn copyMixin(allocator: std.mem.Allocator, mixin: *const types.Mixin) !types.Mixin {
+    var result = mixin.*;
+
+    result.name = try allocator.dupe(u8, mixin.name);
+    errdefer allocator.free(result.name);
+
+    // Copy env
+    if (mixin.env.len > 0) {
+        result.env = try allocator.alloc([2][]const u8, mixin.env.len);
+        for (mixin.env, 0..) |pair, i| {
+            result.env[i][0] = try allocator.dupe(u8, pair[0]);
+            result.env[i][1] = try allocator.dupe(u8, pair[1]);
+        }
+    }
+
+    // Copy deps
+    if (mixin.deps.len > 0) {
+        result.deps = try allocator.alloc([]const u8, mixin.deps.len);
+        for (mixin.deps, 0..) |dep, i| {
+            result.deps[i] = try allocator.dupe(u8, dep);
+        }
+    }
+
+    // Copy deps_serial
+    if (mixin.deps_serial.len > 0) {
+        result.deps_serial = try allocator.alloc([]const u8, mixin.deps_serial.len);
+        for (mixin.deps_serial, 0..) |dep, i| {
+            result.deps_serial[i] = try allocator.dupe(u8, dep);
+        }
+    }
+
+    // Copy deps_optional
+    if (mixin.deps_optional.len > 0) {
+        result.deps_optional = try allocator.alloc([]const u8, mixin.deps_optional.len);
+        for (mixin.deps_optional, 0..) |dep, i| {
+            result.deps_optional[i] = try allocator.dupe(u8, dep);
+        }
+    }
+
+    // Copy deps_if
+    if (mixin.deps_if.len > 0) {
+        result.deps_if = try allocator.alloc(types.ConditionalDep, mixin.deps_if.len);
+        for (mixin.deps_if, 0..) |dep, i| {
+            result.deps_if[i].task = try allocator.dupe(u8, dep.task);
+            result.deps_if[i].condition = try allocator.dupe(u8, dep.condition);
+        }
+    }
+
+    // Copy tags
+    if (mixin.tags.len > 0) {
+        result.tags = try allocator.alloc([]const u8, mixin.tags.len);
+        for (mixin.tags, 0..) |tag, i| {
+            result.tags[i] = try allocator.dupe(u8, tag);
+        }
+    }
+
+    // Copy cmd
+    if (mixin.cmd) |cmd| {
+        result.cmd = try allocator.dupe(u8, cmd);
+    }
+
+    // Copy cwd
+    if (mixin.cwd) |cwd| {
+        result.cwd = try allocator.dupe(u8, cwd);
+    }
+
+    // Copy description
+    if (mixin.description) |desc| {
+        result.description = try allocator.dupe(u8, desc);
+    }
+
+    // Copy hooks
+    if (mixin.hooks.len > 0) {
+        result.hooks = try allocator.alloc(types.TaskHook, mixin.hooks.len);
+        for (mixin.hooks, 0..) |hook, i| {
+            result.hooks[i] = try copyTaskHookImpl(allocator, &hook);
+        }
+    }
+
+    // Copy template
+    if (mixin.template) |tmpl| {
+        result.template = try allocator.dupe(u8, tmpl);
+    }
+
+    // Copy nested mixins
+    if (mixin.mixins.len > 0) {
+        result.mixins = try allocator.alloc([]const u8, mixin.mixins.len);
+        for (mixin.mixins, 0..) |m, i| {
+            result.mixins[i] = try allocator.dupe(u8, m);
+        }
+    }
+
+    return result;
+}
+
+/// Deep copy a template (v1.115.0).
+fn copyTemplate(allocator: std.mem.Allocator, template: *const types.TaskTemplate) !types.TaskTemplate {
+    var result = template.*;
+
+    result.name = try allocator.dupe(u8, template.name);
+    errdefer allocator.free(result.name);
+
+    // Copy cmd
+    result.cmd = try allocator.dupe(u8, template.cmd);
+    errdefer allocator.free(result.cmd);
+
+    // Copy cwd if present
+    if (template.cwd) |cwd| {
+        result.cwd = try allocator.dupe(u8, cwd);
+    }
+
+    // Copy description if present
+    if (template.description) |desc| {
+        result.description = try allocator.dupe(u8, desc);
+    }
+
+    // Copy deps
+    if (template.deps.len > 0) {
+        result.deps = try allocator.alloc([]const u8, template.deps.len);
+        for (template.deps, 0..) |dep, i| {
+            result.deps[i] = try allocator.dupe(u8, dep);
+        }
+    }
+
+    // Copy deps_serial
+    if (template.deps_serial.len > 0) {
+        result.deps_serial = try allocator.alloc([]const u8, template.deps_serial.len);
+        for (template.deps_serial, 0..) |dep, i| {
+            result.deps_serial[i] = try allocator.dupe(u8, dep);
+        }
+    }
+
+    // Copy env
+    if (template.env.len > 0) {
+        result.env = try allocator.alloc([2][]const u8, template.env.len);
+        for (template.env, 0..) |pair, i| {
+            result.env[i][0] = try allocator.dupe(u8, pair[0]);
+            result.env[i][1] = try allocator.dupe(u8, pair[1]);
+        }
+    }
+
+    // Copy condition if present
+    if (template.condition) |cond| {
+        result.condition = try allocator.dupe(u8, cond);
+    }
+
+    // Copy toolchain
+    if (template.toolchain.len > 0) {
+        result.toolchain = try allocator.alloc([]const u8, template.toolchain.len);
+        for (template.toolchain, 0..) |tc, i| {
+            result.toolchain[i] = try allocator.dupe(u8, tc);
+        }
+    }
+
+    // Copy params
+    if (template.params.len > 0) {
+        result.params = try allocator.alloc([]const u8, template.params.len);
+        for (template.params, 0..) |p, i| {
+            result.params[i] = try allocator.dupe(u8, p);
+        }
+    }
+
+    return result;
 }
 
 /// Deep copy a task (v1.114.0 complete deep copy for shared task inheritance).

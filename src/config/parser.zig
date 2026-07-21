@@ -217,8 +217,8 @@ fn copyTaskHook(allocator: std.mem.Allocator, hook: *const types.TaskHook) !type
 
     return types.TaskHook{
         .cmd = cmd_owned,
-        .point = hook.point,  // enum, no need to dupe
-        .failure_strategy = hook.failure_strategy,  // enum, no need to dupe
+        .point = hook.point, // enum, no need to dupe
+        .failure_strategy = hook.failure_strategy, // enum, no need to dupe
         .working_dir = working_dir_owned,
         .env = env_owned,
     };
@@ -855,7 +855,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var task_watch_exclude_patterns = std.ArrayList([]const u8){};
     defer task_watch_exclude_patterns.deinit(allocator);
     var task_watch_mode: ?[]const u8 = null;
-    var in_task_watch: bool = false;  // true when inside [tasks.X.watch] section
+    var in_task_watch: bool = false; // true when inside [tasks.X.watch] section
     // Non-owning slices into content for env pairs — addTask dupes them
     var task_env = std.ArrayList([2][]const u8){};
     defer task_env.deinit(allocator);
@@ -919,7 +919,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // Runtime task parameters (v1.75.0) — parsed from task_params array
     // Task documentation fields (v1.79.0)
     var task_desc_short: ?[]const u8 = null; // Short description for rich format
-    var task_desc_long: ?[]const u8 = null;   // Long description for rich format
+    var task_desc_long: ?[]const u8 = null; // Long description for rich format
     var task_examples = std.ArrayList([]const u8){};
     defer task_examples.deinit(allocator);
     var task_outputs_keys = std.ArrayList([]const u8){};
@@ -955,13 +955,13 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     defer if (task_confirm_if) |ci| allocator.free(ci);
 
     // Subsection state (v1.19.0) — for handling subsections appearing before main task
-    var in_task_matrix: bool = false;  // true when inside [tasks.X.matrix] section
-    var in_task_env: bool = false;     // true when inside [tasks.X.env] section
+    var in_task_matrix: bool = false; // true when inside [tasks.X.matrix] section
+    var in_task_env: bool = false; // true when inside [tasks.X.env] section
     var in_task_toolchain: bool = false; // true when inside [tasks.X.toolchain] section
-    var in_task_hooks: bool = false;    // true when inside [[tasks.X.hooks]] section (v1.24.0)
-    var in_task_retry: bool = false;    // true when inside [tasks.X.retry] section (v1.48.0)
+    var in_task_hooks: bool = false; // true when inside [[tasks.X.hooks]] section (v1.24.0)
+    var in_task_retry: bool = false; // true when inside [tasks.X.retry] section (v1.48.0)
     var in_task_description: bool = false; // true when inside [tasks.X.description] section (v1.79.0)
-    var in_task_outputs: bool = false;    // true when inside [tasks.X.outputs] section (v1.79.0)
+    var in_task_outputs: bool = false; // true when inside [tasks.X.outputs] section (v1.79.0)
     var pending_task_name: ?[]const u8 = null; // task name from subsection
     // Buffer for matrix TOML (will be content for task_matrix_raw when main task appears)
     var pending_matrix_buffer = std.ArrayList(u8){};
@@ -993,7 +993,6 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var current_hook_working_dir: ?[]const u8 = null;
     var current_hook_env = std.ArrayList([2][]const u8){};
     defer current_hook_env.deinit(allocator);
-
 
     // Template parsing state — non-owning slices into content
     var current_template: ?[]const u8 = null;
@@ -1278,6 +1277,121 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
 
+        // Flush a pending [workspace.shared_tasks.NAME] section before any other section
+        // header takes over — otherwise later sections (e.g. [mixins.X], [tasks.X]) would
+        // misroute their key=value lines into the shared-task field parser below, since it
+        // only reset ws_shared_task_name when another [workspace.shared_tasks.*] header
+        // appeared (issue #124).
+        if (ws_shared_task_name != null and trimmed[0] == '[' and !std.mem.startsWith(u8, trimmed, "[workspace.shared_tasks.")) {
+            if (ws_shared_task_name) |task_name| {
+                const cmd = task_cmd orelse "";
+                try addWorkspaceSharedTask(
+                    &ws_shared_tasks,
+                    allocator,
+                    task_name,
+                    cmd,
+                    task_cwd,
+                    task_desc,
+                    task_deps.items,
+                    task_deps_serial.items,
+                    task_deps_optional.items,
+                    task_env.items,
+                    task_timeout_ms,
+                    task_allow_failure,
+                    task_tags.items,
+                );
+            }
+            task_deps.clearRetainingCapacity();
+            task_deps_serial.clearRetainingCapacity();
+            task_deps_optional.clearRetainingCapacity();
+            task_env.clearRetainingCapacity();
+            task_tags.clearRetainingCapacity();
+            task_cmd = null;
+            task_cwd = null;
+            task_desc = null;
+            task_timeout_ms = null;
+            task_allow_failure = false;
+            ws_shared_task_name = null;
+        }
+
+        // Flush a pending [templates.NAME] section before any other section header takes
+        // over — otherwise current_template stays set for the rest of the file and every
+        // subsequent key=value line (e.g. inside [mixins.X] or [tasks.X]) gets misrouted
+        // into template field parsing instead of its own section, silently dropping those
+        // fields (issue #124). Consecutive "[templates." sections re-enter the branch below,
+        // which still flushes normally via the same helper.
+        if (current_template != null and trimmed[0] == '[' and !std.mem.startsWith(u8, trimmed, "[templates.")) {
+            if (current_template) |tmpl_name| {
+                try flushCurrentTemplate(
+                    allocator,
+                    &config,
+                    tmpl_name,
+                    template_cmd,
+                    template_cwd,
+                    template_desc,
+                    template_condition,
+                    &template_deps,
+                    &template_deps_serial,
+                    &template_env,
+                    &template_toolchain,
+                    &template_params,
+                    template_timeout_ms,
+                    template_allow_failure,
+                    template_retry_max,
+                    template_retry_delay_ms,
+                    template_retry_backoff,
+                    template_max_concurrent,
+                    template_cache,
+                    template_max_cpu,
+                    template_max_memory,
+                );
+            }
+            template_deps.clearRetainingCapacity();
+            template_deps_serial.clearRetainingCapacity();
+            template_env.clearRetainingCapacity();
+            template_toolchain.clearRetainingCapacity();
+            template_params.clearRetainingCapacity();
+            template_cmd = null;
+            template_cwd = null;
+            template_desc = null;
+            template_timeout_ms = null;
+            template_allow_failure = false;
+            template_retry_max = 0;
+            template_retry_delay_ms = 0;
+            template_retry_backoff = false;
+            template_retry_backoff_multiplier = null;
+            template_retry_jitter = false;
+            template_max_backoff_ms = null;
+            template_retry_on_codes.clearRetainingCapacity();
+            template_retry_on_patterns.clearRetainingCapacity();
+            template_condition = null;
+            template_max_concurrent = 0;
+            template_cache = false;
+            template_max_cpu = null;
+            template_max_memory = null;
+            current_template = null;
+        }
+
+        // Flush a pending [[mixins.X.hooks]] entry before any other section header takes
+        // over (v1.115.0), mirroring the [[tasks.X.hooks]] flush-on-transition behavior.
+        if (in_mixin_hooks and trimmed[0] == '[' and !(std.mem.startsWith(u8, trimmed, "[[mixins.") and std.mem.endsWith(u8, trimmed, ".hooks]]"))) {
+            try flushCurrentHook(
+                allocator,
+                &mixin_hooks,
+                current_hook_cmd,
+                current_hook_point,
+                current_hook_failure_strategy,
+                current_hook_working_dir,
+                &current_hook_env,
+            );
+            current_hook_cmd = null;
+            current_hook_point = null;
+            current_hook_failure_strategy = null;
+            current_hook_working_dir = null;
+            current_hook_env.clearRetainingCapacity();
+            in_mixin_hooks = false;
+        }
+
         if (std.mem.startsWith(u8, trimmed, "[[workflows.") and std.mem.endsWith(u8, trimmed, ".stages]]")) {
             in_workspace = false;
             // Flush pending stage into workflow_stages (with auto-generated name if needed)
@@ -1405,7 +1519,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_max_backoff_ms = null;
                 task_retry_on_codes.clearRetainingCapacity();
                 task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null;
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
                 task_max_concurrent = 0;
                 task_cache = false;
                 task_max_cpu = null;
@@ -1430,7 +1546,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (err == error.MalformedSectionHeader) return err;
                 return err;
             };
-            workflow_desc = null; workflow_retry_budget = null;
+            workflow_desc = null;
+            workflow_retry_budget = null;
             if (workflow_matrix) |*m| {
                 var matrix_mut = m.*;
                 matrix_mut.deinit(allocator);
@@ -1563,14 +1680,36 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 task_env.clearRetainingCapacity();
                 task_toolchain.clearRetainingCapacity();
                 task_tags.clearRetainingCapacity();
-                task_cmd = null; task_cwd = null; task_desc = null;
-                task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
-                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
-                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
-                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                task_share_output = false;
                 task_required_env.clearRetainingCapacity();
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
@@ -1606,7 +1745,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
                 current_workflow = null;
-                workflow_desc = null; workflow_retry_budget = null;
+                workflow_desc = null;
+                workflow_retry_budget = null;
             }
 
             // Parse new profile name: "[profiles.X]" → X
@@ -1642,7 +1782,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
-                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
+                workflow_stages.clearRetainingCapacity();
+                current_workflow = null;
+                workflow_desc = null;
+                workflow_retry_budget = null;
             }
             if (current_task) |task_name| {
                 // Allow tasks without cmd if they have dependencies (dependency-only tasks)
@@ -1655,14 +1798,48 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); task_requires.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
-                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
-                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
-                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
-                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_toolchain.clearRetainingCapacity();
+                task_tags.clearRetainingCapacity();
+                task_sources.clearRetainingCapacity();
+                task_generates.clearRetainingCapacity();
+                task_requires.clearRetainingCapacity();
+                for (task_task_params.items) |*p| p.deinit(allocator);
+                task_task_params.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                task_share_output = false;
                 task_required_env.clearRetainingCapacity();
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
@@ -1671,13 +1848,27 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (current_profile_task) |ptask| {
                     const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
                     var ptenv_duped: usize = 0;
-                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
-                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    errdefer {
+                        for (pto_env[0..ptenv_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
+                        allocator.free(pto_env);
+                    }
+                    for (profile_task_env.items, 0..) |pair, i| {
+                        pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pto_env[i][0]);
+                        pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                        ptenv_duped += 1;
+                    }
                     const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
                     const pto_key = try allocator.dupe(u8, ptask);
                     errdefer allocator.free(pto_key);
                     try profile_task_overrides.put(pto_key, pto);
-                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                    current_profile_task = null;
+                    profile_task_env.clearRetainingCapacity();
+                    profile_task_cmd = null;
+                    profile_task_cwd = null;
                 }
                 try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
                 profile_env.clearRetainingCapacity();
@@ -1742,14 +1933,48 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); task_requires.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
-                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
-                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
-                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
-                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_toolchain.clearRetainingCapacity();
+                task_tags.clearRetainingCapacity();
+                task_sources.clearRetainingCapacity();
+                task_generates.clearRetainingCapacity();
+                task_requires.clearRetainingCapacity();
+                for (task_task_params.items) |*p| p.deinit(allocator);
+                task_task_params.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                task_share_output = false;
                 task_required_env.clearRetainingCapacity();
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
@@ -1780,19 +2005,36 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
-                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
+                workflow_stages.clearRetainingCapacity();
+                current_workflow = null;
+                workflow_desc = null;
+                workflow_retry_budget = null;
             }
             if (current_profile) |pname| {
                 if (current_profile_task) |ptask| {
                     const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
                     var ptenv_duped: usize = 0;
-                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
-                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    errdefer {
+                        for (pto_env[0..ptenv_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
+                        allocator.free(pto_env);
+                    }
+                    for (profile_task_env.items, 0..) |pair, i| {
+                        pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pto_env[i][0]);
+                        pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                        ptenv_duped += 1;
+                    }
                     const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
                     const pto_key = try allocator.dupe(u8, ptask);
                     errdefer allocator.free(pto_key);
                     try profile_task_overrides.put(pto_key, pto);
-                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                    current_profile_task = null;
+                    profile_task_env.clearRetainingCapacity();
+                    profile_task_cmd = null;
+                    profile_task_cwd = null;
                 }
                 try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
                 profile_env.clearRetainingCapacity();
@@ -1818,14 +2060,48 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); task_requires.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
-                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
-                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
-                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
-                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_toolchain.clearRetainingCapacity();
+                task_tags.clearRetainingCapacity();
+                task_sources.clearRetainingCapacity();
+                task_generates.clearRetainingCapacity();
+                task_requires.clearRetainingCapacity();
+                for (task_task_params.items) |*p| p.deinit(allocator);
+                task_task_params.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                task_share_output = false;
                 task_required_env.clearRetainingCapacity();
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
@@ -1856,19 +2132,36 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
-                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
+                workflow_stages.clearRetainingCapacity();
+                current_workflow = null;
+                workflow_desc = null;
+                workflow_retry_budget = null;
             }
             if (current_profile) |pname| {
                 if (current_profile_task) |ptask| {
                     const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
                     var ptenv_duped: usize = 0;
-                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
-                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    errdefer {
+                        for (pto_env[0..ptenv_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
+                        allocator.free(pto_env);
+                    }
+                    for (profile_task_env.items, 0..) |pair, i| {
+                        pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pto_env[i][0]);
+                        pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                        ptenv_duped += 1;
+                    }
                     const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
                     const pto_key = try allocator.dupe(u8, ptask);
                     errdefer allocator.free(pto_key);
                     try profile_task_overrides.put(pto_key, pto);
-                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                    current_profile_task = null;
+                    profile_task_env.clearRetainingCapacity();
+                    profile_task_cmd = null;
+                    profile_task_cwd = null;
                 }
                 try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
                 profile_env.clearRetainingCapacity();
@@ -1895,14 +2188,48 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); task_requires.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
-                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
-                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
-                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
-                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_toolchain.clearRetainingCapacity();
+                task_tags.clearRetainingCapacity();
+                task_sources.clearRetainingCapacity();
+                task_generates.clearRetainingCapacity();
+                task_requires.clearRetainingCapacity();
+                for (task_task_params.items) |*p| p.deinit(allocator);
+                task_task_params.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                task_share_output = false;
                 task_required_env.clearRetainingCapacity();
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
@@ -1933,19 +2260,36 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
                 workflow_matrix = null;
                 for (workflow_stages.items) |*s| s.deinit(allocator);
-                workflow_stages.clearRetainingCapacity(); current_workflow = null; workflow_desc = null; workflow_retry_budget = null;
+                workflow_stages.clearRetainingCapacity();
+                current_workflow = null;
+                workflow_desc = null;
+                workflow_retry_budget = null;
             }
             if (current_profile) |pname| {
                 if (current_profile_task) |ptask| {
                     const pto_env = try allocator.alloc([2][]const u8, profile_task_env.items.len);
                     var ptenv_duped: usize = 0;
-                    errdefer { for (pto_env[0..ptenv_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); } allocator.free(pto_env); }
-                    for (profile_task_env.items, 0..) |pair, i| { pto_env[i][0] = try allocator.dupe(u8, pair[0]); errdefer allocator.free(pto_env[i][0]); pto_env[i][1] = try allocator.dupe(u8, pair[1]); ptenv_duped += 1; }
+                    errdefer {
+                        for (pto_env[0..ptenv_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
+                        allocator.free(pto_env);
+                    }
+                    for (profile_task_env.items, 0..) |pair, i| {
+                        pto_env[i][0] = try allocator.dupe(u8, pair[0]);
+                        errdefer allocator.free(pto_env[i][0]);
+                        pto_env[i][1] = try allocator.dupe(u8, pair[1]);
+                        ptenv_duped += 1;
+                    }
                     const pto = ProfileTaskOverride{ .cmd = if (profile_task_cmd) |c| try allocator.dupe(u8, c) else null, .cwd = if (profile_task_cwd) |c| try allocator.dupe(u8, c) else null, .env = pto_env };
                     const pto_key = try allocator.dupe(u8, ptask);
                     errdefer allocator.free(pto_key);
                     try profile_task_overrides.put(pto_key, pto);
-                    current_profile_task = null; profile_task_env.clearRetainingCapacity(); profile_task_cmd = null; profile_task_cwd = null;
+                    current_profile_task = null;
+                    profile_task_env.clearRetainingCapacity();
+                    profile_task_cmd = null;
+                    profile_task_cwd = null;
                 }
                 try flushProfile(allocator, &config, pname, &profile_env, &profile_task_overrides, &profile_vars, profile_description);
                 profile_env.clearRetainingCapacity();
@@ -2148,14 +2492,48 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items);
                     }
                 }
-                task_deps.clearRetainingCapacity(); task_deps_serial.clearRetainingCapacity(); task_deps_if.clearRetainingCapacity(); task_deps_optional.clearRetainingCapacity(); task_env.clearRetainingCapacity(); task_toolchain.clearRetainingCapacity(); task_tags.clearRetainingCapacity(); task_sources.clearRetainingCapacity(); task_generates.clearRetainingCapacity(); task_requires.clearRetainingCapacity(); for (task_task_params.items) |*p| p.deinit(allocator); task_task_params.clearRetainingCapacity();
-                task_cmd = null; task_cwd = null; task_desc = null; task_timeout_ms = null; task_allow_failure = false;
-                task_retry_max = 0; task_retry_delay_ms = 0; task_retry_backoff = false;
-                task_retry_backoff_multiplier = null; task_retry_jitter = false; task_max_backoff_ms = null;
-                task_retry_on_codes.clearRetainingCapacity(); task_retry_on_patterns.clearRetainingCapacity();
-                task_condition = null; task_skip_if = null; task_output_if = null; task_max_concurrent = 0; task_cache = false; task_max_cpu = null; task_max_memory = null; task_matrix_raw = null;
-                task_output_file = null; task_output_mode = null; task_remote = null; task_remote_cwd = null; task_remote_env.clearRetainingCapacity();
-                task_notify = false; task_notify_on = null; task_notify_title = null; task_share_output = false;
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_toolchain.clearRetainingCapacity();
+                task_tags.clearRetainingCapacity();
+                task_sources.clearRetainingCapacity();
+                task_generates.clearRetainingCapacity();
+                task_requires.clearRetainingCapacity();
+                for (task_task_params.items) |*p| p.deinit(allocator);
+                task_task_params.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_remote_env.clearRetainingCapacity();
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                task_share_output = false;
                 task_required_env.clearRetainingCapacity();
                 task_secrets.clearRetainingCapacity();
                 current_task = null;
@@ -2166,7 +2544,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
                     var pc_duped: usize = 0;
                     errdefer {
-                        for (pc_pairs[0..pc_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); }
+                        for (pc_pairs[0..pc_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
                         allocator.free(pc_pairs);
                     }
                     for (plugin_cfg_pairs.items, 0..) |pair, i| {
@@ -2231,7 +2612,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_watch = stripQuotes(trimmed["[tasks.".len .. watch_idx]);
+            const before_watch = stripQuotes(trimmed["[tasks.".len..watch_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2262,7 +2643,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_retry = stripQuotes(trimmed["[tasks.".len .. retry_idx]);
+            const before_retry = stripQuotes(trimmed["[tasks.".len..retry_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2296,7 +2677,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_matrix = stripQuotes(trimmed["[tasks.".len .. matrix_idx]);
+            const before_matrix = stripQuotes(trimmed["[tasks.".len..matrix_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_matrix;
@@ -2321,7 +2702,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_env = stripQuotes(trimmed["[tasks.".len .. env_idx]);
+            const before_env = stripQuotes(trimmed["[tasks.".len..env_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_env;
@@ -2346,7 +2727,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_toolchain = stripQuotes(trimmed["[tasks.".len .. toolchain_idx]);
+            const before_toolchain = stripQuotes(trimmed["[tasks.".len..toolchain_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             pending_task_name = before_toolchain;
@@ -2375,7 +2756,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_desc = stripQuotes(trimmed["[tasks.".len .. desc_idx]);
+            const before_desc = stripQuotes(trimmed["[tasks.".len..desc_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2410,7 +2791,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_outputs = stripQuotes(trimmed["[tasks.".len .. outputs_idx]);
+            const before_outputs = stripQuotes(trimmed["[tasks.".len..outputs_idx]);
 
             // Verify we're currently in this task's context
             if (current_task) |task_name| {
@@ -2457,7 +2838,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.ReservedTaskName;
             }
 
-            const before_hooks = stripQuotes(trimmed["[[tasks.".len .. hooks_idx]);
+            const before_hooks = stripQuotes(trimmed["[[tasks.".len..hooks_idx]);
 
             // Store the task name for when we see the main [tasks.X] section
             // UNLESS we're already in that task (hooks after task definition)
@@ -2518,7 +2899,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 for (workflow_stages.items) |*s| s.deinit(allocator);
                 workflow_stages.clearRetainingCapacity();
                 current_workflow = null;
-                workflow_desc = null; workflow_retry_budget = null;
+                workflow_desc = null;
+                workflow_retry_budget = null;
             }
             // Flush pending profile (if any)
             if (current_profile) |pname| {
@@ -2564,7 +2946,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
                     var pc_duped: usize = 0;
                     errdefer {
-                        for (pc_pairs[0..pc_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); }
+                        for (pc_pairs[0..pc_duped]) |pair| {
+                            allocator.free(pair[0]);
+                            allocator.free(pair[1]);
+                        }
                         allocator.free(pc_pairs);
                     }
                     for (plugin_cfg_pairs.items, 0..) |pair, i| {
@@ -2730,110 +3115,29 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         } else if (std.mem.startsWith(u8, trimmed, "[templates.")) {
             // Flush pending template before starting a new one
             if (current_template) |tmpl_name| {
-                if (template_cmd) |cmd| {
-                    const tmpl_name_owned = try allocator.dupe(u8, tmpl_name);
-                    errdefer allocator.free(tmpl_name_owned);
-
-                    const tmpl_cmd_owned = try allocator.dupe(u8, cmd);
-                    errdefer allocator.free(tmpl_cmd_owned);
-
-                    const tmpl_cwd_owned = if (template_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
-                    errdefer if (tmpl_cwd_owned) |c| allocator.free(c);
-
-                    const tmpl_desc_owned = if (template_desc) |desc| try allocator.dupe(u8, desc) else null;
-                    errdefer if (tmpl_desc_owned) |d| allocator.free(d);
-
-                    const tmpl_condition_owned = if (template_condition) |cond| try allocator.dupe(u8, cond) else null;
-                    errdefer if (tmpl_condition_owned) |c| allocator.free(c);
-
-                    // Dupe deps
-                    const tmpl_deps_owned = try allocator.alloc([]const u8, template_deps.items.len);
-                    var deps_duped: usize = 0;
-                    errdefer {
-                        for (tmpl_deps_owned[0..deps_duped]) |d| allocator.free(d);
-                        allocator.free(tmpl_deps_owned);
-                    }
-                    for (template_deps.items, 0..) |d, i| {
-                        tmpl_deps_owned[i] = try allocator.dupe(u8, d);
-                        deps_duped += 1;
-                    }
-
-                    // Dupe deps_serial
-                    const tmpl_deps_serial_owned = try allocator.alloc([]const u8, template_deps_serial.items.len);
-                    var deps_serial_duped: usize = 0;
-                    errdefer {
-                        for (tmpl_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
-                        allocator.free(tmpl_deps_serial_owned);
-                    }
-                    for (template_deps_serial.items, 0..) |d, i| {
-                        tmpl_deps_serial_owned[i] = try allocator.dupe(u8, d);
-                        deps_serial_duped += 1;
-                    }
-
-                    // Dupe env
-                    const tmpl_env_owned = try allocator.alloc([2][]const u8, template_env.items.len);
-                    var env_duped: usize = 0;
-                    errdefer {
-                        for (tmpl_env_owned[0..env_duped]) |pair| {
-                            allocator.free(pair[0]);
-                            allocator.free(pair[1]);
-                        }
-                        allocator.free(tmpl_env_owned);
-                    }
-                    for (template_env.items, 0..) |pair, i| {
-                        tmpl_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
-                        tmpl_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
-                        env_duped += 1;
-                    }
-
-                    // Dupe toolchain
-                    const tmpl_toolchain_owned = try allocator.alloc([]const u8, template_toolchain.items.len);
-                    var toolchain_duped: usize = 0;
-                    errdefer {
-                        for (tmpl_toolchain_owned[0..toolchain_duped]) |t| allocator.free(t);
-                        allocator.free(tmpl_toolchain_owned);
-                    }
-                    for (template_toolchain.items, 0..) |t, i| {
-                        tmpl_toolchain_owned[i] = try allocator.dupe(u8, t);
-                        toolchain_duped += 1;
-                    }
-
-                    // Dupe params
-                    const tmpl_params_owned = try allocator.alloc([]const u8, template_params.items.len);
-                    var params_duped: usize = 0;
-                    errdefer {
-                        for (tmpl_params_owned[0..params_duped]) |p| allocator.free(p);
-                        allocator.free(tmpl_params_owned);
-                    }
-                    for (template_params.items, 0..) |p, i| {
-                        tmpl_params_owned[i] = try allocator.dupe(u8, p);
-                        params_duped += 1;
-                    }
-
-                    const template = types.TaskTemplate{
-                        .name = tmpl_name_owned,
-                        .cmd = tmpl_cmd_owned,
-                        .cwd = tmpl_cwd_owned,
-                        .description = tmpl_desc_owned,
-                        .deps = tmpl_deps_owned,
-                        .deps_serial = tmpl_deps_serial_owned,
-                        .env = tmpl_env_owned,
-                        .timeout_ms = template_timeout_ms,
-                        .allow_failure = template_allow_failure,
-                        .retry_max = template_retry_max,
-                        .retry_delay_ms = template_retry_delay_ms,
-                        .retry_backoff = template_retry_backoff,
-                        .condition = tmpl_condition_owned,
-                        .max_concurrent = template_max_concurrent,
-                        .cache = template_cache,
-                        .max_cpu = template_max_cpu,
-                        .max_memory = template_max_memory,
-                        .toolchain = tmpl_toolchain_owned,
-                        .params = tmpl_params_owned,
-                    };
-
-                    try config.templates.put(tmpl_name_owned, template);
-                }
+                try flushCurrentTemplate(
+                    allocator,
+                    &config,
+                    tmpl_name,
+                    template_cmd,
+                    template_cwd,
+                    template_desc,
+                    template_condition,
+                    &template_deps,
+                    &template_deps_serial,
+                    &template_env,
+                    &template_toolchain,
+                    &template_params,
+                    template_timeout_ms,
+                    template_allow_failure,
+                    template_retry_max,
+                    template_retry_delay_ms,
+                    template_retry_backoff,
+                    template_max_concurrent,
+                    template_cache,
+                    template_max_cpu,
+                    template_max_memory,
+                );
             }
 
             // Reset template state
@@ -2867,7 +3171,32 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 if (err == error.MalformedSectionHeader) return err;
                 return err;
             };
+        } else if (std.mem.startsWith(u8, trimmed, "[[mixins.") and std.mem.endsWith(u8, trimmed, ".hooks]]")) {
+            // Section: [[mixins.X.hooks]] — hook configuration for mixin X (v1.115.0)
+            // Flush previous hook (if any) into mixin_hooks before starting a new entry
+            try flushCurrentHook(
+                allocator,
+                &mixin_hooks,
+                current_hook_cmd,
+                current_hook_point,
+                current_hook_failure_strategy,
+                current_hook_working_dir,
+                &current_hook_env,
+            );
+
+            in_mixin_hooks = true;
+            in_mixin_env = false;
+
+            // Reset current hook state for new hook entry
+            current_hook_cmd = null;
+            current_hook_point = null;
+            current_hook_failure_strategy = null;
+            current_hook_working_dir = null;
+            current_hook_env.clearRetainingCapacity();
         } else if (std.mem.startsWith(u8, trimmed, "[mixins.")) {
+            // Note: any pending [[mixins.X.hooks]] entry was already flushed by the
+            // generic top-of-loop guard above before this branch is reached (v1.115.0).
+
             // Flush pending mixin before starting a new one
             if (current_mixin) |mixin_name| {
                 const mixin_name_owned = try allocator.dupe(u8, mixin_name);
@@ -4273,9 +4602,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         // Count-based format: { count = 10 }
                         const inner = std.mem.trim(u8, trimmed_value[1 .. trimmed_value.len - 1], " \t");
                         if (std.mem.indexOf(u8, inner, "count")) |idx| {
-                            const after_count = inner[idx + 5..]; // Skip "count"
+                            const after_count = inner[idx + 5 ..]; // Skip "count"
                             if (std.mem.indexOf(u8, after_count, "=")) |eq_pos| {
-                                const count_str = std.mem.trim(u8, after_count[eq_pos + 1..], " \t");
+                                const count_str = std.mem.trim(u8, after_count[eq_pos + 1 ..], " \t");
                                 if (std.fmt.parseInt(u32, count_str, 10)) |count_val| {
                                     task_artifact_retention = types.ArtifactRetention{ .count_based = .{ .count = count_val } };
                                 } else |_| {}
@@ -4337,7 +4666,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             if (ch == '}') {
                                 depth -= 1;
                                 if (depth == 0) {
-                                    const table_str = std.mem.trim(u8, ip_str[start..i + 1], " \t,");
+                                    const table_str = std.mem.trim(u8, ip_str[start .. i + 1], " \t,");
                                     try ip_tables.append(allocator, table_str);
                                     start = i + 1;
                                 }
@@ -4410,7 +4739,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                         // Parse array: ["a", "b", "c"]
                                         const choices_v = std.mem.trim(u8, v_raw, " \t");
                                         if (std.mem.startsWith(u8, choices_v, "[") and std.mem.endsWith(u8, choices_v, "]")) {
-                                            const choices_inner = choices_v[1..choices_v.len - 1];
+                                            const choices_inner = choices_v[1 .. choices_v.len - 1];
                                             var ch_it = std.mem.splitScalar(u8, choices_inner, ',');
                                             while (ch_it.next()) |choice| {
                                                 const c = std.mem.trim(u8, choice, " \t\"");
@@ -4459,7 +4788,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                             if (ch == '}') {
                                 depth -= 1;
                                 if (depth == 0) {
-                                    const table_str = std.mem.trim(u8, hooks_str[start..i + 1], " \t,");
+                                    const table_str = std.mem.trim(u8, hooks_str[start .. i + 1], " \t,");
                                     try hook_tables.append(allocator, table_str);
                                     start = i + 1;
                                 }
@@ -4504,7 +4833,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     // Parse array: ["API_KEY", "PASSWORD", ...]
                     const redact_trimmed = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, redact_trimmed, "[") and std.mem.endsWith(u8, redact_trimmed, "]")) {
-                        const inner = redact_trimmed[1..redact_trimmed.len - 1];
+                        const inner = redact_trimmed[1 .. redact_trimmed.len - 1];
                         var parts = std.mem.splitScalar(u8, inner, ',');
                         while (parts.next()) |part| {
                             const part_trimmed = std.mem.trim(u8, part, " \t\"");
@@ -4672,6 +5001,35 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         }
                     }
                 }
+            } else if (in_mixin_hooks) {
+                // Inside [[mixins.X.hooks]] section (v1.115.0)
+                // Parse hook fields: cmd, point, failure_strategy, working_dir, env
+                if (std.mem.eql(u8, key, "cmd")) {
+                    current_hook_cmd = value;
+                } else if (std.mem.eql(u8, key, "point")) {
+                    current_hook_point = value;
+                } else if (std.mem.eql(u8, key, "failure_strategy")) {
+                    current_hook_failure_strategy = value;
+                } else if (std.mem.eql(u8, key, "working_dir")) {
+                    current_hook_working_dir = value;
+                } else if (std.mem.eql(u8, key, "env")) {
+                    // Parse inline table: env = { KEY = "value", FOO = "bar" }
+                    const inner = std.mem.trim(u8, value, " \t");
+                    if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
+                        const pairs_str = inner[1 .. inner.len - 1];
+                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
+                        while (pairs_it.next()) |pair_str| {
+                            const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
+                            const env_key = std.mem.trim(u8, pair_str[0..eq], " \t\"");
+                            const env_val = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
+                            if (env_key.len > 0) {
+                                try current_hook_env.append(allocator, .{ env_key, env_val });
+                            }
+                        }
+                    }
+                } else {
+                    // Unknown field, ignore
+                }
             } else if (current_mixin != null) {
                 // Mixin-level key=value parsing (v1.67.0)
                 if (std.mem.eql(u8, key, "env")) {
@@ -4822,6 +5180,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 }
             }
         }
+    }
+
+    // Flush final pending [[mixins.X.hooks]] entry, if any, before the mixin itself (v1.115.0)
+    if (in_mixin_hooks) {
+        try flushCurrentHook(
+            allocator,
+            &mixin_hooks,
+            current_hook_cmd,
+            current_hook_point,
+            current_hook_failure_strategy,
+            current_hook_working_dir,
+            &current_hook_env,
+        );
+        in_mixin_hooks = false;
     }
 
     // Flush final pending mixin (v1.67.0)
@@ -5021,105 +5393,29 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending template
     if (current_template) |tmpl_name| {
-        if (template_cmd) |cmd| {
-            const tmpl_name_owned = try allocator.dupe(u8, tmpl_name);
-            errdefer allocator.free(tmpl_name_owned);
-
-            const tmpl_cmd_owned = try allocator.dupe(u8, cmd);
-            errdefer allocator.free(tmpl_cmd_owned);
-
-            const tmpl_cwd_owned = if (template_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
-            errdefer if (tmpl_cwd_owned) |c| allocator.free(c);
-
-            const tmpl_desc_owned = if (template_desc) |desc| try allocator.dupe(u8, desc) else null;
-            errdefer if (tmpl_desc_owned) |d| allocator.free(d);
-
-            const tmpl_condition_owned = if (template_condition) |cond| try allocator.dupe(u8, cond) else null;
-            errdefer if (tmpl_condition_owned) |c| allocator.free(c);
-
-            const tmpl_deps_owned = try allocator.alloc([]const u8, template_deps.items.len);
-            var deps_duped: usize = 0;
-            errdefer {
-                for (tmpl_deps_owned[0..deps_duped]) |d| allocator.free(d);
-                allocator.free(tmpl_deps_owned);
-            }
-            for (template_deps.items, 0..) |d, i| {
-                tmpl_deps_owned[i] = try allocator.dupe(u8, d);
-                deps_duped += 1;
-            }
-
-            const tmpl_deps_serial_owned = try allocator.alloc([]const u8, template_deps_serial.items.len);
-            var deps_serial_duped: usize = 0;
-            errdefer {
-                for (tmpl_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
-                allocator.free(tmpl_deps_serial_owned);
-            }
-            for (template_deps_serial.items, 0..) |d, i| {
-                tmpl_deps_serial_owned[i] = try allocator.dupe(u8, d);
-                deps_serial_duped += 1;
-            }
-
-            const tmpl_env_owned = try allocator.alloc([2][]const u8, template_env.items.len);
-            var env_duped: usize = 0;
-            errdefer {
-                for (tmpl_env_owned[0..env_duped]) |pair| {
-                    allocator.free(pair[0]);
-                    allocator.free(pair[1]);
-                }
-                allocator.free(tmpl_env_owned);
-            }
-            for (template_env.items, 0..) |pair, i| {
-                tmpl_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
-                tmpl_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
-                env_duped += 1;
-            }
-
-            const tmpl_toolchain_owned = try allocator.alloc([]const u8, template_toolchain.items.len);
-            var toolchain_duped: usize = 0;
-            errdefer {
-                for (tmpl_toolchain_owned[0..toolchain_duped]) |t| allocator.free(t);
-                allocator.free(tmpl_toolchain_owned);
-            }
-            for (template_toolchain.items, 0..) |t, i| {
-                tmpl_toolchain_owned[i] = try allocator.dupe(u8, t);
-                toolchain_duped += 1;
-            }
-
-            const tmpl_params_owned = try allocator.alloc([]const u8, template_params.items.len);
-            var params_duped: usize = 0;
-            errdefer {
-                for (tmpl_params_owned[0..params_duped]) |p| allocator.free(p);
-                allocator.free(tmpl_params_owned);
-            }
-            for (template_params.items, 0..) |p, i| {
-                tmpl_params_owned[i] = try allocator.dupe(u8, p);
-                params_duped += 1;
-            }
-
-            const template = types.TaskTemplate{
-                .name = tmpl_name_owned,
-                .cmd = tmpl_cmd_owned,
-                .cwd = tmpl_cwd_owned,
-                .description = tmpl_desc_owned,
-                .deps = tmpl_deps_owned,
-                .deps_serial = tmpl_deps_serial_owned,
-                .env = tmpl_env_owned,
-                .timeout_ms = template_timeout_ms,
-                .allow_failure = template_allow_failure,
-                .retry_max = template_retry_max,
-                .retry_delay_ms = template_retry_delay_ms,
-                .retry_backoff = template_retry_backoff,
-                .condition = tmpl_condition_owned,
-                .max_concurrent = template_max_concurrent,
-                .cache = template_cache,
-                .max_cpu = template_max_cpu,
-                .max_memory = template_max_memory,
-                .toolchain = tmpl_toolchain_owned,
-                .params = tmpl_params_owned,
-            };
-
-            try config.templates.put(tmpl_name_owned, template);
-        }
+        try flushCurrentTemplate(
+            allocator,
+            &config,
+            tmpl_name,
+            template_cmd,
+            template_cwd,
+            template_desc,
+            template_condition,
+            &template_deps,
+            &template_deps_serial,
+            &template_env,
+            &template_toolchain,
+            &template_params,
+            template_timeout_ms,
+            template_allow_failure,
+            template_retry_max,
+            template_retry_delay_ms,
+            template_retry_backoff,
+            template_max_concurrent,
+            template_cache,
+            template_max_cpu,
+            template_max_memory,
+        );
     }
 
     // Flush final pending profile task override
@@ -5263,7 +5559,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
             var pc_duped: usize = 0;
             errdefer {
-                for (pc_pairs[0..pc_duped]) |pair| { allocator.free(pair[0]); allocator.free(pair[1]); }
+                for (pc_pairs[0..pc_duped]) |pair| {
+                    allocator.free(pair[0]);
+                    allocator.free(pair[1]);
+                }
                 allocator.free(pc_pairs);
             }
             for (plugin_cfg_pairs.items, 0..) |pair, i| {
@@ -5491,6 +5790,133 @@ fn flushProfile(
         .vars = p_vars,
     };
     try config.profiles.put(p_name, profile);
+}
+
+/// Flush a pending [templates.NAME] section into config.templates (issue #124).
+/// Factored out so it can be called both on section transition (mid-file) and at EOF,
+/// keeping the two call sites from drifting out of sync.
+fn flushCurrentTemplate(
+    allocator: std.mem.Allocator,
+    config: *Config,
+    tmpl_name: []const u8,
+    template_cmd: ?[]const u8,
+    template_cwd: ?[]const u8,
+    template_desc: ?[]const u8,
+    template_condition: ?[]const u8,
+    template_deps: *std.ArrayList([]const u8),
+    template_deps_serial: *std.ArrayList([]const u8),
+    template_env: *std.ArrayList([2][]const u8),
+    template_toolchain: *std.ArrayList([]const u8),
+    template_params: *std.ArrayList([]const u8),
+    template_timeout_ms: ?u64,
+    template_allow_failure: bool,
+    template_retry_max: u32,
+    template_retry_delay_ms: u64,
+    template_retry_backoff: bool,
+    template_max_concurrent: u32,
+    template_cache: bool,
+    template_max_cpu: ?u32,
+    template_max_memory: ?u64,
+) !void {
+    const cmd = template_cmd orelse return;
+
+    const tmpl_name_owned = try allocator.dupe(u8, tmpl_name);
+    errdefer allocator.free(tmpl_name_owned);
+
+    const tmpl_cmd_owned = try allocator.dupe(u8, cmd);
+    errdefer allocator.free(tmpl_cmd_owned);
+
+    const tmpl_cwd_owned = if (template_cwd) |cwd| try allocator.dupe(u8, cwd) else null;
+    errdefer if (tmpl_cwd_owned) |c| allocator.free(c);
+
+    const tmpl_desc_owned = if (template_desc) |desc| try allocator.dupe(u8, desc) else null;
+    errdefer if (tmpl_desc_owned) |d| allocator.free(d);
+
+    const tmpl_condition_owned = if (template_condition) |cond| try allocator.dupe(u8, cond) else null;
+    errdefer if (tmpl_condition_owned) |c| allocator.free(c);
+
+    const tmpl_deps_owned = try allocator.alloc([]const u8, template_deps.items.len);
+    var deps_duped: usize = 0;
+    errdefer {
+        for (tmpl_deps_owned[0..deps_duped]) |d| allocator.free(d);
+        allocator.free(tmpl_deps_owned);
+    }
+    for (template_deps.items, 0..) |d, i| {
+        tmpl_deps_owned[i] = try allocator.dupe(u8, d);
+        deps_duped += 1;
+    }
+
+    const tmpl_deps_serial_owned = try allocator.alloc([]const u8, template_deps_serial.items.len);
+    var deps_serial_duped: usize = 0;
+    errdefer {
+        for (tmpl_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
+        allocator.free(tmpl_deps_serial_owned);
+    }
+    for (template_deps_serial.items, 0..) |d, i| {
+        tmpl_deps_serial_owned[i] = try allocator.dupe(u8, d);
+        deps_serial_duped += 1;
+    }
+
+    const tmpl_env_owned = try allocator.alloc([2][]const u8, template_env.items.len);
+    var env_duped: usize = 0;
+    errdefer {
+        for (tmpl_env_owned[0..env_duped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(tmpl_env_owned);
+    }
+    for (template_env.items, 0..) |pair, i| {
+        tmpl_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
+        tmpl_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
+        env_duped += 1;
+    }
+
+    const tmpl_toolchain_owned = try allocator.alloc([]const u8, template_toolchain.items.len);
+    var toolchain_duped: usize = 0;
+    errdefer {
+        for (tmpl_toolchain_owned[0..toolchain_duped]) |t| allocator.free(t);
+        allocator.free(tmpl_toolchain_owned);
+    }
+    for (template_toolchain.items, 0..) |t, i| {
+        tmpl_toolchain_owned[i] = try allocator.dupe(u8, t);
+        toolchain_duped += 1;
+    }
+
+    const tmpl_params_owned = try allocator.alloc([]const u8, template_params.items.len);
+    var params_duped: usize = 0;
+    errdefer {
+        for (tmpl_params_owned[0..params_duped]) |p| allocator.free(p);
+        allocator.free(tmpl_params_owned);
+    }
+    for (template_params.items, 0..) |p, i| {
+        tmpl_params_owned[i] = try allocator.dupe(u8, p);
+        params_duped += 1;
+    }
+
+    const template = types.TaskTemplate{
+        .name = tmpl_name_owned,
+        .cmd = tmpl_cmd_owned,
+        .cwd = tmpl_cwd_owned,
+        .description = tmpl_desc_owned,
+        .deps = tmpl_deps_owned,
+        .deps_serial = tmpl_deps_serial_owned,
+        .env = tmpl_env_owned,
+        .timeout_ms = template_timeout_ms,
+        .allow_failure = template_allow_failure,
+        .retry_max = template_retry_max,
+        .retry_delay_ms = template_retry_delay_ms,
+        .retry_backoff = template_retry_backoff,
+        .condition = tmpl_condition_owned,
+        .max_concurrent = template_max_concurrent,
+        .cache = template_cache,
+        .max_cpu = template_max_cpu,
+        .max_memory = template_max_memory,
+        .toolchain = tmpl_toolchain_owned,
+        .params = tmpl_params_owned,
+    };
+
+    try config.templates.put(tmpl_name_owned, template);
 }
 
 /// Flush current hook into the destination list (v1.24.0)
