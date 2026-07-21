@@ -116,3 +116,4 @@
 {"timestamp":"2026-07-16T10:24:12Z","action":"subagent","agent_type":"zig-developer","task":"Fix graph_tui.zig enterRawMode panic (unreachable on tcgetattr EBADF when stdin closed) - CI issue #124 triage","project":"zr"}
 {"timestamp":"2026-07-16T10:24:12Z","action":"subagent","agent_type":"test-writer","task":"Fix graph_test.zig test 552 (git-repo env leak), graph_formats_test.zig test 3922 (unsupported TOML syntax), 25000_graph_viz_test.zig test 25004 (ambiguous substring check) - CI issue #124 triage","project":"zr"}
 {"timestamp":"2026-07-18T22:27:33Z","action":"subagent","agent_type":"zig-developer","task":"Fix OutputCapture stdout/stderr split for cache restore (issue #124, tests 882/883)","project":"zr"}
+{"timestamp": "2026-07-19T10:17:21.685029Z", "action": "subagent", "agent_type": "zig-developer", "task": "Fix 7 failing mixin_test.zig tests (8004,8007,8009,8010,8011,8016,8017) - issue #124", "project": "zr"}
