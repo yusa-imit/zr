@@ -1252,7 +1252,7 @@ test "278: run with path containing spaces and special characters" {
     try std.testing.expect(result.exit_code == 0);
 }
 
-test "281: run with --jobs=0 accepts value and runs successfully" {
+test "281: run with --jobs=0 shows validation error" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1272,8 +1272,12 @@ test "281: run with --jobs=0 accepts value and runs successfully" {
 
     var result = try runZr(allocator, &.{ "run", "hello", "--jobs=0" }, tmp_path);
     defer result.deinit();
-    // --jobs=0 is accepted (might default to 1 or CPU count)
-    try std.testing.expect(result.exit_code == 0);
+    // --jobs=0 is explicitly rejected (must be >= 1); 0 is only a valid
+    // internal default meaning "auto-detect" when the flag is omitted.
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "must be") != null or
+        std.mem.indexOf(u8, output, ">= 1") != null);
 }
 
 test "285: run with --profile flag sets profile-specific environment" {

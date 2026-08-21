@@ -1296,7 +1296,7 @@ test "418: workspace run with --format json and --quiet combined" {
     try std.testing.expect(output.len > 0);
 }
 
-test "428: workspace run with --jobs=0 accepts and uses default CPU count" {
+test "428: workspace run with --jobs=0 shows validation error" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1323,8 +1323,12 @@ test "428: workspace run with --jobs=0 accepts and uses default CPU count" {
 
     var result = try runZr(allocator, &.{ "--config", config, "workspace", "run", "build", "--jobs=0" }, tmp_path);
     defer result.deinit();
-    // Should accept --jobs=0 and use default
-    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // --jobs is a global flag validated before workspace dispatch — explicit
+    // 0 is rejected (must be >= 1), matching plain `run --jobs=0` behavior.
+    try std.testing.expect(result.exit_code != 0);
+    const output = if (result.stdout.len > 0) result.stdout else result.stderr;
+    try std.testing.expect(std.mem.indexOf(u8, output, "must be") != null or
+        std.mem.indexOf(u8, output, ">= 1") != null);
 }
 
 test "435: workspace affected with --base and --head refs on same commit shows no changes" {
