@@ -587,8 +587,8 @@ fn run(
                     if (flag_info.inline_value) |value| {
                         // `--flag=value` form — value is embedded in this single token.
                         if ((std.mem.eql(u8, flag_info.long_name, "--format") and
-                            !std.mem.eql(u8, value, "text") and
-                            !std.mem.eql(u8, value, "json")) or
+                            (!std.mem.eql(u8, value, "text") and !std.mem.eql(u8, value, "json") or
+                            std.mem.eql(u8, top_level_cmd, "graph"))) or
                             (std.mem.eql(u8, flag_info.long_name, "--affected") and
                             std.mem.eql(u8, top_level_cmd, "graph")))
                         {
@@ -603,8 +603,8 @@ fn run(
                         // own extended format support (csv, xml, ...). Only consume it globally
                         // when the value is a known global format; otherwise let the subcommand handle it.
                         if ((std.mem.eql(u8, flag_info.long_name, "--format") and
-                            !std.mem.eql(u8, value, "text") and
-                            !std.mem.eql(u8, value, "json")) or
+                            (!std.mem.eql(u8, value, "text") and !std.mem.eql(u8, value, "json") or
+                            std.mem.eql(u8, top_level_cmd, "graph"))) or
                             (std.mem.eql(u8, flag_info.long_name, "--affected") and
                             std.mem.eql(u8, top_level_cmd, "graph")))
                         {
