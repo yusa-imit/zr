@@ -104,28 +104,35 @@ test "105: show --output flag with large file does not error" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Create a temporary output file
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create a temporary output file with large captured output
     const output_file = try tmp.dir.createFile("large_output.txt", .{});
     defer output_file.close();
 
-    // Write 100 lines to the output file
+    // Write 100 lines to the output file (simulating previously captured output)
     var i: usize = 0;
     var buf: [256]u8 = undefined;
     while (i < 100) : (i += 1) {
-        const line = try std.fmt.bufPrint(&buf, "Line {}\n", .{i});
+        const line = try std.fmt.bufPrint(&buf, "Captured output line {}\n", .{i});
         _ = try output_file.writeAll(line);
     }
 
-    const config = try writeTmpConfig(allocator, tmp.dir, LARGE_OUTPUT_TOML);
+    // Create config with task that has output_file configured
+    const config_toml =
+        \\[tasks.large_output]
+        \\description = "Generates large output to test pager"
+        \\cmd = "printf 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30'"
+        \\output_file = "large_output.txt"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
     defer allocator.free(config);
 
-    // Get the full path to output file
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-    const output_path = try std.fs.path.join(allocator, &.{ tmp_path, "large_output.txt" });
-    defer allocator.free(output_path);
-
-    var result = try runZr(allocator, &.{ "--config", config, "show", "large_output", "--output", output_path }, tmp_path);
+    // Show task with --output flag should display the captured output
+    var result = try runZr(allocator, &.{ "show", "large_output", "--output" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
@@ -159,15 +166,27 @@ test "107: show --output with nonexistent file reports error" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const config = try writeTmpConfig(allocator, tmp.dir, LARGE_OUTPUT_TOML);
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // Create config with task that has output_file configured but file doesn't exist
+    const config_toml =
+        \\[tasks.large_output]
+        \\description = "Generates large output to test pager"
+        \\cmd = "printf 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30'"
+        \\output_file = "nonexistent_output.txt"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
     defer allocator.free(config);
 
-    // Attempt to read from a non-existent file
-    var result = try runZr(allocator, &.{ "--config", config, "show", "large_output", "--output", "/nonexistent/path/file.txt" }, null);
+    // Show task with --output flag when file doesn't exist should fail
+    var result = try runZr(allocator, &.{ "show", "large_output", "--output" }, tmp_path);
     defer result.deinit();
 
     // Should exit with error code
-    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
 }
 
 test "108: show with multiline task output" {
@@ -212,28 +231,31 @@ test "110: show task with output redirection to file" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const config = try writeTmpConfig(allocator, tmp.dir, LARGE_OUTPUT_TOML);
-    defer allocator.free(config);
-
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create output file
-    const output_file_path = try std.fs.path.join(allocator, &.{ tmp_path, "output.txt" });
-    defer allocator.free(output_file_path);
+    // Create an output file with captured task output
+    const output_file = try tmp.dir.createFile("output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Output line 1\nOutput line 2\nOutput line 3\n");
 
-    var result = try runZr(allocator, &.{ "--config", config, "show", "large_output", "--output", output_file_path }, tmp_path);
+    // Create config with task that has output_file configured
+    const config_toml =
+        \\[tasks.large_output]
+        \\description = "Generates large output to test pager"
+        \\cmd = "printf 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30'"
+        \\output_file = "output.txt"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Show task with --output flag should display the captured output from the file
+    var result = try runZr(allocator, &.{ "show", "large_output", "--output" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-
-    // Verify file was created
-    const output_file = try tmp.dir.openFile("output.txt", .{});
-    defer output_file.close();
-
-    var buf: [512]u8 = undefined;
-    const bytes_read = try output_file.read(&buf);
-    try std.testing.expect(bytes_read > 0);
 }
 
 test "111: show large output without output flag" {
@@ -278,17 +300,29 @@ test "113: show --output with append mode" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const config = try writeTmpConfig(allocator, tmp.dir, LARGE_OUTPUT_TOML);
-    defer allocator.free(config);
-
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create initial output file
-    const output_path = try std.fs.path.join(allocator, &.{ tmp_path, "appended_output.txt" });
-    defer allocator.free(output_path);
+    // Create an output file with initial captured output (simulating multiple appends)
+    const output_file = try tmp.dir.createFile("appended_output.txt", .{});
+    defer output_file.close();
+    try output_file.writeAll("Initial output\nAppended line 1\nAppended line 2\n");
 
-    var result = try runZr(allocator, &.{ "--config", config, "show", "large_output", "--output", output_path }, tmp_path);
+    // Create config with task that has output_file configured
+    const config_toml =
+        \\[tasks.large_output]
+        \\description = "Generates large output to test pager"
+        \\cmd = "printf 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30'"
+        \\output_file = "appended_output.txt"
+        \\output_mode = "append"
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Show task with --output flag should display the captured output with append mode content
+    var result = try runZr(allocator, &.{ "show", "large_output", "--output" }, tmp_path);
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
