@@ -58,12 +58,12 @@ test "49: config with unknown task field is accepted" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
 }
 
-test "89: validate with --strict flag treats warnings as errors" {
+test "89: validate with --strict flag surfaces missing-description as a notice, not a failure" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Config with a task that lacks description — should trigger --strict warning
+    // Config with a task that lacks description — should trigger a --strict notice
     const config_no_desc =
         \\[tasks.build]
         \\cmd = "echo building"
@@ -76,11 +76,13 @@ test "89: validate with --strict flag treats warnings as errors" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Validate with strict mode — warnings are now treated as errors (exit code 1)
+    // Missing description / unreferenced-task are informational strict-mode
+    // notices, not warning_count-tracked issues — they don't fail --strict
+    // (see integration tests 220/238/408/607/661 and the cmdValidate unit test).
     var result = try runZr(allocator, &.{ "--config", config, "validate", "--strict" }, tmp_path);
     defer result.deinit();
-    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
-    // Verify that strict mode warning appears
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    // Verify that the strict-mode notice still appears
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "missing description") != null);
 }
 
