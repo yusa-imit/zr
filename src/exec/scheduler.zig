@@ -783,6 +783,7 @@ fn loadAndMergeEnvFiles(
     task_env_explicit_count: usize,
     base_env: ?[]const [2][]const u8,
     _cwd: ?[]const u8,
+    had_circular_ref: *bool,
 ) ?[][2][]u8 {
     _ = _cwd; // Reserved for future use: relative path resolution
 
@@ -885,7 +886,9 @@ fn loadAndMergeEnvFiles(
         const interpolated_value = env_loader.interpolateEnvValue(allocator, value, merged_map) catch |err| blk: {
             // If interpolation fails (e.g., circular reference), use original value
             if (err == error.CircularReference) {
-                // Skip this var entirely on circular reference
+                // Circular reference is an unrecoverable config error — signal
+                // the caller to fail the task rather than silently dropping the var.
+                had_circular_ref.* = true;
                 continue;
             }
             break :blk allocator.dupe(u8, value) catch continue;
@@ -997,8 +1000,25 @@ fn workerFn(ctx: WorkerCtx) void {
     }
 
     // Load .env files and merge with task env (v1.78.0)
-    const env_with_files = loadAndMergeEnvFiles(task_allocator, ctx.env_file, ctx.env, ctx.env_explicit_count, null, ctx.task_cwd);
+    var had_circular_env_ref = false;
+    const env_with_files = loadAndMergeEnvFiles(task_allocator, ctx.env_file, ctx.env, ctx.env_explicit_count, null, ctx.task_cwd, &had_circular_env_ref);
     defer if (env_with_files) |env| toolchain_path.freeToolchainEnv(task_allocator, env);
+
+    // Circular .env variable reference is an unrecoverable config error (v2.x)
+    if (had_circular_env_ref) {
+        std.debug.print("✗ [env_file]: circular variable reference detected in task '{s}'\n", .{ctx.task_name});
+        const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
+        ctx.results_mutex.lock();
+        defer ctx.results_mutex.unlock();
+        ctx.results.append(task_allocator, .{
+            .task_name = owned_name,
+            .success = false,
+            .exit_code = 255,
+            .duration_ms = 0,
+        }) catch task_allocator.free(owned_name);
+        if (!ctx.allow_failure) ctx.failed.store(true, .release);
+        return;
+    }
 
     // Check required environment variables (v1.84.0)
     if (ctx.required_env.len > 0) {
