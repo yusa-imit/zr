@@ -367,13 +367,13 @@ test "checkImportPattern - no violation" {
 
     var rule = ConformanceRule.init(
         allocator,
-        "no-react",
+        try allocator.dupe(u8, "no-react"),
         .import_pattern,
         .err,
-        "**/*.js",
-        "React imports not allowed in backend",
+        try allocator.dupe(u8, "**/*.js"),
+        try allocator.dupe(u8, "React imports not allowed in backend"),
     );
-    rule.pattern = "react";
+    rule.pattern = try allocator.dupe(u8, "react");
     defer rule.deinit();
 
     const violation = try checkImportPattern(allocator, file_path, &rule);
@@ -393,13 +393,13 @@ test "checkFileNaming - violation" {
 
     var rule = ConformanceRule.init(
         allocator,
-        "test-naming",
+        try allocator.dupe(u8, "test-naming"),
         .file_naming,
         .warning,
-        "**/*.test.js",
-        "Test files must end with .test.js",
+        try allocator.dupe(u8, "**/*.test.js"),
+        try allocator.dupe(u8, "Test files must end with .test.js"),
     );
-    rule.pattern = "*.test.js";
+    rule.pattern = try allocator.dupe(u8, "*.test.js");
     defer rule.deinit();
 
     const violation = try checkFileNaming(allocator, file_path, &rule);
@@ -416,11 +416,11 @@ test "checkDirectoryDepth - violation" {
 
     var rule = ConformanceRule.init(
         allocator,
-        "depth-limit",
+        try allocator.dupe(u8, "depth-limit"),
         .directory_depth,
         .warning,
-        "**/*",
-        "Directory depth too deep",
+        try allocator.dupe(u8, "**/*"),
+        try allocator.dupe(u8, "Directory depth too deep"),
     );
     defer rule.deinit();
 

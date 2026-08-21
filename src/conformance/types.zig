@@ -72,12 +72,17 @@ pub const ConformanceRule = struct {
     }
 
     pub fn deinit(self: *ConformanceRule) void {
+        const allocator = self.config.allocator;
         var it = self.config.iterator();
         while (it.next()) |entry| {
-            self.config.allocator.free(entry.key_ptr.*);
-            self.config.allocator.free(entry.value_ptr.*);
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
         }
         self.config.deinit();
+        allocator.free(self.id);
+        allocator.free(self.scope);
+        if (self.pattern) |p| allocator.free(p);
+        allocator.free(self.message);
     }
 };
 
@@ -168,13 +173,20 @@ pub const ConformanceResult = struct {
 };
 
 test "ConformanceRule init and deinit" {
+    // deinit() owns and frees id/scope/message/pattern (they're always
+    // heap-duped by the parser to avoid dangling pointers into the source
+    // buffer — see parser.zig's conformance rule parsing) — so callers,
+    // including this test, must pass heap-allocated strings too.
+    const id = try std.testing.allocator.dupe(u8, "test-rule");
+    const scope = try std.testing.allocator.dupe(u8, "src/**/*.ts");
+    const message = try std.testing.allocator.dupe(u8, "Test rule message");
     var rule = ConformanceRule.init(
         std.testing.allocator,
-        "test-rule",
+        id,
         .import_pattern,
         .err,
-        "src/**/*.ts",
-        "Test rule message",
+        scope,
+        message,
     );
     defer rule.deinit();
 

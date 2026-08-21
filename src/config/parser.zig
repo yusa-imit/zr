@@ -1244,14 +1244,24 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     var in_conformance: bool = false;
     var in_conformance_rule: bool = false;
     var conformance_fail_on_warning: bool = false;
+    // Ownership of conformance_ignore/conformance_rules items transfers to
+    // config.conformance via @memcpy near the end of this function. Once
+    // transferred, this defer must NOT also free the item contents (the
+    // copied-out config would be left with dangling pointers) — only the
+    // temporary ArrayList backing storage itself.
+    var conformance_data_transferred = false;
     var conformance_ignore = std.ArrayList([]const u8){};
     defer {
-        for (conformance_ignore.items) |item| allocator.free(item);
+        if (!conformance_data_transferred) {
+            for (conformance_ignore.items) |item| allocator.free(item);
+        }
         conformance_ignore.deinit(allocator);
     }
     var conformance_rules = std.ArrayList(conformance_types.ConformanceRule){};
     defer {
-        for (conformance_rules.items) |*rule| rule.deinit();
+        if (!conformance_data_transferred) {
+            for (conformance_rules.items) |*rule| rule.deinit();
+        }
         conformance_rules.deinit(allocator);
     }
     // Current conformance rule being parsed
@@ -2441,6 +2451,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         } else if (std.mem.eql(u8, trimmed, "[[conformance.rules]]")) {
             // Flush pending conformance rule
             if (in_conformance_rule) {
+                var rule_built = false;
                 if (current_rule_id) |id| {
                     if (current_rule_type) |rule_type| {
                         if (current_rule_scope) |scope| {
@@ -2459,9 +2470,19 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                 try conformance_rules.append(allocator, rule);
                                 // Reset config for next rule
                                 current_rule_config = std.StringHashMap([]const u8).init(allocator);
+                                rule_built = true;
                             }
                         }
                     }
+                }
+                // Required field(s) missing — the rule was dropped, so the
+                // heap-duped strings gathered for it must be freed here
+                // instead of leaking (they're never transferred to a rule).
+                if (!rule_built) {
+                    if (current_rule_id) |id| allocator.free(id);
+                    if (current_rule_scope) |scope| allocator.free(scope);
+                    if (current_rule_pattern) |pattern| allocator.free(pattern);
+                    if (current_rule_message) |message| allocator.free(message);
                 }
             }
             // Start new conformance rule
@@ -3909,9 +3930,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     }
                 }
             } else if (in_conformance_rule) {
-                // Inside [[conformance.rules]] — parse rule fields
+                // Inside [[conformance.rules]] — parse rule fields.
+                // id/scope/pattern/message must be duped: `value` borrows
+                // directly from the source file buffer, which the caller
+                // frees right after parseToml returns (loader.zig) — storing
+                // the borrowed slice here would leave the returned config
+                // with dangling pointers (use-after-free).
                 if (std.mem.eql(u8, key, "id")) {
-                    current_rule_id = value;
+                    current_rule_id = try allocator.dupe(u8, value);
                 } else if (std.mem.eql(u8, key, "type")) {
                     if (std.mem.eql(u8, value, "import_pattern")) {
                         current_rule_type = .import_pattern;
@@ -3933,11 +3959,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         current_rule_severity = .info;
                     }
                 } else if (std.mem.eql(u8, key, "scope")) {
-                    current_rule_scope = value;
+                    current_rule_scope = try allocator.dupe(u8, value);
                 } else if (std.mem.eql(u8, key, "pattern")) {
-                    current_rule_pattern = value;
+                    current_rule_pattern = try allocator.dupe(u8, value);
                 } else if (std.mem.eql(u8, key, "message")) {
-                    current_rule_message = value;
+                    current_rule_message = try allocator.dupe(u8, value);
                 } else if (std.mem.eql(u8, key, "fixable")) {
                     current_rule_fixable = std.mem.eql(u8, value, "true");
                 } else if (std.mem.startsWith(u8, key, "config.")) {
@@ -5661,6 +5687,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush pending conformance rule (if any)
     if (in_conformance_rule) {
+        var rule_built = false;
         if (current_rule_id) |id| {
             if (current_rule_type) |rule_type| {
                 if (current_rule_scope) |scope| {
@@ -5677,9 +5704,19 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         rule.fixable = current_rule_fixable;
                         rule.config = current_rule_config;
                         try conformance_rules.append(allocator, rule);
+                        rule_built = true;
                     }
                 }
             }
+        }
+        // Required field(s) missing — the rule was dropped, so the
+        // heap-duped strings gathered for it must be freed here instead of
+        // leaking (they're never transferred to a rule).
+        if (!rule_built) {
+            if (current_rule_id) |id| allocator.free(id);
+            if (current_rule_scope) |scope| allocator.free(scope);
+            if (current_rule_pattern) |pattern| allocator.free(pattern);
+            if (current_rule_message) |message| allocator.free(message);
         }
     }
 
@@ -5690,6 +5727,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         @memcpy(config.conformance.ignore, conformance_ignore.items);
         config.conformance.rules = try allocator.alloc(conformance_types.ConformanceRule, conformance_rules.items.len);
         @memcpy(config.conformance.rules, conformance_rules.items);
+        conformance_data_transferred = true;
     }
 
     // Transfer imports (v1.55.0)
