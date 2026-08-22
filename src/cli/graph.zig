@@ -957,8 +957,32 @@ pub fn graphCommand(
             // Unknown format values fall back to the default (ascii) rather
             // than erroring, matching --type's tolerant sibling behavior.
             format = GraphFormat.fromString(fmt_str) orelse .ascii;
+        } else if (std.mem.eql(u8, arg, "--format")) {
+            // Handle bare --format token (value is next argument)
+            if (i + 1 >= args.len) {
+                try color.printError(ew, use_color, "graph: --format requires a value\n\n  Hint: zr graph --format json\n", .{});
+                return 1;
+            }
+            i += 1;
+            const fmt_str = args[i];
+            format = GraphFormat.fromString(fmt_str) orelse .ascii;
         } else if (std.mem.startsWith(u8, arg, "--type=")) {
             const type_str = arg["--type=".len..];
+            graph_type = GraphType.fromString(type_str) orelse {
+                try color.printError(ew, use_color,
+                    "graph: invalid type '{s}'\n\n  Valid types: workspace, tasks\n",
+                    .{type_str});
+                return 1;
+            };
+            type_explicit = true;
+        } else if (std.mem.eql(u8, arg, "--type")) {
+            // Handle bare --type token (value is next argument)
+            if (i + 1 >= args.len) {
+                try color.printError(ew, use_color, "graph: --type requires a value\n\n  Hint: zr graph --type tasks\n", .{});
+                return 1;
+            }
+            i += 1;
+            const type_str = args[i];
             graph_type = GraphType.fromString(type_str) orelse {
                 try color.printError(ew, use_color,
                     "graph: invalid type '{s}'\n\n  Valid types: workspace, tasks\n",

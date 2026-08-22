@@ -590,7 +590,9 @@ fn run(
                             (!std.mem.eql(u8, value, "text") and !std.mem.eql(u8, value, "json") or
                             std.mem.eql(u8, top_level_cmd, "graph"))) or
                             (std.mem.eql(u8, flag_info.long_name, "--affected") and
-                            std.mem.eql(u8, top_level_cmd, "graph")))
+                            std.mem.eql(u8, top_level_cmd, "graph")) or
+                            (std.mem.eql(u8, flag_info.long_name, "--config") and
+                            std.mem.eql(u8, top_level_cmd, "doctor")))
                         {
                             try remaining_args.append(allocator, arg);
                         } else {
@@ -606,7 +608,9 @@ fn run(
                             (!std.mem.eql(u8, value, "text") and !std.mem.eql(u8, value, "json") or
                             std.mem.eql(u8, top_level_cmd, "graph"))) or
                             (std.mem.eql(u8, flag_info.long_name, "--affected") and
-                            std.mem.eql(u8, top_level_cmd, "graph")))
+                            std.mem.eql(u8, top_level_cmd, "graph")) or
+                            (std.mem.eql(u8, flag_info.long_name, "--config") and
+                            std.mem.eql(u8, top_level_cmd, "doctor")))
                         {
                             try remaining_args.append(allocator, arg);
                             try remaining_args.append(allocator, value);
@@ -1911,7 +1915,9 @@ fn run(
         var use_new_graph = false;
         for (effective_args[2..]) |arg| {
             if (std.mem.startsWith(u8, arg, "--type=") or
+                std.mem.eql(u8, arg, "--type") or
                 std.mem.startsWith(u8, arg, "--format=") or
+                std.mem.eql(u8, arg, "--format") or
                 std.mem.eql(u8, arg, "--interactive") or
                 std.mem.eql(u8, arg, "--watch") or
                 std.mem.startsWith(u8, arg, "--affected") or
