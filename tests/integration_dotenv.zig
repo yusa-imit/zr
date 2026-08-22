@@ -375,9 +375,14 @@ test "varsubst: escaped dollar sign not expanded" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Escaped variable should not be expanded
+    // Escaped variable should not be expanded — the command itself must
+    // keep the literal "${VAR}" and must not show it substituted to
+    // "echo value". (The Environment section legitimately lists VAR=value
+    // since the .env file loads it, regardless of whether the command
+    // references it, so we can't assert "value" is absent from the whole
+    // output — only that the command line wasn't substituted.)
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "${VAR}") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "value") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "echo value") == null);
 }
 
 test "dotenv+varsubst: .env and variable substitution work together" {

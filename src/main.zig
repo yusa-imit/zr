@@ -2466,6 +2466,7 @@ fn run(
         var output_flag = false;
         var output_opts = show_cmd.ShowOutputOptions{};
         var task_name: ?[]const u8 = null;
+        var format_value: ?[]const u8 = null;
 
         var i: usize = 2;
         while (i < effective_args.len) : (i += 1) {
@@ -2510,8 +2511,22 @@ fn run(
                 output_opts.follow = true;
             } else if (std.mem.eql(u8, arg, "--no-pager")) {
                 output_opts.no_pager = true;
+            } else if (std.mem.eql(u8, arg, "--format")) {
+                if (i + 1 < effective_args.len) {
+                    i += 1;
+                    format_value = effective_args[i];
+                }
+            } else if (std.mem.startsWith(u8, arg, "--format=")) {
+                format_value = arg["--format=".len..];
             } else if (task_name == null) {
                 task_name = arg;
+            }
+        }
+
+        if (format_value) |fmt| {
+            if (!std.mem.eql(u8, fmt, "json") and !std.mem.eql(u8, fmt, "text")) {
+                try color.printError(ew, effective_color, "show: unsupported format '{s}'\n\n  Hint: supported formats: text, json\n", .{fmt});
+                return 1;
             }
         }
 

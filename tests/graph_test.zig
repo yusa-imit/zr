@@ -1023,7 +1023,7 @@ test "513: graph --format json with task having empty deps array" {
     try std.testing.expect(std.mem.indexOf(u8, output, "\"deps\"") != null or std.mem.indexOf(u8, output, "dependencies") != null);
 }
 
-test "521: graph with invalid --format shows error message" {
+test "521: graph with invalid --format (bare token) falls back to default" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1043,12 +1043,14 @@ test "521: graph with invalid --format shows error message" {
     defer zr_toml.close();
     try zr_toml.writeAll(toml);
 
-    var result = try runZr(allocator, &.{ "graph", "--format", "dot" }, tmp_path);
+    // "xyz123" is not a recognized format — matches test 712's documented
+    // fallback contract for the joined (--format=xyz) form, but exercises
+    // the space-separated bare-token form instead.
+    var result = try runZr(allocator, &.{ "graph", "--format", "xyz123" }, tmp_path);
     defer result.deinit();
-    // Should return error for unsupported format
-    try std.testing.expect(result.exit_code != 0);
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     const output = if (result.stdout.len > 0) result.stdout else result.stderr;
-    try std.testing.expect(std.mem.indexOf(u8, output, "unknown format") != null or output.len > 0);
+    try std.testing.expect(output.len > 0);
 }
 
 test "541: graph with --format dot and --affected highlights changed tasks with color" {
