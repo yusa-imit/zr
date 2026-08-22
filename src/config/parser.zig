@@ -3406,6 +3406,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                         if (f.len > 0) try import_files.append(allocator, f);
                     }
                 }
+            } else if (std.mem.eql(u8, key, "load_dotenv") and current_task == null and current_profile == null and current_workflow == null and !in_workspace and !in_metadata and !in_imports and !in_settings and !in_vars and !in_constraint and !in_cache and !in_cache_remote and !in_versioning and !in_conformance and !in_tools and !in_task_env and !in_task_watch and !in_task_matrix and !in_task_hooks and !in_task_retry and !in_task_description and !in_task_outputs and !in_profile_vars and current_plugin_name == null) {
+                config.load_dotenv = std.mem.eql(u8, std.mem.trim(u8, value, " \t\""), "true");
             } else if (in_profile_vars) {
                 // Inside [profiles.X.vars] — parse key = "value" pairs into profile vars (v1.86.0)
                 // Store non-owning slices (ownership transferred in flushProfile, same as profile_env)
@@ -7796,4 +7798,47 @@ test "parse task priority defaults to 0 when not specified" {
 
     const task = config.tasks.get("mytask") orelse return error.TaskNotFound;
     try std.testing.expectEqual(@as(i32, 0), task.priority);
+}
+
+test "parse load_dotenv = false at root level" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\load_dotenv = false
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(false, config.load_dotenv);
+}
+
+test "parse load_dotenv = true at root level" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\load_dotenv = true
+        \\
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(true, config.load_dotenv);
+}
+
+test "parse missing load_dotenv defaults to true" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[tasks.test]
+        \\cmd = "echo test"
+        \\
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    try std.testing.expectEqual(true, config.load_dotenv);
 }
