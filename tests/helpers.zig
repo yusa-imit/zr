@@ -362,3 +362,56 @@ pub fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8, cwd: [
         .allocator = allocator,
     };
 }
+
+/// IsolatedTmpDir represents a temporary directory outside the project tree.
+/// Guaranteed to not have any ancestor zr.toml files (safe for config-not-found tests).
+pub const IsolatedTmpDir = struct {
+    path: []const u8,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *IsolatedTmpDir) void {
+        std.fs.deleteTreeAbsolute(self.path) catch {};
+        self.allocator.free(self.path);
+    }
+};
+
+/// Create a temporary directory outside the project tree (guaranteed isolation from ancestor zr.toml).
+/// Caller must call deinit() to clean up.
+pub fn isolatedTmpDir(allocator: std.mem.Allocator) !IsolatedTmpDir {
+    // Use /tmp by default (outside project tree, guaranteed no ancestor zr.toml)
+    const tmp_base = "/tmp";
+
+    // Create a unique subdirectory using current time and random bytes
+    const timestamp = std.time.microTimestamp();
+    var random_buf: [8]u8 = undefined;
+    var prng = std.Random.Xoroshiro128.init(@as(u64, @bitCast(timestamp)));
+    const random = prng.random();
+    random.bytes(&random_buf);
+
+    // Convert random bytes to hex string
+    const hex_buf = try allocator.alloc(u8, 16);
+    defer allocator.free(hex_buf);
+    const hex_chars = "0123456789abcdef";
+    for (random_buf, 0..) |byte, i| {
+        hex_buf[i * 2] = hex_chars[byte >> 4];
+        hex_buf[i * 2 + 1] = hex_chars[byte & 0x0f];
+    }
+
+    const tmp_path = try std.fmt.allocPrint(allocator, "{s}/zr_test_{d}_{s}", .{
+        tmp_base,
+        timestamp,
+        hex_buf,
+    });
+    errdefer allocator.free(tmp_path);
+
+    // Create the directory
+    std.fs.makeDirAbsolute(tmp_path) catch |err| {
+        allocator.free(tmp_path);
+        return err;
+    };
+
+    return IsolatedTmpDir{
+        .path = tmp_path,
+        .allocator = allocator,
+    };
+}

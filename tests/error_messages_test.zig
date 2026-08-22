@@ -52,14 +52,11 @@ test "missing task argument: shows clear error with hint" {
 test "config not found: suggests zr init" {
     const allocator = std.testing.allocator;
 
-    // Run in temporary directory without zr.toml
-    var tmp_dir = std.testing.tmpDir(.{});
-    defer tmp_dir.cleanup();
+    // Run in isolated temporary directory (outside project tree) without zr.toml
+    var tmp_dir = try helpers.isolatedTmpDir(allocator);
+    defer tmp_dir.deinit();
 
-    const tmp_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    var result = try helpers.runZr(allocator, &.{"list"}, tmp_path);
+    var result = try helpers.runZr(allocator, &.{"list"}, tmp_dir.path);
     defer result.deinit();
 
     // Should mention config not found or no configuration

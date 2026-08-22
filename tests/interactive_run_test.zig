@@ -74,13 +74,10 @@ test "interactive-run: alias 'i' works" {
 
 test "interactive-run: missing config file" {
     const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
+    var tmp = try helpers.isolatedTmpDir(allocator);
+    defer tmp.deinit();
 
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    var result = try runZr(allocator, &.{ "interactive-run", "hello" }, tmp_path);
+    var result = try runZr(allocator, &.{ "interactive-run", "hello" }, tmp.path);
     defer result.deinit();
     try std.testing.expect(result.exit_code != 0);
     // Should report missing config file
