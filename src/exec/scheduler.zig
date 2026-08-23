@@ -2869,7 +2869,10 @@ pub fn run(
                     if (group_semaphores.get(group_name)) |existing| {
                         concurrency_sem = existing;
                     } else {
-                        const permits = group.max_workers orelse concurrency;
+                        // max_workers = 0 means "unlimited" (falls back to the
+                        // global worker count), same as leaving it unset —
+                        // a literal 0-permit semaphore would deadlock forever.
+                        const permits = if (group.max_workers) |mw| (if (mw == 0) concurrency else mw) else concurrency;
                         const new_sem = try allocator.create(std.Thread.Semaphore);
                         errdefer allocator.destroy(new_sem);
                         new_sem.* = std.Thread.Semaphore{ .permits = permits };

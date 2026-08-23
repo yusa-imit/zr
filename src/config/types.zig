@@ -498,6 +498,7 @@ pub const Config = struct {
         var cgit = self.concurrency_groups.iterator();
         while (cgit.next()) |entry| {
             entry.value_ptr.deinit(self.allocator);
+            self.allocator.free(entry.key_ptr.*);
         }
         self.concurrency_groups.deinit();
         var gcit = self.group_configs.iterator();
