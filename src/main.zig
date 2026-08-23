@@ -1100,6 +1100,7 @@ fn run(
         // Support `zr run --only <task>` and `zr run --explain <task>` in addition to `zr run <task> --only`
         // Also support `zr run --tag=<tag>` (tag-filter mode without explicit task name → treat as "*")
         var only_mode_pre = false;
+        var notify_override_pre = false;
         var task_name_idx: usize = 2;
         var filter_only_mode = false; // true when first arg is a flag (tag/dir filter without explicit task)
 
@@ -1113,6 +1114,14 @@ fn run(
                 return 1;
             }
             only_mode_pre = true;
+            task_name_idx = 3;
+        } else if (std.mem.eql(u8, effective_args[2], "--notify")) {
+            // Support `zr run --notify <task>` in addition to `zr run <task> --notify`
+            if (effective_args.len < 4) {
+                try color.printError(ew, effective_color, "run: --notify requires a task name\n\n  Hint: zr run <task-name> --notify\n", .{});
+                return 1;
+            }
+            notify_override_pre = true;
             task_name_idx = 3;
         } else if (std.mem.eql(u8, effective_args[2], "--explain")) {
             if (effective_args.len < 4) {
@@ -1183,7 +1192,7 @@ fn run(
         }
         var run_dir_filter: ?[]const u8 = null;
         var fail_fast = false;
-        var notify_override = false;
+        var notify_override = notify_override_pre;
 
         // Parse --skip flags (v1.83.0)
         var skip_tasks_list = std.ArrayList([]const u8){};
