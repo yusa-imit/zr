@@ -2747,6 +2747,7 @@ pub fn run(
                             "Task '{s}' requests CPU {d}, but system only has {d} CPUs (0-{d}). Affinity setting will be ignored.\n",
                             .{ task_name, cpu_id, numa_topology.total_cpus, numa_topology.total_cpus - 1 },
                         ) catch {};
+                        err_writer.interface.flush() catch {};
                         has_invalid = true;
                         break;
                     }

@@ -274,10 +274,12 @@ test "985: section syntax - on_codes field filters retry attempts by exit code" 
     const config = try writeTmpConfig(allocator, tmp.dir, SECTION_ON_CODES_TOML);
     defer allocator.free(config);
 
-    // Task exit_2 should retry (exit code 2 is in on_codes = [2, 3])
+    // Task exit_2 should retry (exit code 2 is in on_codes = [2, 3]), then fail
+    // after exhausting retries. `zr run`'s own process exit code is the generic
+    // failure code 1, not the underlying task's exit code.
     var result1 = try runZr(allocator, &.{ "--config", config, "run", "exit_2" }, null);
     defer result1.deinit();
-    try std.testing.expectEqual(@as(u8, 2), result1.exit_code);
+    try std.testing.expectEqual(@as(u8, 1), result1.exit_code);
 
     // Task exit_1 should NOT retry (exit code 1 is not in on_codes = [2, 3])
     var result2 = try runZr(allocator, &.{ "--config", config, "run", "exit_1" }, null);

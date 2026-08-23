@@ -151,6 +151,9 @@ test "17004: captured output is trimmed (no trailing newlines in env var)" {
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     // "output-value" without newlines is 12 chars
+    if (std.mem.indexOf(u8, result.stdout, "length=12") == null) {
+        std.debug.print("DEBUG 17004 stdout=[{s}] stderr=[{s}]\n", .{ result.stdout, result.stderr });
+    }
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "length=12") != null);
 }
 

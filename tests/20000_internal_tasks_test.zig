@@ -162,8 +162,11 @@ test "20004: zr run with typo suggests internal task via Levenshtein distance" {
     const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
     defer allocator.free(config);
 
-    // Try to run with a typo: "deplo" instead of "deploy"
-    var result = try runZr(allocator, &.{ "--config", config, "run", "deplo" }, null);
+    // Try to run with a typo: "delpoy" (transposed letters) instead of "deploy".
+    // Note: a prefix like "deplo" would auto-resolve via unique-prefix matching
+    // instead of falling through to Levenshtein suggestions, so we need a typo
+    // that isn't a valid prefix of "deploy".
+    var result = try runZr(allocator, &.{ "--config", config, "run", "delpoy" }, null);
     defer result.deinit();
 
     // Should fail (task not found)
