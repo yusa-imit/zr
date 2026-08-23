@@ -45,6 +45,10 @@ const ExprContext = struct {
     diag: ?*DiagContext,
     task_params: ?*std.StringHashMap([]const u8),
     task_tags: ?[]const []const u8,
+    /// When true, an expression that matches no known pattern is a syntax
+    /// error rather than the runtime fail-open default. Only set by
+    /// `checkExpressionSyntax` (static validation, e.g. `zr validate`).
+    strict: bool = false,
 };
 
 /// Evaluate a condition expression string.
@@ -111,6 +115,7 @@ pub fn checkExpressionSyntax(
         .diag = diag,
         .task_params = null,
         .task_tags = null,
+        .strict = true,
     };
     _ = try evalOr(&ctx, expr);
 }
@@ -283,7 +288,9 @@ fn evalPrimary(ctx: *const ExprContext, expr: []const u8) !bool {
         return evalTaskRef(ctx, trimmed);
     }
 
-    // Unknown expression: fail-open
+    // Unknown expression: fail-open at runtime, but a syntax error under
+    // strict (static) validation — see `ExprContext.strict`.
+    if (ctx.strict) return error.InvalidExpression;
     return true;
 }
 
