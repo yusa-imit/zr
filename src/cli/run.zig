@@ -368,7 +368,12 @@ pub fn cmdRun(
     const match_result = try findTasksByPrefix(allocator, task_name, &config.tasks);
     defer allocator.free(match_result.prefix_matches);
 
-    if (match_result.exact == null) {
+    if (match_result.exact) |exact_name| {
+        // Exact match on task name or alias - use the resolved task name
+        // (findTasksByPrefix returns the real task key even when `task_name`
+        // was actually an alias, so this must not stay as the raw input).
+        resolved_task_name = exact_name;
+    } else {
         // No exact match - check prefix matches
         if (match_result.prefix_matches.len == 0) {
             // No prefix matches either - try fuzzy matching
