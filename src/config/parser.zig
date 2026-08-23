@@ -2561,7 +2561,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending plugin (if any)
             if (current_plugin_name) |pn| {
-                if (plugin_source) |src| {
+                // Missing 'source' is kept as an empty string (rather than being
+                // dropped) so `zr validate` can flag it as a config error.
+                const src = plugin_source orelse "";
+                {
                     const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
                     var pc_duped: usize = 0;
                     errdefer {
@@ -2963,7 +2966,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             }
             // Flush pending plugin (if any)
             if (current_plugin_name) |pn| {
-                if (plugin_source) |src| {
+                // Missing 'source' is kept as an empty string (rather than being
+                // dropped) so `zr validate` can flag it as a config error.
+                const src = plugin_source orelse "";
+                {
                     const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
                     var pc_duped: usize = 0;
                     errdefer {
@@ -5364,6 +5370,20 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         };
 
         try config.mixins.put(mixin_name_owned, mixin);
+
+        // Reset mixin accumulator state. mixin_deps_if (and friends) hold
+        // non-owning slices into the source content until copied above —
+        // leaving them populated here means the function-scope `defer` at
+        // the top of parseToml frees them a second time as if they were
+        // owned, corrupting the allocator (invalid free).
+        mixin_env.clearRetainingCapacity();
+        mixin_deps.clearRetainingCapacity();
+        mixin_deps_serial.clearRetainingCapacity();
+        mixin_deps_optional.clearRetainingCapacity();
+        mixin_deps_if.clearRetainingCapacity();
+        mixin_tags.clearRetainingCapacity();
+        mixin_hooks.clearRetainingCapacity();
+        mixin_mixins.clearRetainingCapacity();
     }
 
     // Flush final pending stage (including approval and on_failure fields, with auto-generated name if needed)
@@ -5583,7 +5603,10 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     // Flush final pending plugin (if any)
     if (current_plugin_name) |pn| {
-        if (plugin_source) |src| {
+        // Missing 'source' is kept as an empty string (rather than being
+        // dropped) so `zr validate` can flag it as a config error.
+        const src = plugin_source orelse "";
+        {
             const pc_pairs = try allocator.alloc([2][]const u8, plugin_cfg_pairs.items.len);
             var pc_duped: usize = 0;
             errdefer {
@@ -6656,7 +6679,7 @@ test "no plugins section gives empty plugins slice" {
     try std.testing.expectEqual(@as(usize, 0), config.plugins.len);
 }
 
-test "plugin without source is ignored" {
+test "plugin without source is kept with empty source for validate to flag" {
     const allocator = std.testing.allocator;
     const toml_content =
         \\[plugins.broken]
@@ -6664,8 +6687,10 @@ test "plugin without source is ignored" {
     ;
     var config = try parseToml(allocator, toml_content);
     defer config.deinit();
-    // Plugin with no source should be ignored (source is required).
-    try std.testing.expectEqual(@as(usize, 0), config.plugins.len);
+    // Source is required, but the plugin entry is preserved (with an empty
+    // source) rather than silently dropped, so `zr validate` can report it.
+    try std.testing.expectEqual(@as(usize, 1), config.plugins.len);
+    try std.testing.expectEqualStrings("", config.plugins[0].source);
 }
 
 test "parse builtin plugin from toml" {
