@@ -285,9 +285,16 @@ test "8007: deps concatenation" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "step1") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "step2") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "step3") != null);
+    // step1/step2 (from the mixin) and step3 (the task's own dep) are independent
+    // deps with no ordering relationship between them — they may run in parallel
+    // in any order. All three must finish before the task's own "testing" output.
     const step1_pos = std.mem.indexOf(u8, result.stdout, "step1") orelse return error.TestFailed;
+    const step2_pos = std.mem.indexOf(u8, result.stdout, "step2") orelse return error.TestFailed;
     const step3_pos = std.mem.indexOf(u8, result.stdout, "step3") orelse return error.TestFailed;
-    try std.testing.expect(step1_pos < step3_pos);
+    const testing_pos = std.mem.indexOf(u8, result.stdout, "testing") orelse return error.TestFailed;
+    try std.testing.expect(step1_pos < testing_pos);
+    try std.testing.expect(step2_pos < testing_pos);
+    try std.testing.expect(step3_pos < testing_pos);
 }
 
 test "8008: tags union" {
