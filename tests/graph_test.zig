@@ -1365,7 +1365,7 @@ test "654: graph visualization with task containing self-loop in deps" {
     );
 }
 
-test "662: graph with --format dot shows unsupported format error" {
+test "662: graph with --format dot outputs GraphViz DOT format" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1396,10 +1396,9 @@ test "662: graph with --format dot shows unsupported format error" {
     var result = try runZr(allocator, &.{ "--config", config, "graph", "--format", "dot" }, tmp_path);
     defer result.deinit();
 
-    // DOT format not implemented - should show error message
-    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "unknown format") != null or
-                            std.mem.indexOf(u8, result.stderr, "supported formats") != null);
+    // DOT format is implemented (GraphViz digraph output) - should succeed.
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "digraph") != null);
 }
 
 test "676: graph with --depth and --format json limits and structures dependency tree" {

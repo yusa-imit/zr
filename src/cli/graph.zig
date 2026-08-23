@@ -1023,6 +1023,11 @@ pub fn graphCommand(
             };
         } else if (std.mem.eql(u8, arg, "--cycles-only")) {
             cycles_only = true;
+        } else if (std.mem.eql(u8, arg, "--ascii")) {
+            // Legacy flag from the pre-`--format` graph command. Kept for
+            // backward compatibility: forces ascii rendering regardless of
+            // any --format also passed (ascii takes precedence).
+            format = .ascii;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             try printGraphHelp(w);
             return 0;
