@@ -738,9 +738,26 @@ fn bracketDelta(s: []const u8) i32 {
     return depth;
 }
 
-/// Join `key = [...]` / `key = {...}` values that span multiple physical lines
-/// into a single logical line, so the line-based parser below (which expects
-/// each key=value pair on one line) can handle multi-line TOML arrays/tables.
+/// Counts non-overlapping `"""` occurrences in `s`. An odd count means `s`
+/// leaves a TOML triple-quoted (multi-line) string open.
+fn countTripleQuotes(s: []const u8) usize {
+    var count: usize = 0;
+    var i: usize = 0;
+    while (i + 3 <= s.len) {
+        if (s[i] == '"' and s[i + 1] == '"' and s[i + 2] == '"') {
+            count += 1;
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    return count;
+}
+
+/// Join `key = [...]` / `key = {...}` values that span multiple physical lines,
+/// and `key = """..."""` triple-quoted strings that span multiple physical
+/// lines, into a single logical line, so the line-based parser below (which
+/// expects each key=value pair on one line) can handle them.
 /// Section headers, comments, and already-balanced lines pass through unchanged.
 fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .{};
@@ -762,8 +779,10 @@ fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]con
             continue;
         };
 
-        var depth = bracketDelta(trimmed[eq_idx + 1 ..]);
-        if (depth <= 0) {
+        const rhs = trimmed[eq_idx + 1 ..];
+        var depth = bracketDelta(rhs);
+        var quote_open = (countTripleQuotes(rhs) % 2) == 1;
+        if (depth <= 0 and !quote_open) {
             try out.appendSlice(allocator, trimmed);
             try out.append(allocator, '\n');
             continue;
@@ -773,13 +792,17 @@ fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]con
         defer joined.deinit(allocator);
         try joined.appendSlice(allocator, trimmed);
 
-        while (depth > 0) {
+        while (depth > 0 or quote_open) {
             const next_line = lines.next() orelse break;
             const next_trimmed = std.mem.trim(u8, next_line, " \t\r");
-            if (next_trimmed.len == 0 or next_trimmed[0] == '#') continue;
+            if (!quote_open and (next_trimmed.len == 0 or next_trimmed[0] == '#')) continue;
             try joined.append(allocator, ' ');
             try joined.appendSlice(allocator, next_trimmed);
-            depth += bracketDelta(next_trimmed);
+            if (quote_open) {
+                if (countTripleQuotes(next_trimmed) % 2 == 1) quote_open = false;
+            } else {
+                depth += bracketDelta(next_trimmed);
+            }
         }
 
         try out.appendSlice(allocator, joined.items);
@@ -2793,6 +2816,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 return error.MalformedSectionHeader;
             }
 
+            if (task_desc != null) {
+                std.debug.print("✗ [Config]: task '{s}' has both a string `description` and a [tasks.{s}.description] table — use one or the other\n", .{ before_desc, before_desc });
+                return error.ConflictingDescription;
+            }
+
             in_task_description = true;
         } else if (std.mem.startsWith(u8, trimmed, "[tasks.") and std.mem.indexOf(u8, trimmed, ".outputs]") != null) {
             // Section: [tasks.X.outputs] — output documentation for task X (v1.79.0)
@@ -2993,95 +3021,118 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 plugin_source = null;
                 plugin_kind = .local;
             }
-            // Flush pending task before starting new one
-            if (current_task) |task_name| {
-                // Allow tasks without cmd if they have dependencies (dependency-only tasks)
-                // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
-                if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
-                    const cmd = task_cmd orelse "";
-                    if (task_matrix_raw) |mraw| {
-                        try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
-                    } else {
-                        try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items, task_concurrency_group);
+            // Peek the task name to detect re-opening the same task's [tasks.X]
+            // header after a subsection like [tasks.X.description] or
+            // [tasks.X.outputs] — TOML allows appending more keys this way, so
+            // we resume accumulating into the existing task's fields instead
+            // of flushing/resetting them.
+            const reopened_task_name = validateSectionHeader(trimmed, "[tasks.") catch |err| {
+                if (err == error.MalformedSectionHeader) return err;
+                return err;
+            };
+            const is_same_task_reopen = if (current_task) |ct| std.mem.eql(u8, ct, reopened_task_name) else false;
+
+            if (!is_same_task_reopen) {
+                // Flush pending task before starting new one
+                if (current_task) |task_name| {
+                    // Allow tasks without cmd if they have dependencies (dependency-only tasks)
+                    // Group configs (no cmd, no deps, has env/cwd/timeout) are stored separately
+                    if (!try tryAddGroupConfig(&config, allocator, task_name, task_cmd, task_cwd, task_env.items, task_timeout_ms, task_deps.items.len, task_deps_serial.items.len, task_matrix_raw)) {
+                        const cmd = task_cmd orelse "";
+                        if (task_matrix_raw) |mraw| {
+                            try addMatrixTask(&config, allocator, task_name, cmd, task_cwd, task_desc, task_deps.items, task_deps_serial.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, mraw);
+                        } else {
+                            try addTaskImpl(&config, allocator, task_name, cmd, task_cwd, task_desc, task_desc_short, task_desc_long, task_examples.items, task_outputs_keys.items, task_outputs_values.items, task_see_also.items, task_deps.items, task_deps_serial.items, task_deps_if.items, task_deps_optional.items, task_env.items, task_timeout_ms, task_allow_failure, task_retry_max, task_retry_delay_ms, task_retry_backoff, task_condition, task_skip_if, task_output_if, task_max_concurrent, task_cache, task_max_cpu, task_max_memory, task_toolchain.items, task_tags.items, task_cpu_affinity.items, task_requires.items, task_numa_node, task_watch_debounce_ms, task_watch_patterns.items, task_watch_exclude_patterns.items, task_watch_mode, task_hooks.items, task_template, task_params.items, task_output_file, task_output_mode, task_remote, task_remote_cwd, task_remote_env.items, task_mixins.items, task_aliases.items, task_silent, task_sources.items, task_generates.items, task_task_params.items, task_env_file.items, task_artifacts.items, task_artifact_retention, task_compress_artifacts, task_notify, task_notify_on, task_notify_title, task_required_env.items, task_secrets.items, task_share_output, task_input_prompts.items, task_redact.items, task_confirm, task_confirm_if, task_internal, task_priority, task_retry_backoff_multiplier, task_retry_jitter, task_max_backoff_ms, task_retry_on_codes.items, task_retry_on_patterns.items, task_concurrency_group);
+                        }
                     }
                 }
+
+                // Reset state — no freeing needed since these are non-owning slices
+                task_deps.clearRetainingCapacity();
+                task_deps_serial.clearRetainingCapacity();
+                task_deps_if.clearRetainingCapacity();
+                task_deps_optional.clearRetainingCapacity();
+                task_env.clearRetainingCapacity();
+                task_toolchain.clearRetainingCapacity();
+                task_tags.clearRetainingCapacity();
+                task_params.clearRetainingCapacity();
+                task_requires.clearRetainingCapacity();
+                task_mixins.clearRetainingCapacity();
+                task_aliases.clearRetainingCapacity();
+                task_sources.clearRetainingCapacity();
+                task_generates.clearRetainingCapacity();
+                task_env_file.clearRetainingCapacity();
+                task_artifacts.clearRetainingCapacity();
+                task_required_env.clearRetainingCapacity();
+                task_secrets.clearRetainingCapacity();
+                for (task_task_params.items) |*p| p.deinit(allocator);
+                task_task_params.clearRetainingCapacity();
+                task_remote_env.clearRetainingCapacity();
+                task_retry_on_codes.clearRetainingCapacity();
+                task_retry_on_patterns.clearRetainingCapacity();
+                task_cpu_affinity.clearRetainingCapacity();
+                task_watch_patterns.clearRetainingCapacity();
+                task_watch_exclude_patterns.clearRetainingCapacity();
+                task_cmd = null;
+                task_cwd = null;
+                task_desc = null;
+                task_timeout_ms = null;
+                task_allow_failure = false;
+                task_retry_max = 0;
+                task_retry_delay_ms = 0;
+                task_retry_backoff = false;
+                task_retry_backoff_multiplier = null;
+                task_retry_jitter = false;
+                task_max_backoff_ms = null;
+                task_condition = null;
+                task_skip_if = null;
+                task_output_if = null;
+                task_max_concurrent = 0;
+                task_cache = false;
+                task_max_cpu = null;
+                task_max_memory = null;
+                task_matrix_raw = null;
+                task_template = null;
+                task_output_file = null;
+                task_output_mode = null;
+                task_remote = null;
+                task_remote_cwd = null;
+                task_concurrency_group = null;
+                task_silent = false;
+                task_internal = false;
+                task_priority = 0;
+                task_artifact_retention = null;
+                task_compress_artifacts = true;
+                task_notify = false;
+                task_notify_on = null;
+                task_notify_title = null;
+                // v1.88.0 reset input_prompts
+                for (task_input_prompts.items) |*ip| ip.deinit(allocator);
+                task_input_prompts.clearRetainingCapacity();
+                // v1.89.0 reset redact
+                for (task_redact.items) |r| allocator.free(r);
+                task_redact.clearRetainingCapacity();
+                // v1.90.0 reset confirm and confirm_if
+                if (task_confirm) |c| allocator.free(c);
+                if (task_confirm_if) |ci| allocator.free(ci);
+                task_confirm = null;
+                task_confirm_if = null;
+                task_share_output = false;
+                task_numa_node = null;
+                task_watch_debounce_ms = null;
+                task_watch_mode = null;
+                // Clear documentation fields
+                task_desc_short = null;
+                task_desc_long = null;
+                task_examples.clearRetainingCapacity();
+                task_outputs_keys.clearRetainingCapacity();
+                task_outputs_values.clearRetainingCapacity();
+                task_see_also.clearRetainingCapacity();
             }
 
-            // Reset state — no freeing needed since these are non-owning slices
-            task_deps.clearRetainingCapacity();
-            task_deps_serial.clearRetainingCapacity();
-            task_deps_if.clearRetainingCapacity();
-            task_deps_optional.clearRetainingCapacity();
-            task_env.clearRetainingCapacity();
-            task_toolchain.clearRetainingCapacity();
-            task_tags.clearRetainingCapacity();
-            task_params.clearRetainingCapacity();
-            task_requires.clearRetainingCapacity();
-            task_mixins.clearRetainingCapacity();
-            task_aliases.clearRetainingCapacity();
-            task_sources.clearRetainingCapacity();
-            task_generates.clearRetainingCapacity();
-            task_env_file.clearRetainingCapacity();
-            task_artifacts.clearRetainingCapacity();
-            task_required_env.clearRetainingCapacity();
-            task_secrets.clearRetainingCapacity();
-            for (task_task_params.items) |*p| p.deinit(allocator);
-            task_task_params.clearRetainingCapacity();
-            task_remote_env.clearRetainingCapacity();
-            task_retry_on_codes.clearRetainingCapacity();
-            task_retry_on_patterns.clearRetainingCapacity();
-            task_cpu_affinity.clearRetainingCapacity();
-            task_watch_patterns.clearRetainingCapacity();
-            task_watch_exclude_patterns.clearRetainingCapacity();
-            task_cmd = null;
-            task_cwd = null;
-            task_desc = null;
-            task_timeout_ms = null;
-            task_allow_failure = false;
-            task_retry_max = 0;
-            task_retry_delay_ms = 0;
-            task_retry_backoff = false;
-            task_retry_backoff_multiplier = null;
-            task_retry_jitter = false;
-            task_max_backoff_ms = null;
-            task_condition = null;
-            task_skip_if = null;
-            task_output_if = null;
-            task_max_concurrent = 0;
-            task_cache = false;
-            task_max_cpu = null;
-            task_max_memory = null;
-            task_matrix_raw = null;
-            task_template = null;
-            task_output_file = null;
-            task_output_mode = null;
-            task_remote = null;
-            task_remote_cwd = null;
-            task_concurrency_group = null;
-            task_silent = false;
-            task_internal = false;
-            task_priority = 0;
-            task_artifact_retention = null;
-            task_compress_artifacts = true;
-            task_notify = false;
-            task_notify_on = null;
-            task_notify_title = null;
-            // v1.88.0 reset input_prompts
-            for (task_input_prompts.items) |*ip| ip.deinit(allocator);
-            task_input_prompts.clearRetainingCapacity();
-            // v1.89.0 reset redact
-            for (task_redact.items) |r| allocator.free(r);
-            task_redact.clearRetainingCapacity();
-            // v1.90.0 reset confirm and confirm_if
-            if (task_confirm) |c| allocator.free(c);
-            if (task_confirm_if) |ci| allocator.free(ci);
-            task_confirm = null;
-            task_confirm_if = null;
-            task_share_output = false;
-            task_numa_node = null;
-            task_watch_debounce_ms = null;
-            task_watch_mode = null;
-
+            // Leaving any subsection context (watch/matrix/env/toolchain/hooks/
+            // retry/description/outputs) regardless of whether this is a fresh
+            // task or a reopen of the current one.
             in_workspace = false;
             in_cache = false;
             in_vars = false;
@@ -3096,18 +3147,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             in_task_description = false;
             in_task_outputs = false;
             in_cache_remote = false;
-            // Clear documentation fields
-            task_desc_short = null;
-            task_desc_long = null;
-            task_examples.clearRetainingCapacity();
-            task_outputs_keys.clearRetainingCapacity();
-            task_outputs_values.clearRetainingCapacity();
-            task_see_also.clearRetainingCapacity();
-            // Validate section header has closing bracket
-            current_task = validateSectionHeader(trimmed, "[tasks.") catch |err| {
-                if (err == error.MalformedSectionHeader) return err;
-                return err;
-            };
+
+            current_task = reopened_task_name;
 
             // If we have pending subsection data for this task, apply it now (v1.19.0)
             if (pending_task_name) |ptask| {
@@ -3398,7 +3439,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const key = std.mem.trim(u8, trimmed[0..eq_idx], " \t");
             var value = std.mem.trim(u8, trimmed[eq_idx + 1 ..], " \t");
 
-            if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
+            if (value.len >= 6 and std.mem.startsWith(u8, value, "\"\"\"") and std.mem.endsWith(u8, value, "\"\"\"")) {
+                value = std.mem.trim(u8, value[3 .. value.len - 3], " \t");
+            } else if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
                 value = value[1 .. value.len - 1];
             }
 
@@ -4888,6 +4931,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                 try task_examples.append(allocator, trimmed_example);
                             }
                         }
+                    } else {
+                        std.debug.print("✗ [Config]: task '{s}' has invalid `examples` — expected an array of strings, e.g. examples = [\"zr run test\"]\n", .{current_task.?});
+                        return error.InvalidFieldType;
                     }
                 } else if (std.mem.eql(u8, key, "see_also")) {
                     // Task see_also array (v1.79.0)
@@ -4901,7 +4947,14 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                 try task_see_also.append(allocator, trimmed_task);
                             }
                         }
+                    } else {
+                        std.debug.print("✗ [Config]: task '{s}' has invalid `see_also` — expected an array of task names, e.g. see_also = [\"build\"]\n", .{current_task.?});
+                        return error.InvalidFieldType;
                     }
+                } else if (std.mem.eql(u8, key, "outputs")) {
+                    // `outputs` must be defined via a [tasks.X.outputs] table, not an inline value.
+                    std.debug.print("✗ [Config]: task '{s}' has invalid `outputs` — expected a [tasks.{s}.outputs] table, not an inline value\n", .{ current_task.?, current_task.? });
+                    return error.InvalidFieldType;
                 }
             } else if (current_template != null) {
                 // Template-level key=value parsing (same as task but with params support)
