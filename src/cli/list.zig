@@ -414,6 +414,7 @@ pub fn cmdList(
                     try obj.addNull("description");
                 }
                 try obj.addBool("internal", task.internal);
+                try obj.addBool("silent", task.silent);
                 try obj.addNumber("priority", task.priority);
                 // Add source_file if task came from an included file (v1.99.0)
                 if (task.source_file) |sf| {
