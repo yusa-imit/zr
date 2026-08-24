@@ -883,14 +883,14 @@ test "854: example workflow with anonymous stages from docker-kubernetes" {
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "docker push") != null);
 }
 
-test "860: inline workflow stages syntax is not supported (parser limitation)" {
+test "860: inline workflow stages syntax is supported" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Test that inline stages array syntax is NOT recognized by parser
+    // Test that inline stages array syntax IS now supported by parser (fixed in v1.X)
     const toml =
         \\[tasks.test]
         \\cmd = "echo test"
@@ -910,12 +910,13 @@ test "860: inline workflow stages syntax is not supported (parser limitation)" {
     const config = try writeTmpConfig(allocator, tmp.dir, toml);
     defer allocator.free(config);
 
-    // Parser should not recognize inline stages syntax
-    var result = try runZr(allocator, &.{ "--config", config, "validate" }, tmp_path);
+    // Parser should now recognize inline stages syntax
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "ci" }, tmp_path);
     defer result.deinit();
-    // Should fail validation (no stages detected)
-    try std.testing.expect(result.exit_code == 1);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "no stages defined") != null);
+    // Should succeed and run all tasks
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "build") != null);
 }
 
 test "861: task without cmd field is now recognized (v1.19.0 feature)" {
