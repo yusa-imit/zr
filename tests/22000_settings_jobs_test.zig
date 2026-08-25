@@ -138,7 +138,7 @@ test "22004: Task-level timeout overrides [settings] default_timeout" {
         \\
         \\[tasks.medium]
         \\cmd = "sleep 2 && echo done"
-        \\timeout = 15
+        \\timeout = "15s"
         \\
     ;
     const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
@@ -147,7 +147,10 @@ test "22004: Task-level timeout overrides [settings] default_timeout" {
     var result = try runZr(allocator, &.{ "--config", config, "run", "medium" }, tmp_path);
     defer result.deinit();
 
-    // Task-level timeout = 5s > sleep 2s, so it should succeed
+    // Task-level timeout = 15s > sleep 2s, so it should succeed. NOTE: task-level
+    // `timeout` requires a unit-suffixed string ("15s"/"5m"/etc) per parseDurationMs
+    // (src/config/types.zig) — unlike [settings] default_timeout, a bare integer
+    // silently fails to parse and the override is dropped entirely.
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "done") != null);
 }

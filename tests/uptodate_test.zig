@@ -323,11 +323,14 @@ test "uptodate: --force flag always runs task" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create source and output
+    // Create source, then wait, then output — output's mtime must be strictly
+    // newer than source's for the up-to-date check to treat it as up-to-date
+    // (uptodate.zig treats gen_mtime <= source_mtime as stale). The sleep must
+    // sit between the two writes, not after both, or they can land on the same
+    // mtime tick under coarser CI filesystem clock resolution.
     try tmp.dir.writeFile(.{ .sub_path = "src.txt", .data = "input" });
-    try tmp.dir.writeFile(.{ .sub_path = "out.txt", .data = "output" });
-
     std.Thread.sleep(100_000_000); // 100ms
+    try tmp.dir.writeFile(.{ .sub_path = "out.txt", .data = "output" });
 
     // First run without force: up-to-date → should skip
     var result1 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);

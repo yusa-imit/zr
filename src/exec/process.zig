@@ -68,13 +68,20 @@ const TimeoutCtx = struct {
 };
 
 fn timeoutWatcher(ctx: TimeoutCtx) void {
-    // Sleep in small increments so we can detect normal exit early
+    // Poll against a wall-clock deadline rather than an accumulated counter
+    // of assumed sleep durations. Under thread contention, std.Thread.sleep()
+    // calls can run well past their requested duration; a naive
+    // `elapsed_ms += slice_ms` counter doesn't see that drift and can push
+    // the effective timeout far later than configured (observed: nominal
+    // 1000ms timeouts firing 2-3s late under heavy concurrent test load,
+    // sometimes losing the race entirely to a process that was about to
+    // exit naturally). Checking real elapsed time each iteration keeps the
+    // watcher accurate regardless of scheduling jitter.
     const slice_ms: u64 = 50;
-    var elapsed_ms: u64 = 0;
-    while (elapsed_ms < ctx.timeout_ms) {
+    const deadline_ms = std.time.milliTimestamp() + @as(i64, @intCast(ctx.timeout_ms));
+    while (std.time.milliTimestamp() < deadline_ms) {
         if (ctx.done.load(.acquire)) return; // child already exited normally
         std.Thread.sleep(slice_ms * std.time.ns_per_ms);
-        elapsed_ms += slice_ms;
     }
     if (ctx.done.load(.acquire)) return; // child exited just before we fired
     // Kill the child process
@@ -515,6 +522,28 @@ test "run: timeout kills slow process" {
     try std.testing.expect(!result.success);
     // Should complete well within the 5s sleep (killed by timeout)
     try std.testing.expect(result.duration_ms < 2000);
+}
+
+test "run: timeout reliably fires under repeated back-to-back invocations" {
+    // Regression test for a wall-clock drift bug in timeoutWatcher: a naive
+    // `elapsed_ms += slice_ms` counter (instead of checking real time) let
+    // scheduling delays push the effective timeout arbitrarily late, and
+    // under contention the watcher could lose the race to the process
+    // exiting naturally. A single iteration rarely caught this — it needs
+    // concurrent thread pressure from repeated runs to surface reliably.
+    const allocator = std.testing.allocator;
+    var i: u32 = 0;
+    while (i < 5) : (i += 1) {
+        const result = try run(allocator, .{
+            .cmd = "sleep 5",
+            .cwd = null,
+            .env = null,
+            .inherit_stdio = false,
+            .timeout_ms = 200,
+        });
+        try std.testing.expect(!result.success);
+        try std.testing.expect(result.duration_ms < 3000);
+    }
 }
 
 test "run: no timeout for fast process" {
