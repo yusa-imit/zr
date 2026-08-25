@@ -514,8 +514,12 @@ test "994: section syntax - on_codes with single value in array" {
     var result = try runZr(allocator, &.{ "--config", config, "run", "specific_error" }, null);
     defer result.deinit();
 
-    // Should retry (exit code 42 matches on_codes = [42])
-    try std.testing.expectEqual(@as(u8, 42), result.exit_code);
+    // Should retry (exit code 42 matches on_codes = [42]) but still exhaust retries and
+    // fail overall — `zr run` always reports 1 on task failure, not the task's own exit
+    // code (consistent with every other retry/failure test in this file).
+    try std.testing.expectEqual(@as(u8, 1), result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "exit: 42") != null or
+        std.mem.indexOf(u8, result.stderr, "exit: 42") != null);
 }
 
 test "995: section syntax - on_patterns with single string in array" {
