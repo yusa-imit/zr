@@ -2845,8 +2845,10 @@ pub fn run(
                 }
             }
 
-            // Run deps_serial chain synchronously before this task (if any)
-            if (task.deps_serial.len > 0) {
+            // Run deps_serial chain synchronously before this task (if any).
+            // Skipped entirely in --only mode, matching how regular deps are excluded
+            // from the subgraph above.
+            if (task.deps_serial.len > 0 and !sched_config.only_mode) {
                 const serial_ok = try runSerialChain(
                     allocator, config, task.deps_serial, sched_config.extra_env, config.toolchains.tools,
                     sched_config.inherit_stdio, &results, &results_mutex, &completed, sched_config.runtime_params,

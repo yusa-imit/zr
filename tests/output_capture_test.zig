@@ -230,7 +230,7 @@ test "17007: capture only populated for tasks that actually ran (skip_if: up-to-
 
     const config_toml =
         \\[tasks.generate]
-        \\cmd = "bash -c 'echo generated-value > output.txt'"
+        \\cmd = "bash -c 'echo generated-value | tee output.txt'"
         \\generates = ["output.txt"]
         \\share_output = true
         \\

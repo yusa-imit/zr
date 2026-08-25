@@ -672,21 +672,28 @@ pub fn cmdList(
             names.clearRetainingCapacity();
             for (nd_list.items) |nd| try names.append(allocator, nd.name);
         } else if (std.mem.eql(u8, key, "recent")) {
-            var last_run = std.StringHashMap(i64).init(allocator);
+            // records_list is in chronological (oldest-first) file order, so the record's
+            // position doubles as a tiebreaker finer-grained than the second-resolution
+            // timestamp — two runs in the same second still sort by actual run order.
+            var last_run = std.StringHashMap(usize).init(allocator);
             defer last_run.deinit();
-            for (records_list.items) |rec| {
-                const cur = last_run.get(rec.task_name) orelse 0;
-                if (rec.timestamp > cur) try last_run.put(rec.task_name, rec.timestamp);
+            for (records_list.items, 0..) |rec, idx| {
+                try last_run.put(rec.task_name, idx);
             }
-            const NT = struct { name: []const u8, ts: i64 };
+            const NT = struct { name: []const u8, has_run: bool, idx: usize };
             var nt_list = std.ArrayList(NT){};
             defer nt_list.deinit(allocator);
             for (names.items) |name| {
-                try nt_list.append(allocator, .{ .name = name, .ts = last_run.get(name) orelse 0 });
+                if (last_run.get(name)) |idx| {
+                    try nt_list.append(allocator, .{ .name = name, .has_run = true, .idx = idx });
+                } else {
+                    try nt_list.append(allocator, .{ .name = name, .has_run = false, .idx = 0 });
+                }
             }
             std.mem.sort(NT, nt_list.items, {}, struct {
                 fn lessThan(_: void, a: NT, b: NT) bool {
-                    if (a.ts != b.ts) return a.ts > b.ts;
+                    if (a.has_run != b.has_run) return a.has_run;
+                    if (a.has_run and a.idx != b.idx) return a.idx > b.idx;
                     return std.mem.lessThan(u8, a.name, b.name);
                 }
             }.lessThan);

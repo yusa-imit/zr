@@ -734,9 +734,12 @@ test "task filtering: nested glob pattern with multiple levels test:*:**" {
     var result = try runZr(allocator, &.{ "--config", config, "run", "test:*:**" }, tmp_path);
     defer result.deinit();
 
-    // All test tasks should execute
+    // "test:*:**" requires at least 3 colon-separated segments (test:<one>:<one-or-more>),
+    // so it matches the two 3+-segment tasks but not "test:unit" (only 2 segments) —
+    // consistent with the plain "test:**" behavior verified above, which matches any depth
+    // starting one segment after "test:".
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "unit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "unit") == null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "integration_db") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "integration_api_v1") != null);
 }
