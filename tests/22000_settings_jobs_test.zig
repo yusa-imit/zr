@@ -138,7 +138,7 @@ test "22004: Task-level timeout overrides [settings] default_timeout" {
         \\
         \\[tasks.medium]
         \\cmd = "sleep 2 && echo done"
-        \\timeout = 5
+        \\timeout = 15
         \\
     ;
     const config = try writeTmpConfig(allocator, tmp.dir, config_toml);

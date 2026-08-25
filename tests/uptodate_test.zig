@@ -327,7 +327,7 @@ test "uptodate: --force flag always runs task" {
     try tmp.dir.writeFile(.{ .sub_path = "src.txt", .data = "input" });
     try tmp.dir.writeFile(.{ .sub_path = "out.txt", .data = "output" });
 
-    std.Thread.sleep(10_000_000); // 10ms
+    std.Thread.sleep(100_000_000); // 100ms
 
     // First run without force: up-to-date → should skip
     var result1 = try runZr(allocator, &.{ "--config", config, "run", "build" }, tmp_path);
