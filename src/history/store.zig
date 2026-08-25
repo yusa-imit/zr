@@ -20,10 +20,13 @@ pub const Record = struct {
     avg_cpu_percent: f64 = 0.0,
     /// Runtime tags added with --add-tag (comma-separated, owned if non-null).
     runtime_tags: ?[]const u8 = null,
+    /// Resolved task params, serialized as comma-separated "name=value" pairs (owned if non-null).
+    params: ?[]const u8 = null,
 
     pub fn deinit(self: Record, allocator: std.mem.Allocator) void {
         allocator.free(self.task_name);
         if (self.runtime_tags) |t| allocator.free(t);
+        if (self.params) |p| allocator.free(p);
     }
 };
 
@@ -60,7 +63,8 @@ pub const Store = struct {
         var line_buf: [2048]u8 = undefined;
         const status = if (record.success) "ok" else "fail";
         const tags_str = record.runtime_tags orelse "";
-        const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\t{s}\t{d}\t{d}\t{d}\t{d}\t{d:.2}\t{s}\n", .{
+        const params_str = record.params orelse "";
+        const line = try std.fmt.bufPrint(&line_buf, "{d}\t{s}\t{s}\t{d}\t{d}\t{d}\t{d}\t{d:.2}\t{s}\t{s}\n", .{
             record.timestamp,
             record.task_name,
             status,
@@ -70,6 +74,7 @@ pub const Store = struct {
             record.peak_memory_bytes,
             record.avg_cpu_percent,
             tags_str,
+            params_str,
         });
         try file.writeAll(line);
     }
@@ -123,6 +128,7 @@ pub const Store = struct {
                 .peak_memory_bytes = r.peak_memory_bytes,
                 .avg_cpu_percent = r.avg_cpu_percent,
                 .runtime_tags = if (r.runtime_tags) |t| try allocator.dupe(u8, t) else null,
+                .params = if (r.params) |p| try allocator.dupe(u8, p) else null,
             };
             try records.append(allocator, owned);
         }
@@ -155,6 +161,7 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
     const mem_str = it.next(); // Optional (v1.16.0+)
     const cpu_str = it.next(); // Optional (v1.16.0+)
     const tags_str = it.next(); // Optional (v1.102.0+)
+    const params_str = it.next(); // Optional (params-in-history feature)
 
     const timestamp = std.fmt.parseInt(i64, ts_str, 10) catch return error.InvalidFormat;
     const duration_ms = std.fmt.parseInt(u64, dur_str, 10) catch return error.InvalidFormat;
@@ -164,6 +171,7 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
     const avg_cpu_percent = if (cpu_str) |s| std.fmt.parseFloat(f64, s) catch 0.0 else 0.0;
     const success = std.mem.eql(u8, status_str, "ok");
     const runtime_tags = if (tags_str) |s| (if (s.len > 0) try allocator.dupe(u8, s) else null) else null;
+    const params = if (params_str) |s| (if (s.len > 0) try allocator.dupe(u8, s) else null) else null;
 
     return Record{
         .timestamp = timestamp,
@@ -175,6 +183,7 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Record {
         .peak_memory_bytes = peak_memory_bytes,
         .avg_cpu_percent = avg_cpu_percent,
         .runtime_tags = runtime_tags,
+        .params = params,
     };
 }
 

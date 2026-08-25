@@ -191,6 +191,21 @@ pub fn printTaskEnvironment(
     }
 }
 
+/// Validate a task param value against its declared type ("number", "bool", or "string").
+fn validateParamType(param: types.TaskParam, value: []const u8) !void {
+    if (std.mem.eql(u8, param.type, "number")) {
+        _ = std.fmt.parseFloat(f64, value) catch return error.InvalidParamType;
+    } else if (std.mem.eql(u8, param.type, "bool")) {
+        const valid = std.mem.eql(u8, value, "true") or
+            std.mem.eql(u8, value, "false") or
+            std.mem.eql(u8, value, "1") or
+            std.mem.eql(u8, value, "0") or
+            std.mem.eql(u8, value, "yes") or
+            std.mem.eql(u8, value, "no");
+        if (!valid) return error.InvalidParamType;
+    }
+}
+
 pub fn cmdRun(
     allocator: std.mem.Allocator,
     task_name: []const u8,
@@ -458,10 +473,24 @@ pub fn cmdRun(
 
         if (runtime_params.get(pos_key)) |value| {
             // Positional param provided
+            validateParamType(param, value) catch {
+                try color.printError(err_writer, use_color,
+                    "run: Invalid value for parameter '{s}': expected type '{s}', got '{s}'\n",
+                    .{ param.name, param.type, value },
+                );
+                return 1;
+            };
             try resolved_params.put(try allocator.dupe(u8, param.name), try allocator.dupe(u8, value));
             pos_idx += 1;
         } else if (runtime_params.get(param.name)) |value| {
             // Named param provided
+            validateParamType(param, value) catch {
+                try color.printError(err_writer, use_color,
+                    "run: Invalid value for parameter '{s}': expected type '{s}', got '{s}'\n",
+                    .{ param.name, param.type, value },
+                );
+                return 1;
+            };
             try resolved_params.put(try allocator.dupe(u8, param.name), try allocator.dupe(u8, value));
         } else if (param.default) |default_val| {
             // Use default value
@@ -1097,8 +1126,10 @@ pub fn cmdRun(
     defer if (tags_str) |t| allocator.free(t);
 
     // Record to history (best-effort, ignore errors)
+    const params_str = try serializeParamsForHistory(allocator, &resolved_params);
+    defer if (params_str) |p| allocator.free(p);
     recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-        @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str);
+        @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str, params_str);
 
     // Save/clear last-failures.txt for --retry-failed support (v1.107.0)
     // Suppressed when track_failures=false (multi-task runs handle this externally).
@@ -1460,7 +1491,7 @@ pub fn cmdWatch(
         defer if (tags_str) |t| allocator.free(t);
 
         recordHistory(allocator, task_name, sched_result.total_success, elapsed_ms,
-            @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str);
+            @intCast(sched_result.results.items.len), total_retries, peak_memory, avg_cpu, tags_str, null);
 
         // Trigger live reload if enabled and task succeeded
         if (use_live_reload and sched_result.total_success) {
@@ -2012,6 +2043,7 @@ pub fn cmdHistory(
             try obj.addNumber("duration_ms", rec.duration_ms);
             try obj.addNumber("task_count", rec.task_count);
             try obj.addNumber("timestamp", rec.timestamp);
+            if (rec.params) |p| try obj.addString("params", p);
             try obj.end();
         }
         try runs_arr.end();
@@ -2046,6 +2078,11 @@ pub fn cmdHistory(
         if (rec.runtime_tags) |tags| {
             try w.print("  ", .{});
             try color.printDim(w, use_color, "[{s}]", .{tags});
+        }
+        // Display resolved task params if present
+        if (rec.params) |params| {
+            try w.print("  ", .{});
+            try color.printDim(w, use_color, "({s})", .{params});
         }
         try w.print("\n", .{});
     }
@@ -2138,6 +2175,7 @@ pub fn recordHistory(
     peak_memory_bytes: u64,
     avg_cpu_percent: f64,
     runtime_tags: ?[]const u8,
+    params: ?[]const u8,
 ) void {
     const hist_path = history.defaultHistoryPath(allocator) catch return;
     defer allocator.free(hist_path);
@@ -2155,7 +2193,38 @@ pub fn recordHistory(
         .peak_memory_bytes = peak_memory_bytes,
         .avg_cpu_percent = avg_cpu_percent,
         .runtime_tags = runtime_tags,
+        .params = params,
     }) catch {};
+}
+
+/// Build a comma-separated "name=value" string from resolved task params, for history recording.
+/// Returns null if there are no params. Caller owns and must free the returned slice.
+fn serializeParamsForHistory(allocator: std.mem.Allocator, resolved_params: *const std.StringHashMap([]const u8)) !?[]const u8 {
+    if (resolved_params.count() == 0) return null;
+
+    var keys = std.ArrayList([]const u8){};
+    defer keys.deinit(allocator);
+    var it = resolved_params.iterator();
+    while (it.next()) |entry| {
+        if (std.mem.startsWith(u8, entry.key_ptr.*, "__positional_")) continue;
+        try keys.append(allocator, entry.key_ptr.*);
+    }
+    if (keys.items.len == 0) return null;
+    std.mem.sort([]const u8, keys.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+
+    var buf = std.ArrayList(u8){};
+    defer buf.deinit(allocator);
+    for (keys.items, 0..) |key, i| {
+        if (i > 0) try buf.append(allocator, ',');
+        try buf.appendSlice(allocator, key);
+        try buf.append(allocator, '=');
+        try buf.appendSlice(allocator, resolved_params.get(key).?);
+    }
+    return try buf.toOwnedSlice(allocator);
 }
 
 /// Emit a JSON object for the run result:

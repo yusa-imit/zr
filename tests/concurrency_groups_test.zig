@@ -182,7 +182,7 @@ test "5005: parallel tasks respect concurrency group limits" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var result = try runZr(allocator, &.{ "--config", config, "run", "task1", "task2", "task3" }, tmp_path);
+    var result = try runZr(allocator, &.{ "--config", config, "run", "task1,task2,task3" }, tmp_path);
     defer result.deinit();
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     // All tasks should complete despite limit=1

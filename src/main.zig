@@ -565,6 +565,7 @@ fn run(
     // swallow it before graphCommand ever sees it.
     // The subcommand isn't always args[1] — global flags (e.g. `--config X`)
     // may precede it, so skip past any leading global flag/value pairs first.
+    var top_level_cmd_idx: usize = 0;
     const top_level_cmd: []const u8 = blk: {
         var j: usize = 1;
         while (j < args.len) : (j += 1) {
@@ -573,6 +574,7 @@ fn run(
                 if (flag_info.takes_value and flag_info.inline_value == null) j += 1;
                 continue;
             }
+            top_level_cmd_idx = j;
             break :blk a;
         }
         break :blk "";
@@ -592,7 +594,8 @@ fn run(
                             (std.mem.eql(u8, flag_info.long_name, "--affected") and
                             std.mem.eql(u8, top_level_cmd, "graph")) or
                             (std.mem.eql(u8, flag_info.long_name, "--config") and
-                            std.mem.eql(u8, top_level_cmd, "doctor")))
+                            std.mem.eql(u8, top_level_cmd, "doctor") and
+                            i > top_level_cmd_idx))
                         {
                             try remaining_args.append(allocator, arg);
                         } else {
@@ -610,7 +613,8 @@ fn run(
                             (std.mem.eql(u8, flag_info.long_name, "--affected") and
                             std.mem.eql(u8, top_level_cmd, "graph")) or
                             (std.mem.eql(u8, flag_info.long_name, "--config") and
-                            std.mem.eql(u8, top_level_cmd, "doctor")))
+                            std.mem.eql(u8, top_level_cmd, "doctor") and
+                            i > top_level_cmd_idx))
                         {
                             try remaining_args.append(allocator, arg);
                             try remaining_args.append(allocator, value);
@@ -2310,7 +2314,7 @@ fn run(
         return bench_cmd.cmdBench(allocator, bench_args, effective_w, ew, json_output);
     } else if (std.mem.eql(u8, cmd, "doctor")) {
         const doctor_args = if (effective_args.len >= 3) effective_args[2..] else &[_][]const u8{};
-        var opts = doctor_cmd.DoctorOptions{};
+        var opts = doctor_cmd.DoctorOptions{ .config_path = if (flag_parser.get("config")) |v| (v.asString() catch null) else null };
         for (doctor_args) |arg| {
             if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
                 try color.printInfo(effective_w, effective_color,

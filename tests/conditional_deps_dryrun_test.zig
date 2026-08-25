@@ -358,9 +358,9 @@ test "conditional_deps_dryrun: nested chain A->B->C with condition not met" {
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
     // Only A should appear (conditional dep on B not included, so C also excluded)
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "a") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "b") == null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "c") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "→ a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "→ b") == null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "→ c") == null);
 }
 
 test "conditional_deps_dryrun: diamond dependency with conditional middle branch" {
