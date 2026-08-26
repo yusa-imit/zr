@@ -616,6 +616,39 @@ fn stripQuotes(s: []const u8) []const u8 {
     return trimmed;
 }
 
+/// Unescape TOML basic-string escape sequences (\n \t \r \b \f \" \\).
+/// Unrecognized `\x` sequences are left as-is (backslash + char kept literally)
+/// rather than erroring, to tolerate glob/regex-like content in cmd strings.
+/// Returns an allocated buffer the caller must free.
+fn unescapeTomlString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .{};
+    errdefer out.deinit(allocator);
+    var i: usize = 0;
+    while (i < s.len) {
+        if (s[i] == '\\' and i + 1 < s.len) {
+            switch (s[i + 1]) {
+                'n' => try out.append(allocator, '\n'),
+                't' => try out.append(allocator, '\t'),
+                'r' => try out.append(allocator, '\r'),
+                '"' => try out.append(allocator, '"'),
+                '\\' => try out.append(allocator, '\\'),
+                'b' => try out.append(allocator, 0x08),
+                'f' => try out.append(allocator, 0x0C),
+                else => {
+                    try out.append(allocator, s[i]);
+                    i += 1;
+                    continue;
+                },
+            }
+            i += 2;
+        } else {
+            try out.append(allocator, s[i]);
+            i += 1;
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 /// Parse inline workflow matrix: matrix = { os = ["linux", "macos"], version = ["1.0", "2.0"] }
 fn parseInlineWorkflowMatrix(allocator: std.mem.Allocator, raw: []const u8, matrix_out: *?types.MatrixConfig) !void {
     const inner_full = std.mem.trim(u8, raw, " \t");
@@ -818,6 +851,15 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
 
     const joined_content = try joinMultilineValues(allocator, content);
     defer allocator.free(joined_content);
+
+    // Buffers allocated for unescaping quoted string values (\n \t \" etc.).
+    // Kept alive for the whole parse — like `joined_content`, these are referenced
+    // by non-owning slices (e.g. task_cmd) until the relevant addTaskImpl/etc. dupes them.
+    var unescape_buffers: std.ArrayList([]u8) = .{};
+    defer {
+        for (unescape_buffers.items) |b| allocator.free(b);
+        unescape_buffers.deinit(allocator);
+    }
 
     var lines = std.mem.splitScalar(u8, joined_content, '\n');
 
@@ -3439,10 +3481,26 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             const key = std.mem.trim(u8, trimmed[0..eq_idx], " \t");
             var value = std.mem.trim(u8, trimmed[eq_idx + 1 ..], " \t");
 
+            var was_quoted_string = false;
             if (value.len >= 6 and std.mem.startsWith(u8, value, "\"\"\"") and std.mem.endsWith(u8, value, "\"\"\"")) {
                 value = std.mem.trim(u8, value[3 .. value.len - 3], " \t");
+                was_quoted_string = true;
             } else if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
                 value = value[1 .. value.len - 1];
+                was_quoted_string = true;
+            }
+
+            // Unescape TOML basic-string escapes (\n \t \r \" \\ etc.) now that the
+            // surrounding quotes have been stripped. Only applies to quoted strings —
+            // unquoted values (numbers, booleans, arrays, inline tables) pass through as-is.
+            // The unescaped buffer must outlive this line (callers like task_cmd stash the
+            // slice for later duping), so it's tracked in `unescape_buffers` instead of
+            // being freed at the end of this block.
+            if (was_quoted_string and std.mem.indexOfScalar(u8, value, '\\') != null) {
+                if (unescapeTomlString(allocator, value)) |unescaped| {
+                    try unescape_buffers.append(allocator, unescaped);
+                    value = unescaped;
+                } else |_| {}
             }
 
             // Top-level include = [...] key (v1.99.0) — feeds same machinery as [imports]
