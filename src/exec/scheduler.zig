@@ -2279,6 +2279,12 @@ fn executeHooks(
     return true;
 }
 
+/// Output callback for runTaskSync's share_output capture (deps_serial chain).
+fn syncTaskOutputCallback(line: []const u8, is_stderr: bool, ctx_opaque: ?*anyopaque) void {
+    const oc: *output_capture.OutputCapture = @ptrCast(@alignCast(ctx_opaque orelse return));
+    oc.writeLine(line, is_stderr) catch {};
+}
+
 /// Run a single task synchronously (on the calling thread). Records result.
 /// Holds results_mutex while appending so it is safe to call concurrently with worker threads.
 /// Returns true if the task succeeded (or has allow_failure set).
@@ -2294,6 +2300,7 @@ fn runTaskSync(
     runtime_params: ?*const std.StringHashMap([]const u8),
     config_vars: ?*const std.StringHashMap([]const u8),
     default_timeout_ms: ?u64,
+    task_outputs: ?*std.StringHashMap([]const u8),
 ) !bool {
     // Auto-install any missing toolchains specified in task.toolchain
     try ensureToolchainsInstalled(allocator, task);
@@ -2336,19 +2343,73 @@ fn runTaskSync(
         return false;
     }
 
+    // Build combined extra_env: ZR_OUTPUT_* captured task outputs from prior
+    // deps_serial (or deps) tasks with share_output=true (mirrors the async
+    // scheduler path so deps_serial gets the same env injection).
+    var combined_extra_env_list: std.ArrayList([2][]u8) = .{};
+    var combined_extra_env_used = false;
+    defer if (combined_extra_env_used) {
+        for (combined_extra_env_list.items) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        combined_extra_env_list.deinit(allocator);
+    };
+    const effective_extra_env: ?[]const [2][]const u8 = blk: {
+        if (task_outputs) |outputs| {
+            if (outputs.count() > 0) {
+                if (extra_env) |extra| {
+                    for (extra) |pair| {
+                        const k = allocator.dupe(u8, pair[0]) catch break :blk extra_env;
+                        const v = allocator.dupe(u8, pair[1]) catch {
+                            allocator.free(k);
+                            break :blk extra_env;
+                        };
+                        combined_extra_env_list.append(allocator, .{ k, v }) catch {
+                            allocator.free(k);
+                            allocator.free(v);
+                            break :blk extra_env;
+                        };
+                    }
+                }
+                var it = outputs.iterator();
+                while (it.next()) |entry| {
+                    const sanitized = sanitizeTaskNameForEnv(allocator, entry.key_ptr.*) catch continue;
+                    const key = std.fmt.allocPrint(allocator, "ZR_OUTPUT_{s}", .{sanitized}) catch {
+                        allocator.free(sanitized);
+                        continue;
+                    };
+                    allocator.free(sanitized);
+                    const val = allocator.dupe(u8, entry.value_ptr.*) catch {
+                        allocator.free(key);
+                        continue;
+                    };
+                    combined_extra_env_list.append(allocator, .{ key, val }) catch {
+                        allocator.free(key);
+                        allocator.free(val);
+                        continue;
+                    };
+                }
+                combined_extra_env_used = true;
+                break :blk @as(?[]const [2][]const u8, combined_extra_env_list.items);
+            }
+        }
+        break :blk extra_env;
+    };
+
     // Build environment with toolchain PATH injection and extra_env
-    const merged_env = buildEnvWithToolchains(allocator, env, toolchains, extra_env);
+    const merged_env = buildEnvWithToolchains(allocator, env, toolchains, effective_extra_env);
     defer if (merged_env) |e| toolchain_path.freeToolchainEnv(allocator, e);
 
     const proc_env: ?[]const [2][]const u8 = if (merged_env) |e| e else null;
 
     // Interpolate runtime parameters in command and cwd (v1.75.0 + vars), falling back to config vars
-    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params, config_vars, null);
+    const interpolated_cmd = try interpolateParams(allocator, task.cmd, runtime_params, config_vars, task_outputs);
     defer allocator.free(interpolated_cmd);
 
     const interpolated_cwd = if (task.cwd) |cwd|
         if (cwd.len > 0)
-            try interpolateParams(allocator, cwd, runtime_params, config_vars, null)
+            try interpolateParams(allocator, cwd, runtime_params, config_vars, task_outputs)
         else
             null
     else
@@ -2368,7 +2429,7 @@ fn runTaskSync(
         for (env_pairs) |pair| {
             const key = try allocator.dupe(u8, pair[0]);
             errdefer allocator.free(key);
-            const val = try interpolateParams(allocator, pair[1], runtime_params, config_vars, null);
+            const val = try interpolateParams(allocator, pair[1], runtime_params, config_vars, task_outputs);
             errdefer allocator.free(val);
             try interpolated_env_pairs.append(allocator, .{ key, val });
         }
@@ -2378,13 +2439,27 @@ fn runTaskSync(
     else
         null;
 
+    // Capture output when share_output is enabled, so downstream deps_serial/deps
+    // tasks can read it via ZR_OUTPUT_* env vars or {{output.task-name}} templates.
+    var output_cap: ?output_capture.OutputCapture = null;
+    defer if (output_cap) |*oc| oc.deinit();
+    if (task.share_output) {
+        output_cap = output_capture.OutputCapture.init(allocator, .{
+            .mode = .buffer,
+            .max_buffer_size = 1024 * 1024,
+        }) catch null;
+    }
+    const capture_inherit_stdio = if (output_cap != null) false else inherit_stdio;
+
     const task_start = std.time.milliTimestamp();
     const effective_timeout_ms: ?u64 = task.timeout_ms orelse default_timeout_ms;
     var proc_result = process.run(allocator, .{
         .cmd = interpolated_cmd,
         .cwd = interpolated_cwd orelse task.cwd,
         .env = final_env,
-        .inherit_stdio = inherit_stdio,
+        .output_callback = if (output_cap != null) syncTaskOutputCallback else null,
+        .output_ctx = if (output_cap) |*oc| @ptrCast(oc) else null,
+        .inherit_stdio = capture_inherit_stdio,
         .timeout_ms = effective_timeout_ms,
     }) catch process.ProcessResult{
         .exit_code = 1,
@@ -2404,11 +2479,14 @@ fn runTaskSync(
             if (delay_ms > 0) {
                 std.Thread.sleep(delay_ms * std.time.ns_per_ms);
             }
+            if (output_cap) |*oc| oc.clearBuffer();
             proc_result = process.run(allocator, .{
                 .cmd = interpolated_cmd,
                 .cwd = interpolated_cwd orelse task.cwd,
                 .env = final_env,
-                .inherit_stdio = inherit_stdio,
+                .output_callback = if (output_cap != null) syncTaskOutputCallback else null,
+                .output_ctx = if (output_cap) |*oc| @ptrCast(oc) else null,
+                .inherit_stdio = capture_inherit_stdio,
                 .timeout_ms = effective_timeout_ms,
             }) catch process.ProcessResult{
                 .exit_code = 1,
@@ -2424,6 +2502,41 @@ fn runTaskSync(
     // Check if task timed out (exit code 124 is timeout from process.run)
     if (proc_result.exit_code == 124 and task.timeout_ms != null) {
         was_timeout = true;
+    }
+
+    // If share_output, relay captured output to stdout and store trimmed output for
+    // downstream tasks (mirrors the async scheduler path, extended to deps_serial).
+    if (output_cap) |*oc| {
+        if (oc.getBuffer()) |buffered_output| {
+            defer allocator.free(buffered_output);
+            if (buffered_output.len > 0) {
+                const stdout_f = std.fs.File.stdout();
+                if (stdout_f.isTty()) stdout_f.writeAll("\r\x1b[K") catch {};
+                stdout_f.writeAll(buffered_output) catch {};
+            }
+            if (proc_result.success) {
+                if (task_outputs) |outputs| {
+                    const trimmed = std.mem.trimRight(u8, buffered_output, " \t\r\n");
+                    const name_dupe = allocator.dupe(u8, task.name) catch null;
+                    const val_dupe = allocator.dupe(u8, trimmed) catch null;
+                    if (name_dupe != null and val_dupe != null) {
+                        results_mutex.lock();
+                        if (outputs.fetchRemove(name_dupe.?)) |old| {
+                            allocator.free(old.key);
+                            allocator.free(old.value);
+                        }
+                        outputs.put(name_dupe.?, val_dupe.?) catch {
+                            allocator.free(name_dupe.?);
+                            allocator.free(val_dupe.?);
+                        };
+                        results_mutex.unlock();
+                    } else {
+                        if (name_dupe) |n| allocator.free(n);
+                        if (val_dupe) |v| allocator.free(v);
+                    }
+                }
+            }
+        } else |_| {}
     }
 
     // Execute post-task hooks
@@ -2507,6 +2620,7 @@ fn runSerialChain(
     completed: *std.StringHashMap(bool),
     runtime_params: ?*const std.StringHashMap([]const u8),
     default_timeout_ms: ?u64,
+    task_outputs: ?*std.StringHashMap([]const u8),
 ) !bool {
     // Convenient reference to config.vars for interpolation
     const config_vars: ?*const std.StringHashMap([]const u8) = if (config.vars.count() > 0) &config.vars else null;
@@ -2528,13 +2642,13 @@ fn runSerialChain(
             const chain_ok = try runSerialChain(
                 allocator, config, dep_task.deps_serial, extra_env, toolchains,
                 inherit_stdio, results, results_mutex, completed, runtime_params,
-                default_timeout_ms,
+                default_timeout_ms, task_outputs,
             );
             if (!chain_ok) return false;
         }
 
         const task_env: ?[]const [2][]const u8 = if (dep_task.env.len > 0) dep_task.env else null;
-        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params, config_vars, default_timeout_ms);
+        const ok = try runTaskSync(allocator, dep_task, task_env, extra_env, toolchains, inherit_stdio, results, results_mutex, runtime_params, config_vars, default_timeout_ms, task_outputs);
         // Update sentinel to real result
         try completed.put(dep_name, ok);
         if (!ok) return false;
@@ -2852,7 +2966,7 @@ pub fn run(
                 const serial_ok = try runSerialChain(
                     allocator, config, task.deps_serial, sched_config.extra_env, config.toolchains.tools,
                     sched_config.inherit_stdio, &results, &results_mutex, &completed, sched_config.runtime_params,
-                    sched_config.default_timeout_ms,
+                    sched_config.default_timeout_ms, sched_config.task_outputs,
                 );
                 if (!serial_ok) {
                     if (!task.allow_failure) failed.store(true, .release);
