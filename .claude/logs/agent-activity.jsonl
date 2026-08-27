@@ -119,3 +119,7 @@
 {"timestamp": "2026-07-19T10:17:21.685029Z", "action": "subagent", "agent_type": "zig-developer", "task": "Fix 7 failing mixin_test.zig tests (8004,8007,8009,8010,8011,8016,8017) - issue #124", "project": "zr"}
 {"timestamp":"2026-08-24T10:23:39Z","action":"subagent","agent_type":"zig-developer","task":"Triage and fix batch of integration-test failures tracked in issue #124 (STABILIZATION cycle 415)","project":"zr"}
 {"timestamp":"2026-08-25T10:25:15Z","action":"subagent","agent_type":"test-writer","task":"Widen timing margins on 2 CI-flaky tests (22000_settings_jobs_test 22004, uptodate --force) - issue #124","project":"zr"}
+{"timestamp":"2026-08-26T16:27:05Z","action":"subagent","agent_type":"Explore","task":"Investigate workflow flat tasks params parsing gap (task_params_test workflow passes params to tasks)","project":"zr"}
+{"timestamp":"2026-08-26T16:27:05Z","action":"subagent","agent_type":"test-writer","task":"Add tests for workflow inline-table task params (multi-task, backward-compat, stage syntax)","project":"zr"}
+{"timestamp":"2026-08-26T16:27:05Z","action":"subagent","agent_type":"zig-developer","task":"Implement per-task params override for workflow tasks (parser.zig, types.zig, run.zig)","project":"zr"}
+{"timestamp": "2026-08-27T10:29:01Z", "action": "subagent", "agent_type": "test-writer", "task": "Fix malformed TOML fixture in task_params_test.zig (missing [workflows.staged] header)", "project": "zr"}

@@ -1798,7 +1798,7 @@ fn workerFn(ctx: WorkerCtx) void {
         }
     }
 
-    // If we captured output for caching purposes, relay it to stdout so user sees it
+    // If we captured output for caching purposes, relay it to stdout/stderr so user sees it
     if (capture_for_cache) {
         if (output_cap) |*oc| {
             if (oc.config.mode == .buffer) {
@@ -1809,6 +1809,12 @@ fn workerFn(ctx: WorkerCtx) void {
                         // Clear any in-progress spinner/monitor line before printing buffered output.
                         if (stdout_f.isTty()) stdout_f.writeAll("\r\x1b[K") catch {};
                         stdout_f.writeAll(buffered_output) catch {};
+                    }
+                } else |_| {}
+                if (oc.getStderrBuffer()) |buffered_stderr| {
+                    defer task_allocator.free(buffered_stderr);
+                    if (buffered_stderr.len > 0) {
+                        std.fs.File.stderr().writeAll(buffered_stderr) catch {};
                     }
                 } else |_| {}
             }
