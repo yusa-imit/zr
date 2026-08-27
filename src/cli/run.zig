@@ -1778,6 +1778,19 @@ pub fn cmdWorkflow(
 
             const stage_start_ns = std.time.nanoTimestamp();
 
+            // Build runtime_params from stage.task_params
+            var stage_runtime_params = std.StringHashMap([]const u8).init(allocator);
+            defer stage_runtime_params.deinit();
+            for (stage.task_params) |param_pair| {
+                // param_pair is ["taskname", "key=value"]
+                const param_str = param_pair[1];
+                if (std.mem.indexOf(u8, param_str, "=")) |eq_idx| {
+                    const key = param_str[0..eq_idx];
+                    const val = param_str[eq_idx + 1 ..];
+                    try stage_runtime_params.put(key, val);
+                }
+            }
+
             var sched_result = scheduler.run(allocator, &config, stage.tasks, .{
                 .inherit_stdio = true,
                 .max_jobs = wf_max_jobs,
@@ -1788,6 +1801,7 @@ pub fn cmdWorkflow(
                 .skip_tasks = skip_tasks,
                 .default_timeout_ms = wf_default_timeout_ms,
                 .project_root = std.fs.path.dirname(config_path),
+                .runtime_params = &stage_runtime_params,
             }) catch |err| {
             switch (err) {
                 error.TaskNotFound => {

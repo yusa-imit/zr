@@ -232,6 +232,7 @@ fn flushPendingStage(
     workflow_stages: *std.ArrayList(Stage),
     stage_name: ?[]const u8,
     stage_tasks: *std.ArrayList([]const u8),
+    stage_task_params: *std.ArrayList([2][]const u8),
     stage_parallel: bool,
     stage_fail_fast: bool,
     stage_condition: ?[]const u8,
@@ -261,6 +262,27 @@ fn flushPendingStage(
         tduped += 1;
     }
 
+    // Allocate and dupe task params
+    const s_task_params = try allocator.alloc([2][]const u8, stage_task_params.items.len);
+    var pduped: usize = 0;
+    errdefer {
+        for (s_task_params[0..pduped]) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(s_task_params);
+    }
+    for (stage_task_params.items, 0..) |pair, i| {
+        s_task_params[i] = .{
+            try allocator.dupe(u8, pair[0]),
+            try allocator.dupe(u8, pair[1]),
+        };
+        // pair[1] ("key=value") was heap-allocated by parseTasksArrayWithParams;
+        // it has now been duped into s_task_params, so free the original.
+        allocator.free(pair[1]);
+        pduped += 1;
+    }
+
     // Dupe optional fields
     const s_cond = if (stage_condition) |c| try allocator.dupe(u8, c) else null;
     errdefer if (s_cond) |c| allocator.free(c);
@@ -275,6 +297,7 @@ fn flushPendingStage(
         .condition = s_cond,
         .approval = stage_approval,
         .on_failure = s_on_failure,
+        .task_params = s_task_params,
     };
     try workflow_stages.append(allocator, new_stage);
 
@@ -284,6 +307,147 @@ fn flushPendingStage(
     }
 
     return true;
+}
+
+/// Parse a tasks array that can contain both plain strings and inline tables with params.
+/// Example: ["task1", { name = "task2", params = { env = "prod" } }]
+/// Populates stage_tasks with task names and stage_task_params with [taskname, "key=value"] pairs.
+fn parseTasksArrayWithParams(
+    allocator: std.mem.Allocator,
+    tasks_str: []const u8,
+    stage_tasks: *std.ArrayList([]const u8),
+    stage_task_params: *std.ArrayList([2][]const u8),
+) !void {
+    var pos: usize = 0;
+    while (pos < tasks_str.len) {
+        // Skip whitespace
+        while (pos < tasks_str.len and (tasks_str[pos] == ' ' or tasks_str[pos] == '\t' or tasks_str[pos] == '\n' or tasks_str[pos] == '\r')) {
+            pos += 1;
+        }
+        if (pos >= tasks_str.len) break;
+
+        // Check if this is a plain quoted string or an inline table
+        if (tasks_str[pos] == '"') {
+            // Plain quoted string task name
+            pos += 1; // Skip opening quote
+            const start = pos;
+            while (pos < tasks_str.len and tasks_str[pos] != '"') {
+                pos += 1;
+            }
+            const task_name = tasks_str[start..pos];
+            if (task_name.len > 0) {
+                try stage_tasks.append(allocator, task_name);
+            }
+            if (pos < tasks_str.len) pos += 1; // Skip closing quote
+        } else if (tasks_str[pos] == '{') {
+            // Inline table: { name = "taskname", params = { key = value, ... } }
+            const table_start = pos;
+            pos += 1; // Skip opening brace
+            var brace_depth: i32 = 1;
+            while (pos < tasks_str.len and brace_depth > 0) {
+                if (tasks_str[pos] == '{') brace_depth += 1;
+                if (tasks_str[pos] == '}') brace_depth -= 1;
+                pos += 1;
+            }
+
+            if (brace_depth != 0) break; // Unmatched braces
+            const table_str = tasks_str[table_start + 1 .. pos - 1];
+
+            // Parse fields from inline table
+            var task_name: ?[]const u8 = null;
+            var task_params_map = std.StringHashMap([]const u8).init(allocator);
+            defer task_params_map.deinit();
+
+            // Split by comma, respecting nested braces/brackets
+            var field_start: usize = 0;
+            var field_pos: usize = 0;
+            var brace_bracket_depth: i32 = 0;
+
+            while (field_pos <= table_str.len) {
+                const is_end = field_pos == table_str.len;
+                const is_delimiter = !is_end and table_str[field_pos] == ',' and brace_bracket_depth == 0;
+
+                if (!is_end) {
+                    if (table_str[field_pos] == '[' or table_str[field_pos] == '{') brace_bracket_depth += 1;
+                    if (table_str[field_pos] == ']' or table_str[field_pos] == '}') brace_bracket_depth -= 1;
+                }
+
+                if (is_delimiter or is_end) {
+                    const field = std.mem.trim(u8, table_str[field_start..field_pos], " \t");
+                    if (field.len > 0) {
+                        const eq_idx = std.mem.indexOf(u8, field, "=") orelse {
+                            field_start = field_pos + 1;
+                            field_pos += 1;
+                            continue;
+                        };
+                        const field_key = std.mem.trim(u8, field[0..eq_idx], " \t");
+                        const field_value_raw = std.mem.trim(u8, field[eq_idx + 1 ..], " \t");
+
+                        if (std.mem.eql(u8, field_key, "name")) {
+                            task_name = std.mem.trim(u8, field_value_raw, "\"");
+                        } else if (std.mem.eql(u8, field_key, "params")) {
+                            // Parse params inline table: { key = value, ... }
+                            if (std.mem.startsWith(u8, field_value_raw, "{") and std.mem.endsWith(u8, field_value_raw, "}")) {
+                                const params_str = field_value_raw[1 .. field_value_raw.len - 1];
+                                var param_start: usize = 0;
+                                var param_pos: usize = 0;
+                                var param_depth: i32 = 0;
+
+                                while (param_pos <= params_str.len) {
+                                    const p_is_end = param_pos == params_str.len;
+                                    const p_is_delim = !p_is_end and params_str[param_pos] == ',' and param_depth == 0;
+
+                                    if (!p_is_end) {
+                                        if (params_str[param_pos] == '[' or params_str[param_pos] == '{') param_depth += 1;
+                                        if (params_str[param_pos] == ']' or params_str[param_pos] == '}') param_depth -= 1;
+                                    }
+
+                                    if (p_is_delim or p_is_end) {
+                                        const param_field = std.mem.trim(u8, params_str[param_start..param_pos], " \t");
+                                        if (param_field.len > 0) {
+                                            const param_eq = std.mem.indexOf(u8, param_field, "=") orelse {
+                                                param_start = param_pos + 1;
+                                                param_pos += 1;
+                                                continue;
+                                            };
+                                            const param_key = std.mem.trim(u8, param_field[0..param_eq], " \t");
+                                            const param_val = std.mem.trim(u8, param_field[param_eq + 1 ..], " \t\"");
+                                            try task_params_map.put(param_key, param_val);
+                                        }
+                                        param_start = param_pos + 1;
+                                    }
+                                    param_pos += 1;
+                                }
+                            }
+                        }
+                    }
+                    field_start = field_pos + 1;
+                }
+                field_pos += 1;
+            }
+
+            // Add task and its params
+            if (task_name) |tn| {
+                try stage_tasks.append(allocator, tn);
+
+                // Add each param as [taskname, "key=value"]
+                var param_iter = task_params_map.iterator();
+                while (param_iter.next()) |entry| {
+                    const key = entry.key_ptr.*;
+                    const val = entry.value_ptr.*;
+                    const param_str = try std.fmt.allocPrint(allocator, "{s}={s}", .{ key, val });
+                    errdefer allocator.free(param_str);
+                    try stage_task_params.append(allocator, .{ tn, param_str });
+                }
+            }
+        } else if (tasks_str[pos] == ',') {
+            // Comma separator
+            pos += 1;
+        } else {
+            // Skip unknown characters
+            pos += 1;
+        }
+    }
 }
 
 /// Parse inline stages syntax: stages = [{ name = "...", tasks = [...] }, {...}]
@@ -339,6 +503,9 @@ fn parseInlineStages(
         var stage_name: ?[]const u8 = null;
         var stage_tasks = std.ArrayList([]const u8){};
         defer stage_tasks.deinit(allocator);
+        // stage_task_params items are non-owning slices into content (duped when Stage constructed)
+        var stage_task_params = std.ArrayList([2][]const u8){};
+        defer stage_task_params.deinit(allocator);
         var stage_parallel: bool = true;
         var stage_fail_fast: bool = false;
         var stage_condition: ?[]const u8 = null;
@@ -373,14 +540,10 @@ fn parseInlineStages(
                     if (std.mem.eql(u8, field_key, "name")) {
                         stage_name = field_value;
                     } else if (std.mem.eql(u8, field_key, "tasks")) {
-                        // Parse tasks array: ["task1", "task2"]
+                        // Parse tasks array: ["task1", "task2"] or with inline table params
                         if (std.mem.startsWith(u8, field_value, "[") and std.mem.endsWith(u8, field_value, "]")) {
                             const tasks_str = field_value[1 .. field_value.len - 1];
-                            var tasks_it = std.mem.splitScalar(u8, tasks_str, ',');
-                            while (tasks_it.next()) |t| {
-                                const trimmed_t = std.mem.trim(u8, t, " \t\"");
-                                if (trimmed_t.len > 0) try stage_tasks.append(allocator, trimmed_t);
-                            }
+                            try parseTasksArrayWithParams(allocator, tasks_str, &stage_tasks, &stage_task_params);
                         }
                     } else if (std.mem.eql(u8, field_key, "parallel")) {
                         stage_parallel = std.mem.eql(u8, field_value, "true");
@@ -405,6 +568,7 @@ fn parseInlineStages(
             workflow_stages,
             stage_name,
             &stage_tasks,
+            &stage_task_params,
             stage_parallel,
             stage_fail_fast,
             stage_condition,
@@ -1166,6 +1330,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
     // stage_tasks items are non-owning slices into content
     var stage_tasks = std.ArrayList([]const u8){};
     defer stage_tasks.deinit(allocator);
+    // stage_task_params items are non-owning slices into content (duped when Stage constructed)
+    var stage_task_params = std.ArrayList([2][]const u8){};
+    defer stage_task_params.deinit(allocator);
     var stage_parallel: bool = true;
     var stage_fail_fast: bool = false;
     var stage_condition: ?[]const u8 = null;
@@ -1475,6 +1642,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -1484,6 +1652,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Reset stage state
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_approval = false;
@@ -1512,6 +1681,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -1520,6 +1690,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_approval = false;
@@ -1534,6 +1705,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -1543,6 +1715,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             // Reset stage state
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -1795,6 +1968,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -1803,6 +1977,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -1836,6 +2011,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -1844,6 +2020,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -2059,6 +2236,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -2067,6 +2245,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -2186,6 +2365,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -2194,6 +2374,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -2314,6 +2495,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -2322,6 +2504,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -2968,6 +3151,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 &workflow_stages,
                 stage_name,
                 &stage_tasks,
+                &stage_task_params,
                 stage_parallel,
                 stage_fail_fast,
                 stage_condition,
@@ -2976,6 +3160,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             );
             stage_name = null;
             stage_tasks.clearRetainingCapacity();
+            stage_task_params.clearRetainingCapacity();
             stage_parallel = true;
             stage_fail_fast = false;
             stage_condition = null;
@@ -3571,12 +3756,12 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                 } else if (std.mem.eql(u8, key, "tasks")) {
                     if (std.mem.startsWith(u8, value, "[") and std.mem.endsWith(u8, value, "]")) {
                         stage_tasks.clearRetainingCapacity();
+                        // Free previously-collected param_str allocations (from a
+                        // redefined "tasks" key) before dropping them.
+                        for (stage_task_params.items) |pair| allocator.free(pair[1]);
+                        stage_task_params.clearRetainingCapacity();
                         const tasks_str = value[1 .. value.len - 1];
-                        var tasks_it = std.mem.splitScalar(u8, tasks_str, ',');
-                        while (tasks_it.next()) |t| {
-                            const trimmed_t = std.mem.trim(u8, t, " \t\"");
-                            if (trimmed_t.len > 0) try stage_tasks.append(allocator, trimmed_t);
-                        }
+                        try parseTasksArrayWithParams(allocator, tasks_str, &stage_tasks, &stage_task_params);
                     }
                 } else if (std.mem.eql(u8, key, "parallel")) {
                     stage_parallel = std.mem.eql(u8, value, "true");
@@ -5503,6 +5688,7 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
         &workflow_stages,
         stage_name,
         &stage_tasks,
+        &stage_task_params,
         stage_parallel,
         stage_fail_fast,
         stage_condition,

@@ -826,6 +826,23 @@ pub const Config = struct {
             const s_on_failure = if (stage.on_failure) |f| try self.allocator.dupe(u8, f) else null;
             errdefer if (s_on_failure) |f| self.allocator.free(f);
 
+            const s_task_params = try self.allocator.alloc([2][]const u8, stage.task_params.len);
+            var params_duped: usize = 0;
+            errdefer {
+                for (s_task_params[0..params_duped]) |pair| {
+                    self.allocator.free(pair[0]);
+                    self.allocator.free(pair[1]);
+                }
+                self.allocator.free(s_task_params);
+            }
+            for (stage.task_params, 0..) |pair, j| {
+                s_task_params[j] = .{
+                    try self.allocator.dupe(u8, pair[0]),
+                    try self.allocator.dupe(u8, pair[1]),
+                };
+                params_duped += 1;
+            }
+
             wf_stages[i] = Stage{
                 .name = s_name,
                 .tasks = s_tasks,
@@ -834,6 +851,7 @@ pub const Config = struct {
                 .condition = s_cond,
                 .approval = stage.approval,
                 .on_failure = s_on_failure,
+                .task_params = s_task_params,
             };
             stages_duped += 1;
         }
@@ -1739,6 +1757,10 @@ pub const Stage = struct {
     approval: bool = false,
     /// Task to run on stage failure (e.g., "notify-slack").
     on_failure: ?[]const u8 = null,
+    /// Per-task param overrides, aggregated across all task entries in this stage.
+    /// Each pair is [task_name, param_key=param_value] format.
+    /// Populated from inline-table `{ name = "...", params = {...} }` syntax in `tasks = [...]`.
+    task_params: []const [2][]const u8 = &.{},
 
     pub fn deinit(self: *Stage, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1746,6 +1768,11 @@ pub const Stage = struct {
         allocator.free(self.tasks);
         if (self.condition) |c| allocator.free(c);
         if (self.on_failure) |f| allocator.free(f);
+        for (self.task_params) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(self.task_params);
     }
 };
 

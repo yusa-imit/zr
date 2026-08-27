@@ -774,3 +774,137 @@ test "task params: no params field backward compatible" {
     defer allocator.free(combined);
     try std.testing.expect(std.mem.indexOf(u8, combined, "Building") != null);
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Test 23: Multiple tasks in workflow with distinct param overrides
+// ────────────────────────────────────────────────────────────────────────────
+
+test "task params: multiple tasks in workflow with different params" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const params_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo Deploying to {{env}}"
+        \\params = [
+        \\  { name = "env", default = "dev" }
+        \\]
+        \\
+        \\[tasks.migrate]
+        \\cmd = "echo Migrating {{db}}"
+        \\params = [
+        \\  { name = "db", default = "local" }
+        \\]
+        \\
+        \\[workflows.release]
+        \\tasks = [
+        \\  { name = "migrate", params = { db = "production" } },
+        \\  { name = "deploy", params = { env = "production" } }
+        \\]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, params_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "release" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer allocator.free(combined);
+    // Each task should receive its own correct param value (not the other's)
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Deploying to production") != null);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Migrating production") != null);
+    // Verify defaults are NOT used (would be "dev" and "local")
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Deploying to dev") == null);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Migrating local") == null);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Test 24: Workflow with plain string task syntax (backward compatibility)
+// ────────────────────────────────────────────────────────────────────────────
+
+test "task params: workflow with plain string task syntax backward compatible" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const params_toml =
+        \\[tasks.build]
+        \\cmd = "echo Building application"
+        \\params = [
+        \\  { name = "mode", default = "debug" }
+        \\]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo Running tests"
+        \\
+        \\[workflows.simple]
+        \\tasks = ["test", "build"]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, params_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "simple" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer allocator.free(combined);
+    // Both tasks should run successfully with default params
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Running tests") != null);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Building application") != null);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Test 25: Workflow stage with explicit [[workflows.X.stages]] and inline params
+// ────────────────────────────────────────────────────────────────────────────
+
+test "task params: workflow stage with inline table params" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const params_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo Deploying to {{env}}"
+        \\params = [
+        \\  { name = "env", default = "dev" }
+        \\]
+        \\
+        \\[workflows.staged]
+        \\
+        \\[[workflows.staged.stages]]
+        \\name = "production"
+        \\tasks = [
+        \\  { name = "deploy", params = { env = "production" } }
+        \\]
+        \\
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, params_toml);
+    defer allocator.free(config);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    var result = try runZr(allocator, &.{ "--config", config, "workflow", "staged" }, tmp_path);
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer allocator.free(combined);
+    // Task should receive param override from stage, not default
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Deploying to production") != null);
+    try std.testing.expect(std.mem.indexOf(u8, combined, "Deploying to dev") == null);
+}
