@@ -107,3 +107,172 @@ fn printStatusJson(w: *std.Io.Writer, config_path: []const u8, task_count: usize
     try w.print("]\n}}\n", .{});
     return 0;
 }
+
+test "cmdStatus: text output with no run history" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\
+        \\[tasks.test]
+        \\cmd = "test"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const options = StatusOptions{ .config_path = config_path, .json_output = false, .use_color = false };
+    const code = try cmdStatus(allocator, options, &out_w, &err_w);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "Tasks    2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "No run history") != null);
+}
+
+test "cmdStatus: text output with run history and failures" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\
+        \\[tasks.test]
+        \\cmd = "test"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    // Create .zr directory and last-failures.txt
+    try tmp.dir.makePath(".zr");
+    const failures_content = "build\ntest\n";
+    try tmp.dir.writeFile(.{ .sub_path = ".zr/last-failures.txt", .data = failures_content });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const options = StatusOptions{ .config_path = config_path, .json_output = false, .use_color = false };
+    const code = try cmdStatus(allocator, options, &out_w, &err_w);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "Last run failures (2)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "test") != null);
+}
+
+test "cmdStatus: text output with run history but all succeeded" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    // Create .zr directory with empty last-failures.txt (all succeeded)
+    try tmp.dir.makePath(".zr");
+    try tmp.dir.writeFile(.{ .sub_path = ".zr/last-failures.txt", .data = "" });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const options = StatusOptions{ .config_path = config_path, .json_output = false, .use_color = false };
+    const code = try cmdStatus(allocator, options, &out_w, &err_w);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "All tasks succeeded") != null);
+}
+
+test "cmdStatus: json output format" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\
+        \\[tasks.test]
+        \\cmd = "test"
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    // Create failures file
+    try tmp.dir.makePath(".zr");
+    try tmp.dir.writeFile(.{ .sub_path = ".zr/last-failures.txt", .data = "build\n" });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const options = StatusOptions{ .config_path = config_path, .json_output = true, .use_color = false };
+    const code = try cmdStatus(allocator, options, &out_w, &err_w);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"config\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"task_count\": 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"has_run_history\": true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"last_failures\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"build\"") != null);
+}
+
+test "cmdStatus: missing config file returns error" {
+    const allocator = std.testing.allocator;
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const options = StatusOptions{ .config_path = "/nonexistent/path/zr.toml", .json_output = false, .use_color = false };
+    const code = try cmdStatus(allocator, options, &out_w, &err_w);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const written_err = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written_err, "No zr.toml found") != null);
+}

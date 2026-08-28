@@ -189,3 +189,192 @@ fn secretsCheckCommand(
 
     return 1;
 }
+
+test "secretsCommand: missing subcommand returns error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml = "[tasks.build]\ncmd = \"make\"\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    // Pass only "secrets" (args.len < 2 triggers missing subcommand error)
+    const args = [_][]const u8{ "secrets" };
+    const code = try secretsCommand(allocator, &args, &out_w, &err_w, config_path, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const written_err = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written_err, "missing subcommand") != null);
+}
+
+test "secretsCommand: unknown subcommand returns error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml = "[tasks.build]\ncmd = \"make\"\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "secrets", "unknown" };
+    const code = try secretsCommand(allocator, &args, &out_w, &err_w, config_path, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const written_err = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written_err, "unknown subcommand") != null);
+}
+
+test "secretsCommand: help flag shows help text" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml = "[tasks.build]\ncmd = \"make\"\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "secrets", "--help" };
+    const code = try secretsCommand(allocator, &args, &out_w, &err_w, config_path, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "Usage: zr secrets") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "list") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "check") != null);
+}
+
+test "secretsCommand: list with no secrets shows empty message" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml = "[tasks.build]\ncmd = \"make\"\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "secrets", "list" };
+    const code = try secretsCommand(allocator, &args, &out_w, &err_w, config_path, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "No tasks with secrets") != null);
+}
+
+test "secretsCommand: list shows tasks with secrets declared" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\secrets = ["API_KEY", "DB_PASSWORD"]
+        \\
+        \\[tasks.deploy]
+        \\cmd = "deploy"
+        \\secrets = ["SSH_KEY"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "secrets", "list" };
+    const code = try secretsCommand(allocator, &args, &out_w, &err_w, config_path, false);
+    try std.testing.expectEqual(@as(u8, 0), code);
+
+    const written = out_buf[0..out_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written, "Secrets:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "deploy") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "API_KEY") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "SSH_KEY") != null);
+}
+
+test "secretsCommand: check with missing secrets reports error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[tasks.build]
+        \\cmd = "make"
+        \\secrets = ["MISSING_SECRET1", "MISSING_SECRET2"]
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const config_path = try std.fmt.allocPrint(allocator, "{s}/zr.toml", .{tmp_path});
+    defer allocator.free(config_path);
+
+    var out_buf: [4096]u8 = undefined;
+    var out_w = std.Io.Writer.fixed(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_w = std.Io.Writer.fixed(&err_buf);
+
+    const args = [_][]const u8{ "secrets", "check" };
+    const code = try secretsCommand(allocator, &args, &out_w, &err_w, config_path, false);
+    try std.testing.expectEqual(@as(u8, 1), code);
+
+    const written_err = err_buf[0..err_w.end];
+    try std.testing.expect(std.mem.indexOf(u8, written_err, "Missing secrets") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written_err, "build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written_err, "MISSING_SECRET") != null);
+}
