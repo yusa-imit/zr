@@ -26,11 +26,11 @@ test "28000: include basic - tasks from included file are available" {
     defer allocator.free(tmp_path);
 
     // Write included file with a task
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[tasks.ci]
         \\cmd = "echo ci-task"
         \\description = "CI task from included file"
-    , "ci.zr.toml");
+    , "ci.zr.toml"));
 
     // Write root config with include
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -59,11 +59,11 @@ test "28001: task override - root config task wins when same name in both files"
     defer allocator.free(tmp_path);
 
     // Write included file with task 'build'
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[tasks.build]
         \\cmd = "echo build-from-included"
         \\description = "Build from included file"
-    , "other.zr.toml");
+    , "other.zr.toml"));
 
     // Write root config with same task name
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -93,12 +93,12 @@ test "28002: var merge - vars from included file available, root wins on conflic
     defer allocator.free(tmp_path);
 
     // Write included file with vars
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[vars]
         \\DATABASE = "included_db"
         \\PORT = "5432"
         \\TIMEOUT = "30"
-    , "db.zr.toml");
+    , "db.zr.toml"));
 
     // Write root config with overlapping vars
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -136,20 +136,20 @@ test "28003: nested include - included file itself has an include (multi-level)"
     defer allocator.free(tmp_path);
 
     // Level 2: deepest include
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[tasks.lint]
         \\cmd = "echo lint-task"
         \\description = "Lint from deep include"
-    , "lint.zr.toml");
+    , "lint.zr.toml"));
 
     // Level 1: includes level 2
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\include = ["./lint.zr.toml"]
         \\
         \\[tasks.test]
         \\cmd = "echo test-task"
         \\description = "Test from intermediate include"
-    , "test.zr.toml");
+    , "test.zr.toml"));
 
     // Level 0: root includes level 1
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -187,20 +187,20 @@ test "28004: cycle detection - circular include returns error (non-zero exit)" {
     defer allocator.free(tmp_path);
 
     // File a.zr.toml includes b.zr.toml
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\include = ["./b.zr.toml"]
         \\
         \\[tasks.task-a]
         \\cmd = "echo a"
-    , "a.zr.toml");
+    , "a.zr.toml"));
 
     // File b.zr.toml includes a.zr.toml (cycle!)
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\include = ["./a.zr.toml"]
         \\
         \\[tasks.task-b]
         \\cmd = "echo b"
-    , "b.zr.toml");
+    , "b.zr.toml"));
 
     // Write root config that includes a.zr.toml (which includes b.zr.toml which includes a.zr.toml)
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -232,13 +232,13 @@ test "28005: validate --show-includes shows file paths and task counts" {
     defer allocator.free(tmp_path);
 
     // Write included file with 2 tasks
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[tasks.ci]
         \\cmd = "echo ci"
         \\
         \\[tasks.deploy]
         \\cmd = "echo deploy"
-    , "ci.zr.toml");
+    , "ci.zr.toml"));
 
     // Write root config with 1 task
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -269,11 +269,11 @@ test "28006: list --source shows [filename] next to tasks from included files" {
     defer allocator.free(tmp_path);
 
     // Write included file with a task
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[tasks.ci]
         \\cmd = "echo ci"
         \\description = "CI task"
-    , "ci.zr.toml");
+    , "ci.zr.toml"));
 
     // Write root config with a task and include
     const config = try writeTmpConfig(allocator, tmp.dir,
@@ -311,18 +311,18 @@ test "28007: --config compatibility - include paths resolved relative to --confi
     try tmp.dir.makePath("subdir");
 
     // Write an included file in root temp directory
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\[tasks.shared]
         \\cmd = "echo shared-task"
-    , "shared.zr.toml");
+    , "shared.zr.toml"));
 
     // Write root config in subdirectory that includes ../shared.zr.toml
-    _ = try writeTmpConfigPath(allocator, tmp.dir,
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir,
         \\include = ["../shared.zr.toml"]
         \\
         \\[tasks.local]
         \\cmd = "echo local-task"
-    , "subdir/project.zr.toml");
+    , "subdir/project.zr.toml"));
 
     // Get absolute path to the config file
     const config_path = try std.fmt.allocPrint(allocator, "{s}/subdir/project.zr.toml", .{tmp_path});

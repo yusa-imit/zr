@@ -164,9 +164,9 @@ test "affected: detects changes in subdirectory with platform separator" {
     defer std.testing.allocator.free(tmp_path);
 
     // Initialize git repo
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "init" }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.email", "test@example.com" }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.name", "Test User" }, tmp_path);
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "init" }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.email", "test@example.com" }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.name", "Test User" }, tmp_path); r.deinit(); }
 
     try tmp.dir.makePath("packages/core");
     try tmp.dir.writeFile(.{ .sub_path = "packages/core/zr.toml", .data =
@@ -180,8 +180,8 @@ test "affected: detects changes in subdirectory with platform separator" {
         \\members = ["packages/*"]
     });
 
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "add", "." }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "commit", "-m", "Initial" }, tmp_path);
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "add", "." }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "commit", "-m", "Initial" }, tmp_path); r.deinit(); }
 
     // Modify file
     try tmp.dir.writeFile(.{ .sub_path = "packages/core/main.zig", .data = "const std = @import(\"std\"); // changed" });
@@ -203,9 +203,9 @@ test "affected: correctly matches paths with trailing separator" {
     defer std.testing.allocator.free(tmp_path);
 
     // Initialize git repo
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "init" }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.email", "test@example.com" }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.name", "Test User" }, tmp_path);
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "init" }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.email", "test@example.com" }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.name", "Test User" }, tmp_path); r.deinit(); }
 
     try tmp.dir.makePath("packages/utils");
     try tmp.dir.writeFile(.{ .sub_path = "packages/utils/zr.toml", .data =
@@ -220,8 +220,8 @@ test "affected: correctly matches paths with trailing separator" {
         \\members = ["packages/utils/"]
     });
 
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "add", "." }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "commit", "-m", "Initial" }, tmp_path);
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "add", "." }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "commit", "-m", "Initial" }, tmp_path); r.deinit(); }
 
     // Modify file
     try tmp.dir.writeFile(.{ .sub_path = "packages/utils/helper.zig", .data = "pub fn help() void {} // changed" });
@@ -243,9 +243,9 @@ test "affected: distinguishes similar path prefixes" {
     defer std.testing.allocator.free(tmp_path);
 
     // Initialize git repo
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "init" }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.email", "test@example.com" }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.name", "Test User" }, tmp_path);
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "init" }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.email", "test@example.com" }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "config", "user.name", "Test User" }, tmp_path); r.deinit(); }
 
     try tmp.dir.makePath("packages/core");
     try tmp.dir.makePath("packages/core-utils");
@@ -265,8 +265,8 @@ test "affected: distinguishes similar path prefixes" {
         \\members = ["packages/core", "packages/core-utils"]
     });
 
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "add", "." }, tmp_path);
-    _ = try helpers.runCommand(std.testing.allocator, &.{ "git", "commit", "-m", "Initial" }, tmp_path);
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "add", "." }, tmp_path); r.deinit(); }
+    { var r = try helpers.runCommand(std.testing.allocator, &.{ "git", "commit", "-m", "Initial" }, tmp_path); r.deinit(); }
 
     // Modify only packages/core/main.zig
     try tmp.dir.writeFile(.{ .sub_path = "packages/core/main.zig", .data = "const std = @import(\"std\"); // changed" });

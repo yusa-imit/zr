@@ -34,7 +34,7 @@ test "imports: basic import from one external file" {
         \\cmd = "echo common"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml"));
 
     // Create main config that imports common.toml
     const main_toml =
@@ -74,7 +74,7 @@ test "imports: multiple files imported in order" {
         \\cmd = "echo task1"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, tasks1_toml, "tasks1.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, tasks1_toml, "tasks1.toml"));
 
     // Create second imported file
     const tasks2_toml =
@@ -83,7 +83,7 @@ test "imports: multiple files imported in order" {
         \\cmd = "echo task2"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, tasks2_toml, "tasks2.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, tasks2_toml, "tasks2.toml"));
 
     // Create main config that imports both files
     const main_toml =
@@ -123,7 +123,7 @@ test "imports: main config tasks override imported tasks with same name" {
         \\cmd = "echo building-common"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml"));
 
     // Create main config with same 'build' task (should override)
     const main_toml =
@@ -164,7 +164,7 @@ test "imports: circular imports detected and reported as error" {
         \\cmd = "echo a"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, file_a, "file_a.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, file_a, "file_a.toml"));
 
     // Create file B that imports file A (creates cycle)
     const file_b =
@@ -175,7 +175,7 @@ test "imports: circular imports detected and reported as error" {
         \\cmd = "echo b"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, file_b, "file_b.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, file_b, "file_b.toml"));
 
     // Main config imports file A
     const main_toml =
@@ -253,7 +253,7 @@ test "imports: relative paths resolve correctly" {
         \\cmd = "echo shared"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, shared_common, "shared/common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, shared_common, "shared/common.toml"));
 
     // Create config in tasks directory that imports from shared
     const tasks_config =
@@ -299,7 +299,7 @@ test "imports: transitive imports (imported file can have imports)" {
         \\cmd = "echo base"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, base_toml, "base.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, base_toml, "base.toml"));
 
     // Create middle layer that imports base
     const middle_toml =
@@ -310,7 +310,7 @@ test "imports: transitive imports (imported file can have imports)" {
         \\cmd = "echo middle"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, middle_toml, "middle.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, middle_toml, "middle.toml"));
 
     // Create main config that imports middle
     const main_toml =
@@ -410,7 +410,7 @@ test "imports: workflows can be imported" {
         \\tasks = ["lint", "test"]
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml"));
 
     // Create main config that imports the workflow
     const main_toml =
@@ -452,7 +452,7 @@ test "imports: profiles can be imported" {
         \\description = "Development profile"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml"));
 
     // Create main config that imports the profile
     const main_toml =
@@ -492,7 +492,7 @@ test "imports: main config preserves its own tasks/workflows/profiles" {
         \\tasks = ["common-task"]
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml"));
 
     // Create main config with its own definitions
     const main_toml =
@@ -541,7 +541,7 @@ test "imports: dependencies work across imported tasks" {
         \\cmd = "echo setting up"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, setup_toml, "setup.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, setup_toml, "setup.toml"));
 
     // Create main config with build task that depends on setup
     const main_toml =
@@ -579,7 +579,7 @@ test "imports: imported task environment variables accessible" {
         \\env = { MY_VAR = "imported-value" }
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, common_toml, "common.toml"));
 
     // Create main config
     const main_toml =
@@ -618,7 +618,7 @@ test "imports: config with both [imports] and direct tasks section" {
         \\cmd = "echo formatting"
         \\
     ;
-    _ = try writeTmpConfigPath(allocator, tmp.dir, utils_toml, "utils.toml");
+    allocator.free(try writeTmpConfigPath(allocator, tmp.dir, utils_toml, "utils.toml"));
 
     // Create main config with both imports and direct task definitions
     const main_toml =
