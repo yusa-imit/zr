@@ -1,4 +1,12 @@
-## CI red since v1.113.0: ~270 integration test failures, mostly untriaged (2026-07-11, Cycle 394)
+## CI red since v1.113.0: RESOLVED (2026-08-28, Cycle 428) — root cause was leaked ZrResult/path allocations
+**Symptom**: The last several CI runs (issue #124) showed "0 failed" but still exited 1 — turned out to be pure GPA leak detection (23 tests leaked memory), not real test failures. `tests/28000_includes_test.zig` and `tests/integration_imports.zig` discarded `writeTmpConfigPath()`'s return (`_ = try writeTmpConfigPath(...)`) without freeing it; `tests/integration_path_separator.zig` did the same with `helpers.runCommand()`'s `ZrResult` (which owns heap-allocated stdout/stderr and must call `.deinit()`). A prior session had already fixed the includes/imports files but left it uncommitted.
+**Fix**: Committed the prior session's fix (3e6fd34) + applied the same pattern to `integration_path_separator.zig` (wrap each discarded `runCommand` call in `{ var r = try helpers.runCommand(...); r.deinit(); }`). `zig build test && zig build integration-test` now clean.
+**Also found**: `deps_test.test.800` fails locally-only (not in CI) because this dev machine has `python3` but no `python` on PATH — `zr deps check` looks for the literal `python` binary. Environment quirk, not a bug — ignore locally, it passes in CI.
+**Lesson**: When GPA reports "N tests leaked memory" alongside "0 failed", the build still exits 1 — don't assume 0 failed means CI is green. Always grep the log for `leaked` separately from `FAIL`.
+
+---
+
+## CI red since v1.113.0: ~270 integration test failures, mostly untriaged (2026-07-11, Cycle 394) — HISTORICAL, see resolution above
 **Symptom**: `zig build integration-test` has been failing on `main` since commit 72bcedd (2026-06-30, v1.113.0) — 1797 passed/44 skipped/276 failed on CI (Ubuntu), reproduces locally on macOS at 1803/44/270. `zig build test` (unit tests) passes cleanly, so this was never caught by sessions that only ran unit tests. Filed as issue #124 with full details — **read that issue first** before re-triaging from scratch.
 **Confirmed root causes so far** (see issue #124 for the rest — most of the 270 are still untriaged):
 1. Workflow matrix (`[workflows.X.matrix]` / inline `matrix = {...}`) is completely unwired in `src/config/parser.zig` — `addWorkflow()` never sets `Workflow.matrix`, so it's always null regardless of TOML content. Affects `tests/workflow_matrix_test.zig` (~10 tests). NOT yet fixed — needs a parser feature addition (support both inline `matrix = {...}` and `[workflows.X.matrix]` + `[[workflows.X.matrix.exclude]]` since the test file uses both).

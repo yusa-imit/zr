@@ -413,11 +413,14 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
         }
     }
 
-    const term = child.wait() catch return error.WaitFailed;
-
-    // Wait for output reader threads to finish
+    // Drain reader threads to EOF before reaping the child. Child.wait()
+    // closes the stdout/stderr pipe fds internally; joining after wait()
+    // races those closes against the reader threads' in-flight read(),
+    // which can return EBADF and silently truncate trailing output.
     if (maybe_stdout_thread) |t| t.join();
     if (maybe_stderr_thread) |t| t.join();
+
+    const term = child.wait() catch return error.WaitFailed;
 
     // Signal watchers that child is done
     child_done.store(true, .release);
@@ -616,5 +619,56 @@ test "run: memory limit enforcement (Linux only)" {
     // Only skip if it succeeded with exit code 0 (python not available or too fast to monitor)
     if (result.success and result.exit_code == 0) {
         return error.SkipZigTest;
+    }
+}
+
+// Test helper types for output callback race condition regression test
+const TestOutputCtx = struct {
+    lines: std.ArrayListUnmanaged([]const u8) = .empty,
+    allocator: std.mem.Allocator,
+
+    fn callback(line: []const u8, _: bool, ctx: ?*anyopaque) void {
+        var self = @as(*TestOutputCtx, @ptrCast(@alignCast(ctx.?)));
+        const duped = self.allocator.dupe(u8, line) catch return;
+        self.lines.append(self.allocator, duped) catch {};
+    }
+};
+
+test "run: output callback receives all lines without dropping trailing output" {
+    // Regression test for race condition where child.wait() closes stdout/stderr
+    // pipes before the reader threads finish draining output, causing dropped
+    // lines (typically the last few lines on Linux under heavy scheduling contention).
+    // Run multiple times with a fast, multi-line process to increase odds of hitting
+    // the race window.
+    const allocator = std.testing.allocator;
+
+    var iteration: u32 = 0;
+    while (iteration < 5) : (iteration += 1) {
+        var ctx = TestOutputCtx{ .allocator = allocator };
+        defer {
+            for (ctx.lines.items) |line| {
+                allocator.free(line);
+            }
+            ctx.lines.deinit(allocator);
+        }
+
+        const result = try run(allocator, .{
+            .cmd = "echo line1; echo line2; echo line3; echo line4; echo line5",
+            .cwd = null,
+            .env = null,
+            .inherit_stdio = false,
+            .output_callback = TestOutputCtx.callback,
+            .output_ctx = @ptrCast(&ctx),
+        });
+
+        try std.testing.expect(result.success);
+
+        // All 5 lines must be captured, no drops due to wait() race
+        try std.testing.expectEqual(@as(usize, 5), ctx.lines.items.len);
+        try std.testing.expectEqualStrings("line1", ctx.lines.items[0]);
+        try std.testing.expectEqualStrings("line2", ctx.lines.items[1]);
+        try std.testing.expectEqualStrings("line3", ctx.lines.items[2]);
+        try std.testing.expectEqualStrings("line4", ctx.lines.items[3]);
+        try std.testing.expectEqualStrings("line5", ctx.lines.items[4]);
     }
 }

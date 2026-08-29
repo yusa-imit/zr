@@ -11,18 +11,14 @@
 
 ## Current Status
 
-- **Build version**: v1.113.0 (current in build.zig.zon) | Latest Release: v1.113.0 (2026-06-30)
+- **Build version**: v1.113.0 (still current in build.zig.zon — no minor release since; sailor jumped ahead independently)
 - **Unit tests**: ✅ Passing (1779 passed, 8 skipped, 0 failed)
-- **Integration tests**: 118 test files — comprehensive coverage (41000-41005 for zr status)
-- **Test coverage**: ~98% file coverage — exceeds 80% threshold
-- **CI**: Was FAILED (test 991 timing regression from sailor v2.69.0 cycle) — FIXED in v1.113.0
-- **GitHub Issues**: 0 open bugs; #115 (sailor v2.70.0) closed
-- **Binary**: ~1.2MB ReleaseSmall, ~12MB debug, ~4-8ms cold start
-- **Sailor version**: v2.70.0 (upgraded in v1.113.0 cycle — MatrixView widget, no breaking changes)
-- **zuda version**: main@4ff2325 (upgraded 2026-05-21, Cycle 259 FEATURE — includes detectCycle fix)
-- **Source**: ~78,000+ lines, 100+ modules, 10 language providers
-- **Latest work (2026-06-30, FEATURE Cycle 382)**: ✅ **v1.113.0 RELEASED** — `zr status` command (config path, task count, last-run failures, --json support), sailor v2.70.0 migration, CI timing fix (test 991: 1000ms→5000ms bound). 6 integration tests (41000-41005). GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.113.0
-- **Previous work (2026-06-29, FEATURE Cycle 378)**: ✅ **v1.111.0 RELEASED** — `--env-file <path>` flag for `zr run`. GitHub release: https://github.com/yusa-imit/zr/releases/tag/v1.111.0
+- **Integration tests**: ✅ Passing (2076 passed, 44 skipped, 0 failed as of Cycle 428)
+- **CI**: Was red since v1.113.0 (issue #124) for ~2 months across many sessions — RESOLVED 2026-08-28 Cycle 428. Final root cause was 23 tests leaking `ZrResult`/allocated-path memory in 3 test files (see debugging.md). Push 830a5e2 should be the first fully-green `main` CI run in a long time — verify next session.
+- **GitHub Issues**: bug-label issues should be 0 after #124's fix lands; re-check `gh issue list --label bug` next session
+- **Sailor version**: v2.96.0 (migrated 2026-08-28 Cycle 428, closing #119-#148 in one batch — was stuck at v2.70.0 for ~2 months while ~30 migration issues piled up unaddressed)
+- **Next sailor migration issue**: #149 (v2.96.1)
+- **Latest work (2026-08-28, Cycle 428)**: Finished a prior uncommitted session's fix for leaked test allocations (28000_includes_test.zig, integration_imports.zig), extended the same fix to integration_path_separator.zig, committed the already-fetched sailor v2.96.0 bump, closed 30 stale migration issues (#119-#148). No new feature/version release this cycle — was entirely a stabilization catch-up.
 
 ## PRD Phase Status
 
