@@ -634,13 +634,13 @@ gh issue create --repo yusa-imit/sailor \
 
 ## zuda Library
 
-- **Current**: Not yet integrated — **READY for migration** (zuda v1.15.0 available with all target modules)
+- **Current**: Integrated — `main@4ff2325` (all planned migrations complete: DAG, Levenshtein, Glob; topo sort/cycle detection/work-stealing deque kept as custom perf-critical implementations)
 - **Repository**: https://github.com/yusa-imit/zuda
-- **Tracking**: See `docs/milestones.md` for migration targets
+- **Tracking**: See `docs/milestones.md` § "zuda Library" for the per-module migration table and status
 - **Compatibility layers**: `zuda.compat.zr_dag` provides drop-in wrapper for DAG/topo sort/cycle detection
 
-### Migration Protocol (ACTIVE)
-1. zuda 마이그레이션 마일스톤은 **READY 상태** — 자율 세션에서 **적극적으로** 수행한다
+### Migration Protocol (only applies when a NEW module is targeted)
+1. `docs/milestones.md`에서 READY 상태의 신규 zuda 마이그레이션 마일스톤이 있는지 먼저 확인 — 현재는 없음 (모든 계획된 마이그레이션 완료)
 2. `zig fetch --save`로 의존성 추가
 3. 자체 구현 → zuda import로 교체 (compat 래퍼 사용 또는 native API 직접 사용)
 4. `zig build test && zig build integration-test` 통과 확인
