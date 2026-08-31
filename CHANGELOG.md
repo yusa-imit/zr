@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **sailor v2.97.0** — migrated to latest sailor release (no breaking changes)
+
 ## [1.113.0] - 2026-06-30
 
 ### Added
