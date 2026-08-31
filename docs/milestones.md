@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Latest**: v1.113.0 (feat: zr status command + sailor v2.70.0) — RELEASED 2026-06-30
+- **Latest**: v1.113.1 (chore: consolidated stabilization patch — issue #124 backlog cleared, sailor v2.97.0) — RELEASED 2026-09-01
 - **Pending release**: —
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
