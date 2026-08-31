@@ -649,19 +649,54 @@ pub fn cmdRun(
                         return 1;
                     }
                 } else {
-                    // Interactive: prompt user via stdin (fallback to default if available)
+                    // Interactive: prompt user via stdin, fall back to default on empty input
+                    if (ip.secret) {
+                        try color.printError(err_writer, use_color,
+                            "✗ run: secret input '{s}' requires explicit --input flag\n\n" ++
+                            "  Hint: Use --input {s}=VALUE (secret inputs never use defaults automatically)\n",
+                            .{ ip.name, ip.name });
+                        return 1;
+                    }
                     if (ip.default) |def| {
-                        try resolved_params.put(
-                            try allocator.dupe(u8, ip.name),
-                            try allocator.dupe(u8, def),
-                        );
+                        try w.print("{s} [{s}]: ", .{ ip.prompt, def });
                     } else {
+                        try w.print("{s}: ", .{ip.prompt});
+                    }
+                    var ip_buf: [256]u8 = undefined;
+                    const ip_n = std.fs.File.stdin().read(&ip_buf) catch 0;
+                    const ip_answer = std.mem.trim(u8, ip_buf[0..ip_n], " \t\r\n");
+                    const ip_value = if (ip_answer.len > 0) ip_answer else (ip.default orelse "");
+                    if (ip_value.len == 0) {
                         try color.printError(err_writer, use_color,
                             "✗ run: required input '{s}' not provided\n\n" ++
                             "  Hint: Use --input {s}=VALUE\n",
                             .{ ip.name, ip.name });
                         return 1;
                     }
+                    input_prompt_mod.validateInputValue(ip, ip_value) catch |verr| {
+                        switch (verr) {
+                            input_prompt_mod.InputError.InvalidInputType => {
+                                try color.printError(err_writer, use_color,
+                                    "✗ Input '{s}': expected {s}, got '{s}'\n\n  Hint: Use --input {s}=<value>\n",
+                                    .{ ip.name, ip.type, ip_value, ip.name });
+                            },
+                            input_prompt_mod.InputError.InvalidInputChoice => {
+                                try color.printError(err_writer, use_color,
+                                    "✗ Input '{s}': invalid choice '{s}'\n", .{ ip.name, ip_value });
+                                if (ip.choices.len > 0) {
+                                    try err_writer.print("  Valid choices:", .{});
+                                    for (ip.choices) |c| try err_writer.print(" {s}", .{c});
+                                    try err_writer.print("\n  Hint: Use --input {s}=<choice>\n", .{ip.name});
+                                }
+                            },
+                            else => {},
+                        }
+                        return 1;
+                    };
+                    try resolved_params.put(
+                        try allocator.dupe(u8, ip.name),
+                        try allocator.dupe(u8, ip_value),
+                    );
                 }
             }
 

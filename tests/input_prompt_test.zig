@@ -1,6 +1,7 @@
 const std = @import("std");
 const helpers = @import("helpers.zig");
 const runZr = helpers.runZr;
+const runZrWithStdin = helpers.runZrWithStdin;
 const writeTmpConfig = helpers.writeTmpConfig;
 
 // ── Integration Tests for Input Prompting Feature ───────────────────────────
@@ -612,4 +613,185 @@ test "18020: zr run --dry-run shows [HIDDEN] for secret input default" {
     // Dry-run output should show [HIDDEN] for secret default, not the actual default
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "[HIDDEN]") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "defaultpass") == null);
+}
+
+// ── Interactive Input Prompting via Stdin ──────────────────────────────────
+//
+// Tests for the interactive prompt code path: when zr run <task> is invoked
+// WITHOUT --non-interactive and WITHOUT --input/--param flags, the task's
+// input_prompt should read user input from stdin (in non-TTY test context).
+//
+// These tests are the Red phase (TDD) — they exercise stdin prompting which
+// is currently NOT implemented (line ~651-665 in src/cli/run.zig).
+//
+
+test "18021: interactive input_prompt reads stdin value when not using --non-interactive" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo {{TAG}}"
+        \\input_prompt = [{name="TAG", prompt="Enter tag:", default="v1.0.0"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Run WITHOUT --non-interactive, WITHOUT --input flag
+    // Provide stdin value "custom-tag\n"
+    var result = try runZrWithStdin(allocator, tmp.dir, &.{ "--config", config, "run", "deploy" }, "custom-tag\n");
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // The task command "echo {{TAG}}" should output exactly the resolved value (custom-tag),
+    // not the default (v1.0.0). Split stdout by lines to check the actual command output,
+    // not just substring presence (which could match the prompt text "[v1.0.0]").
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    var found_correct_output = false;
+    var found_wrong_output = false;
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+        if (std.mem.eql(u8, trimmed, "custom-tag")) {
+            found_correct_output = true;
+        }
+        if (std.mem.eql(u8, trimmed, "v1.0.0")) {
+            found_wrong_output = true;
+        }
+    }
+    try std.testing.expect(found_correct_output);
+    try std.testing.expect(!found_wrong_output);
+}
+
+test "18022: interactive input_prompt falls back to default with empty stdin line" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.build]
+        \\cmd = "echo Version={{VERSION}}"
+        \\input_prompt = [{name="VERSION", prompt="Version:", default="1.0.0"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Run WITHOUT --non-interactive, WITHOUT --input flag
+    // Provide empty stdin line (just newline) to simulate user pressing Enter
+    var result = try runZrWithStdin(allocator, tmp.dir, &.{ "--config", config, "run", "build" }, "\n");
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // When stdin is empty, the default value should be used.
+    // The task command "echo Version={{VERSION}}" should output "Version=1.0.0".
+    // Split stdout by lines to check the actual command output.
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    var found_default_output = false;
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+        if (std.mem.eql(u8, trimmed, "Version=1.0.0")) {
+            found_default_output = true;
+        }
+    }
+    try std.testing.expect(found_default_output);
+}
+
+test "18023: interactive input_prompt with type=number rejects invalid stdin value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.measure]
+        \\cmd = "echo {{COUNT}}"
+        \\input_prompt = [{name="COUNT", prompt="Count:", type="number"}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Run WITHOUT --non-interactive, WITHOUT --input flag
+    // Provide invalid (non-numeric) value via stdin
+    var result = try runZrWithStdin(allocator, tmp.dir, &.{ "--config", config, "run", "measure" }, "abc\n");
+    defer result.deinit();
+
+    // Should fail with validation error
+    try std.testing.expect(result.exit_code != 0);
+
+    const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer allocator.free(combined);
+
+    // Error should mention the input name or validation issue
+    try std.testing.expect(std.mem.indexOf(u8, combined, "COUNT") != null or
+        std.mem.indexOf(u8, combined, "number") != null or
+        std.mem.indexOf(u8, combined, "invalid") != null);
+}
+
+test "18024: interactive input_prompt with choices rejects invalid stdin value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo {{ENV}}"
+        \\input_prompt = [{name="ENV", prompt="Environment:", choices=["prod", "staging"]}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Run WITHOUT --non-interactive, WITHOUT --input flag
+    // Provide invalid choice via stdin
+    var result = try runZrWithStdin(allocator, tmp.dir, &.{ "--config", config, "run", "deploy" }, "invalid\n");
+    defer result.deinit();
+
+    // Should fail with validation error
+    try std.testing.expect(result.exit_code != 0);
+
+    const combined = try std.fmt.allocPrint(allocator, "{s}{s}", .{ result.stdout, result.stderr });
+    defer allocator.free(combined);
+
+    // Error should mention the input name or choices
+    try std.testing.expect(std.mem.indexOf(u8, combined, "ENV") != null or
+        std.mem.indexOf(u8, combined, "choice") != null or
+        std.mem.indexOf(u8, combined, "invalid") != null);
+}
+
+test "18025: interactive input_prompt with choices accepts valid stdin value" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const config_toml =
+        \\[tasks.deploy]
+        \\cmd = "echo Deploying to {{ENV}}"
+        \\input_prompt = [{name="ENV", prompt="Environment:", choices=["prod", "staging"]}]
+    ;
+
+    const config = try writeTmpConfig(allocator, tmp.dir, config_toml);
+    defer allocator.free(config);
+
+    // Run WITHOUT --non-interactive, WITHOUT --input flag
+    // Provide valid choice via stdin
+    var result = try runZrWithStdin(allocator, tmp.dir, &.{ "--config", config, "run", "deploy" }, "prod\n");
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+
+    // The task command "echo Deploying to {{ENV}}" should output "Deploying to prod".
+    // Split stdout by lines to check the actual command output (not the prompt/choices text).
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    var found_correct_output = false;
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+        if (std.mem.eql(u8, trimmed, "Deploying to prod")) {
+            found_correct_output = true;
+        }
+    }
+    try std.testing.expect(found_correct_output);
 }
