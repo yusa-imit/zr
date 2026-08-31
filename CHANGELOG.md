@@ -7,8 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.113.1] - 2026-09-01
+
+Consolidated patch release for the large backlog of stabilization work accumulated
+since v1.113.0 (issue #124: CI integration-test red with ~270 failures across many
+unrelated test files, now fully resolved).
+
+### Added
+- Per-task `params` overrides inside workflow `tasks = [{...}]` arrays
+- Interactive stdin reading for `input_prompt` in `zr run`
+
+### Fixed
+- **Crashes**: multiple use-after-free bugs (scheduler's executed_tasks map, task deps
+  in scheduler workers, mixin `deps_if` parsing, `[[conformance.rules]]` parsing),
+  a double-free in mixin cycle detection, and a `concurrency_groups max_workers=0`
+  deadlock
+- **`zr deps check`**: version-detection spawn/exec errors are now surfaced as
+  `error.ToolNotFound` instead of a misleading `NoVersionFound`; added `python3`/`pip3`
+  fallback for systems without a bare `python`/`pip` binary on PATH
+- **Output correctness**: output reader threads are now joined before `child.wait()`
+  to prevent race-condition output truncation; stdout/stderr relayed live during
+  cache-populating runs; separated stdout/stderr buffering
+- **TOML parsing**: quoted string values now unescape `\n \t \r \" \\`; fixed quoted
+  task keys, root-level `load_dotenv`, task `requires`, `retry_backoff_multiplier`/
+  jitter/`max_backoff_ms`/retry conditions, task documentation fields, and nested
+  mixin resolution
+- **CLI flag parsing**: `--flag=value` syntax for global flags, `graph --type=tasks
+  --format=json`, `graph --affected`/`--format` ordering, `show` flag order, legacy
+  `--ascii` support, `run <alias>` resolution, `run --notify <task>`
+- **Workspace**: shared-task inheritance, parent-workspace discovery, env priority,
+  `deps_serial` now supports `share_output`
+- Timeout watcher wall-clock drift; `HOME` env leak; `[vars]` merge from imported
+  configs; circular `.env` variable references now fail the task instead of hanging
+- Numerous incorrect test assertions and flaky-test timing margins fixed as part of
+  the same stabilization effort
+
 ### Changed
-- **sailor v2.97.0** — migrated to latest sailor release (no breaking changes)
+- **sailor v2.96.0 → v2.97.0** — migrated through the latest sailor releases (REPL
+  editing, async input decoding, fmt `Plain` formatter; no breaking changes)
 
 ## [1.113.0] - 2026-06-30
 
