@@ -15,9 +15,32 @@ pub const VersionDetectionConfig = struct {
     use_subcommand: bool = false,
 };
 
-/// Detect installed tool version by running version command
+/// Detect installed tool version by running version command.
+/// Falls back to alternate binary names (see `aliasesFor`) if the canonical
+/// tool name isn't found on PATH — e.g. many modern systems ship `python3`
+/// but not a bare `python`.
 /// Caller owns the returned Version
 pub fn detectVersion(allocator: std.mem.Allocator, config: VersionDetectionConfig) !Version {
+    return detectVersionExact(allocator, config) catch |err| {
+        if (err != error.ToolNotFound) return err;
+        for (aliasesFor(config.tool_name)) |alias| {
+            var alt_config = config;
+            alt_config.tool_name = alias;
+            return detectVersionExact(allocator, alt_config) catch continue;
+        }
+        return err;
+    };
+}
+
+/// Alternate binary names to try when the canonical tool name isn't found on
+/// PATH (e.g. `python`/`pip` are frequently only installed as `python3`/`pip3`).
+fn aliasesFor(tool_name: []const u8) []const []const u8 {
+    if (std.mem.eql(u8, tool_name, "python")) return &[_][]const u8{"python3"};
+    if (std.mem.eql(u8, tool_name, "pip")) return &[_][]const u8{"pip3"};
+    return &[_][]const u8{};
+}
+
+fn detectVersionExact(allocator: std.mem.Allocator, config: VersionDetectionConfig) !Version {
     var child_process = std.process.Child.init(
         if (config.use_subcommand)
             &[_][]const u8{ config.tool_name, config.version_command }
@@ -29,11 +52,22 @@ pub fn detectVersion(allocator: std.mem.Allocator, config: VersionDetectionConfi
     child_process.stdout_behavior = .Pipe;
     child_process.stderr_behavior = .Pipe;
 
-    try child_process.spawn();
-    defer _ = child_process.wait() catch {};
+    child_process.spawn() catch |err| {
+        return switch (err) {
+            error.FileNotFound => error.ToolNotFound,
+            else => err,
+        };
+    };
 
     const stdout = try child_process.stdout.?.readToEndAlloc(allocator, 8192);
     defer allocator.free(stdout);
+
+    _ = child_process.wait() catch |err| {
+        return switch (err) {
+            error.FileNotFound => error.ToolNotFound,
+            else => err,
+        };
+    };
 
     return parseVersionOutput(allocator, stdout);
 }
@@ -528,4 +562,47 @@ test "parseVersionOutput: kubernetes version" {
     try std.testing.expectEqual(@as(u32, 1), version.major);
     try std.testing.expectEqual(@as(u32, 27), version.minor);
     try std.testing.expectEqual(@as(u32, 0), version.patch);
+}
+
+test "detectVersion: nonexistent tool returns error.ToolNotFound not error.NoVersionFound" {
+    const config = VersionDetectionConfig{
+        .tool_name = "zr-definitely-nonexistent-binary-xyz123",
+        .version_command = "--version",
+    };
+
+    const result = detectVersion(std.testing.allocator, config);
+
+    try std.testing.expectError(error.ToolNotFound, result);
+}
+
+test "aliasesFor: python maps to python3" {
+    const aliases = aliasesFor("python");
+
+    try std.testing.expectEqual(@as(usize, 1), aliases.len);
+    try std.testing.expectEqualStrings("python3", aliases[0]);
+}
+
+test "aliasesFor: pip maps to pip3" {
+    const aliases = aliasesFor("pip");
+
+    try std.testing.expectEqual(@as(usize, 1), aliases.len);
+    try std.testing.expectEqualStrings("pip3", aliases[0]);
+}
+
+test "aliasesFor: unrelated tool returns empty slice" {
+    const aliases = aliasesFor("node");
+
+    try std.testing.expectEqual(@as(usize, 0), aliases.len);
+}
+
+test "aliasesFor: rust returns empty slice" {
+    const aliases = aliasesFor("rustc");
+
+    try std.testing.expectEqual(@as(usize, 0), aliases.len);
+}
+
+test "aliasesFor: ruby returns empty slice" {
+    const aliases = aliasesFor("ruby");
+
+    try std.testing.expectEqual(@as(usize, 0), aliases.len);
 }
