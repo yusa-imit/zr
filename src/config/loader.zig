@@ -1906,3 +1906,35 @@ test "addWorkflow: programmatic workflow construction" {
     try std.testing.expectEqual(@as(usize, 1), wf.stages.len);
     try std.testing.expectEqualStrings("s1", wf.stages[0].name);
 }
+
+test "resolveMixins: mixin env parsed from array-of-pairs syntax is applied to task" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const toml =
+        \\[mixins.parent_env]
+        \\env = [["A", "parent_a"]]
+        \\
+        \\[tasks.test]
+        \\cmd = "echo A=$A"
+        \\mixins = ["parent_env"]
+        \\
+    ;
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = toml });
+    const path = try tmp.dir.realpathAlloc(allocator, "zr.toml");
+    defer allocator.free(path);
+
+    var config = try loadFromFile(allocator, path);
+    defer config.deinit();
+
+    const mixin = config.mixins.get("parent_env").?;
+    try std.testing.expectEqual(@as(usize, 1), mixin.env.len);
+    try std.testing.expectEqualStrings("A", mixin.env[0][0]);
+    try std.testing.expectEqualStrings("parent_a", mixin.env[0][1]);
+
+    const task = config.tasks.get("test").?;
+    try std.testing.expectEqual(@as(usize, 1), task.env.len);
+    try std.testing.expectEqualStrings("A", task.env[0][0]);
+    try std.testing.expectEqualStrings("parent_a", task.env[0][1]);
+}
