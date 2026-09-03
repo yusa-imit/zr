@@ -406,7 +406,8 @@ test "1012: dependency picker suggests existing tasks" {
 
     // Form should at minimum recognize deps field and validate against known tasks
     // (actual autocomplete widget may be deferred to TUI)
-    try std.testing.expect(result.stderr.len >= 0); // Just ensure no crash
+    // Verify no crash by checking stderr does not contain panic marker
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "panic:") == null);
 }
 
 test "1013: dependency picker allows multiple dependencies" {
@@ -427,7 +428,7 @@ test "1013: dependency picker allows multiple dependencies" {
 
     // Should parse multiple dependencies (format may vary: array vs comma-separated)
     // At minimum, should not crash on multiple deps
-    try std.testing.expect(result.stderr.len >= 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "panic:") == null);
 }
 
 test "1014: dependency picker prevents circular dependencies" {

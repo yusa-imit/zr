@@ -225,7 +225,7 @@ test "8006: env merging semantics" {
         \\env = [["A", "parent_a"], ["B", "parent_b"], ["C", "parent_c"]]
         \\
         \\[tasks.test]
-        \\cmd = "echo 'A=$A B=$B C=$C'"
+        \\cmd = "echo \"A=$A B=$B C=$C\""
         \\env = [["A", "child_a"], ["B", "parent_b"], ["D", "child_d"]]
         \\mixins = ["parent_env"]
         \\
@@ -242,8 +242,9 @@ test "8006: env merging semantics" {
     defer result.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), result.exit_code);
-    // Task-level env should override mixin env for same keys
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "child_a") != null or std.mem.indexOf(u8, result.stdout, "parent_a") == null);
+    // Task-level env should override mixin env for same keys: child_a wins, parent_a is replaced
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "child_a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "parent_a") == null);
 }
 
 test "8007: deps concatenation" {

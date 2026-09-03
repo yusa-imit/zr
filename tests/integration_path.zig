@@ -696,8 +696,9 @@ test "path handling: config file paths with environment variables" {
     var result = try helpers.runZr(std.testing.allocator, &.{ "run", "env_path" }, tmp_path);
     defer result.deinit();
 
-    // Should execute without error (exit code depends on environment)
-    try std.testing.expect(result.stdout.len >= 0);
+    // Task should run successfully and produce output (echo $HOME always prints something)
+    try std.testing.expectEqual(@as(u8, 0), result.exit_code);
+    try std.testing.expect(result.stdout.len > 0);
 }
 
 // ── Path Case Sensitivity Tests ────────────────────────────────────────────
