@@ -1120,7 +1120,7 @@ Create an interactive HTML/SVG-based workflow visualization for understanding co
 
 ### Sailor Library
 
-- **Current in zr**: v2.98.0 (see `build.zig.zon` for the authoritative pinned version)
+- **Current in zr**: v2.99.0 (see `build.zig.zon` for the authoritative pinned version)
 - **Repository**: https://github.com/yusa-imit/sailor
 - **Note**: The version table below is only maintained through v2.63.0. Versions v2.64.0–v2.98.0 were migrated (see `.claude/memory/project-context.md` and git log for `chore: migrate to sailor vX.Y.Z` commits) but were not individually logged here — do not treat the table's last entry as the current version.
 
