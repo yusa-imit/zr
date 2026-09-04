@@ -3,7 +3,7 @@
 ## Current Status
 
 - **Latest**: v1.113.1 (chore: consolidated stabilization patch — issue #124 backlog cleared, sailor v2.97.0) — RELEASED 2026-09-01
-- **Pending release**: —
+- **Pending release**: v1.114.0 (Task Argument Passthrough)
 - **Active milestones**: 1 (Code Quality & Documentation Polish [continuous])
 - **READY milestones**: 0
 - **BLOCKED milestones**: 0 (all blockers resolved)
@@ -18,6 +18,17 @@
 
 > **ALL PHASE 1-13 MILESTONES COMPLETE** — v1.57.0 marks feature-complete v1.0-equivalent status. Remaining milestones are post-v1.0 enhancements.
 
+
+### Task Argument Passthrough (`--` separator)
+
+Allow users to pass raw, unparsed arguments through to a task's command via a `--` separator — essential for wrapping CLI tools where the task needs to forward user-supplied flags/args without zr attempting to parse them as its own flags or task params. Includes:
+- **`zr run <task> -- <raw args...>`** — everything after `--` is shell-quoted (each arg wrapped in single quotes, embedded `'` escaped as `'\''`) and joined into a single space-separated string exposed to the task as `ZR_ARGS`
+- **No `--` present** — `ZR_ARGS` is left unset; existing behavior unaffected
+- **`--` with nothing after it** — `ZR_ARGS` is set to an empty string (distinguishable from unset via shell `${VAR+x}`)
+- **Composable** with task params and `--env`: `zr run deploy env_name=prod --env REGION=us-east-1 -- --verbose` applies params, CLI env, and `ZR_ARGS` all together
+- **Global `--` handling**: `--` also terminates zr's own top-level flag parsing so `zr run task -- --verbose` doesn't misparse `--verbose` as a zr flag
+- **Integration tests**: 6 tests (42000–42005) covering basic passthrough, no-separator case, empty-after-separator case, space-preserving shell quoting, param+ZR_ARGS combination, `--env`+ZR_ARGS combination
+**Status: DONE** — Completed Cycle 451 FEATURE (2026-09-05). Implementation: `--` handling added to the global flag-parsing loop (`src/main.zig`, top-level arg parsing) and to the task-args loop inside the run dispatch (builds shell-quoted `ZR_ARGS` via `cli_env`). Testing: 6 integration tests (42000-42005) in `tests/42000_task_args_test.zig`. Released as v1.114.0.
 
 ### Retry Failed Tasks (`--retry-failed`)
 

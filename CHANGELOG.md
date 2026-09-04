@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.114.0] - 2026-09-05
+
+### Added
+- **Task Argument Passthrough**: `zr run <task> -- <raw args...>` forwards everything
+  after `--` to the task as a shell-quoted `ZR_ARGS` environment variable, without zr
+  attempting to parse those args as its own flags or task params. `--` with nothing
+  after it sets `ZR_ARGS` to an empty string (distinguishable from unset); composable
+  with task params and `--env`.
+
 ## [1.113.1] - 2026-09-01
 
 Consolidated patch release for the large backlog of stabilization work accumulated
