@@ -584,6 +584,16 @@ fn run(
         var i: usize = 0;
         while (i < args.len) : (i += 1) {
             const arg = args[i];
+            if (std.mem.eql(u8, arg, "--")) {
+                // `--` terminates global flag parsing — everything from here on
+                // (including `--` itself) is passed through untouched so that
+                // e.g. `zr run task -- --verbose` doesn't get --verbose stolen
+                // as a global flag instead of forwarded to the task.
+                while (i < args.len) : (i += 1) {
+                    try remaining_args.append(allocator, args[i]);
+                }
+                break;
+            }
             if (isGlobalFlag(arg)) |flag_info| {
                 if (flag_info.takes_value) {
                     if (flag_info.inline_value) |value| {
@@ -1009,7 +1019,8 @@ fn run(
                 "  --junit <file>        Write JUnit XML test report to file\n" ++
                 "  --retry-failed        Re-run only the tasks that failed in the last run\n" ++
                 "  --output-on-failure   Suppress output for successful tasks; show for failures\n" ++
-                "  --summary             Print a formatted summary table after all tasks complete\n\n" ++
+                "  --summary             Print a formatted summary table after all tasks complete\n" ++
+                "  -- <args...>          Pass remaining args through to the task as ZR_ARGS (shell-quoted)\n\n" ++
                 "GLOBAL OPTIONS:\n" ++
                 "  --dry-run, -n         Preview what would run without executing\n" ++
                 "  --jobs, -j <N>        Max parallel tasks (default: CPU count)\n" ++
@@ -1035,7 +1046,8 @@ fn run(
                 "  zr run build,test,lint               # Run three tasks in sequence\n" ++
                 "  zr run build,test --fail-fast        # Stop on first failure\n" ++
                 "  zr run --retry-failed                # Re-run tasks that failed in the last run\n" ++
-                "  zr run build,test,lint --summary     # Run tasks and show summary table at the end\n",
+                "  zr run build,test,lint --summary     # Run tasks and show summary table at the end\n" ++
+                "  zr run deploy -- --verbose --dry-run # Forward '--verbose --dry-run' to the task as $ZR_ARGS\n",
                 .{},
             );
             return 0;
@@ -1266,7 +1278,27 @@ fn run(
         while (i < effective_args.len) : (i += 1) {
             const arg = effective_args[i];
 
-            if (std.mem.eql(u8, arg, "--tag")) {
+            if (std.mem.eql(u8, arg, "--")) {
+                // Task argument passthrough: everything after `--` is shell-quoted
+                // and joined into ZR_ARGS for the task's command to consume.
+                var quoted = std.ArrayList(u8){};
+                defer quoted.deinit(allocator);
+                var j = i + 1;
+                while (j < effective_args.len) : (j += 1) {
+                    if (j > i + 1) try quoted.append(allocator, ' ');
+                    try quoted.append(allocator, '\'');
+                    for (effective_args[j]) |c| {
+                        if (c == '\'') {
+                            try quoted.appendSlice(allocator, "'\\''");
+                        } else {
+                            try quoted.append(allocator, c);
+                        }
+                    }
+                    try quoted.append(allocator, '\'');
+                }
+                try cli_env.put(try allocator.dupe(u8, "ZR_ARGS"), try quoted.toOwnedSlice(allocator));
+                break;
+            } else if (std.mem.eql(u8, arg, "--tag")) {
                 // --tag <tagname> syntax (repeatable)
                 i += 1;
                 if (i >= effective_args.len) {
