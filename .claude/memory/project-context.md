@@ -5,19 +5,19 @@
 - **Name**: zr (zig-runner)
 - **Language**: Zig 0.15.2
 - **Type**: Universal task runner & workflow manager CLI → developer platform
-- **Version**: v1.113.1 (build.zig.zon) | Latest Release: v1.113.1 (2026-09-01)
+- **Version**: v1.114.0 (build.zig.zon) | Latest Release: v1.114.0 (2026-09-05)
 - **Config format**: TOML + built-in expression engine
 - **Repository**: https://github.com/yusa-imit/zr
 
 ## Current Status
 
-- **Build version**: v1.113.1 (released 2026-09-01, Cycle 439)
-- **Unit tests**: ✅ Passing (1797 passed, 8 skipped, 0 failed as of Cycle 444)
-- **Integration tests**: ✅ Passing (2081 passed, 44 skipped, 0 failed as of Cycle 444)
-- **CI**: Green (issue #124 CI-red saga fully resolved and closed as of Cycle 439)
-- **GitHub Issues**: 0 open bug-label issues as of Cycle 444; only routine sailor migration issues appear
-- **Sailor version**: v2.98.0 (migrated 2026-09-02 Cycle 444, issue #151, no breaking changes — new tooltip.zig auto-dismiss/fade-in and splitpane.zig drag-resize APIs, all opt-in)
-- **Latest work (2026-09-02, Cycle 444)**: FEATURE mode session; found no active bug/feature-blocking issues, so per issue-priority protocol handled the sole open issue (#151, sailor v2.98.0 migration label) — build.zig.zon was already bumped by a prior uncommitted session state, verified full test suite green, committed, closed issue. No active PRD phase work remains (all 13 phases complete); only continuous "Code Quality & Documentation Polish" milestone is active.
+- **Build version**: v1.114.0 (released 2026-09-05, Cycle 451)
+- **Unit tests**: ✅ Passing (1798 passed, 8 skipped, 0 failed as of Cycle 451)
+- **Integration tests**: ✅ Passing (2087 passed, 44 skipped, 0 failed as of Cycle 451)
+- **CI**: Green
+- **GitHub Issues**: 0 open issues as of Cycle 451
+- **Sailor version**: v2.99.0 (no breaking changes)
+- **Latest work (2026-09-05, Cycle 451)**: FEATURE mode session; found a prior session's finished-but-uncommitted work implementing Task Argument Passthrough (`zr run <task> -- <args...>` → shell-quoted `ZR_ARGS` env var), plus a new `tests/42000_task_args_test.zig` (6 tests). Verified full suite green, added help text for `--`, documented the milestone in `docs/milestones.md`, and released as v1.114.0 (minor release — new feature milestone completed with tests, 0 bug issues open).
 
 ## PRD Phase Status
 
