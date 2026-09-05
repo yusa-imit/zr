@@ -413,7 +413,6 @@ Comprehensive guides in `docs/guides/`:
 
 **Architecture docs**:
 - [Product Requirements](docs/PRD.md) — Full specification and design
-- [CLAUDE.md](CLAUDE.md) — Development orchestration
 
 ---
 
@@ -536,7 +535,6 @@ zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 
 ### Contributing
 
-We use Claude Code for autonomous development with AI-assisted teams. See [CLAUDE.md](CLAUDE.md) for:
 
 - Development workflow
 - Coding standards (Zig conventions)

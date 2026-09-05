@@ -1,25 +1,22 @@
 .vscode
 
 # zig
-.zig-cache
-zig-out
+.zig-cache/
+zig-out/
+zig-pkg/
 
 # Build artifacts
 main
 *.wasm
 *.a
 *.o
+*.so
+*.dylib
+*.log
+*.db
 docs/*.html
 docs/*.js
 docs/*.tar
-
-# Claude Code
-.claude/settings.local.json
-.claude/teams/
-.claude/tasks/
-.claude/projects/
-.claude/scratchpad.md
-.claude/session-counter
 
 # zr runtime files
 .zr_history
@@ -38,3 +35,6 @@ Thumbs.db
 
 # Test artifacts
 test_check
+test_*
+/test
+verify_*
