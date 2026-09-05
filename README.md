@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/yusa-imit/zr/workflows/CI/badge.svg)](https://github.com/yusa-imit/zr/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.84.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.84.0)
+[![Version](https://img.shields.io/badge/version-1.114.0-blue.svg)](https://github.com/yusa-imit/zr/releases/tag/v1.114.0)
 
 ---
 
@@ -528,14 +528,14 @@ zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe
 
 ### Test Status
 
-- **Unit tests**: 1717/1725 passing (8 skipped, 0 failures)
-- **Integration tests**: 115 test files, comprehensive CLI coverage
+- **Unit tests**: 1799/1807 passing (8 skipped, 0 failures)
+- **Integration tests**: 2087/2131 passing (44 skipped, 0 failures)
 - **CI targets**: 6 (x86_64/aarch64 × linux-gnu/macos-none/windows-msvc)
 - **Memory leaks**: 0
 
 ### Contributing
 
-
+See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for:
 - Development workflow
 - Coding standards (Zig conventions)
 - Commit conventions (conventional commits)
