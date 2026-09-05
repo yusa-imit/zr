@@ -201,7 +201,10 @@ test "getRepoStatus: current repo" {
     defer status.deinit(allocator);
 
     try std.testing.expect(status.exists);
-    try std.testing.expect(status.branch != null);
+    // CI checks out pull requests as a detached HEAD, so `branch` is legitimately null there.
+    // The property under test is that the current repository resolves; a branch name is a
+    // bonus that only holds on a real branch checkout.
+    if (status.branch) |branch| try std.testing.expect(branch.len > 0);
 }
 
 test "getRepoStatus: non-existent repo" {
