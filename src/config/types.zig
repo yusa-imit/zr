@@ -1052,11 +1052,11 @@ pub const Config = struct {
             null, // confirm_if not supported in templates yet
             false, // internal not supported in templates yet
             0, // priority not supported in templates yet
-            null, // retry_backoff_multiplier not supported in templates yet
-            false, // retry_jitter not supported in templates yet
-            null, // max_backoff_ms not supported in templates yet
-            &[_]u8{}, // retry_on_codes not supported in templates yet
-            &[_][]const u8{}, // retry_on_patterns not supported in templates yet
+            template.retry_backoff_multiplier,
+            template.retry_jitter,
+            template.max_backoff_ms,
+            template.retry_on_codes,
+            template.retry_on_patterns,
             null, // concurrency_group not supported in templates yet
         );
 
@@ -1126,6 +1126,16 @@ pub const TaskTemplate = struct {
     retry_max: u32 = 0,
     retry_delay_ms: u64 = 0,
     retry_backoff: bool = false,
+    /// Backoff multiplier for retry delays (v1.47.0).
+    retry_backoff_multiplier: ?f64 = null,
+    /// If true, add random jitter (±25%) to retry delays to prevent thundering herd (v1.47.0).
+    retry_jitter: bool = false,
+    /// Maximum delay between retries in milliseconds (ceiling for backoff calculation) (v1.47.0).
+    max_backoff_ms: ?u64 = null,
+    /// If non-empty, only retry when exit code matches one of these codes (v1.47.0).
+    retry_on_codes: []const u8 = &[_]u8{},
+    /// If non-empty, only retry when stdout/stderr contains one of these patterns (v1.47.0).
+    retry_on_patterns: []const []const u8 = &[_][]const u8{},
     /// Default condition expression.
     condition: ?[]const u8 = null,
     /// Default max_concurrent.
@@ -1155,6 +1165,9 @@ pub const TaskTemplate = struct {
         }
         if (self.env.len > 0) allocator.free(self.env);
         if (self.condition) |c| allocator.free(c);
+        if (self.retry_on_codes.len > 0) allocator.free(self.retry_on_codes);
+        for (self.retry_on_patterns) |pattern| allocator.free(pattern);
+        if (self.retry_on_patterns.len > 0) allocator.free(self.retry_on_patterns);
         for (self.toolchain) |tc| allocator.free(tc);
         if (self.toolchain.len > 0) allocator.free(self.toolchain);
         for (self.params) |p| allocator.free(p);
@@ -2309,6 +2322,29 @@ fn applyTemplateToTask(
         task.retry_max = template.retry_max;
         task.retry_delay_ms = template.retry_delay_ms;
         task.retry_backoff = template.retry_backoff;
+        // Apply template retry advanced fields if not already set on task
+        if (task.retry_backoff_multiplier == null and template.retry_backoff_multiplier != null) {
+            task.retry_backoff_multiplier = template.retry_backoff_multiplier;
+        }
+        if (!task.retry_jitter and template.retry_jitter) {
+            task.retry_jitter = template.retry_jitter;
+        }
+        if (task.max_backoff_ms == null and template.max_backoff_ms != null) {
+            task.max_backoff_ms = template.max_backoff_ms;
+        }
+        // Copy retry_on_codes if template has them
+        if (template.retry_on_codes.len > 0 and task.retry_on_codes.len == 0) {
+            const codes_copy = try allocator.dupe(u8, template.retry_on_codes);
+            task.retry_on_codes = codes_copy;
+        }
+        // Copy retry_on_patterns if template has them
+        if (template.retry_on_patterns.len > 0 and task.retry_on_patterns.len == 0) {
+            const patterns_copy = try allocator.alloc([]const u8, template.retry_on_patterns.len);
+            for (template.retry_on_patterns, 0..) |pattern, i| {
+                patterns_copy[i] = try allocator.dupe(u8, pattern);
+            }
+            task.retry_on_patterns = patterns_copy;
+        }
     }
 
     if (task.condition == null and template.condition != null) {

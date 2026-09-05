@@ -935,6 +935,31 @@ fn bracketDelta(s: []const u8) i32 {
     return depth;
 }
 
+/// Splits the body of a TOML inline table (e.g. the content between `{` and `}`)
+/// on top-level commas only — commas nested inside `[...]`/`{...}` array or
+/// table values (e.g. `on_codes = [1, 2]`) are treated as part of that value,
+/// not as field separators. Caller owns the returned ArrayList (slices borrow `s`).
+fn splitTopLevelFields(allocator: std.mem.Allocator, s: []const u8) !std.ArrayList([]const u8) {
+    var result: std.ArrayList([]const u8) = .{};
+    errdefer result.deinit(allocator);
+    var depth: i32 = 0;
+    var in_str = false;
+    var start: usize = 0;
+    for (s, 0..) |c, i| {
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) in_str = !in_str;
+        if (!in_str) {
+            if (c == '[' or c == '{') depth += 1;
+            if (c == ']' or c == '}') depth -= 1;
+            if (c == ',' and depth == 0) {
+                try result.append(allocator, s[start..i]);
+                start = i + 1;
+            }
+        }
+    }
+    try result.append(allocator, s[start..]);
+    return result;
+}
+
 /// Counts non-overlapping `"""` occurrences in `s`. An odd count means `s`
 /// leaves a TOML triple-quoted (multi-line) string open.
 fn countTripleQuotes(s: []const u8) usize {
@@ -1582,6 +1607,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     template_retry_max,
                     template_retry_delay_ms,
                     template_retry_backoff,
+                    template_retry_backoff_multiplier,
+                    template_retry_jitter,
+                    template_max_backoff_ms,
+                    &template_retry_on_codes,
+                    &template_retry_on_patterns,
                     template_max_concurrent,
                     template_cache,
                     template_max_cpu,
@@ -3428,6 +3458,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     template_retry_max,
                     template_retry_delay_ms,
                     template_retry_backoff,
+                    template_retry_backoff_multiplier,
+                    template_retry_jitter,
+                    template_max_backoff_ms,
+                    &template_retry_on_codes,
+                    &template_retry_on_patterns,
                     template_max_concurrent,
                     template_cache,
                     template_max_cpu,
@@ -4627,8 +4662,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
                         const pairs_str = inner[1 .. inner.len - 1];
-                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
-                        while (pairs_it.next()) |pair_str| {
+                        var pairs_list = try splitTopLevelFields(allocator, pairs_str);
+                        defer pairs_list.deinit(allocator);
+                        for (pairs_list.items) |pair_str| {
                             const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
                             const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
                             const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
@@ -5256,8 +5292,9 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
                         const pairs_str = inner[1 .. inner.len - 1];
-                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
-                        while (pairs_it.next()) |pair_str| {
+                        var pairs_list = try splitTopLevelFields(allocator, pairs_str);
+                        defer pairs_list.deinit(allocator);
+                        for (pairs_list.items) |pair_str| {
                             const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
                             const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
                             const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
@@ -5292,7 +5329,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                                     while (patterns_it.next()) |pattern_str| {
                                         const trimmed_pattern = std.mem.trim(u8, pattern_str, " \t\"");
                                         if (trimmed_pattern.len > 0) {
-                                            try template_retry_on_patterns.append(allocator, trimmed_pattern);
+                                            const duped_pattern = try allocator.dupe(u8, trimmed_pattern);
+                                            try template_retry_on_patterns.append(allocator, duped_pattern);
                                         }
                                     }
                                 }
@@ -5784,6 +5822,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_retry_max,
             template_retry_delay_ms,
             template_retry_backoff,
+            template_retry_backoff_multiplier,
+            template_retry_jitter,
+            template_max_backoff_ms,
+            &template_retry_on_codes,
+            &template_retry_on_patterns,
             template_max_concurrent,
             template_cache,
             template_max_cpu,
@@ -6201,6 +6244,11 @@ fn flushCurrentTemplate(
     template_retry_max: u32,
     template_retry_delay_ms: u64,
     template_retry_backoff: bool,
+    template_retry_backoff_multiplier: ?f64,
+    template_retry_jitter: bool,
+    template_max_backoff_ms: ?u64,
+    template_retry_on_codes: *std.ArrayList(u8),
+    template_retry_on_patterns: *std.ArrayList([]const u8),
     template_max_concurrent: u32,
     template_cache: bool,
     template_max_cpu: ?u32,
@@ -6282,6 +6330,12 @@ fn flushCurrentTemplate(
         params_duped += 1;
     }
 
+    const tmpl_retry_on_codes_owned = try allocator.dupe(u8, template_retry_on_codes.items);
+    errdefer if (tmpl_retry_on_codes_owned.len > 0) allocator.free(tmpl_retry_on_codes_owned);
+
+    // Patterns are already duped when appended to the ArrayList, so just allocate and copy
+    const tmpl_retry_on_patterns_owned = try template_retry_on_patterns.toOwnedSlice(allocator);
+
     const template = types.TaskTemplate{
         .name = tmpl_name_owned,
         .cmd = tmpl_cmd_owned,
@@ -6295,6 +6349,11 @@ fn flushCurrentTemplate(
         .retry_max = template_retry_max,
         .retry_delay_ms = template_retry_delay_ms,
         .retry_backoff = template_retry_backoff,
+        .retry_backoff_multiplier = template_retry_backoff_multiplier,
+        .retry_jitter = template_retry_jitter,
+        .max_backoff_ms = template_max_backoff_ms,
+        .retry_on_codes = tmpl_retry_on_codes_owned,
+        .retry_on_patterns = tmpl_retry_on_patterns_owned,
         .condition = tmpl_condition_owned,
         .max_concurrent = template_max_concurrent,
         .cache = template_cache,
@@ -8191,4 +8250,50 @@ test "parse missing load_dotenv defaults to true" {
     defer config.deinit();
 
     try std.testing.expectEqual(true, config.load_dotenv);
+}
+
+test "template with retry advanced fields (backoff_multiplier, jitter, max_backoff, on_codes, on_patterns)" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[templates.retrying]
+        \\cmd = "flaky-command"
+        \\retry = { max = 3, delay = "2s", backoff_multiplier = 2.5, jitter = true, max_backoff = "30s", on_codes = [1, 2], on_patterns = ["timeout", "connection refused"] }
+        \\params = []
+        \\
+        \\[tasks.build]
+        \\cmd = "echo applying template"
+        \\template = "retrying"
+        \\params = {}
+    ;
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+
+    // Basic retry fields (these should work)
+    try std.testing.expectEqual(@as(u32, 3), task.retry_max);
+    try std.testing.expectEqual(@as(u64, 2_000), task.retry_delay_ms);
+
+    // Advanced retry fields (these are the bug — currently hardcoded to null/false/empty)
+    try std.testing.expectEqual(@as(?f64, 2.5), task.retry_backoff_multiplier);
+    try std.testing.expectEqual(true, task.retry_jitter);
+    try std.testing.expectEqual(@as(?u64, 30_000), task.max_backoff_ms);
+
+    // Verify retry_on_codes slice is correct
+    try std.testing.expectEqual(@as(usize, 2), task.retry_on_codes.len);
+    if (task.retry_on_codes.len >= 1) {
+        try std.testing.expectEqual(@as(u8, 1), task.retry_on_codes[0]);
+    }
+    if (task.retry_on_codes.len >= 2) {
+        try std.testing.expectEqual(@as(u8, 2), task.retry_on_codes[1]);
+    }
+
+    // Verify retry_on_patterns slice is correct
+    try std.testing.expectEqual(@as(usize, 2), task.retry_on_patterns.len);
+    if (task.retry_on_patterns.len >= 1) {
+        try std.testing.expectEqualStrings("timeout", task.retry_on_patterns[0]);
+    }
+    if (task.retry_on_patterns.len >= 2) {
+        try std.testing.expectEqualStrings("connection refused", task.retry_on_patterns[1]);
+    }
 }

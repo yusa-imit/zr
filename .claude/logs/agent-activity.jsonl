@@ -128,3 +128,5 @@
 {"timestamp": "2026-08-28T22:21:29Z", "action": "subagent", "agent_type": "general-purpose", "task": "Investigate CI-only flaky output_filtering_test race condition in process.zig output capture", "project": "zr"}
 {"timestamp": "2026-08-28T22:21:29Z", "action": "subagent", "agent_type": "test-writer", "task": "Add regression test for child.wait()/reader-thread join-order race in src/exec/process.zig", "project": "zr"}
 {"timestamp":"2026-08-31T16:26:33Z","action":"subagent","agent_type":"test-writer","task":"Write failing tests for detectVersion ToolNotFound wiring + python/pip alias fallback in src/toolchain/version.zig","project":"zr"}
+{"timestamp":"2026-09-05T04:13:27Z","action":"subagent","agent_type":"test-writer","task":"Write failing tests: TaskTemplate retry advanced fields (backoff_multiplier, jitter, max_backoff, on_codes, on_patterns) parsed but discarded for templates","project":"zr"}
+{"timestamp":"2026-09-05T04:18:13Z","action":"subagent","agent_type":"zig-developer","task":"Wire TaskTemplate retry advanced fields through flushCurrentTemplate/expandTemplate to fix data loss","project":"zr"}
