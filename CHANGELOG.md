@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`tidy` build step** (plan 001 item 2): `zig build tidy`, wired as a `zig build test`
+  dependency, vendored from the kingdom's `citadel/templates/tidy` reference. Enforces line
+  length (100), function length (70, ratcheted via `tidy_baseline.txt` for the 844 pre-existing
+  violations — the baseline may only shrink, never grow), a `//!` doc-header requirement under
+  `src/`, and a ban list (`catch unreachable` without a proof comment, `@panic`/
+  `std.debug.print` outside the CLI/bench/test surface, `std.time.*`/`std.crypto.random` in
+  library code, `anyerror` on a `pub fn`). File-length is a warning only (24 files over 800
+  lines recorded, not gated).
+
 ### Fixed
+- **Vendored `tidy` use-after-free**: `checkFunctionLength` freed a hashmap-interned lookup key
+  on a repeated function name (e.g. the many `deinit`/`waitForEvent` overloads across sibling
+  structs in `config/types.zig` and `watch/native.zig`) before reading that same key back via
+  `baseline.get(key)`, poisoning the read under `std.testing.allocator` and making an already
+  ratcheted function falsely fail as unbaselined. Fixed by deferring the free until after the
+  baseline lookup; same bug present in `citadel/templates/tidy` upstream, flagged in realm memory.
 - Docs/CI hygiene (plan 001 item 1): `ci.yml` no longer references the deleted
   `.claude/memory/**` path and now skips `docs/**`/`*.md`-only changes on `pull_request` too, not
   just `push`; README version badge and test-status counts reconciled with `build.zig.zon`

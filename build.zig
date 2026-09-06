@@ -18,6 +18,25 @@ const std = @import("std");
 //   zig build fuzz-toml                 # TOML parser fuzzer
 //   zig build fuzz-expr                 # Expression engine fuzzer
 
+/// Wires the Tiger Style `tidy` lint (`tools/tidy.zig`, vendored from the kingdom's
+/// `citadel/templates/tidy` reference) as its own `zig build tidy` step and returns the
+/// underlying run step so `test` can also depend on it.
+fn addTidyStep(b: *std.Build) *std.Build.Step.Run {
+    const tidy_exe = b.addExecutable(.{
+        .name = "tidy",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/tidy.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run_tidy = b.addRunArtifact(tidy_exe);
+    run_tidy.addArgs(&.{ "--root", b.pathFromRoot(".") });
+
+    const tidy_step = b.step("tidy", "Run the tidy lint on its own");
+    tidy_step.dependOn(&run_tidy.step);
+    return run_tidy;
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -82,7 +101,9 @@ pub fn build(b: *std.Build) void {
     run_exe_tests.addArtifactArg(exe_tests);
     run_exe_tests.has_side_effects = true;
 
+    const run_tidy = addTidyStep(b);
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_tidy.step);
     test_step.dependOn(&run_exe_tests.step);
 
     // --- Integration Tests ---
