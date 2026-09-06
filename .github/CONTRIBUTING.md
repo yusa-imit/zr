@@ -52,7 +52,7 @@ zr/
 ├── docs/             # Documentation
 │   ├── guides/       # User guides (6 guides)
 │   └── PRD.md        # Product Requirements Document
-└── .claude/          # AI development tools
+└── .github/          # CI workflows, issue/PR templates, this guide
 ```
 
 ---
@@ -297,7 +297,7 @@ All PRs must pass:
 CI runs automatically on:
 - Push to `main`
 - Pull requests to `main`
-- Skips runs for `.claude/memory/**`, `docs/**`, `*.md` changes
+- Skips runs (both triggers) for `docs/**`, `*.md` changes
 
 ---
 

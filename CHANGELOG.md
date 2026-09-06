@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Docs/CI hygiene (plan 001 item 1): `ci.yml` no longer references the deleted
+  `.claude/memory/**` path and now skips `docs/**`/`*.md`-only changes on `pull_request` too, not
+  just `push`; README version badge and test-status counts reconciled with `build.zig.zon`
+  (v1.114.0) and the latest suite run (1799 unit / 2087 integration); README's headless
+  Contributing bullet list now links `.github/CONTRIBUTING.md`; stale `.claude/` reference in
+  `CONTRIBUTING.md`'s project-structure diagram and CI-trigger notes removed.
+
 ## [1.114.0] - 2026-09-05
 
 ### Added
