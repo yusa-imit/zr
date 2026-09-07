@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const zuda = @import("zuda");
+const assert = std.debug.assert;
 
 const ZudaGraph = zuda.containers.graphs.AdjacencyList([]const u8, void, StringContext, StringContext.hash, StringContext.eql);
 
@@ -33,22 +34,30 @@ pub const DAG = struct {
         dependencies: std.ArrayList([]const u8),
 
         pub fn init(allocator: std.mem.Allocator, name: []const u8) !Node {
-            return Node{
+            const node = Node{
                 .name = try allocator.dupe(u8, name),
                 .dependencies = std.ArrayList([]const u8){},
             };
+            assert(node.name.len == name.len); // dupe() preserves the exact byte length.
+            assert(node.dependencies.items.len == 0); // A fresh node has no dependencies yet.
+            return node;
         }
 
         pub fn deinit(self: *Node, allocator: std.mem.Allocator) void {
+            const dep_count_before = self.dependencies.items.len;
             allocator.free(self.name);
             for (self.dependencies.items) |dep| {
                 allocator.free(dep);
             }
+            assert(self.dependencies.items.len == dep_count_before); // Freeing keeps the list len.
             self.dependencies.deinit(allocator);
         }
 
         pub fn addDependency(self: *Node, allocator: std.mem.Allocator, dep: []const u8) !void {
+            const count_before = self.dependencies.items.len;
             try self.dependencies.append(allocator, try allocator.dupe(u8, dep));
+            assert(self.dependencies.items.len == count_before + 1); // Exactly one dep was added.
+            assert(self.dependencies.items[self.dependencies.items.len - 1].len == dep.len);
         }
     };
 
@@ -72,6 +81,7 @@ pub const DAG = struct {
 
                 // Clear and reuse the temp deps list
                 self.temp_deps.clearRetainingCapacity();
+                assert(self.temp_deps.items.len == 0); // Postcondition of clearRetainingCapacity.
 
                 // Get dependencies for this vertex (outgoing edges)
                 if (self.dag.graph.getNeighbors(vertex)) |neighbors| {
@@ -80,26 +90,32 @@ pub const DAG = struct {
                     }
                 }
 
-                return Entry{
+                const entry = Entry{
                     .key_ptr = vertex,
                     .value_ptr = Node{
                         .name = vertex,
                         .dependencies = self.temp_deps,
                     },
                 };
+                assert(entry.value_ptr.dependencies.items.len == self.temp_deps.items.len);
+                return entry;
             }
 
             pub fn deinit(self: *Iterator) void {
+                assert(self.temp_deps.items.len <= self.temp_deps.capacity); // Sanity check.
                 self.temp_deps.deinit(self.dag.allocator);
             }
         };
 
         pub fn iterator(self: NodesMap) Iterator {
-            return .{
+            const it = Iterator{
                 .vertex_it = self.dag.graph.vertexIterator(),
                 .dag = self.dag,
                 .temp_deps = std.ArrayList([]const u8){},
             };
+            assert(it.temp_deps.items.len == 0); // A fresh iterator's scratch buffer is empty.
+            assert(it.dag == self.dag); // The iterator captures the same DAG reference.
+            return it;
         }
 
         pub fn getPtr(self: NodesMap, name: []const u8) ?*Node {
@@ -110,11 +126,15 @@ pub const DAG = struct {
         }
 
         pub fn contains(self: NodesMap, name: []const u8) bool {
-            return self.dag.graph.containsVertex(name);
+            const result = self.dag.graph.containsVertex(name);
+            assert(result == self.dag.graph.containsVertex(name)); // Pure query: idempotent.
+            return result;
         }
 
         pub fn count(self: NodesMap) usize {
-            return self.dag.graph.vertexCount();
+            const c = self.dag.graph.vertexCount();
+            assert(c == self.dag.graph.vertexCount()); // Pure query: idempotent.
+            return c;
         }
     };
 
@@ -124,18 +144,25 @@ pub const DAG = struct {
     }
 
     pub fn init(allocator: std.mem.Allocator) DAG {
-        return .{
+        var dag = DAG{
             .graph = ZudaGraph.init(allocator, .{}, true), // directed=true
             .allocator = allocator,
         };
+        assert(dag.graph.vertexCount() == 0); // A freshly initialized DAG has no nodes.
+        assert(dag.nodeCount() == 0); // Two derivations of the same invariant agree.
+        return dag;
     }
 
     pub fn deinit(self: *DAG) void {
+        const count_before = self.graph.vertexCount();
         // Free all vertex names that we allocated in addNode()
         var vertex_it = self.graph.vertexIterator();
+        var freed: usize = 0;
         while (vertex_it.next()) |vertex| {
             self.allocator.free(vertex);
+            freed += 1;
         }
+        assert(freed == count_before); // Every vertex name allocated in addNode() is freed once.
 
         self.graph.deinit();
     }
@@ -154,16 +181,21 @@ pub const DAG = struct {
         self.graph.addVertex(owned_name) catch |err| switch (err) {
             error.VertexExists => {
                 self.allocator.free(owned_name);
+                assert(self.graph.containsVertex(name)); // Postcondition: vertex now present.
                 return;
             },
             error.OutOfMemory => return error.OutOfMemory,
         };
+        assert(self.graph.containsVertex(name)); // Postcondition: vertex now present.
     }
 
     /// Add an edge from 'from' node to 'to' node (from depends on to)
     pub fn addEdge(self: *DAG, from: []const u8, to: []const u8) std.mem.Allocator.Error!void {
         try self.addNode(from);
         try self.addNode(to);
+        // Redundant re-check: addNode() above guarantees both endpoints now exist.
+        assert(self.graph.containsVertex(from));
+        assert(self.graph.containsVertex(to));
 
         // Check if edge already exists
         if (self.graph.containsEdge(from, to)) {
@@ -174,6 +206,7 @@ pub const DAG = struct {
             error.VertexExists => return,
             error.OutOfMemory => return error.OutOfMemory,
         };
+        assert(self.graph.containsEdge(from, to)); // Postcondition: edge now present.
     }
 
     /// Get a node by name
@@ -183,6 +216,7 @@ pub const DAG = struct {
         if (!self.graph.containsVertex(name)) {
             return null;
         }
+        assert(self.graph.containsVertex(name)); // Redundant re-check: verified above.
 
         const node = self.allocator.create(Node) catch return null;
         errdefer self.allocator.destroy(node);
@@ -198,6 +232,7 @@ pub const DAG = struct {
             self.allocator.free(node.name);
             self.allocator.destroy(node);
         }
+        assert(node.name.len == name.len); // dupe() preserves the exact byte length.
 
         // Get outgoing edges (dependencies)
         if (self.graph.getNeighbors(name)) |neighbors| {
@@ -217,7 +252,10 @@ pub const DAG = struct {
         if (!self.graph.containsVertex(name)) {
             return 0;
         }
-        return self.graph.inDegree(name);
+        assert(self.graph.containsVertex(name)); // Redundant re-check: verified above.
+        const degree = self.graph.inDegree(name);
+        assert(degree <= self.nodeCount()); // In-degree cannot exceed the total node count.
+        return degree;
     }
 
     /// Get all nodes with no dependencies (entry points)
@@ -234,17 +272,23 @@ pub const DAG = struct {
             }
         }
 
+        assert(result.items.len <= self.nodeCount()); // Entry nodes are a subset of all nodes.
         return result;
     }
 
     /// Check if the graph is empty
     pub fn isEmpty(self: *DAG) bool {
-        return self.graph.vertexCount() == 0;
+        const count = self.graph.vertexCount();
+        const empty = count == 0;
+        assert(empty == (self.graph.vertexCount() == 0)); // Idempotent query: repeated calls agree.
+        return empty;
     }
 
     /// Get the number of nodes
     pub fn nodeCount(self: *DAG) usize {
-        return self.graph.vertexCount();
+        const count = self.graph.vertexCount();
+        assert(count == self.graph.vertexCount()); // Idempotent query: repeated calls agree.
+        return count;
     }
 };
 
