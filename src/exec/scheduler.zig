@@ -1,4 +1,6 @@
 const std = @import("std");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 const loader = @import("../config/loader.zig");
 const dag_mod = @import("../graph/dag.zig");
 const topo_sort = @import("../graph/topo_sort.zig");
@@ -39,7 +41,9 @@ pub const SchedulerError = error{
 
 /// Sanitize task name for use as env var suffix: uppercase, hyphens/dots → underscores (v1.87.0).
 pub fn sanitizeTaskNameForEnv(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    assert(name.len > 0); // Task names are never empty.
     const upper = try allocator.dupe(u8, name);
+    assert(upper.len == name.len); // dupe() preserves the exact byte length.
     for (upper) |*c| {
         if (c.* == '-' or c.* == '.') {
             c.* = '_';
@@ -47,6 +51,7 @@ pub fn sanitizeTaskNameForEnv(allocator: std.mem.Allocator, name: []const u8) ![
             c.* = std.ascii.toUpper(c.*);
         }
     }
+    assert(upper.len == name.len); // The in-place transform never resizes the slice.
     return upper;
 }
 
@@ -154,10 +159,10 @@ fn interpolateParams(
                             try result.appendSlice(allocator, output_val);
                         } else {
                             // Output not found - leave placeholder as-is
-                            try result.appendSlice(allocator, input[i..e + 2]);
+                            try result.appendSlice(allocator, input[i .. e + 2]);
                         }
                     } else {
-                        try result.appendSlice(allocator, input[i..e + 2]);
+                        try result.appendSlice(allocator, input[i .. e + 2]);
                     }
                 } else if (runtime_params) |rp| {
                     if (rp.get(param_name)) |value| {
@@ -167,22 +172,22 @@ fn interpolateParams(
                             try result.appendSlice(allocator, var_val);
                         } else {
                             // Param not found - leave placeholder as-is
-                            try result.appendSlice(allocator, input[i..e + 2]);
+                            try result.appendSlice(allocator, input[i .. e + 2]);
                         }
                     } else {
                         // No config vars, param not found - leave placeholder as-is
-                        try result.appendSlice(allocator, input[i..e + 2]);
+                        try result.appendSlice(allocator, input[i .. e + 2]);
                     }
                 } else if (config_vars) |cv| {
                     if (cv.get(param_name)) |var_val| {
                         try result.appendSlice(allocator, var_val);
                     } else {
                         // Param not found - leave placeholder as-is
-                        try result.appendSlice(allocator, input[i..e + 2]);
+                        try result.appendSlice(allocator, input[i .. e + 2]);
                     }
                 } else {
                     // No runtime params or config vars - leave placeholder as-is
-                    try result.appendSlice(allocator, input[i..e + 2]);
+                    try result.appendSlice(allocator, input[i .. e + 2]);
                 }
                 i = e + 2;
             } else {
@@ -204,8 +209,11 @@ fn interpolateParams(
 /// see cmdWorkflow in cli/run.zig). Unresolved placeholders are left as-is.
 /// Returns an allocated string; caller must free.
 pub fn interpolateMatrixEnv(allocator: std.mem.Allocator, input: []const u8, extra_env: ?[]const [2][]const u8) ![]const u8 {
+    stdx.maybe(input.len == 0); // An empty command string is legitimate input.
     if (extra_env == null or std.mem.indexOf(u8, input, "${matrix.") == null) {
-        return allocator.dupe(u8, input);
+        const copy = try allocator.dupe(u8, input);
+        assert(copy.len == input.len); // No-op path: exact copy of the input.
+        return copy;
     }
     const extra = extra_env.?;
 
@@ -238,6 +246,7 @@ pub fn interpolateMatrixEnv(allocator: std.mem.Allocator, input: []const u8, ext
         i += 1;
     }
 
+    assert(i == input.len); // The scan consumed the entire input exactly once.
     return result.toOwnedSlice(allocator);
 }
 
@@ -358,7 +367,9 @@ pub const DryRunLevel = struct {
     tasks: [][]const u8,
 
     pub fn deinit(self: DryRunLevel, allocator: std.mem.Allocator) void {
+        const task_count = self.tasks.len;
         for (self.tasks) |t| allocator.free(t);
+        assert(self.tasks.len == task_count); // Freeing each task name doesn't resize the slice.
         allocator.free(self.tasks);
     }
 };
@@ -369,7 +380,9 @@ pub const DryRunPlan = struct {
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *DryRunPlan) void {
+        const level_count = self.levels.len;
         for (self.levels) |level| level.deinit(self.allocator);
+        assert(self.levels.len == level_count); // Freeing each level doesn't resize the slice.
         self.allocator.free(self.levels);
     }
 };
@@ -384,6 +397,7 @@ pub fn planDryRun(
     task_names: []const []const u8,
     only_mode: bool,
 ) SchedulerError!DryRunPlan {
+    stdx.maybe(task_names.len == 0); // Running with no explicit targets is legitimate.
     var needed = if (only_mode) blk: {
         var n = std.StringHashMap(void).init(allocator);
         errdefer n.deinit();
@@ -405,6 +419,7 @@ pub fn planDryRun(
 
     // Build owned DryRunLevel array
     const plan_levels = try allocator.alloc(DryRunLevel, levels.levels.items.len);
+    assert(plan_levels.len == levels.levels.items.len); // Allocation matches the level count.
     var levels_built: usize = 0;
     errdefer {
         for (plan_levels[0..levels_built]) |lvl| lvl.deinit(allocator);
@@ -425,6 +440,7 @@ pub fn planDryRun(
         plan_levels[i] = DryRunLevel{ .tasks = tasks };
         levels_built += 1;
     }
+    assert(levels_built == levels.levels.items.len); // Every planned level was populated once.
 
     return DryRunPlan{
         .levels = plan_levels,
@@ -452,9 +468,11 @@ pub const ScheduleResult = struct {
     total_success: bool,
 
     pub fn deinit(self: *ScheduleResult, allocator: std.mem.Allocator) void {
+        const result_count = self.results.items.len;
         for (self.results.items) |result| {
             allocator.free(result.task_name);
         }
+        assert(self.results.items.len == result_count); // Freeing task_name leaves the list len.
         self.results.deinit(allocator);
     }
 };
@@ -796,9 +814,14 @@ fn loadAndMergeEnvFiles(
     for (env_file_paths) |env_path| {
         const is_abs = std.fs.path.isAbsolute(env_path);
         const exists = if (is_abs)
-            if (std.fs.openFileAbsolute(env_path, .{})) |f| blk: { f.close(); break :blk true; } else |_| false
-        else
-            if (std.fs.cwd().openFile(env_path, .{})) |f| blk: { f.close(); break :blk true; } else |_| false;
+            if (std.fs.openFileAbsolute(env_path, .{})) |f| blk: {
+                f.close();
+                break :blk true;
+            } else |_| false
+        else if (std.fs.cwd().openFile(env_path, .{})) |f| blk: {
+            f.close();
+            break :blk true;
+        } else |_| false;
         if (!exists) {
             std.debug.print("✗ [env_file]: file not found: {s}\n", .{env_path});
         }
@@ -1257,22 +1280,22 @@ fn workerFn(ctx: WorkerCtx) void {
             ) catch false; // On error, assume not up-to-date and run the task
 
             if (is_up_to_date) {
-            // Task is up-to-date: record a skipped success result
-            const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
-            ctx.results_mutex.lock();
-            defer ctx.results_mutex.unlock();
-            ctx.results.append(task_allocator, .{
-                .task_name = owned_name,
-                .success = true,
-                .exit_code = 0,
-                .duration_ms = 0,
-                .skipped = true,
-            }) catch task_allocator.free(owned_name);
+                // Task is up-to-date: record a skipped success result
+                const owned_name = task_allocator.dupe(u8, ctx.task_name) catch return;
+                ctx.results_mutex.lock();
+                defer ctx.results_mutex.unlock();
+                ctx.results.append(task_allocator, .{
+                    .task_name = owned_name,
+                    .success = true,
+                    .exit_code = 0,
+                    .duration_ms = 0,
+                    .skipped = true,
+                }) catch task_allocator.free(owned_name);
 
-            // Record event for timeline
-            if (ctx.timeline_tracker) |tt| {
-                tt.recordEvent(.skipped, ctx.task_name, null) catch {};
-            }
+                // Record event for timeline
+                if (ctx.timeline_tracker) |tt| {
+                    tt.recordEvent(.skipped, ctx.task_name, null) catch {};
+                }
 
                 return;
             }
@@ -1756,10 +1779,9 @@ fn workerFn(ctx: WorkerCtx) void {
     if (ctx.notify) {
         const should_notify = notification.shouldNotify(
             if (ctx.notify_on) |no|
-                if (std.mem.eql(u8, no, "success")) notification.NotifyOn.success
-                else if (std.mem.eql(u8, no, "failure")) notification.NotifyOn.failure
-                else notification.NotifyOn.always
-            else notification.NotifyOn.always,
+                if (std.mem.eql(u8, no, "success")) notification.NotifyOn.success else if (std.mem.eql(u8, no, "failure")) notification.NotifyOn.failure else notification.NotifyOn.always
+            else
+                notification.NotifyOn.always,
             proc_result.success,
         );
         if (should_notify) {
@@ -2646,9 +2668,18 @@ fn runSerialChain(
         // Recursively run this dep's own serial chain first
         if (dep_task.deps_serial.len > 0) {
             const chain_ok = try runSerialChain(
-                allocator, config, dep_task.deps_serial, extra_env, toolchains,
-                inherit_stdio, results, results_mutex, completed, runtime_params,
-                default_timeout_ms, task_outputs,
+                allocator,
+                config,
+                dep_task.deps_serial,
+                extra_env,
+                toolchains,
+                inherit_stdio,
+                results,
+                results_mutex,
+                completed,
+                runtime_params,
+                default_timeout_ms,
+                task_outputs,
             );
             if (!chain_ok) return false;
         }
@@ -2671,7 +2702,9 @@ pub fn run(
     task_names: []const []const u8,
     sched_config: SchedulerConfig,
 ) SchedulerError!ScheduleResult {
+    stdx.maybe(task_names.len == 0); // Running with no explicit targets is legitimate.
     var results = std.ArrayList(TaskResult){};
+    assert(results.items.len == 0); // A freshly created results list starts empty.
     errdefer {
         for (results.items) |r| {
             allocator.free(r.task_name);
@@ -2702,6 +2735,7 @@ pub fn run(
     defer levels.deinit(allocator);
 
     const concurrency = resolveMaxJobs(sched_config.max_jobs);
+    assert(concurrency > 0); // Semaphore permits must be positive or every task deadlocks.
 
     var results_mutex = std.Thread.Mutex{};
     var failed = std.atomic.Value(bool).init(false);
@@ -2970,9 +3004,18 @@ pub fn run(
             // from the subgraph above.
             if (task.deps_serial.len > 0 and !sched_config.only_mode) {
                 const serial_ok = try runSerialChain(
-                    allocator, config, task.deps_serial, sched_config.extra_env, config.toolchains.tools,
-                    sched_config.inherit_stdio, &results, &results_mutex, &completed, sched_config.runtime_params,
-                    sched_config.default_timeout_ms, sched_config.task_outputs,
+                    allocator,
+                    config,
+                    task.deps_serial,
+                    sched_config.extra_env,
+                    config.toolchains.tools,
+                    sched_config.inherit_stdio,
+                    &results,
+                    &results_mutex,
+                    &completed,
+                    sched_config.runtime_params,
+                    sched_config.default_timeout_ms,
+                    sched_config.task_outputs,
                 );
                 if (!serial_ok) {
                     if (!task.allow_failure) failed.store(true, .release);
@@ -3171,6 +3214,10 @@ pub fn run(
     }
 
     const total_success = !failed.load(.acquire);
+    // Serial-dependency chains (deps_serial) contribute extra results beyond `needed`'s
+    // top-level node count, so the only sound bound here is non-negativity (always true of
+    // usize); document that explicitly rather than asserting a false upper bound.
+    stdx.maybe(results.items.len > needed.count());
 
     return ScheduleResult{
         .results = results,

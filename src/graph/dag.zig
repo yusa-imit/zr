@@ -8,6 +8,8 @@
 
 const std = @import("std");
 const zuda = @import("zuda");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 const ZudaGraph = zuda.containers.graphs.AdjacencyList([]const u8, void, StringContext, StringContext.hash, StringContext.eql);
 
@@ -33,22 +35,31 @@ pub const DAG = struct {
         dependencies: std.ArrayList([]const u8),
 
         pub fn init(allocator: std.mem.Allocator, name: []const u8) !Node {
-            return Node{
+            assert(name.len > 0); // Task names are never empty.
+            const node = Node{
                 .name = try allocator.dupe(u8, name),
                 .dependencies = std.ArrayList([]const u8){},
             };
+            assert(node.name.len == name.len); // dupe() preserves the exact byte length.
+            assert(node.dependencies.items.len == 0); // A freshly built node has no deps yet.
+            return node;
         }
 
         pub fn deinit(self: *Node, allocator: std.mem.Allocator) void {
+            const dep_count = self.dependencies.items.len;
             allocator.free(self.name);
             for (self.dependencies.items) |dep| {
                 allocator.free(dep);
             }
+            assert(self.dependencies.items.len == dep_count); // Freeing bytes leaves len untouched.
             self.dependencies.deinit(allocator);
         }
 
         pub fn addDependency(self: *Node, allocator: std.mem.Allocator, dep: []const u8) !void {
+            assert(dep.len > 0); // Dependency names are never empty.
+            const count_before = self.dependencies.items.len;
             try self.dependencies.append(allocator, try allocator.dupe(u8, dep));
+            assert(self.dependencies.items.len == count_before + 1); // Exactly one dep was added.
         }
     };
 
@@ -69,9 +80,11 @@ pub const DAG = struct {
 
             pub fn next(self: *Iterator) ?Entry {
                 const vertex = self.vertex_it.next() orelse return null;
+                assert(vertex.len > 0); // Vertex names are never empty.
 
                 // Clear and reuse the temp deps list
                 self.temp_deps.clearRetainingCapacity();
+                assert(self.temp_deps.items.len == 0); // Postcondition of clearRetainingCapacity.
 
                 // Get dependencies for this vertex (outgoing edges)
                 if (self.dag.graph.getNeighbors(vertex)) |neighbors| {
@@ -124,24 +137,33 @@ pub const DAG = struct {
     }
 
     pub fn init(allocator: std.mem.Allocator) DAG {
-        return .{
+        const dag = DAG{
             .graph = ZudaGraph.init(allocator, .{}, true), // directed=true
             .allocator = allocator,
         };
+        assert(dag.graph.vertexCount() == 0); // A freshly initialized DAG has no vertices.
+        return dag;
     }
 
     pub fn deinit(self: *DAG) void {
+        const vertex_count_before = self.graph.vertexCount();
+
         // Free all vertex names that we allocated in addNode()
         var vertex_it = self.graph.vertexIterator();
+        var freed: usize = 0;
         while (vertex_it.next()) |vertex| {
             self.allocator.free(vertex);
+            freed += 1;
         }
+        assert(freed == vertex_count_before); // Every name allocated in addNode() is freed once.
 
         self.graph.deinit();
     }
 
     /// Add a node to the graph
     pub fn addNode(self: *DAG, name: []const u8) std.mem.Allocator.Error!void {
+        assert(name.len > 0); // Task names are never empty.
+
         // Check if already exists
         if (self.graph.containsVertex(name)) {
             return; // Already exists, nothing to do
@@ -154,14 +176,19 @@ pub const DAG = struct {
         self.graph.addVertex(owned_name) catch |err| switch (err) {
             error.VertexExists => {
                 self.allocator.free(owned_name);
+                assert(self.graph.containsVertex(name)); // Postcondition: vertex now present.
                 return;
             },
             error.OutOfMemory => return error.OutOfMemory,
         };
+        assert(self.graph.containsVertex(name)); // Postcondition: vertex now present.
     }
 
     /// Add an edge from 'from' node to 'to' node (from depends on to)
     pub fn addEdge(self: *DAG, from: []const u8, to: []const u8) std.mem.Allocator.Error!void {
+        assert(from.len > 0); // Task names are never empty.
+        assert(to.len > 0); // Task names are never empty.
+
         try self.addNode(from);
         try self.addNode(to);
 
@@ -174,12 +201,15 @@ pub const DAG = struct {
             error.VertexExists => return,
             error.OutOfMemory => return error.OutOfMemory,
         };
+        assert(self.graph.containsEdge(from, to)); // Postcondition: the edge now exists.
     }
 
     /// Get a node by name
     /// Returns an allocated Node that must be freed by the caller via node.deinit(allocator) + allocator.destroy(node)
     /// Returns null if the node doesn't exist
     pub fn getNode(self: *DAG, name: []const u8) ?*Node {
+        assert(name.len > 0); // Task names are never empty.
+
         if (!self.graph.containsVertex(name)) {
             return null;
         }
@@ -198,6 +228,7 @@ pub const DAG = struct {
             self.allocator.free(node.name);
             self.allocator.destroy(node);
         }
+        assert(std.mem.eql(u8, node.name, name)); // dupe() must preserve the exact bytes.
 
         // Get outgoing edges (dependencies)
         if (self.graph.getNeighbors(name)) |neighbors| {
@@ -214,10 +245,14 @@ pub const DAG = struct {
 
     /// Get the in-degree of a node (number of nodes that depend on it)
     pub fn getInDegree(self: *DAG, name: []const u8) usize {
+        assert(name.len > 0); // Task names are never empty.
+
         if (!self.graph.containsVertex(name)) {
             return 0;
         }
-        return self.graph.inDegree(name);
+        const degree = self.graph.inDegree(name);
+        assert(degree <= self.graph.vertexCount()); // In-degree can't exceed the total node count.
+        return degree;
     }
 
     /// Get all nodes with no dependencies (entry points)
@@ -234,6 +269,7 @@ pub const DAG = struct {
             }
         }
 
+        assert(result.items.len <= self.graph.vertexCount()); // Entry nodes are a subset of all.
         return result;
     }
 
@@ -246,6 +282,25 @@ pub const DAG = struct {
     pub fn nodeCount(self: *DAG) usize {
         return self.graph.vertexCount();
     }
+
+    /// Verifies internal invariants: every vertex name is non-empty and every edge target is
+    /// itself a known vertex. Tests and fuzzers call this after every mutation
+    /// (`testing.md`'s `check_invariants()` convention).
+    pub fn checkInvariants(self: *DAG) void {
+        var vertex_it = self.graph.vertexIterator();
+        var vertex_count: usize = 0;
+        while (vertex_it.next()) |vertex| {
+            vertex_count += 1;
+            assert(vertex.len > 0); // Vertex names are never empty.
+            if (self.graph.getNeighbors(vertex)) |neighbors| {
+                for (neighbors) |edge| {
+                    // Every edge target was added via addNode() inside addEdge().
+                    assert(self.graph.containsVertex(edge.target));
+                }
+            }
+        }
+        assert(vertex_count == self.graph.vertexCount()); // Iteration count matches the tally.
+    }
 };
 
 // Tests migrated from original dag.zig
@@ -257,8 +312,11 @@ test "DAG: basic node operations" {
     defer dag.deinit();
 
     try dag.addNode("build");
+    dag.checkInvariants();
     try dag.addNode("test");
+    dag.checkInvariants();
     try dag.addNode("lint");
+    dag.checkInvariants();
 
     try std.testing.expect(dag.nodeCount() == 3);
     try std.testing.expect(!dag.isEmpty());
@@ -271,8 +329,11 @@ test "DAG: add edges" {
     defer dag.deinit();
 
     try dag.addEdge("test", "build");
+    dag.checkInvariants();
     try dag.addEdge("deploy", "test");
+    dag.checkInvariants();
     try dag.addEdge("deploy", "lint");
+    dag.checkInvariants();
 
     try std.testing.expect(dag.nodeCount() == 4); // test, build, deploy, lint
 }
@@ -336,7 +397,36 @@ test "DAG: deinit cleans up memory" {
     try std.testing.expectEqual(@as(usize, 1), entries.items.len);
     try std.testing.expectEqualStrings("task2", entries.items[0]);
 
+    dag.checkInvariants();
     dag.deinit();
+}
+
+test "DAG: checkInvariants holds across a diamond dependency graph" {
+    const allocator = std.testing.allocator;
+
+    var dag = DAG.init(allocator);
+    defer dag.deinit();
+
+    // deploy depends on test and lint; both depend on build.
+    try dag.addEdge("deploy", "test");
+    try dag.addEdge("deploy", "lint");
+    try dag.addEdge("test", "build");
+    try dag.addEdge("lint", "build");
+    dag.checkInvariants();
+
+    try std.testing.expectEqual(@as(usize, 4), dag.nodeCount());
+    try std.testing.expectEqual(@as(usize, 2), dag.getInDegree("build"));
+}
+
+test "Node.addDependency rejects an empty allocation-free path" {
+    const allocator = std.testing.allocator;
+
+    var node = try DAG.Node.init(allocator, "build");
+    defer node.deinit(allocator);
+
+    try node.addDependency(allocator, "fetch-deps");
+    try std.testing.expectEqual(@as(usize, 1), node.dependencies.items.len);
+    try std.testing.expectEqualStrings("fetch-deps", node.dependencies.items[0]);
 }
 
 test "DAG: isEmpty" {

@@ -444,8 +444,8 @@ src/exec/scheduler.zig:buildEnvWithToolchains:85
 src/exec/scheduler.zig:doc-header:1
 src/exec/scheduler.zig:interpolateParams:83
 src/exec/scheduler.zig:line-length:107
-src/exec/scheduler.zig:loadAndMergeEnvFiles:165
-src/exec/scheduler.zig:run:512
+src/exec/scheduler.zig:loadAndMergeEnvFiles:170
+src/exec/scheduler.zig:run:528
 src/exec/scheduler.zig:runTaskSync:315
 src/exec/scheduler.zig:workerFn:1123
 src/exec/timeline.zig:ban-list:7
@@ -631,6 +631,10 @@ src/registry/server.zig:doc-header:1
 src/registry/server.zig:line-length:3
 src/registry/storage.zig:doc-header:1
 src/registry/storage.zig:line-length:11
+# stdx.zig's `assert_always` is the one place tiger-style.md sanctions an unconditional
+# @panic in library code (an invariant that must hold in every build mode, ReleaseFast
+# included) — not inherited debt, a deliberate, singular exception.
+src/stdx.zig:ban-list:1
 src/template/builtin/build.zig:doc-header:1
 src/template/builtin/build.zig:line-length:2
 src/template/builtin/ci.zig:doc-header:1
