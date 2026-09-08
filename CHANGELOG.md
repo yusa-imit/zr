@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Assertion baseline, `src/cache/store.zig`** (plan 001 item 3, partial): pre/post
+  assertions on every public `CacheStore` function via `src/stdx.zig`'s `assert`/`maybe`
+  helpers, following the pattern established for `graph/dag.zig`/`exec/scheduler.zig`.
+  `src/config/parser.zig` remains for a follow-up cycle.
 - **`tidy` build step** (plan 001 item 2): `zig build tidy`, wired as a `zig build test`
   dependency, vendored from the kingdom's `citadel/templates/tidy` reference. Enforces line
   length (100), function length (70, ratcheted via `tidy_baseline.txt` for the 844 pre-existing

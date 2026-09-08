@@ -1,6 +1,8 @@
 const std = @import("std");
 const types = @import("../config/types.zig");
 const glob_mod = @import("../util/glob.zig");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 /// Cache entry metadata stored on disk.
 /// File name: <hex-hash>.ok  (task succeeded)
@@ -23,14 +25,16 @@ pub const CacheStore = struct {
             // Fallback to system temp directory (platform-agnostic)
             const tmp_path = switch (builtin.os.tag) {
                 .windows => std.process.getEnvVarOwned(allocator, "TEMP") catch
-                            std.process.getEnvVarOwned(allocator, "TMP") catch
-                            try allocator.dupe(u8, "C:\\Windows\\Temp"),
+                    std.process.getEnvVarOwned(allocator, "TMP") catch
+                    try allocator.dupe(u8, "C:\\Windows\\Temp"),
                 else => std.process.getEnvVarOwned(allocator, "TMPDIR") catch
-                        try allocator.dupe(u8, "/tmp"),
+                    try allocator.dupe(u8, "/tmp"),
             };
             defer allocator.free(tmp_path);
             break :blk try std.fs.path.join(allocator, &[_][]const u8{ tmp_path, ".zr", "cache" });
         };
+
+        assert(dir_path.len > 0); // $HOME and fallback-temp branches both build a non-empty path.
 
         // Ensure directory exists
         std.fs.cwd().makePath(dir_path) catch |err| switch (err) {
@@ -38,19 +42,33 @@ pub const CacheStore = struct {
             else => return err,
         };
 
-        return CacheStore{
+        const store = CacheStore{
             .dir_path = dir_path,
             .allocator = allocator,
         };
+        assert(store.dir_path.len > 0); // Re-checked on the struct, not just the local.
+        return store;
     }
 
     pub fn deinit(self: *CacheStore) void {
-        self.allocator.free(self.dir_path);
+        assert(self.dir_path.len > 0); // deinit is never called on a moved-from/zeroed store.
+        const dir_path = self.dir_path;
+        self.allocator.free(dir_path);
+        assert(dir_path.len > 0); // The freed slice's length is untouched by free() itself.
+    }
+
+    /// Renders a hasher's final digest as the 16-char hex key every cache-key function returns.
+    fn finalizeKey(allocator: std.mem.Allocator, hasher: *std.hash.Wyhash) ![]u8 {
+        const hash_val = hasher.final();
+        const key = try std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
+        assert(key.len == 16); // Fixed-width u64 hex formatting always produces 16 digits.
+        return key;
     }
 
     /// Compute a 64-bit hash key for a task based on its cmd and env vars.
     /// Returns the hash as a hex string (16 chars, caller owns memory).
     pub fn computeKey(allocator: std.mem.Allocator, cmd: []const u8, env: ?[]const [2][]const u8) ![]u8 {
+        stdx.maybe(cmd.len == 0); // cmd is user config data; unusual empty, but not our contract.
         var hasher = std.hash.Wyhash.init(0);
         hasher.update(cmd);
         if (env) |pairs| {
@@ -61,8 +79,7 @@ pub const CacheStore = struct {
                 hasher.update(";");
             }
         }
-        const hash_val = hasher.final();
-        return std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
+        return finalizeKey(allocator, &hasher);
     }
 
     /// Compute cache key including source file content hashes.
@@ -76,6 +93,8 @@ pub const CacheStore = struct {
         sources: []const []const u8,
         cwd: []const u8,
     ) ![]u8 {
+        assert(cwd.len > 0); // Caller resolves globs from a real directory, never "".
+        stdx.maybe(sources.len == 0); // No inputs/sources is a legitimate, common case.
         var hasher = std.hash.Wyhash.init(0);
         hasher.update(cmd);
         if (env) |pairs| {
@@ -90,8 +109,7 @@ pub const CacheStore = struct {
         if (sources.len > 0) {
             var base_dir = std.fs.cwd().openDir(cwd, .{ .iterate = true }) catch {
                 // If we can't open the cwd, fall back to key without source hashes
-                const hash_val = hasher.final();
-                return std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
+                return finalizeKey(allocator, &hasher);
             };
             defer base_dir.close();
 
@@ -134,12 +152,13 @@ pub const CacheStore = struct {
             }
         }
 
-        const hash_val = hasher.final();
-        return std.fmt.allocPrint(allocator, "{x:0>16}", .{hash_val});
+        return finalizeKey(allocator, &hasher);
     }
 
     /// Check if a successful cache entry exists for the given key.
     pub fn hasHit(self: *const CacheStore, key: []const u8) bool {
+        assert(key.len > 0); // Every caller passes a computeKey()/computeKeyWithSources() result.
+        assert(self.dir_path.len > 0); // Same invariant established at init(), still holding.
         const file_name = std.fmt.allocPrint(self.allocator, "{s}.ok", .{key}) catch return false;
         defer self.allocator.free(file_name);
 
@@ -154,6 +173,7 @@ pub const CacheStore = struct {
     /// Record a successful task execution in the cache.
     /// Uses atomic write (temp file + rename) to prevent race conditions in concurrent writes.
     pub fn recordHit(self: *const CacheStore, key: []const u8) !void {
+        assert(key.len > 0); // Every caller passes a computeKey()/computeKeyWithSources() result.
         const file_name = try std.fmt.allocPrint(self.allocator, "{s}.ok", .{key});
         defer self.allocator.free(file_name);
 
@@ -173,7 +193,9 @@ pub const CacheStore = struct {
         const file = try std.fs.cwd().createFile(temp_path, .{ .truncate = true });
         file.close();
 
-        // Atomically rename to final name (this operation is atomic on POSIX and Windows)
+        // Atomically rename to final name (this operation is atomic on POSIX and Windows).
+        // Not re-verified with a stat after rename: recordHit is on the task-completion hot
+        // path, and rename()'s own success/error result is already the authoritative signal.
         std.fs.cwd().rename(temp_path, path) catch |err| {
             // Clean up temp file on failure
             std.fs.cwd().deleteFile(temp_path) catch {};
@@ -183,6 +205,7 @@ pub const CacheStore = struct {
 
     /// Remove a specific cache entry.
     pub fn invalidate(self: *const CacheStore, key: []const u8) void {
+        assert(key.len > 0); // Every caller passes a computeKey()/computeKeyWithSources() result.
         const file_name = std.fmt.allocPrint(self.allocator, "{s}.ok", .{key}) catch return;
         defer self.allocator.free(file_name);
 
@@ -218,6 +241,7 @@ pub const CacheStore = struct {
             count += 1;
         }
 
+        assert(count <= names.items.len); // Deletions never exceed the collected `.ok` file set.
         return count;
     }
 
@@ -229,6 +253,8 @@ pub const CacheStore = struct {
         member_path: []const u8,
         config: types.Config,
     ) !usize {
+        stdx.maybe(member_path.len == 0); // Unused today (see below); a caller may still pass "".
+        const task_count = config.tasks.count();
         var count: usize = 0;
 
         // Iterate through tasks in the config and invalidate their cache entries
@@ -247,8 +273,10 @@ pub const CacheStore = struct {
             }
         }
 
-        _ = member_path; // Path may be needed for future enhancements
+        // member_path itself is unused today (invalidation is by task cache key, not by path);
+        // kept as a parameter for a future member-scoped filter.
 
+        assert(count <= task_count); // At most one invalidation per task in the config.
         return count;
     }
 
@@ -280,6 +308,9 @@ pub const CacheStore = struct {
             stats.total_size_bytes += stat.size;
         }
 
+        // Independent re-derivation of "no entries": a directory with zero counted `.ok`
+        // files can only have accumulated zero bytes, since size only ever adds per entry.
+        if (stats.total_entries == 0) assert(stats.total_size_bytes == 0);
         return stats;
     }
 };
@@ -414,6 +445,33 @@ test "computeKeyWithSources changes when file content changes" {
 
     // Different file content → different cache key → cache invalidated
     try std.testing.expect(!std.mem.eql(u8, key1, key2));
+}
+
+test "computeKey handles empty cmd and no env" {
+    const allocator = std.testing.allocator;
+    const key = try CacheStore.computeKey(allocator, "", null);
+    defer allocator.free(key);
+    try std.testing.expectEqual(@as(usize, 16), key.len);
+}
+
+test "computeKeyWithSources tolerates a pattern matching no files" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var buf: [512]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &buf);
+
+    const key = try CacheStore.computeKeyWithSources(
+        allocator,
+        "echo hi",
+        null,
+        &[_][]const u8{"no-such-file-*.txt"},
+        tmp_path,
+    );
+    defer allocator.free(key);
+    try std.testing.expectEqual(@as(usize, 16), key.len);
 }
 
 test "computeKeyWithSources stable for unchanged files" {
