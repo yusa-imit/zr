@@ -2,6 +2,8 @@ const std = @import("std");
 const types = @import("types.zig");
 const matrix = @import("matrix.zig");
 const conformance_types = @import("../conformance/types.zig");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 const Config = types.Config;
 const Task = types.Task;
@@ -26,6 +28,8 @@ fn parseTaskParamsArray(
     value: []const u8,
     out: *std.ArrayList(types.TaskParam),
 ) !void {
+    const out_count_before = out.items.len;
+
     const params_trimmed = std.mem.trim(u8, value, " \t");
     if (!std.mem.startsWith(u8, params_trimmed, "[") or !std.mem.endsWith(u8, params_trimmed, "]")) return;
     const params_str = params_trimmed[1 .. params_trimmed.len - 1];
@@ -86,6 +90,10 @@ fn parseTaskParamsArray(
             try out.append(allocator, param);
         }
     }
+
+    assert(out.items.len >= out_count_before); // Params are only ever appended, never removed.
+    // At most one param per top-level `{...}` table found in the array.
+    assert(out.items.len <= out_count_before + param_tables.items.len);
 }
 
 /// If the current task state represents a group config (no cmd, no deps, has env/cwd/timeout),
@@ -102,6 +110,10 @@ fn tryAddGroupConfig(
     task_deps_serial_len: usize,
     task_matrix_raw: ?[]const u8,
 ) !bool {
+    // task_name is a non-owning slice into a `[tasks.NAME]` header — TOML user data
+    // (`[tasks.]` parses to an empty name), not a caller contract, so `maybe`, not `assert`.
+    stdx.maybe(task_name.len == 0);
+
     if (task_cmd != null) return false;
     if (task_deps_len != 0 or task_deps_serial_len != 0) return false;
     if (task_matrix_raw != null) return false;
@@ -126,6 +138,7 @@ fn tryAddGroupConfig(
         env[i][1] = try allocator.dupe(u8, pair[1]);
         env_duped += 1;
     }
+    assert(env_duped == task_env.len); // Every env pair is duped exactly once.
 
     const cwd = if (task_cwd) |c| try allocator.dupe(u8, c) else null;
     errdefer if (cwd) |c| allocator.free(c);
@@ -140,12 +153,15 @@ fn tryAddGroupConfig(
     const key = try allocator.dupe(u8, name);
     errdefer allocator.free(key);
     try config.group_configs.put(key, gc);
+    assert(config.group_configs.contains(name)); // Postcondition: group config now present.
     return true;
 }
 
 /// Parse a constraint scope value from TOML (e.g., { tag = "app" } or "path/to/project").
 /// Returns non-owning slices into the value string.
 fn parseScopeValue(value: []const u8) !?types.ConstraintScope {
+    stdx.maybe(value.len == 0); // Malformed/empty config values are user data, not our contract.
+
     if (std.mem.eql(u8, value, "all")) return .all;
 
     // Check for inline table: { tag = "value" } or { path = "value" }
@@ -159,6 +175,7 @@ fn parseScopeValue(value: []const u8) !?types.ConstraintScope {
         if (v.len >= 2 and v[0] == '"' and v[v.len - 1] == '"') {
             v = v[1 .. v.len - 1];
         }
+        assert(v.len <= inner.len); // v is trim()med/dequoted substring of inner, never longer.
 
         if (std.mem.eql(u8, k, "tag")) {
             return types.ConstraintScope{ .tag = v };
@@ -173,27 +190,43 @@ fn parseScopeValue(value: []const u8) !?types.ConstraintScope {
 
 /// Dupe a ConstraintScope, allocating owned copies of strings.
 fn dupeConstraintScope(allocator: std.mem.Allocator, scope: types.ConstraintScope) !types.ConstraintScope {
-    return switch (scope) {
+    const duped: types.ConstraintScope = switch (scope) {
         .all => .all,
         .tag => |t| types.ConstraintScope{ .tag = try allocator.dupe(u8, t) },
         .path => |p| types.ConstraintScope{ .path = try allocator.dupe(u8, p) },
     };
+    // dupe() preserves the exact byte length on both owned-string variants.
+    switch (scope) {
+        .all => assert(duped == .all),
+        .tag => |t| assert(duped.tag.len == t.len),
+        .path => |p| assert(duped.path.len == p.len),
+    }
+    return duped;
 }
 
 /// Copy a ConditionalDep, allocating owned copies of strings.
 fn copyConditionalDep(allocator: std.mem.Allocator, dep: *const types.ConditionalDep) !types.ConditionalDep {
+    // Both fields are non-owning slices into TOML user data (`task = ""`/`condition = ""`
+    // parse successfully as empty strings) — not a caller contract, so `maybe`, not `assert`.
+    stdx.maybe(dep.task.len == 0);
+    stdx.maybe(dep.condition.len == 0);
+
     const task_owned = try allocator.dupe(u8, dep.task);
     errdefer allocator.free(task_owned);
     const condition_owned = try allocator.dupe(u8, dep.condition);
     errdefer allocator.free(condition_owned);
-    return types.ConditionalDep{
+    const copy = types.ConditionalDep{
         .task = task_owned,
         .condition = condition_owned,
     };
+    assert(copy.task.len == dep.task.len); // dupe() preserves the exact byte length.
+    return copy;
 }
 
 /// Copy a TaskHook, allocating owned copies of strings and nested structures.
 fn copyTaskHook(allocator: std.mem.Allocator, hook: *const types.TaskHook) !types.TaskHook {
+    stdx.maybe(hook.cmd.len == 0); // hook.cmd is TOML user data, not a validated caller value.
+
     const cmd_owned = try allocator.dupe(u8, hook.cmd);
     errdefer allocator.free(cmd_owned);
     const working_dir_owned = if (hook.working_dir) |wd| try allocator.dupe(u8, wd) else null;
@@ -214,14 +247,17 @@ fn copyTaskHook(allocator: std.mem.Allocator, hook: *const types.TaskHook) !type
         env_owned[i][1] = try allocator.dupe(u8, pair[1]);
         env_duped += 1;
     }
+    assert(env_duped == hook.env.len); // Every env pair is duped exactly once.
 
-    return types.TaskHook{
+    const copy = types.TaskHook{
         .cmd = cmd_owned,
         .point = hook.point, // enum, no need to dupe
         .failure_strategy = hook.failure_strategy, // enum, no need to dupe
         .working_dir = working_dir_owned,
         .env = env_owned,
     };
+    assert(copy.env.len == hook.env.len); // The copy's env slice matches the source's length.
+    return copy;
 }
 
 /// Helper function to flush a pending stage into workflow_stages.
@@ -239,6 +275,8 @@ fn flushPendingStage(
     stage_approval: bool,
     stage_on_failure: ?[]const u8,
 ) !bool {
+    const stages_count_before = workflow_stages.items.len;
+
     // Only flush if we have a name OR if we have tasks (which need an auto-generated name)
     const should_flush = stage_name != null or stage_tasks.items.len > 0;
     if (!should_flush) return false;
@@ -250,17 +288,9 @@ fn flushPendingStage(
         // This will be allocated and freed by the caller after use
         try std.fmt.allocPrint(allocator, "stage-{d}", .{workflow_stages.items.len + 1});
 
-    // Allocate and dupe task names
-    const s_tasks = try allocator.alloc([]const u8, stage_tasks.items.len);
-    var tduped: usize = 0;
-    errdefer {
-        for (s_tasks[0..tduped]) |t| allocator.free(t);
-        allocator.free(s_tasks);
-    }
-    for (stage_tasks.items, 0..) |t, i| {
-        s_tasks[i] = try allocator.dupe(u8, t);
-        tduped += 1;
-    }
+    // Same dupe-with-partial-free-on-error shape as dupeDeps(); reused rather than inlined.
+    const s_tasks = try dupeDeps(allocator, stage_tasks.items);
+    assert(s_tasks.len == stage_tasks.items.len); // dupeDeps() preserves the element count.
 
     // Allocate and dupe task params
     const s_task_params = try allocator.alloc([2][]const u8, stage_task_params.items.len);
@@ -300,6 +330,7 @@ fn flushPendingStage(
         .task_params = s_task_params,
     };
     try workflow_stages.append(allocator, new_stage);
+    assert(workflow_stages.items.len == stages_count_before + 1); // Exactly one stage flushed.
 
     // If we auto-generated the name, free it now (it was duped into the Stage)
     if (stage_name == null) {
@@ -307,6 +338,46 @@ fn flushPendingStage(
     }
 
     return true;
+}
+
+/// Parse a `{ key = value, ... }` inline-table body (already stripped of its outer braces)
+/// into `task_params_map`, splitting on top-level commas while respecting nested `[]`/`{}`.
+/// Extracted from `parseTasksArrayWithParams` to keep that function under the line-length
+/// ratchet; behavior is unchanged (this is the same loop, just callable on its own).
+fn parseInlineParamsMap(params_str: []const u8, task_params_map: *std.StringHashMap([]const u8)) !void {
+    const pairs_count_before = task_params_map.count();
+    var param_start: usize = 0;
+    var param_pos: usize = 0;
+    var param_depth: i32 = 0;
+
+    while (param_pos <= params_str.len) {
+        const p_is_end = param_pos == params_str.len;
+        const p_is_delim = !p_is_end and params_str[param_pos] == ',' and param_depth == 0;
+
+        if (!p_is_end) {
+            if (params_str[param_pos] == '[' or params_str[param_pos] == '{') param_depth += 1;
+            if (params_str[param_pos] == ']' or params_str[param_pos] == '}') param_depth -= 1;
+        }
+
+        if (p_is_delim or p_is_end) {
+            const param_field = std.mem.trim(u8, params_str[param_start..param_pos], " \t");
+            if (param_field.len > 0) {
+                const param_eq = std.mem.indexOf(u8, param_field, "=") orelse {
+                    param_start = param_pos + 1;
+                    param_pos += 1;
+                    continue;
+                };
+                const param_key = std.mem.trim(u8, param_field[0..param_eq], " \t");
+                const param_val = std.mem.trim(u8, param_field[param_eq + 1 ..], " \t\"");
+                try task_params_map.put(param_key, param_val);
+            }
+            param_start = param_pos + 1;
+        }
+        param_pos += 1;
+    }
+
+    // Never inserts more pairs than fields split from params_str could produce.
+    assert(task_params_map.count() >= pairs_count_before);
 }
 
 /// Parse a tasks array that can contain both plain strings and inline tables with params.
@@ -318,6 +389,8 @@ fn parseTasksArrayWithParams(
     stage_tasks: *std.ArrayList([]const u8),
     stage_task_params: *std.ArrayList([2][]const u8),
 ) !void {
+    const tasks_count_before = stage_tasks.items.len;
+
     var pos: usize = 0;
     while (pos < tasks_str.len) {
         // Skip whitespace
@@ -389,35 +462,7 @@ fn parseTasksArrayWithParams(
                             // Parse params inline table: { key = value, ... }
                             if (std.mem.startsWith(u8, field_value_raw, "{") and std.mem.endsWith(u8, field_value_raw, "}")) {
                                 const params_str = field_value_raw[1 .. field_value_raw.len - 1];
-                                var param_start: usize = 0;
-                                var param_pos: usize = 0;
-                                var param_depth: i32 = 0;
-
-                                while (param_pos <= params_str.len) {
-                                    const p_is_end = param_pos == params_str.len;
-                                    const p_is_delim = !p_is_end and params_str[param_pos] == ',' and param_depth == 0;
-
-                                    if (!p_is_end) {
-                                        if (params_str[param_pos] == '[' or params_str[param_pos] == '{') param_depth += 1;
-                                        if (params_str[param_pos] == ']' or params_str[param_pos] == '}') param_depth -= 1;
-                                    }
-
-                                    if (p_is_delim or p_is_end) {
-                                        const param_field = std.mem.trim(u8, params_str[param_start..param_pos], " \t");
-                                        if (param_field.len > 0) {
-                                            const param_eq = std.mem.indexOf(u8, param_field, "=") orelse {
-                                                param_start = param_pos + 1;
-                                                param_pos += 1;
-                                                continue;
-                                            };
-                                            const param_key = std.mem.trim(u8, param_field[0..param_eq], " \t");
-                                            const param_val = std.mem.trim(u8, param_field[param_eq + 1 ..], " \t\"");
-                                            try task_params_map.put(param_key, param_val);
-                                        }
-                                        param_start = param_pos + 1;
-                                    }
-                                    param_pos += 1;
-                                }
+                                try parseInlineParamsMap(params_str, &task_params_map);
                             }
                         }
                     }
@@ -448,6 +493,9 @@ fn parseTasksArrayWithParams(
             pos += 1;
         }
     }
+
+    assert(pos >= tasks_str.len); // The loop only exits once pos has reached the end.
+    assert(stage_tasks.items.len >= tasks_count_before); // Tasks are only ever appended.
 }
 
 /// Parse inline stages syntax: stages = [{ name = "...", tasks = [...] }, {...}]
@@ -8191,4 +8239,52 @@ test "parse missing load_dotenv defaults to true" {
     defer config.deinit();
 
     try std.testing.expectEqual(true, config.load_dotenv);
+}
+
+test "stripQuotes: string with no closing quote is returned unstripped" {
+    // Only one side is a `"`, so the quote-stripping condition (both ends must
+    // be `"`) never fires and the original (trimmed) string comes back with
+    // its leading quote character still attached.
+    const unterminated = "\"unterminated";
+    const result = stripQuotes(unterminated);
+    try std.testing.expectEqualStrings(unterminated, result);
+}
+
+test "bracketDelta: unbalanced closing brackets yield negative depth" {
+    // A run of closing brackets with no matching opens is valid TOML-parser
+    // input (e.g. a torn/partial line) and must report a negative net depth
+    // rather than saturating at zero or erroring.
+    try std.testing.expectEqual(@as(i32, -3), bracketDelta("]}]"));
+}
+
+test "bracketDelta: brackets inside a quoted string do not affect depth" {
+    // `[` / `]` characters that appear inside a double-quoted string (e.g.
+    // "${matrix.x}") are not structural TOML brackets and must not perturb
+    // the net depth used to decide whether a multi-line value is still open.
+    try std.testing.expectEqual(@as(i32, 0), bracketDelta("\"[not a bracket]\""));
+}
+
+test "countTripleQuotes: string with zero triple-quote occurrences returns zero" {
+    // Plain single-quoted values (the common case) contain no `"""` at all;
+    // the counter must not false-positive on the lone double-quote pairs.
+    try std.testing.expectEqual(@as(usize, 0), countTripleQuotes("value = \"hello world\""));
+}
+
+test "parseInlineTableField: field absent from inline table returns null" {
+    // `on_success` is never a key in this inline table; the lookup must
+    // report absence rather than returning a stale/adjacent value.
+    const inner = "cmd = \"echo hi\", on_error = \"fail\"";
+    try std.testing.expectEqual(@as(?[]const u8, null), parseInlineTableField(inner, "on_success"));
+}
+
+test "parseInlineTableField: unterminated quoted value falls back to raw remainder" {
+    // When a quoted field value never closes, the function does not error or
+    // return null: it falls through to the unquoted branch and returns the
+    // raw (still `"`-prefixed) remainder up to the next comma or end of
+    // string. This characterizes existing behavior on malformed input, not
+    // a desired outcome.
+    const inner = "cmd = \"echo hello";
+    const result = parseInlineTableField(inner, "cmd");
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("\"echo hello", result.?);
 }
