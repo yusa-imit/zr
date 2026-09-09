@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assertions on every public `CacheStore` function via `src/stdx.zig`'s `assert`/`maybe`
   helpers, following the pattern established for `graph/dag.zig`/`exec/scheduler.zig`.
   `src/config/parser.zig` remains for a follow-up cycle.
+- **Assertion baseline, `src/config/parser.zig`, partial** (plan 001 item 3, continued):
+  pre/post/invariant assertions via `src/stdx.zig` on `parseTaskParamsArray`,
+  `tryAddGroupConfig`, `parseScopeValue`, `dupeConstraintScope`, `copyConditionalDep`,
+  `copyTaskHook`, `flushPendingStage`, and `parseTasksArrayWithParams`; a new
+  `parseInlineParamsMap` extraction (out of `parseTasksArrayWithParams`, same behavior) and a
+  new `splitTopLevelBraceTables` extraction (out of `parseTaskParamsArray`, to stay under the
+  70-line tidy ratchet) each carry their own assertions. 4 new characterization tests for
+  `stripQuotes`/`bracketDelta`/`countTripleQuotes`/`parseInlineTableField`. The remaining
+  helpers in this file, the 5,100-line `parseToml`, and the 12 `catch unreachable` proof
+  comments called for by plan 001 item 3 remain for follow-up cycles.
 - **`tidy` build step** (plan 001 item 2): `zig build tidy`, wired as a `zig build test`
   dependency, vendored from the kingdom's `citadel/templates/tidy` reference. Enforces line
   length (100), function length (70, ratcheted via `tidy_baseline.txt` for the 844 pre-existing
