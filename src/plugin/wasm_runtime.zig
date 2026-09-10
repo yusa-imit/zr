@@ -1,4 +1,6 @@
 const std = @import("std");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 /// WASM plugin runtime using interpreter-based execution.
 /// This module provides sandboxed execution of WASM plugins with minimal overhead.
@@ -11,7 +13,6 @@ const std = @import("std");
 ///
 /// Note: This is a pure Zig implementation for maximum portability.
 /// For production use with external WASM files, consider linking to Wasm3 C library.
-
 pub const WasmError = error{
     InvalidModule,
     FunctionNotFound,
@@ -208,56 +209,71 @@ pub const BinaryReader = struct {
         return std.mem.readInt(u32, bytes[0..4], .little);
     }
 
-    /// Read LEB128 unsigned integer
+    /// Read LEB128 unsigned integer.
+    ///
+    /// `shift` is widened to `u8` rather than the `u5` the `<<` operator strictly needs:
+    /// the loop bound below only ever applies a shift < 32, but a narrower counter type
+    /// would overflow on its own `+= 7` step on the final iteration before that bound is
+    /// even checked (see the regression test for the exact byte sequence that triggered it).
     pub fn readVarU32(self: *BinaryReader) !u32 {
+        const bytes_max = 5; // Ceil(32 / 7): the widest ULEB128 encoding of a 32-bit value.
         var result: u32 = 0;
-        var shift: u5 = 0;
-        while (true) {
+        var shift: u8 = 0;
+        for (0..bytes_max) |_| {
+            assert(shift < 32);
             const byte = try self.readByte();
-            result |= (@as(u32, byte & 0x7F) << shift);
-            if ((byte & 0x80) == 0) break;
+            result |= (@as(u32, byte & 0x7F) << @intCast(shift));
+            if ((byte & 0x80) == 0) {
+                assert(self.pos <= self.data.len);
+                return result;
+            }
             shift += 7;
-            if (shift >= 35) return error.InvalidModule; // Max 5 bytes for u32
         }
-        return result;
+        return error.InvalidModule;
     }
 
-    /// Read LEB128 signed integer
+    /// Read LEB128 signed integer. See `readVarU32` for why `shift` is a `u8`.
     pub fn readVarI32(self: *BinaryReader) !i32 {
+        const bytes_max = 5; // Ceil(32 / 7): the widest SLEB128 encoding of a 32-bit value.
         var result: i32 = 0;
-        var shift: u5 = 0;
+        var shift: u8 = 0;
         var byte: u8 = undefined;
-        while (true) {
+        for (0..bytes_max) |_| {
+            assert(shift < 32);
             byte = try self.readByte();
-            result |= (@as(i32, @intCast(byte & 0x7F)) << shift);
+            result |= (@as(i32, @intCast(byte & 0x7F)) << @intCast(shift));
             shift += 7;
-            if ((byte & 0x80) == 0) break;
-            if (shift >= 35) return error.InvalidModule;
+            if ((byte & 0x80) == 0) {
+                if (shift < 32 and (byte & 0x40) != 0) {
+                    result |= @as(i32, -1) << @intCast(shift);
+                }
+                assert(self.pos <= self.data.len);
+                return result;
+            }
         }
-        // Sign extend if negative
-        if (shift < 32 and (byte & 0x40) != 0) {
-            result |= @as(i32, -1) << shift;
-        }
-        return result;
+        return error.InvalidModule;
     }
 
-    /// Read LEB128 signed 64-bit integer
+    /// Read LEB128 signed 64-bit integer. See `readVarU32` for why `shift` is a `u8`.
     pub fn readVarI64(self: *BinaryReader) !i64 {
+        const bytes_max = 10; // Ceil(64 / 7): the widest SLEB128 encoding of a 64-bit value.
         var result: i64 = 0;
-        var shift: u6 = 0;
+        var shift: u8 = 0;
         var byte: u8 = undefined;
-        while (true) {
+        for (0..bytes_max) |_| {
+            assert(shift < 64);
             byte = try self.readByte();
-            result |= (@as(i64, @intCast(byte & 0x7F)) << shift);
+            result |= (@as(i64, @intCast(byte & 0x7F)) << @intCast(shift));
             shift += 7;
-            if ((byte & 0x80) == 0) break;
-            if (shift >= 70) return error.InvalidModule;
+            if ((byte & 0x80) == 0) {
+                if (shift < 64 and (byte & 0x40) != 0) {
+                    result |= @as(i64, -1) << @intCast(shift);
+                }
+                assert(self.pos <= self.data.len);
+                return result;
+            }
         }
-        // Sign extend if negative
-        if (shift < 64 and (byte & 0x40) != 0) {
-            result |= @as(i64, -1) << shift;
-        }
-        return result;
+        return error.InvalidModule;
     }
 
     /// Read UTF-8 name (length-prefixed)
@@ -1111,6 +1127,45 @@ test "BinaryReader: readVarI64" {
     }
 }
 
+test "BinaryReader: readVarU32 at the maximum 5-byte width does not overflow the shift counter" {
+    // 4294967295 (u32 max) needs the full 5 bytes of ULEB128 width.
+    const data = [_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0x0F };
+    var reader = BinaryReader.init(&data);
+    try std.testing.expectEqual(@as(u32, 4294967295), try reader.readVarU32());
+}
+
+test "BinaryReader: readVarU32 rejects a 6th continuation byte" {
+    const data = [_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F };
+    var reader = BinaryReader.init(&data);
+    try std.testing.expectError(error.InvalidModule, reader.readVarU32());
+}
+
+test "BinaryReader: readVarI32 at the maximum 5-byte width does not overflow the shift counter" {
+    // i32 min (-2147483648) needs the full 5 bytes of SLEB128 width.
+    const data = [_]u8{ 0x80, 0x80, 0x80, 0x80, 0x78 };
+    var reader = BinaryReader.init(&data);
+    try std.testing.expectEqual(@as(i32, -2147483648), try reader.readVarI32());
+}
+
+test "BinaryReader: readVarI32 rejects a 6th continuation byte" {
+    const data = [_]u8{ 0x80, 0x80, 0x80, 0x80, 0x80, 0x78 };
+    var reader = BinaryReader.init(&data);
+    try std.testing.expectError(error.InvalidModule, reader.readVarI32());
+}
+
+test "BinaryReader: readVarI64 at the maximum 10-byte width does not overflow the shift counter" {
+    // i64 min (-9223372036854775808) needs the full 10 bytes of SLEB128 width.
+    const data = [_]u8{ 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7F };
+    var reader = BinaryReader.init(&data);
+    try std.testing.expectEqual(@as(i64, -9223372036854775808), try reader.readVarI64());
+}
+
+test "BinaryReader: readVarI64 rejects an 11th continuation byte" {
+    const data = [_]u8{ 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7F };
+    var reader = BinaryReader.init(&data);
+    try std.testing.expectError(error.InvalidModule, reader.readVarI64());
+}
+
 test "BinaryReader: readName" {
     const allocator = std.testing.allocator;
     const data = [_]u8{ 0x05, 'h', 'e', 'l', 'l', 'o' };
@@ -1236,7 +1291,9 @@ test "Instance: loadModule - complete module" {
         0x01, 0x00, 0x00, 0x00, // version
 
         // Type section
-        0x01, 0x07, 0x01, 0x60, 0x01, 0x7F, 0x01, 0x7F,
+        0x01, 0x07, 0x01, 0x60,
+        0x01, 0x7F, 0x01,
+        0x7F,
 
         // Function section
         0x03, 0x02, 0x01, 0x00, // 1 function, type 0
@@ -1245,7 +1302,9 @@ test "Instance: loadModule - complete module" {
         0x05, 0x03, 0x01, 0x00, 0x01, // 1 memory, no max, 1 page
 
         // Export section
-        0x07, 0x07, 0x01, 0x03, 'a', 'd', 'd', 0x00, 0x00,
+        0x07, 0x07, 0x01, 0x03, 'a',
+        'd',  'd',  0x00,
+        0x00,
 
         // Code section
         0x0A, 0x09, 0x01, // code section, 1 function
@@ -1329,13 +1388,16 @@ test "Interpreter: i32.const and i32.add" {
         0x01, 0x00, 0x00, 0x00, // version
 
         // Type section: (i32) -> i32
-        0x01, 0x07, 0x01, 0x60, 0x01, 0x7F, 0x01, 0x7F,
+        0x01, 0x07, 0x01, 0x60,
+        0x01, 0x7F, 0x01, 0x7F,
 
         // Function section: 1 function of type 0
         0x03, 0x02, 0x01, 0x00,
 
         // Export section: export function 0 as "add"
-        0x07, 0x07, 0x01, 0x03, 'a', 'd', 'd', 0x00, 0x00,
+        0x07, 0x07, 0x01, 0x03,
+        'a',  'd',  'd',  0x00,
+        0x00,
 
         // Code section
         0x0A, 0x09, 0x01, // 1 function
@@ -1365,13 +1427,19 @@ test "Interpreter: i32 arithmetic operations" {
         0x01, 0x00, 0x00, 0x00, // version
 
         // Type section: (i32, i32) -> i32
-        0x01, 0x08, 0x01, 0x60, 0x02, 0x7F, 0x7F, 0x01, 0x7F,
+        0x01, 0x08, 0x01, 0x60,
+        0x02, 0x7F, 0x7F, 0x01,
+        0x7F,
 
         // Function section
-        0x03, 0x02, 0x01, 0x00,
+        0x03, 0x02, 0x01,
+        0x00,
 
         // Export section
-        0x07, 0x08, 0x01, 0x04, 'c', 'a', 'l', 'c', 0x00, 0x00,
+        0x07, 0x08, 0x01,
+        0x04, 'c',  'a',  'l',
+        'c',  0x00,
+        0x00,
 
         // Code section
         0x0A, 0x0C, 0x01, // 1 function
@@ -1407,13 +1475,17 @@ test "Interpreter: local variables" {
         0x01, 0x00, 0x00, 0x00, // version
 
         // Type section: (i32) -> i32
-        0x01, 0x07, 0x01, 0x60, 0x01, 0x7F, 0x01, 0x7F,
+        0x01, 0x07, 0x01, 0x60,
+        0x01, 0x7F, 0x01, 0x7F,
 
         // Function section
         0x03, 0x02, 0x01, 0x00,
 
         // Export section
-        0x07, 0x08, 0x01, 0x04, 't', 'e', 's', 't', 0x00, 0x00,
+        0x07, 0x08, 0x01, 0x04,
+        't',  'e',  's',  't',
+        0x00,
+        0x00,
 
         // Code section
         0x0A, 0x11, 0x01, // section size=17, 1 function
@@ -1446,13 +1518,18 @@ test "Interpreter: comparison operations" {
         0x01, 0x00, 0x00, 0x00, // version
 
         // Type section: (i32, i32) -> i32
-        0x01, 0x08, 0x01, 0x60, 0x02, 0x7F, 0x7F, 0x01, 0x7F,
+        0x01, 0x08, 0x01, 0x60,
+        0x02, 0x7F, 0x7F, 0x01,
+        0x7F,
 
         // Function section
-        0x03, 0x02, 0x01, 0x00,
+        0x03, 0x02, 0x01,
+        0x00,
 
         // Export section
-        0x07, 0x06, 0x01, 0x02, 'g', 't', 0x00, 0x00,
+        0x07, 0x06, 0x01,
+        0x02, 'g',  't',  0x00,
+        0x00,
 
         // Code section
         0x0A, 0x09, 0x01, // 1 function
@@ -1489,16 +1566,22 @@ test "Interpreter: memory operations" {
         0x01, 0x00, 0x00, 0x00, // version
 
         // Type section: () -> i32
-        0x01, 0x06, 0x01, 0x60, 0x00, 0x01, 0x7F,
+        0x01, 0x06, 0x01, 0x60,
+        0x00, 0x01, 0x7F,
 
         // Function section
-        0x03, 0x02, 0x01, 0x00,
+        0x03,
+        0x02, 0x01, 0x00,
 
         // Memory section: 1 page
-        0x05, 0x03, 0x01, 0x00, 0x01,
+        0x05,
+        0x03, 0x01, 0x00, 0x01,
 
         // Export section
-        0x07, 0x08, 0x01, 0x04, 't', 'e', 's', 't', 0x00, 0x00,
+        0x07, 0x08, 0x01, 0x04,
+        't',  'e',  's',  't',
+        0x00,
+        0x00,
 
         // Code section
         0x0A, 0x10, 0x01, // 1 function

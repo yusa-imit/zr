@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines recorded, not gated).
 
 ### Fixed
+- **WASM plugin LEB128 decoder shift-counter overflow**: `src/plugin/wasm_runtime.zig`'s
+  `readVarU32`/`readVarI32`/`readVarI64` tracked their bit-shift amount in a `u5`/`u6` too
+  narrow to hold the increment on the final byte of a maximal-width encoding — for the signed
+  decoders this panicked on any legitimate 5-byte (i32) or 10-byte (i64) SLEB128 value, not
+  just malformed input. Fixed by widening the counter to `u8`, replacing the unbounded
+  `while (true)` with a `for (0..bytes_max)` loop, and adding shift-bound assertions; 6 new
+  regression tests cover the u32/i32/i64 maximal-width boundary and the one-byte-too-many
+  negative-space case for each.
 - **Vendored `tidy` use-after-free**: `checkFunctionLength` freed a hashmap-interned lookup key
   on a repeated function name (e.g. the many `deinit`/`waitForEvent` overloads across sibling
   structs in `config/types.zig` and `watch/native.zig`) before reading that same key back via
