@@ -247,6 +247,8 @@ test "formatManPage: basic task" {
         .generates = &[_][]const u8{},
     };
 
+    // std.testing.allocator only fails on genuine OOM or a deliberately wrapped failing
+    // allocator, neither of which applies to this fixed-size test allocation.
     var buf = std.ArrayList(u8).initCapacity(allocator, 1024) catch unreachable;
     defer buf.deinit(allocator);
 

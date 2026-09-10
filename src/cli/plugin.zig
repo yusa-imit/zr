@@ -976,6 +976,8 @@ test "plugin create: creates scaffold files in temp dir" {
     try std.testing.expectEqual(@as(u8, 0), code);
 
     // Verify all scaffold files were created.
+    // cmdPluginCreate returning 0 above already guarantees these exact files exist, so
+    // access() cannot fail here.
     tmp.dir.access("my-plugin/plugin.toml", .{}) catch unreachable;
     tmp.dir.access("my-plugin/plugin.h", .{}) catch unreachable;
     tmp.dir.access("my-plugin/plugin_impl.c", .{}) catch unreachable;
@@ -1037,5 +1039,6 @@ test "plugin create: --output-dir flag parsed correctly" {
     const args = [_][]const u8{ "zr", "plugin", "create", "flagged-plugin", "--output-dir", tmp_path };
     const code = try cmdPlugin(allocator, "create", &args, "zr.toml", false, &out_w, &err_w, false);
     try std.testing.expectEqual(@as(u8, 0), code);
+    // cmdPlugin returning 0 above already guarantees this file exists.
     tmp.dir.access("flagged-plugin/plugin.toml", .{}) catch unreachable;
 }

@@ -1409,15 +1409,20 @@ fn formatBytes(bytes: u64) [64]u8 {
     var buf: [64]u8 = undefined;
     @memset(&buf, 0);
     if (bytes < 1024) {
+        // Longest output here is "1023 B" (6 bytes) into a 64-byte buffer: never overflows.
         _ = std.fmt.bufPrint(&buf, "{d} B", .{bytes}) catch unreachable;
     } else if (bytes < 1024 * 1024) {
         const kb = @as(f64, @floatFromInt(bytes)) / 1024.0;
+        // kb < 1024 here, so "{d:.2} KB" is at most "1023.99 KB" (11 bytes): never overflows.
         _ = std.fmt.bufPrint(&buf, "{d:.2} KB", .{kb}) catch unreachable;
     } else if (bytes < 1024 * 1024 * 1024) {
         const mb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0);
+        // mb < 1024 here, so "{d:.2} MB" is at most "1023.99 MB" (11 bytes): never overflows.
         _ = std.fmt.bufPrint(&buf, "{d:.2} MB", .{mb}) catch unreachable;
     } else {
         const gb = @as(f64, @floatFromInt(bytes)) / (1024.0 * 1024.0 * 1024.0);
+        // gb <= maxInt(u64)/1024^3 (~1.7e10), so "{d:.2} GB" is at most ~20 bytes: never
+        // overflows a 64-byte buffer. Proven by the maxInt(u64) boundary test below.
         _ = std.fmt.bufPrint(&buf, "{d:.2} GB", .{gb}) catch unreachable;
     }
     return buf;
