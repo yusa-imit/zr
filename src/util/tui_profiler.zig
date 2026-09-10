@@ -309,6 +309,9 @@ pub const TuiProfiler = struct {
         // Profiler.reset() only clears profiles and current_frame, not root_scopes
         // We need to deinit and re-init to clear root_scopes completely
         self.render_profiler.deinit();
+        // sailor v2.99.0's Profiler.init (src/profiler.zig:107) declares `!Self` but its body
+        // only assigns fields, three of them empty-initialized containers (`.{}`) — it performs
+        // no fallible operation and can never actually return an error.
         self.render_profiler = sailor.profiler.Profiler.init(self.allocator, self.render_threshold_ms) catch unreachable;
 
         self.memory_tracker.reset();
