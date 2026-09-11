@@ -348,7 +348,6 @@ src/config/parser.zig:ban-list:38
 src/config/parser.zig:doc-header:1
 src/config/parser.zig:flushCurrentTemplate:123
 src/config/parser.zig:flushPendingStage:81
-src/config/parser.zig:flushProfile:76
 src/config/parser.zig:line-length:250
 src/config/parser.zig:parseInlineStages:128
 src/config/parser.zig:parseInlineWorkflowMatrix:79

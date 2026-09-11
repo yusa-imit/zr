@@ -6227,40 +6227,28 @@ fn flushProfile(
     profile_vars: *std.ArrayList([2][]const u8),
     profile_description: ?[]const u8,
 ) !void {
+    stdx.maybe(pname.len == 0); // Section-header profile names; empty is degenerate but valid.
+    const overrides_count_before = profile_task_overrides.count();
+
     const p_name = try allocator.dupe(u8, pname);
     errdefer allocator.free(p_name);
 
-    const p_env = try allocator.alloc([2][]const u8, profile_env.items.len);
-    var env_duped: usize = 0;
+    const p_env = try dupeEnv(allocator, profile_env.items);
     errdefer {
-        for (p_env[0..env_duped]) |pair| {
+        for (p_env) |pair| {
             allocator.free(pair[0]);
             allocator.free(pair[1]);
         }
         allocator.free(p_env);
     }
-    for (profile_env.items, 0..) |pair, i| {
-        p_env[i][0] = try allocator.dupe(u8, pair[0]);
-        errdefer allocator.free(p_env[i][0]);
-        p_env[i][1] = try allocator.dupe(u8, pair[1]);
-        env_duped += 1;
-    }
 
-    // Allocate and dupe vars
-    const p_vars = try allocator.alloc([2][]const u8, profile_vars.items.len);
-    var vars_duped: usize = 0;
+    const p_vars = try dupeEnv(allocator, profile_vars.items);
     errdefer {
-        for (p_vars[0..vars_duped]) |pair| {
+        for (p_vars) |pair| {
             allocator.free(pair[0]);
             allocator.free(pair[1]);
         }
         allocator.free(p_vars);
-    }
-    for (profile_vars.items, 0..) |pair, i| {
-        p_vars[i][0] = try allocator.dupe(u8, pair[0]);
-        errdefer allocator.free(p_vars[i][0]);
-        p_vars[i][1] = try allocator.dupe(u8, pair[1]);
-        vars_duped += 1;
     }
 
     // Dupe description if present
@@ -6285,6 +6273,9 @@ fn flushProfile(
     // Clear source map without freeing (ownership transferred)
     profile_task_overrides.clearRetainingCapacity();
 
+    assert(new_overrides.count() == overrides_count_before); // Overrides transferred, none lost.
+    assert(profile_task_overrides.count() == 0); // Source map ownership fully transferred out.
+
     const profile = Profile{
         .name = p_name,
         .env = p_env,
@@ -6293,6 +6284,7 @@ fn flushProfile(
         .vars = p_vars,
     };
     try config.profiles.put(p_name, profile);
+    assert(config.profiles.contains(p_name)); // The flushed profile is now retrievable by name.
 }
 
 /// Flush a pending [templates.NAME] section into config.templates (issue #124).
@@ -6321,6 +6313,8 @@ fn flushCurrentTemplate(
     template_max_cpu: ?u32,
     template_max_memory: ?u64,
 ) !void {
+    stdx.maybe(template_cmd == null); // A template with no cmd is skipped, not an error.
+    stdx.maybe(tmpl_name.len == 0); // Section-header template names; empty is degenerate but valid.
     const cmd = template_cmd orelse return;
 
     const tmpl_name_owned = try allocator.dupe(u8, tmpl_name);
@@ -6338,63 +6332,37 @@ fn flushCurrentTemplate(
     const tmpl_condition_owned = if (template_condition) |cond| try allocator.dupe(u8, cond) else null;
     errdefer if (tmpl_condition_owned) |c| allocator.free(c);
 
-    const tmpl_deps_owned = try allocator.alloc([]const u8, template_deps.items.len);
-    var deps_duped: usize = 0;
+    const tmpl_deps_owned = try dupeDeps(allocator, template_deps.items);
     errdefer {
-        for (tmpl_deps_owned[0..deps_duped]) |d| allocator.free(d);
+        for (tmpl_deps_owned) |d| allocator.free(d);
         allocator.free(tmpl_deps_owned);
     }
-    for (template_deps.items, 0..) |d, i| {
-        tmpl_deps_owned[i] = try allocator.dupe(u8, d);
-        deps_duped += 1;
-    }
 
-    const tmpl_deps_serial_owned = try allocator.alloc([]const u8, template_deps_serial.items.len);
-    var deps_serial_duped: usize = 0;
+    const tmpl_deps_serial_owned = try dupeDeps(allocator, template_deps_serial.items);
     errdefer {
-        for (tmpl_deps_serial_owned[0..deps_serial_duped]) |d| allocator.free(d);
+        for (tmpl_deps_serial_owned) |d| allocator.free(d);
         allocator.free(tmpl_deps_serial_owned);
     }
-    for (template_deps_serial.items, 0..) |d, i| {
-        tmpl_deps_serial_owned[i] = try allocator.dupe(u8, d);
-        deps_serial_duped += 1;
-    }
 
-    const tmpl_env_owned = try allocator.alloc([2][]const u8, template_env.items.len);
-    var env_duped: usize = 0;
+    const tmpl_env_owned = try dupeEnv(allocator, template_env.items);
     errdefer {
-        for (tmpl_env_owned[0..env_duped]) |pair| {
+        for (tmpl_env_owned) |pair| {
             allocator.free(pair[0]);
             allocator.free(pair[1]);
         }
         allocator.free(tmpl_env_owned);
     }
-    for (template_env.items, 0..) |pair, i| {
-        tmpl_env_owned[i][0] = try allocator.dupe(u8, pair[0]);
-        tmpl_env_owned[i][1] = try allocator.dupe(u8, pair[1]);
-        env_duped += 1;
-    }
 
-    const tmpl_toolchain_owned = try allocator.alloc([]const u8, template_toolchain.items.len);
-    var toolchain_duped: usize = 0;
+    const tmpl_toolchain_owned = try dupeDeps(allocator, template_toolchain.items);
     errdefer {
-        for (tmpl_toolchain_owned[0..toolchain_duped]) |t| allocator.free(t);
+        for (tmpl_toolchain_owned) |t| allocator.free(t);
         allocator.free(tmpl_toolchain_owned);
     }
-    for (template_toolchain.items, 0..) |t, i| {
-        tmpl_toolchain_owned[i] = try allocator.dupe(u8, t);
-        toolchain_duped += 1;
-    }
 
-    const tmpl_params_owned = try allocator.alloc([]const u8, template_params.items.len);
-    var params_duped: usize = 0;
+    const tmpl_params_owned = try dupeDeps(allocator, template_params.items);
     errdefer {
-        for (tmpl_params_owned[0..params_duped]) |p| allocator.free(p);
+        for (tmpl_params_owned) |p| allocator.free(p);
         allocator.free(tmpl_params_owned);
-    }
-    for (template_params.items, 0..) |p, i| {
-        tmpl_params_owned[i] = try allocator.dupe(u8, p);
-        params_duped += 1;
     }
 
     const template = types.TaskTemplate{
@@ -6420,6 +6388,19 @@ fn flushCurrentTemplate(
     };
 
     try config.templates.put(tmpl_name_owned, template);
+    assert(config.templates.contains(tmpl_name_owned)); // The flushed template is now retrievable.
+}
+
+/// Map a TOML hook-point string to its enum value, or null if unrecognized.
+fn parseHookPoint(point: []const u8) ?types.HookPoint {
+    stdx.maybe(point.len == 0); // Empty point strings are valid TOML user data; just unrecognized.
+
+    if (std.mem.eql(u8, point, "before")) return types.HookPoint.before;
+    if (std.mem.eql(u8, point, "after")) return types.HookPoint.after;
+    if (std.mem.eql(u8, point, "success")) return types.HookPoint.success;
+    if (std.mem.eql(u8, point, "failure")) return types.HookPoint.failure;
+    if (std.mem.eql(u8, point, "timeout")) return types.HookPoint.timeout;
+    return null;
 }
 
 /// Flush current hook into the destination list (v1.24.0)
@@ -6432,22 +6413,15 @@ fn flushCurrentHook(
     working_dir: ?[]const u8,
     env: *std.ArrayList([2][]const u8),
 ) !void {
+    stdx.maybe(cmd == null); // A hook table with no cmd is skipped, not an error.
+    stdx.maybe(point == null); // A hook table with no point is skipped, not an error.
+    const hooks_count_before = dest_hooks.items.len;
+
     // Hook requires cmd and point
     if (cmd == null or point == null) return;
 
-    // Parse hook point
-    const hook_point = if (std.mem.eql(u8, point.?, "before"))
-        types.HookPoint.before
-    else if (std.mem.eql(u8, point.?, "after"))
-        types.HookPoint.after
-    else if (std.mem.eql(u8, point.?, "success"))
-        types.HookPoint.success
-    else if (std.mem.eql(u8, point.?, "failure"))
-        types.HookPoint.failure
-    else if (std.mem.eql(u8, point.?, "timeout"))
-        types.HookPoint.timeout
-    else
-        return; // Invalid point, skip this hook
+    // Parse hook point; an unrecognized point string skips this hook.
+    const hook_point = parseHookPoint(point.?) orelse return;
 
     // Parse failure strategy
     const hook_failure_strategy = if (failure_strategy) |fs| blk: {
@@ -6477,6 +6451,7 @@ fn flushCurrentHook(
         hook_env[i][1] = try allocator.dupe(u8, pair[1]);
         env_duped += 1;
     }
+    assert(env_duped == env.items.len); // Every env pair was duped exactly once, none skipped.
 
     const hook = types.TaskHook{
         .cmd = hook_cmd,
@@ -6487,6 +6462,7 @@ fn flushCurrentHook(
     };
 
     try dest_hooks.append(allocator, hook);
+    assert(dest_hooks.items.len == hooks_count_before + 1); // Exactly one hook was appended.
 }
 
 test "parse timeout and allow_failure from toml" {
@@ -8688,6 +8664,245 @@ test "joinMultilineValues: a bracketed array spanning multiple physical lines is
     try std.testing.expect(std.mem.indexOf(u8, first_line, "\"a\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, first_line, "\"b\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, first_line, "]") != null);
+}
+
+// --- flushProfile ---
+
+test "flushProfile: adds a profile with duped env, vars, description, and transferred overrides" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var profile_env = std.ArrayList([2][]const u8){};
+    defer profile_env.deinit(allocator);
+    try profile_env.append(allocator, .{ "FOO", "bar" });
+
+    var profile_task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+    defer profile_task_overrides.deinit();
+    const override_key = try allocator.dupe(u8, "build");
+    try profile_task_overrides.put(override_key, ProfileTaskOverride{ .env = &.{} });
+
+    var profile_vars = std.ArrayList([2][]const u8){};
+    defer profile_vars.deinit(allocator);
+    try profile_vars.append(allocator, .{ "STAGE", "prod" });
+
+    try flushProfile(
+        allocator,
+        &config,
+        "release",
+        &profile_env,
+        &profile_task_overrides,
+        &profile_vars,
+        "Release profile",
+    );
+
+    // Ownership of the override map was transferred into the profile; the source is now empty.
+    try std.testing.expectEqual(@as(usize, 0), profile_task_overrides.count());
+
+    const profile = config.profiles.get("release").?;
+    try std.testing.expectEqualStrings("release", profile.name);
+    try std.testing.expectEqual(@as(usize, 1), profile.env.len);
+    try std.testing.expectEqualStrings("FOO", profile.env[0][0]);
+    try std.testing.expectEqual(@as(usize, 1), profile.vars.len);
+    try std.testing.expectEqualStrings("prod", profile.vars[0][1]);
+    try std.testing.expectEqualStrings("Release profile", profile.description.?);
+    try std.testing.expectEqual(@as(usize, 1), profile.task_overrides.count());
+}
+
+test "flushProfile: empty name, env, vars, and null description are valid degenerate input" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var profile_env = std.ArrayList([2][]const u8){};
+    defer profile_env.deinit(allocator);
+    var profile_task_overrides = std.StringHashMap(ProfileTaskOverride).init(allocator);
+    defer profile_task_overrides.deinit();
+    var profile_vars = std.ArrayList([2][]const u8){};
+    defer profile_vars.deinit(allocator);
+
+    try flushProfile(
+        allocator,
+        &config,
+        "",
+        &profile_env,
+        &profile_task_overrides,
+        &profile_vars,
+        null,
+    );
+
+    const profile = config.profiles.get("").?;
+    try std.testing.expectEqual(@as(usize, 0), profile.env.len);
+    try std.testing.expectEqual(@as(usize, 0), profile.vars.len);
+    try std.testing.expect(profile.description == null);
+}
+
+// --- flushCurrentTemplate ---
+
+test "flushCurrentTemplate: null cmd is skipped without adding a template" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var deps = std.ArrayList([]const u8){};
+    defer deps.deinit(allocator);
+    var deps_serial = std.ArrayList([]const u8){};
+    defer deps_serial.deinit(allocator);
+    var env = std.ArrayList([2][]const u8){};
+    defer env.deinit(allocator);
+    var toolchain = std.ArrayList([]const u8){};
+    defer toolchain.deinit(allocator);
+    var params = std.ArrayList([]const u8){};
+    defer params.deinit(allocator);
+
+    try flushCurrentTemplate(
+        allocator,
+        &config,
+        "release",
+        null,
+        null,
+        null,
+        null,
+        &deps,
+        &deps_serial,
+        &env,
+        &toolchain,
+        &params,
+        null,
+        false,
+        0,
+        0,
+        false,
+        0,
+        false,
+        null,
+        null,
+    );
+
+    try std.testing.expectEqual(@as(usize, 0), config.templates.count());
+}
+
+test "flushCurrentTemplate: adds a template with every owned slice duped" {
+    const allocator = std.testing.allocator;
+    var config = Config.init(allocator);
+    defer config.deinit();
+
+    var deps = std.ArrayList([]const u8){};
+    defer deps.deinit(allocator);
+    try deps.append(allocator, "build");
+    var deps_serial = std.ArrayList([]const u8){};
+    defer deps_serial.deinit(allocator);
+    try deps_serial.append(allocator, "lint");
+    var env = std.ArrayList([2][]const u8){};
+    defer env.deinit(allocator);
+    try env.append(allocator, .{ "FOO", "bar" });
+    var toolchain = std.ArrayList([]const u8){};
+    defer toolchain.deinit(allocator);
+    try toolchain.append(allocator, "zig");
+    var params = std.ArrayList([]const u8){};
+    defer params.deinit(allocator);
+    try params.append(allocator, "target");
+
+    try flushCurrentTemplate(
+        allocator,
+        &config,
+        "release",
+        "zig build ${target}",
+        "sub/dir",
+        "Release template",
+        "true",
+        &deps,
+        &deps_serial,
+        &env,
+        &toolchain,
+        &params,
+        5000,
+        true,
+        3,
+        100,
+        true,
+        2,
+        true,
+        4,
+        1024,
+    );
+
+    const tmpl = config.templates.get("release").?;
+    try std.testing.expectEqualStrings("zig build ${target}", tmpl.cmd);
+    try std.testing.expectEqualStrings("sub/dir", tmpl.cwd.?);
+    try std.testing.expectEqual(@as(usize, 1), tmpl.deps.len);
+    try std.testing.expectEqualStrings("build", tmpl.deps[0]);
+    try std.testing.expectEqual(@as(usize, 1), tmpl.deps_serial.len);
+    try std.testing.expectEqual(@as(usize, 1), tmpl.env.len);
+    try std.testing.expectEqual(@as(usize, 1), tmpl.toolchain.len);
+    try std.testing.expectEqual(@as(usize, 1), tmpl.params.len);
+    try std.testing.expectEqual(@as(u64, 5000), tmpl.timeout_ms.?);
+    try std.testing.expectEqual(@as(u32, 3), tmpl.retry_max);
+}
+
+// --- flushCurrentHook ---
+
+test "flushCurrentHook: null cmd or null point is skipped without appending a hook" {
+    const allocator = std.testing.allocator;
+    var hooks = std.ArrayList(types.TaskHook){};
+    defer hooks.deinit(allocator);
+    var env = std.ArrayList([2][]const u8){};
+    defer env.deinit(allocator);
+
+    try flushCurrentHook(allocator, &hooks, null, "before", null, null, &env);
+    try flushCurrentHook(allocator, &hooks, "echo hi", null, null, null, &env);
+    try std.testing.expectEqual(@as(usize, 0), hooks.items.len);
+}
+
+test "flushCurrentHook: an unrecognized point string is skipped without appending a hook" {
+    const allocator = std.testing.allocator;
+    var hooks = std.ArrayList(types.TaskHook){};
+    defer hooks.deinit(allocator);
+    var env = std.ArrayList([2][]const u8){};
+    defer env.deinit(allocator);
+
+    try flushCurrentHook(allocator, &hooks, "echo hi", "midway", null, null, &env);
+    try std.testing.expectEqual(@as(usize, 0), hooks.items.len);
+}
+
+test "flushCurrentHook: appends a hook with duped cmd, env, and default failure strategy" {
+    const allocator = std.testing.allocator;
+    var hooks = std.ArrayList(types.TaskHook){};
+    defer {
+        for (hooks.items) |*h| h.deinit(allocator);
+        hooks.deinit(allocator);
+    }
+    var env = std.ArrayList([2][]const u8){};
+    defer env.deinit(allocator);
+    try env.append(allocator, .{ "FOO", "bar" });
+
+    try flushCurrentHook(allocator, &hooks, "echo hi", "success", null, "sub/dir", &env);
+
+    try std.testing.expectEqual(@as(usize, 1), hooks.items.len);
+    const hook = hooks.items[0];
+    try std.testing.expectEqualStrings("echo hi", hook.cmd);
+    try std.testing.expectEqual(types.HookPoint.success, hook.point);
+    try std.testing.expectEqual(types.HookFailureStrategy.continue_task, hook.failure_strategy);
+    try std.testing.expectEqualStrings("sub/dir", hook.working_dir.?);
+    try std.testing.expectEqual(@as(usize, 1), hook.env.len);
+}
+
+test "flushCurrentHook: 'abort_task' failure strategy is parsed from a matching string" {
+    const allocator = std.testing.allocator;
+    var hooks = std.ArrayList(types.TaskHook){};
+    defer {
+        for (hooks.items) |*h| h.deinit(allocator);
+        hooks.deinit(allocator);
+    }
+    var env = std.ArrayList([2][]const u8){};
+    defer env.deinit(allocator);
+
+    try flushCurrentHook(allocator, &hooks, "echo hi", "failure", "abort_task", null, &env);
+
+    try std.testing.expectEqual(
+        types.HookFailureStrategy.abort_task,
+        hooks.items[0].failure_strategy,
+    );
 }
 
 test "joinMultilineValues: an array left open at end-of-input terminates the join loop" {
