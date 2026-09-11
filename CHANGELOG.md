@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stripQuotes`/`bracketDelta`/`countTripleQuotes`/`parseInlineTableField`. The remaining
   helpers in this file, the 5,100-line `parseToml`, and the 12 `catch unreachable` proof
   comments called for by plan 001 item 3 remain for follow-up cycles.
+- **Assertion baseline, `src/config/parser.zig`, continued** (plan 001 item 3, continued):
+  pre/post/invariant assertions via `src/stdx.zig` on `validateSectionHeader`, `dupeDeps`,
+  `dupeEnv`, `parseSettingsTaskArray`, `parseInlineTableField`, `stripQuotes`,
+  `unescapeTomlString`, `finalizeWorkflowMatrix`, `bracketDelta`, `countTripleQuotes`, and
+  `joinMultilineValues`, following the same pattern. `flushProfile`, `flushCurrentTemplate`,
+  `flushCurrentHook`, and `parseToml` itself remain for follow-up cycles.
 - **`tidy` build step** (plan 001 item 2): `zig build tidy`, wired as a `zig build test`
   dependency, vendored from the kingdom's `citadel/templates/tidy` reference. Enforces line
   length (100), function length (70, ratcheted via `tidy_baseline.txt` for the 844 pre-existing
