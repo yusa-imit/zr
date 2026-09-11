@@ -650,10 +650,12 @@ pub const ParseError = error{
 /// Returns the content between start and the closing bracket.
 /// Returns error.MalformedSectionHeader if closing bracket is missing.
 fn validateSectionHeader(line: []const u8, prefix: []const u8) ParseError![]const u8 {
+    assert(prefix.len > 0); // Every call site passes a fixed non-empty section prefix literal.
     if (!std.mem.startsWith(u8, line, prefix)) {
         return error.MalformedSectionHeader;
     }
     const start = prefix.len;
+    assert(start <= line.len); // startsWith(line, prefix) guarantees prefix.len <= line.len.
     const end = std.mem.indexOf(u8, line[start..], "]") orelse {
         // Missing closing bracket - return helpful error
         std.debug.print("✗ [Config]: Malformed TOML section header: '{s}'\n", .{line});
@@ -663,11 +665,15 @@ fn validateSectionHeader(line: []const u8, prefix: []const u8) ParseError![]cons
     // Quoted TOML keys (e.g. [tasks."test:unit"]) must have their surrounding
     // quotes stripped so the stored name matches the literal key ("test:unit",
     // not "\"test:unit\""). Bare keys are returned unchanged.
-    return stripQuotes(line[start..][0..end]);
+    const result = stripQuotes(line[start..][0..end]);
+    assert(result.len <= end); // stripQuotes() only trims/dequotes, never grows the slice.
+    return result;
 }
 
 /// Duplicate dependency slice array (for workspace shared tasks, v1.63.0)
 fn dupeDeps(allocator: std.mem.Allocator, deps: []const []const u8) ![][]const u8 {
+    stdx.maybe(deps.len == 0); // An empty deps list is common, valid TOML user data.
+
     const result = try allocator.alloc([]const u8, deps.len);
     var duped: usize = 0;
     errdefer {
@@ -678,11 +684,16 @@ fn dupeDeps(allocator: std.mem.Allocator, deps: []const []const u8) ![][]const u
         result[i] = try allocator.dupe(u8, dep);
         duped += 1;
     }
+
+    assert(duped == deps.len); // Every element was duped exactly once, none skipped.
+    assert(result.len == deps.len); // The returned slice has the same element count as the input.
     return result;
 }
 
 /// Duplicate environment variable pairs (for workspace shared tasks, v1.63.0)
 fn dupeEnv(allocator: std.mem.Allocator, env: []const [2][]const u8) ![][2][]const u8 {
+    stdx.maybe(env.len == 0); // An empty env list is common, valid TOML user data.
+
     const result = try allocator.alloc([2][]const u8, env.len);
     var duped: usize = 0;
     errdefer {
@@ -698,6 +709,9 @@ fn dupeEnv(allocator: std.mem.Allocator, env: []const [2][]const u8) ![][2][]con
         result[i][1] = try allocator.dupe(u8, pair[1]);
         duped += 1;
     }
+
+    assert(duped == env.len); // Every pair was duped exactly once, none skipped.
+    assert(result.len == env.len); // The returned slice has the same element count as the input.
     return result;
 }
 
@@ -777,6 +791,8 @@ fn addWorkspaceSharedTask(
 /// Returns a newly allocated slice of duped strings.
 /// Caller owns the returned memory (freed via ProjectSettings.deinit).
 fn parseSettingsTaskArray(allocator: std.mem.Allocator, value: []const u8, existing: ?[]const []const u8) !?[]const []const u8 {
+    stdx.maybe(value.len == 0); // Empty TOML values are valid, if degenerate, user data.
+
     // Free existing if being replaced
     if (existing) |old| {
         for (old) |n| allocator.free(n);
@@ -792,6 +808,7 @@ fn parseSettingsTaskArray(allocator: std.mem.Allocator, value: []const u8, exist
         arr.deinit(allocator);
     }
     const inner = trimmed[1 .. trimmed.len - 1];
+    assert(inner.len == trimmed.len - 2); // Exactly one bracket sliced off each end.
     var it = std.mem.splitScalar(u8, inner, ',');
     while (it.next()) |item| {
         const name = std.mem.trim(u8, item, " \t\"'");
@@ -799,13 +816,21 @@ fn parseSettingsTaskArray(allocator: std.mem.Allocator, value: []const u8, exist
             try arr.append(allocator, try allocator.dupe(u8, name));
         }
     }
-    return try arr.toOwnedSlice(allocator);
+
+    const arr_count = arr.items.len;
+    const result = try arr.toOwnedSlice(allocator);
+    assert(result.len == arr_count); // toOwnedSlice() preserves the element count.
+    assert(result.len <= inner.len + 1); // At most one name per comma-delimited field in inner.
+    return result;
 }
 
 /// Extract the value of a field from an inline TOML table inner string.
 /// Given inner = `cmd = "echo hello", on_error = "fail"` and field = "cmd",
 /// returns the raw value `"echo hello"` (with quotes).
 fn parseInlineTableField(inner: []const u8, field: []const u8) ?[]const u8 {
+    assert(field.len > 0); // Every call site passes a fixed non-empty field-name literal.
+    stdx.maybe(inner.len == 0); // Inline table contents come from TOML user data.
+
     // Simple approach: find "field =" or "field=" in the inner string
     var search_buf: [128]u8 = undefined;
     const search1 = std.fmt.bufPrint(&search_buf, "{s} =", .{field}) catch return null;
@@ -813,6 +838,7 @@ fn parseInlineTableField(inner: []const u8, field: []const u8) ?[]const u8 {
         const search2 = std.fmt.bufPrint(&search_buf, "{s}=", .{field}) catch return null;
         break :blk if (std.mem.indexOf(u8, inner, search2)) |idx| idx + search2.len else return null;
     };
+    assert(search2_start <= inner.len); // Found within, or at the very end of, inner.
 
     const rest = std.mem.trim(u8, inner[search2_start..], " \t");
     if (rest.len == 0) return null;
@@ -820,21 +846,30 @@ fn parseInlineTableField(inner: []const u8, field: []const u8) ?[]const u8 {
     // If starts with quote, find matching end quote
     if (rest[0] == '"') {
         if (std.mem.indexOfScalarPos(u8, rest, 1, '"')) |end| {
-            return rest[0 .. end + 1]; // include quotes
+            const quoted = rest[0 .. end + 1]; // include quotes
+            assert(quoted.len <= rest.len); // Bounded slice of rest, never longer.
+            return quoted;
         }
     }
 
     // Unquoted: up to comma or end
     const end = std.mem.indexOfScalar(u8, rest, ',') orelse rest.len;
-    return std.mem.trim(u8, rest[0..end], " \t");
+    const result = std.mem.trim(u8, rest[0..end], " \t");
+    assert(result.len <= rest.len); // Trimmed slice of rest, never longer.
+    return result;
 }
 
 /// Strip surrounding double quotes from a string.
 /// If not quoted, return the string as-is.
 fn stripQuotes(s: []const u8) []const u8 {
+    stdx.maybe(s.len == 0); // Empty TOML values are valid, if degenerate, user data.
+
     const trimmed = std.mem.trim(u8, s, " \t");
+    assert(trimmed.len <= s.len); // trim() only removes bytes, never adds them.
     if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
-        return trimmed[1 .. trimmed.len - 1];
+        const result = trimmed[1 .. trimmed.len - 1];
+        assert(result.len == trimmed.len - 2); // Exactly one quote stripped from each end.
+        return result;
     }
     return trimmed;
 }
@@ -844,6 +879,8 @@ fn stripQuotes(s: []const u8) []const u8 {
 /// rather than erroring, to tolerate glob/regex-like content in cmd strings.
 /// Returns an allocated buffer the caller must free.
 fn unescapeTomlString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    stdx.maybe(s.len == 0); // Empty cmd/value strings are valid TOML user data.
+
     var out: std.ArrayList(u8) = .{};
     errdefer out.deinit(allocator);
     var i: usize = 0;
@@ -869,7 +906,10 @@ fn unescapeTomlString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
             i += 1;
         }
     }
-    return out.toOwnedSlice(allocator);
+
+    const result = try out.toOwnedSlice(allocator);
+    assert(result.len <= s.len); // Escape sequences only collapse two bytes into one, never expand.
+    return result;
 }
 
 /// Parse inline workflow matrix: matrix = { os = ["linux", "macos"], version = ["1.0", "2.0"] }
@@ -963,6 +1003,7 @@ fn finalizeWorkflowMatrix(allocator: std.mem.Allocator, workflow_matrix: *?types
         try pending_exclusions.append(allocator, excl);
         current_exclusion.* = std.StringHashMap([]const u8).init(allocator);
     }
+    assert(current_exclusion.count() == 0); // Freshly (re)initialized above, or already empty.
 
     // If we have exclusions and a matrix, apply them
     if (pending_exclusions.items.len > 0 and workflow_matrix.* != null) {
@@ -977,11 +1018,14 @@ fn finalizeWorkflowMatrix(allocator: std.mem.Allocator, workflow_matrix: *?types
         for (pending_exclusions.items) |*excl| excl.deinit(allocator);
         pending_exclusions.clearRetainingCapacity();
     }
+    assert(pending_exclusions.items.len == 0); // Every branch above drains the pending list.
 }
 
 /// Net bracket depth contributed by `s` (counting `[`/`{` as +1 and `]`/`}` as -1),
 /// ignoring brackets that appear inside double-quoted strings (e.g. `${matrix.x}`).
 fn bracketDelta(s: []const u8) i32 {
+    stdx.maybe(s.len == 0); // Empty line content is valid TOML input.
+
     var depth: i32 = 0;
     var in_str = false;
     for (s, 0..) |c, i| {
@@ -991,12 +1035,17 @@ fn bracketDelta(s: []const u8) i32 {
             if (c == ']' or c == '}') depth -= 1;
         }
     }
+
+    const depth_magnitude: u32 = @abs(depth);
+    assert(depth_magnitude <= s.len); // Each byte contributes at most one to the bracket depth.
     return depth;
 }
 
 /// Counts non-overlapping `"""` occurrences in `s`. An odd count means `s`
 /// leaves a TOML triple-quoted (multi-line) string open.
 fn countTripleQuotes(s: []const u8) usize {
+    stdx.maybe(s.len < 3); // Short content (including empty) is valid TOML input.
+
     var count: usize = 0;
     var i: usize = 0;
     while (i + 3 <= s.len) {
@@ -1007,6 +1056,8 @@ fn countTripleQuotes(s: []const u8) usize {
             i += 1;
         }
     }
+
+    assert(count <= @divFloor(s.len, 3)); // Each match consumes 3 bytes; matches never overlap.
     return count;
 }
 
@@ -1016,6 +1067,8 @@ fn countTripleQuotes(s: []const u8) usize {
 /// expects each key=value pair on one line) can handle them.
 /// Section headers, comments, and already-balanced lines pass through unchanged.
 fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]const u8 {
+    stdx.maybe(content.len == 0); // Empty TOML file content is valid input.
+
     var out: std.ArrayList(u8) = .{};
     errdefer out.deinit(allocator);
 
@@ -1065,7 +1118,10 @@ fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]con
         try out.append(allocator, '\n');
     }
 
-    return out.toOwnedSlice(allocator);
+    const out_len = out.items.len;
+    const result = try out.toOwnedSlice(allocator);
+    assert(result.len == out_len); // toOwnedSlice() preserves the exact byte count.
+    return result;
 }
 
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
@@ -8298,4 +8354,348 @@ test "parseInlineTableField: unterminated quoted value falls back to raw remaind
     const result = parseInlineTableField(inner, "cmd");
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("\"echo hello", result.?);
+}
+
+// --- validateSectionHeader ---
+
+test "validateSectionHeader: well-formed header with quoted key strips the quotes" {
+    // `[tasks."test:unit"]` must yield the bare key `test:unit`, not the
+    // still-quoted `"test:unit"`, so the stored task name matches lookups.
+    const result = try validateSectionHeader("[tasks.\"test:unit\"]", "[tasks.");
+    try std.testing.expectEqualStrings("test:unit", result);
+}
+
+test "validateSectionHeader: missing closing bracket returns MalformedSectionHeader" {
+    // A torn/truncated header line has no `]` at all; this must be reported
+    // as an error rather than silently returning the unterminated remainder.
+    try std.testing.expectError(
+        error.MalformedSectionHeader,
+        validateSectionHeader("[tasks.build", "[tasks."),
+    );
+}
+
+test "validateSectionHeader: line not matching the expected prefix returns MalformedSectionHeader" {
+    // Caller passes the wrong prefix for this line (e.g. dispatch bug or
+    // malformed TOML); the mismatch must fail loudly, not partially parse.
+    try std.testing.expectError(
+        error.MalformedSectionHeader,
+        validateSectionHeader("[workflows.ci]", "[tasks."),
+    );
+}
+
+test "validateSectionHeader: empty content between brackets returns an empty slice" {
+    // `[tasks.]` is degenerate but well-formed (bracket present, zero-length
+    // key) and must return "" rather than erroring.
+    const result = try validateSectionHeader("[tasks.]", "[tasks.");
+    try std.testing.expectEqualStrings("", result);
+}
+
+// --- dupeDeps ---
+
+test "dupeDeps: dupes every element into an independently owned allocation" {
+    const allocator = std.testing.allocator;
+    const src = [_][]const u8{ "build", "test" };
+    const result = try dupeDeps(allocator, &src);
+    defer {
+        for (result) |d| allocator.free(d);
+        allocator.free(result);
+    }
+    try std.testing.expectEqual(@as(usize, 2), result.len);
+    try std.testing.expectEqualStrings("build", result[0]);
+    try std.testing.expectEqualStrings("test", result[1]);
+    // Owned copies live at different addresses than the source literals.
+    try std.testing.expect(result[0].ptr != src[0].ptr);
+}
+
+test "dupeDeps: empty slice returns a zero-length owned slice, not an error" {
+    const allocator = std.testing.allocator;
+    const result = try dupeDeps(allocator, &.{});
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+// --- dupeEnv ---
+
+test "dupeEnv: dupes every key/value pair into independently owned allocations" {
+    const allocator = std.testing.allocator;
+    const src = [_][2][]const u8{.{ "FOO", "bar" }};
+    const result = try dupeEnv(allocator, &src);
+    defer {
+        for (result) |pair| {
+            allocator.free(pair[0]);
+            allocator.free(pair[1]);
+        }
+        allocator.free(result);
+    }
+    try std.testing.expectEqual(@as(usize, 1), result.len);
+    try std.testing.expectEqualStrings("FOO", result[0][0]);
+    try std.testing.expectEqualStrings("bar", result[0][1]);
+    try std.testing.expect(result[0][0].ptr != src[0][0].ptr);
+}
+
+test "dupeEnv: empty slice returns a zero-length owned slice, not an error" {
+    const allocator = std.testing.allocator;
+    const result = try dupeEnv(allocator, &.{});
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+// --- parseSettingsTaskArray ---
+
+test "parseSettingsTaskArray: parses quoted comma-separated names into an owned slice" {
+    const allocator = std.testing.allocator;
+    const result = (try parseSettingsTaskArray(allocator, "[\"build\", \"test\"]", null)).?;
+    defer {
+        for (result) |n| allocator.free(n);
+        allocator.free(result);
+    }
+    try std.testing.expectEqual(@as(usize, 2), result.len);
+    try std.testing.expectEqualStrings("build", result[0]);
+    try std.testing.expectEqualStrings("test", result[1]);
+}
+
+test "parseSettingsTaskArray: value without brackets is malformed and returns null" {
+    const allocator = std.testing.allocator;
+    const result = try parseSettingsTaskArray(allocator, "build, test", null);
+    try std.testing.expectEqual(@as(?[]const []const u8, null), result);
+}
+
+test "parseSettingsTaskArray: empty array value returns an empty owned slice, not null" {
+    // "[]" is well-formed (has both brackets) and distinct from malformed
+    // input: it must come back as a zero-length slice, not null.
+    const allocator = std.testing.allocator;
+    const result = (try parseSettingsTaskArray(allocator, "[]", null)).?;
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "parseSettingsTaskArray: replacing an existing slice frees it without leaking" {
+    // std.testing.allocator panics on an unfreed allocation at test teardown,
+    // so this test fails loudly if the "free existing before replacing" path
+    // in parseSettingsTaskArray is ever broken (e.g. by a misplaced assertion).
+    const allocator = std.testing.allocator;
+    const existing = try dupeDeps(allocator, &[_][]const u8{"old"});
+    const result = (try parseSettingsTaskArray(allocator, "[\"new\"]", existing)).?;
+    defer {
+        for (result) |n| allocator.free(n);
+        allocator.free(result);
+    }
+    try std.testing.expectEqual(@as(usize, 1), result.len);
+    try std.testing.expectEqualStrings("new", result[0]);
+}
+
+// --- parseInlineTableField ---
+
+test "parseInlineTableField: field name longer than the internal search buffer returns null" {
+    // The lookup formats "<field> =" into a fixed 128-byte stack buffer; a
+    // field name near/over that bound makes bufPrint fail, and the function
+    // must fall back to null rather than panicking or reading garbage.
+    const overlong_field = "f" ** 200;
+    const inner = "cmd = \"echo hi\"";
+    try std.testing.expectEqual(@as(?[]const u8, null), parseInlineTableField(inner, overlong_field));
+}
+
+test "parseInlineTableField: empty inner string returns null for any field" {
+    try std.testing.expectEqual(@as(?[]const u8, null), parseInlineTableField("", "cmd"));
+}
+
+test "parseInlineTableField: unquoted value is truncated at the next top-level comma" {
+    const inner = "cmd = echo, on_error = fail";
+    const result = parseInlineTableField(inner, "cmd");
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("echo", result.?);
+}
+
+// --- stripQuotes (additional boundaries beyond the existing test) ---
+
+test "stripQuotes: exactly two quote characters strips to an empty string" {
+    // The two-character `""` case sits exactly on the `len >= 2` threshold
+    // the quote-stripping branch relies on.
+    try std.testing.expectEqualStrings("", stripQuotes("\"\""));
+}
+
+test "stripQuotes: single quote character below the two-char threshold is unchanged" {
+    // A lone `"` (len == 1) must not satisfy the `trimmed.len >= 2` guard;
+    // it comes back untouched rather than panicking on an out-of-range index.
+    try std.testing.expectEqualStrings("\"", stripQuotes("\""));
+}
+
+test "stripQuotes: empty string input returns an empty string" {
+    try std.testing.expectEqualStrings("", stripQuotes(""));
+}
+
+// --- unescapeTomlString ---
+
+test "unescapeTomlString: common escape sequences are translated to their literal bytes" {
+    const allocator = std.testing.allocator;
+    const result = try unescapeTomlString(allocator, "a\\nb\\tc\\\"d");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("a\nb\tc\"d", result);
+}
+
+test "unescapeTomlString: unrecognized escape sequence is preserved literally" {
+    // `\q` is not a known TOML escape; the backslash and the following
+    // character are both kept as-is rather than erroring or dropping the
+    // backslash, so glob/regex-like content in cmd strings survives.
+    const allocator = std.testing.allocator;
+    const result = try unescapeTomlString(allocator, "\\q");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("\\q", result);
+}
+
+test "unescapeTomlString: trailing backslash with no following character is kept as-is" {
+    // A backslash as the very last byte has no `i + 1` to inspect; the
+    // `i + 1 < s.len` guard must route it to the literal-copy path instead
+    // of indexing past the end of the slice.
+    const allocator = std.testing.allocator;
+    const result = try unescapeTomlString(allocator, "abc\\");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("abc\\", result);
+}
+
+test "unescapeTomlString: empty input returns an empty owned slice" {
+    const allocator = std.testing.allocator;
+    const result = try unescapeTomlString(allocator, "");
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+// --- finalizeWorkflowMatrix ---
+
+test "finalizeWorkflowMatrix: pending exclusion is flushed into an existing matrix" {
+    const allocator = std.testing.allocator;
+
+    var workflow_matrix: ?types.MatrixConfig = types.MatrixConfig{
+        .dimensions = &.{},
+        .exclude = &.{},
+    };
+
+    var pending_exclusions = std.ArrayList(types.MatrixExclusion){};
+    var current_exclusion = std.StringHashMap([]const u8).init(allocator);
+    // Not consumed by an error path in this test, so no errdefer is needed.
+    try current_exclusion.put(try allocator.dupe(u8, "os"), try allocator.dupe(u8, "macos"));
+
+    try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_exclusions, &current_exclusion);
+
+    defer {
+        if (workflow_matrix) |*m| m.deinit(allocator);
+        pending_exclusions.deinit(allocator);
+        current_exclusion.deinit();
+    }
+
+    // The pending exclusion moved into the matrix...
+    try std.testing.expectEqual(@as(usize, 1), workflow_matrix.?.exclude.len);
+    try std.testing.expectEqualStrings("macos", workflow_matrix.?.exclude[0].conditions.get("os").?);
+    // ...and the pending list was drained, and current_exclusion reset to fresh/empty.
+    try std.testing.expectEqual(@as(usize, 0), pending_exclusions.items.len);
+    try std.testing.expectEqual(@as(usize, 0), current_exclusion.count());
+}
+
+test "finalizeWorkflowMatrix: pending exclusion is discarded (and freed) when no matrix exists" {
+    // With no matrix to attach to, the exclusion must be dropped without
+    // leaking the strings/map it owns — std.testing.allocator enforces that.
+    const allocator = std.testing.allocator;
+
+    var workflow_matrix: ?types.MatrixConfig = null;
+
+    var pending_exclusions = std.ArrayList(types.MatrixExclusion){};
+    defer pending_exclusions.deinit(allocator);
+    var current_exclusion = std.StringHashMap([]const u8).init(allocator);
+    try current_exclusion.put(try allocator.dupe(u8, "os"), try allocator.dupe(u8, "linux"));
+
+    try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_exclusions, &current_exclusion);
+    defer current_exclusion.deinit();
+
+    try std.testing.expectEqual(@as(?types.MatrixConfig, null), workflow_matrix);
+    try std.testing.expectEqual(@as(usize, 0), pending_exclusions.items.len);
+}
+
+test "finalizeWorkflowMatrix: nothing pending and no exclusions is a no-op" {
+    const allocator = std.testing.allocator;
+
+    var workflow_matrix: ?types.MatrixConfig = types.MatrixConfig{
+        .dimensions = &.{},
+        .exclude = &.{},
+    };
+    var pending_exclusions = std.ArrayList(types.MatrixExclusion){};
+    var current_exclusion = std.StringHashMap([]const u8).init(allocator);
+
+    try finalizeWorkflowMatrix(allocator, &workflow_matrix, &pending_exclusions, &current_exclusion);
+
+    defer {
+        if (workflow_matrix) |*m| m.deinit(allocator);
+        pending_exclusions.deinit(allocator);
+        current_exclusion.deinit();
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), workflow_matrix.?.exclude.len);
+    try std.testing.expectEqual(@as(usize, 0), pending_exclusions.items.len);
+}
+
+// --- bracketDelta (additional boundaries beyond the existing tests) ---
+
+test "bracketDelta: empty string yields zero depth" {
+    try std.testing.expectEqual(@as(i32, 0), bracketDelta(""));
+}
+
+test "bracketDelta: single opening bracket yields depth one" {
+    try std.testing.expectEqual(@as(i32, 1), bracketDelta("["));
+}
+
+// --- countTripleQuotes (additional boundaries beyond the existing test) ---
+
+test "countTripleQuotes: odd count signals an unterminated multi-line string" {
+    try std.testing.expectEqual(@as(usize, 1), countTripleQuotes("text = \"\"\" start of block"));
+}
+
+test "countTripleQuotes: adjacent triple-quote runs are counted without overlap" {
+    // Six consecutive quote characters are two non-overlapping `"""` runs,
+    // not four overlapping ones (the scan advances by 3 on every match).
+    try std.testing.expectEqual(@as(usize, 2), countTripleQuotes("\"\"\"\"\"\""));
+}
+
+test "countTripleQuotes: string shorter than three characters returns zero" {
+    try std.testing.expectEqual(@as(usize, 0), countTripleQuotes("\"\""));
+}
+
+// --- joinMultilineValues ---
+
+test "joinMultilineValues: single-line balanced content passes through unchanged" {
+    // A trailing '\n' in the input makes std.mem.splitScalar yield a final
+    // empty segment; that segment is emitted as its own blank line, so the
+    // single logical line comes back with a trailing blank line appended.
+    const allocator = std.testing.allocator;
+    const result = try joinMultilineValues(allocator, "key = \"value\"\n");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("key = \"value\"\n\n", result);
+}
+
+test "joinMultilineValues: empty content still produces a single blank line, not an empty string" {
+    const allocator = std.testing.allocator;
+    const result = try joinMultilineValues(allocator, "");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("\n", result);
+}
+
+test "joinMultilineValues: a bracketed array spanning multiple physical lines is joined into one" {
+    const allocator = std.testing.allocator;
+    const content = "key = [\n  \"a\",\n  \"b\",\n]\n";
+    const result = try joinMultilineValues(allocator, content);
+    defer allocator.free(result);
+
+    const first_newline = std.mem.indexOfScalar(u8, result, '\n').?;
+    const first_line = result[0..first_newline];
+    try std.testing.expect(std.mem.indexOf(u8, first_line, "\"a\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first_line, "\"b\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first_line, "]") != null);
+}
+
+test "joinMultilineValues: an array left open at end-of-input terminates the join loop" {
+    // No closing `]` ever appears; `lines.next() orelse break` must end the
+    // inner loop when input is exhausted instead of looping unboundedly.
+    const allocator = std.testing.allocator;
+    const content = "key = [\n  \"a\",\n";
+    const result = try joinMultilineValues(allocator, content);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "\"a\"") != null);
 }
