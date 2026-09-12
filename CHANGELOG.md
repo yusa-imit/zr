@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unescapeTomlString`, `finalizeWorkflowMatrix`, `bracketDelta`, `countTripleQuotes`, and
   `joinMultilineValues`, following the same pattern. `flushProfile`, `flushCurrentTemplate`,
   `flushCurrentHook`, and `parseToml` itself remain for follow-up cycles.
+- **Assertion baseline, `src/config/parser.zig`, continued** (plan 001 item 3, continued):
+  pre/post/invariant assertions via `src/stdx.zig` on `flushProfile`, `flushCurrentTemplate`,
+  and `flushCurrentHook`; a new `parseHookPoint` extraction (out of `flushCurrentHook`, to stay
+  under the 70-line tidy ratchet) carries its own assertions. `flushProfile` and
+  `flushCurrentTemplate` were also rewritten to call the existing `dupeDeps`/`dupeEnv` helpers
+  instead of repeating the dupe-loop pattern inline, which incidentally brought `flushProfile`
+  under the 70-line hard cap (removed from `tidy_baseline.txt`). 10 new characterization tests.
+  Only `parseToml` itself remains uninstrumented for item 3.
 - **`tidy` build step** (plan 001 item 2): `zig build tidy`, wired as a `zig build test`
   dependency, vendored from the kingdom's `citadel/templates/tidy` reference. Enforces line
   length (100), function length (70, ratcheted via `tidy_baseline.txt` for the 844 pre-existing
