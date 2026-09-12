@@ -1125,8 +1125,10 @@ fn joinMultilineValues(allocator: std.mem.Allocator, content: []const u8) ![]con
 }
 
 pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
+    stdx.maybe(content.len == 0); // Empty config file is valid — produces a Config with no tasks.
     var config = Config.init(allocator);
     errdefer config.deinit();
+    assert(config.tasks.count() == 0); // A freshly initialized Config starts with no tasks.
 
     const joined_content = try joinMultilineValues(allocator, content);
     defer allocator.free(joined_content);
@@ -6208,10 +6210,25 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             imp_duped += 1;
         }
         config.imports = owned_imports;
+        assert(config.imports.len == import_files.items.len); // No import path lost/duplicated.
+    }
+
+    if (conformance_data_transferred) {
+        // memcpy'd above from conformance_rules/conformance_ignore — count must match exactly.
+        assert(config.conformance.rules.len == conformance_rules.items.len);
+        assert(config.conformance.ignore.len == conformance_ignore.items.len);
     }
 
     // Apply group config defaults to tasks (v1.95.0)
     try config.applyGroupDefaults();
+
+    // Every task the parse produced must be retrievable under its own name: the hashmap key
+    // and the task's `name` field are set independently (addTaskImpl and its callers), so this
+    // is a real cross-check, not a restatement of the same computation.
+    var built_tasks_it = config.tasks.iterator();
+    while (built_tasks_it.next()) |entry| {
+        assert(std.mem.eql(u8, entry.key_ptr.*, entry.value_ptr.name));
+    }
 
     return config;
 }
@@ -6527,6 +6544,38 @@ test "parse tags from toml" {
     try std.testing.expectEqual(@as(usize, 2), test_task.tags.len);
     try std.testing.expectEqualStrings("test", test_task.tags[0]);
     try std.testing.expectEqualStrings("ci", test_task.tags[1]);
+}
+
+test "parseToml on empty content produces an empty config" {
+    const allocator = std.testing.allocator;
+
+    var config = try parseToml(allocator, "");
+    defer config.deinit();
+
+    try std.testing.expect(config.tasks.count() == 0);
+}
+
+test "parseToml task map keys mirror each task's own name field" {
+    const allocator = std.testing.allocator;
+
+    const toml_content =
+        \\[tasks.build]
+        \\cmd = "zig build"
+        \\
+        \\[tasks.test]
+        \\cmd = "zig build test"
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    var it = config.tasks.iterator();
+    var checked: usize = 0;
+    while (it.next()) |entry| {
+        try std.testing.expectEqualStrings(entry.key_ptr.*, entry.value_ptr.name);
+        checked += 1;
+    }
+    try std.testing.expect(checked == 2);
 }
 
 test "parse simple toml config" {

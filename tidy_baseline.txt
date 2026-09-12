@@ -352,7 +352,7 @@ src/config/parser.zig:line-length:250
 src/config/parser.zig:parseInlineStages:128
 src/config/parser.zig:parseInlineWorkflowMatrix:79
 src/config/parser.zig:parseTasksArrayWithParams:137
-src/config/parser.zig:parseToml:5091
+src/config/parser.zig:parseToml:5108
 src/config/repos.zig:doc-header:1
 src/config/repos.zig:line-length:6
 src/config/repos.zig:parseRepoConfig:122
