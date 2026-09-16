@@ -516,6 +516,9 @@ fn parseInlineStages(
     workflow_stages: *std.ArrayList(Stage),
     value: []const u8,
 ) !usize {
+    stdx.maybe(value.len == 0); // Degenerate empty value; the bracket check below returns 0.
+    const stages_before = workflow_stages.items.len;
+
     const trimmed = std.mem.trim(u8, value, " \t");
     if (!std.mem.startsWith(u8, trimmed, "[") or !std.mem.endsWith(u8, trimmed, "]")) {
         return 0; // Not an array
@@ -637,6 +640,10 @@ fn parseInlineStages(
         stage_count += 1;
     }
 
+    assert(pos <= inner.len); // The scanning cursor never runs past the slice it walks.
+    // Not every inline table is flushed (an empty `{}` entry with no name/tasks is skipped by
+    // flushPendingStage), but nothing flushes more than once per counted entry.
+    assert(workflow_stages.items.len - stages_before <= stage_count);
     return stage_count;
 }
 
@@ -731,6 +738,9 @@ fn addWorkspaceSharedTask(
     allow_failure: bool,
     tags: []const []const u8,
 ) !void {
+    stdx.maybe(name.len == 0); // Degenerate but valid TOML user data.
+    const count_before = shared_tasks.count();
+
     const task_name = try allocator.dupe(u8, name);
     errdefer allocator.free(task_name);
 
@@ -785,6 +795,10 @@ fn addWorkspaceSharedTask(
     };
 
     try shared_tasks.put(task_name, task);
+
+    // put() either inserts a new key (count+1) or replaces an existing one (count unchanged).
+    assert(shared_tasks.count() == count_before or shared_tasks.count() == count_before + 1);
+    assert(shared_tasks.contains(task_name));
 }
 
 /// Parse a TOML inline array of task names for [settings] lifecycle hooks.
@@ -914,8 +928,11 @@ fn unescapeTomlString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 
 /// Parse inline workflow matrix: matrix = { os = ["linux", "macos"], version = ["1.0", "2.0"] }
 fn parseInlineWorkflowMatrix(allocator: std.mem.Allocator, raw: []const u8, matrix_out: *?types.MatrixConfig) !void {
+    stdx.maybe(raw.len == 0); // Degenerate empty value; the brace check below returns early.
     const inner_full = std.mem.trim(u8, raw, " \t");
     if (!std.mem.startsWith(u8, inner_full, "{") or !std.mem.endsWith(u8, inner_full, "}")) return;
+    // startsWith("{") and endsWith("}") both holding requires at least 2 distinct bytes.
+    assert(inner_full.len >= 2);
     const inner = inner_full[1 .. inner_full.len - 1];
 
     var dims: std.ArrayListUnmanaged(MatrixDim) = .{};
@@ -983,7 +1000,8 @@ fn parseInlineWorkflowMatrix(allocator: std.mem.Allocator, raw: []const u8, matr
         });
     }
 
-    if (dims.items.len > 0) {
+    const had_dims = dims.items.len > 0;
+    if (had_dims) {
         matrix_out.* = types.MatrixConfig{
             .dimensions = try dims.toOwnedSlice(allocator),
             .exclude = &.{},
@@ -991,6 +1009,7 @@ fn parseInlineWorkflowMatrix(allocator: std.mem.Allocator, raw: []const u8, matr
     } else {
         dims.deinit(allocator);
     }
+    assert(!had_dims or matrix_out.* != null); // Finding ≥1 dimension always sets matrix_out.
 }
 
 /// Finalize workflow matrix by collecting all pending exclusions
@@ -6410,6 +6429,7 @@ fn flushCurrentTemplate(
 
 /// Map a TOML hook-point string to its enum value, or null if unrecognized.
 fn parseHookPoint(point: []const u8) ?types.HookPoint {
+    comptime assert(std.meta.fields(types.HookPoint).len == 5); // One branch below per variant.
     stdx.maybe(point.len == 0); // Empty point strings are valid TOML user data; just unrecognized.
 
     if (std.mem.eql(u8, point, "before")) return types.HookPoint.before;
@@ -8962,4 +8982,191 @@ test "joinMultilineValues: an array left open at end-of-input terminates the joi
     const result = try joinMultilineValues(allocator, content);
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "\"a\"") != null);
+}
+
+// --- parseInlineStages ---
+
+test "parseInlineStages: a one-entry inline array appends one stage and returns 1" {
+    const allocator = std.testing.allocator;
+    var workflow_stages = std.ArrayList(Stage){};
+    defer {
+        for (workflow_stages.items) |*s| s.deinit(allocator);
+        workflow_stages.deinit(allocator);
+    }
+
+    const count = try parseInlineStages(
+        allocator,
+        &workflow_stages,
+        "[{ name = \"build\", tasks = [\"compile\"] }]",
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), count);
+    try std.testing.expectEqual(@as(usize, 1), workflow_stages.items.len);
+    try std.testing.expectEqualStrings("build", workflow_stages.items[0].name);
+    try std.testing.expectEqual(@as(usize, 1), workflow_stages.items[0].tasks.len);
+    try std.testing.expectEqualStrings("compile", workflow_stages.items[0].tasks[0]);
+}
+
+test "parseInlineStages: a value not wrapped in brackets returns 0 and appends nothing" {
+    const allocator = std.testing.allocator;
+    var workflow_stages = std.ArrayList(Stage){};
+    defer workflow_stages.deinit(allocator);
+
+    const count = try parseInlineStages(allocator, &workflow_stages, "not an array");
+
+    try std.testing.expectEqual(@as(usize, 0), count);
+    try std.testing.expectEqual(@as(usize, 0), workflow_stages.items.len);
+}
+
+// --- addWorkspaceSharedTask ---
+
+test "addWorkspaceSharedTask: a new name increases count by 1 and stores a retrievable Task" {
+    const allocator = std.testing.allocator;
+    var shared_tasks = std.StringHashMap(Task).init(allocator);
+    defer {
+        var it = shared_tasks.iterator();
+        while (it.next()) |entry| {
+            var task = entry.value_ptr.*;
+            task.deinit(allocator);
+        }
+        shared_tasks.deinit();
+    }
+
+    try addWorkspaceSharedTask(
+        &shared_tasks,
+        allocator,
+        "build",
+        "zig build",
+        null,
+        null,
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        null,
+        false,
+        &.{},
+    );
+
+    try std.testing.expectEqual(@as(u32, 1), shared_tasks.count());
+    const stored = shared_tasks.get("build").?;
+    try std.testing.expectEqualStrings("zig build", stored.cmd);
+    try std.testing.expectEqualStrings("build", stored.name);
+}
+
+test "addWorkspaceSharedTask: calling it twice with the same name replaces, not duplicates" {
+    const allocator = std.testing.allocator;
+    var shared_tasks = std.StringHashMap(Task).init(allocator);
+    defer {
+        var it = shared_tasks.iterator();
+        while (it.next()) |entry| {
+            var task = entry.value_ptr.*;
+            task.deinit(allocator);
+        }
+        shared_tasks.deinit();
+    }
+
+    try addWorkspaceSharedTask(
+        &shared_tasks,
+        allocator,
+        "build",
+        "zig build",
+        null,
+        null,
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        null,
+        false,
+        &.{},
+    );
+
+    // Capture the first task's fields by value *before* overwriting: `put()` on an
+    // already-present key replaces only the map's value slot (HashMap.getOrPut keeps the
+    // original stored key, per std/hash_map.zig) and does not free what it replaces —
+    // freeing this pre-owned copy is the caller's job, not addWorkspaceSharedTask's, so we
+    // do it ourselves below to keep this leak-freedom test isolated from that separate,
+    // pre-existing caller-responsibility gap. It must stay alive (unfreed) across the
+    // second call below: the map's *key* is still this exact allocation and freeing it
+    // first would leave a dangling key live inside the map during the next `put()`.
+    const stale = shared_tasks.get("build").?;
+
+    try addWorkspaceSharedTask(
+        &shared_tasks,
+        allocator,
+        "build",
+        "zig build --release",
+        null,
+        null,
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        null,
+        false,
+        &.{},
+    );
+
+    try std.testing.expectEqual(@as(u32, 1), shared_tasks.count());
+    try std.testing.expectEqualStrings("zig build --release", shared_tasks.get("build").?.cmd);
+
+    // Now that the replacement has landed, the pre-replace copy is safely orphaned
+    // (the live map key/value no longer alias it) and freeing it here cannot race with
+    // any further lookup on "build".
+    var stale_mut = stale;
+    stale_mut.deinit(allocator);
+}
+
+// --- parseInlineWorkflowMatrix ---
+
+test "parseInlineWorkflowMatrix: brace-wrapped dims sets matrix_out with the parsed key/values" {
+    const allocator = std.testing.allocator;
+    var matrix_out: ?types.MatrixConfig = null;
+
+    try parseInlineWorkflowMatrix(allocator, "{ os = [\"linux\", \"macos\"] }", &matrix_out);
+    defer if (matrix_out) |*m| m.deinit(allocator);
+
+    try std.testing.expect(matrix_out != null);
+    try std.testing.expectEqual(@as(usize, 1), matrix_out.?.dimensions.len);
+    try std.testing.expectEqualStrings("os", matrix_out.?.dimensions[0].key);
+    try std.testing.expectEqual(@as(usize, 2), matrix_out.?.dimensions[0].values.len);
+    try std.testing.expectEqualStrings("linux", matrix_out.?.dimensions[0].values[0]);
+    try std.testing.expectEqualStrings("macos", matrix_out.?.dimensions[0].values[1]);
+}
+
+test "parseInlineWorkflowMatrix: a non-brace-wrapped value leaves matrix_out untouched" {
+    const allocator = std.testing.allocator;
+    var matrix_out: ?types.MatrixConfig = null;
+
+    try parseInlineWorkflowMatrix(allocator, "not a table", &matrix_out);
+
+    try std.testing.expectEqual(@as(?types.MatrixConfig, null), matrix_out);
+}
+
+test "parseInlineWorkflowMatrix: an empty brace body parses zero dims, leaves matrix_out null" {
+    const allocator = std.testing.allocator;
+    var matrix_out: ?types.MatrixConfig = null;
+
+    try parseInlineWorkflowMatrix(allocator, "{}", &matrix_out);
+
+    try std.testing.expectEqual(@as(?types.MatrixConfig, null), matrix_out);
+}
+
+// --- parseHookPoint ---
+
+test "parseHookPoint: all five known keywords map to their matching enum value" {
+    try std.testing.expectEqual(types.HookPoint.before, parseHookPoint("before").?);
+    try std.testing.expectEqual(types.HookPoint.after, parseHookPoint("after").?);
+    try std.testing.expectEqual(types.HookPoint.success, parseHookPoint("success").?);
+    try std.testing.expectEqual(types.HookPoint.failure, parseHookPoint("failure").?);
+    try std.testing.expectEqual(types.HookPoint.timeout, parseHookPoint("timeout").?);
+}
+
+test "parseHookPoint: empty string returns null" {
+    try std.testing.expectEqual(@as(?types.HookPoint, null), parseHookPoint(""));
+}
+
+test "parseHookPoint: an unrecognized keyword returns null" {
+    try std.testing.expectEqual(@as(?types.HookPoint, null), parseHookPoint("midway"));
 }
