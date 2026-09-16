@@ -1,5 +1,7 @@
 const std = @import("std");
 const cache_key_mod = @import("cache_key.zig");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 /// Cache storage for task execution results (Phase 2 - Cache Key Generation).
 /// Stores task outputs (stdout, stderr) and metadata in .zr/cache/<cache_key>/
@@ -251,15 +253,9 @@ pub const CacheStore = struct {
         const days_since_epoch = seconds_u64 / (24 * 60 * 60);
 
         // Compute year, month, day (simplified Gregorian calendar)
-        var year: u32 = 1970;
-        var days_left: u64 = days_since_epoch;
-
-        while (true) {
-            const days_in_year: u64 = if (isLeapYear(year)) 366 else 365;
-            if (days_left < days_in_year) break;
-            days_left -= days_in_year;
-            year += 1;
-        }
+        const year_result = yearFromDaysSinceEpoch(days_since_epoch);
+        const year = year_result.year;
+        var days_left = year_result.days_left;
 
         const days_in_months = [_]u32{
             if (isLeapYear(year)) 29 else 28, // February
@@ -306,6 +302,30 @@ pub const CacheStore = struct {
 
     fn isLeapYear(year: u32) bool {
         return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0);
+    }
+
+    /// Bound on how many years the day-to-year loop below will walk before giving up. Any
+    /// real system clock stays far under this; it exists so a corrupted timestamp fails
+    /// loudly instead of spinning.
+    const years_since_epoch_max: u32 = 100_000;
+
+    /// Given a day count since 1970-01-01, returns the calendar year it falls in and the
+    /// number of days remaining within that year (0-indexed day-of-year).
+    fn yearFromDaysSinceEpoch(days_since_epoch: u64) struct { year: u32, days_left: u64 } {
+        var year: u32 = 1970;
+        var days_left = days_since_epoch;
+
+        var iterations: u32 = 0;
+        while (iterations < years_since_epoch_max) : (iterations += 1) {
+            const days_in_year: u64 = if (isLeapYear(year)) 366 else 365;
+            if (days_left < days_in_year) break;
+            days_left -= days_in_year;
+            year += 1;
+        }
+        stdx.assert_always(iterations < years_since_epoch_max);
+
+        assert(days_left < 366); // Postcondition: remaining days always fit within one year.
+        return .{ .year = year, .days_left = days_left };
     }
 
     /// Write manifest as JSON to manifest.json file.
@@ -431,6 +451,24 @@ pub const CachedEntry = struct {
 
 // ─── Tests ───
 
+test "CacheStore.yearFromDaysSinceEpoch: day 0 is 1970-01-01" {
+    const result = CacheStore.yearFromDaysSinceEpoch(0);
+    try std.testing.expectEqual(@as(u32, 1970), result.year);
+    try std.testing.expectEqual(@as(u64, 0), result.days_left);
+}
+
+test "CacheStore.yearFromDaysSinceEpoch: day 365 rolls over into 1971" {
+    const result = CacheStore.yearFromDaysSinceEpoch(365);
+    try std.testing.expectEqual(@as(u32, 1971), result.year);
+    try std.testing.expectEqual(@as(u64, 0), result.days_left);
+}
+
+test "CacheStore.yearFromDaysSinceEpoch: a huge day count still terminates within the bound" {
+    const result = CacheStore.yearFromDaysSinceEpoch(365 * 50_000);
+    try std.testing.expect(result.year > 1970);
+    try std.testing.expect(result.days_left < 366);
+}
+
 test "CacheStore: init creates store with correct allocator" {
     const allocator = std.testing.allocator;
     var store = CacheStore.init(allocator);
@@ -470,7 +508,7 @@ test "CacheStore: store creates cache directory with manifest and output files" 
     try std.testing.expect(std.mem.indexOf(u8, manifest_content, "test_task") != null);
     try std.testing.expect(std.mem.indexOf(u8, manifest_content, cache_key) != null);
     try std.testing.expect(std.mem.indexOf(u8, manifest_content, "\"exit_code\":0") != null or
-                           std.mem.indexOf(u8, manifest_content, "\"exit_code\": 0") != null);
+        std.mem.indexOf(u8, manifest_content, "\"exit_code\": 0") != null);
 
     // Verify stdout file contains expected output
     const stdout_content = try dir.readFileAlloc(allocator, "stdout", 1024);
