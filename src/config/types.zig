@@ -1,4 +1,6 @@
 const std = @import("std");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 const plugin_loader = @import("../plugin/loader.zig");
 pub const PluginConfig = plugin_loader.PluginConfig;
 pub const PluginSourceKind = plugin_loader.SourceKind;
@@ -1052,11 +1054,11 @@ pub const Config = struct {
             null, // confirm_if not supported in templates yet
             false, // internal not supported in templates yet
             0, // priority not supported in templates yet
-            null, // retry_backoff_multiplier not supported in templates yet
-            false, // retry_jitter not supported in templates yet
-            null, // max_backoff_ms not supported in templates yet
-            &[_]u8{}, // retry_on_codes not supported in templates yet
-            &[_][]const u8{}, // retry_on_patterns not supported in templates yet
+            template.retry_backoff_multiplier,
+            template.retry_jitter,
+            template.max_backoff_ms,
+            template.retry_on_codes,
+            template.retry_on_patterns,
             null, // concurrency_group not supported in templates yet
         );
 
@@ -1126,6 +1128,16 @@ pub const TaskTemplate = struct {
     retry_max: u32 = 0,
     retry_delay_ms: u64 = 0,
     retry_backoff: bool = false,
+    /// Default retry backoff multiplier (v1.47.0). Null means the task-level default applies.
+    retry_backoff_multiplier: ?f64 = null,
+    /// Default retry jitter flag (v1.47.0).
+    retry_jitter: bool = false,
+    /// Default maximum backoff in milliseconds (v1.47.0). Null means no cap.
+    max_backoff_ms: ?u64 = null,
+    /// Default HTTP-style exit codes that trigger a retry (v1.47.0, owned, duped).
+    retry_on_codes: []const u8 = &[_]u8{},
+    /// Default output substrings that trigger a retry (v1.47.0, owned, duped strings).
+    retry_on_patterns: []const []const u8 = &[_][]const u8{},
     /// Default condition expression.
     condition: ?[]const u8 = null,
     /// Default max_concurrent.
@@ -1159,6 +1171,9 @@ pub const TaskTemplate = struct {
         if (self.toolchain.len > 0) allocator.free(self.toolchain);
         for (self.params) |p| allocator.free(p);
         if (self.params.len > 0) allocator.free(self.params);
+        if (self.retry_on_codes.len > 0) allocator.free(self.retry_on_codes);
+        for (self.retry_on_patterns) |pattern| allocator.free(pattern);
+        if (self.retry_on_patterns.len > 0) allocator.free(self.retry_on_patterns);
     }
 };
 
@@ -2244,6 +2259,71 @@ test "parseMemoryBytes: various formats" {
     try std.testing.expectEqual(@as(?u64, null), parseMemoryBytes("invalid"));
 }
 
+/// Fills in a task's retry fields from its template wherever the task left them at their
+/// zero/default value. Legacy `retry_max`/`retry_delay_ms`/`retry_backoff` travel together as
+/// one group (a task that set any retry config owns all three); the 5 advanced fields added in
+/// v1.47.0 (`retry_backoff_multiplier`, `retry_jitter`, `max_backoff_ms`, `retry_on_codes`,
+/// `retry_on_patterns`) are inherited independently since a task may mix its own basic retry
+/// count with a template's advanced backoff shape.
+/// Preconditions: `task` and `template` are both fully constructed (`Task.deinit`/
+/// `TaskTemplate.deinit` are safe to call on them). Ownership: any slice copied out of
+/// `template` here is freshly `allocator.dupe`d so `task.deinit` and `template.deinit` each
+/// free their own memory, never the same allocation twice.
+fn applyTemplateRetryDefaults(
+    allocator: std.mem.Allocator,
+    task: *Task,
+    template: *const TaskTemplate,
+) !void {
+    // Negative space: a task's owned retry-code/pattern slices never alias the template's —
+    // each side frees its own memory independently in deinit.
+    assert(task.retry_on_codes.len == 0 or task.retry_on_codes.ptr != template.retry_on_codes.ptr);
+    assert(task.retry_on_patterns.len == 0 or
+        task.retry_on_patterns.ptr != template.retry_on_patterns.ptr);
+
+    if (task.retry_max == 0 and template.retry_max > 0) {
+        task.retry_max = template.retry_max;
+        task.retry_delay_ms = template.retry_delay_ms;
+        task.retry_backoff = template.retry_backoff;
+    }
+
+    if (task.retry_backoff_multiplier == null and template.retry_backoff_multiplier != null) {
+        task.retry_backoff_multiplier = template.retry_backoff_multiplier;
+    }
+
+    if (!task.retry_jitter and template.retry_jitter) {
+        task.retry_jitter = template.retry_jitter;
+    }
+
+    if (task.max_backoff_ms == null and template.max_backoff_ms != null) {
+        task.max_backoff_ms = template.max_backoff_ms;
+    }
+
+    if (task.retry_on_codes.len == 0 and template.retry_on_codes.len > 0) {
+        task.retry_on_codes = try allocator.dupe(u8, template.retry_on_codes);
+    }
+
+    if (task.retry_on_patterns.len == 0 and template.retry_on_patterns.len > 0) {
+        const patterns = try allocator.alloc([]const u8, template.retry_on_patterns.len);
+        var duped: usize = 0;
+        errdefer {
+            for (patterns[0..duped]) |p| allocator.free(p);
+            allocator.free(patterns);
+        }
+        for (template.retry_on_patterns, 0..) |pattern, i| {
+            patterns[i] = try allocator.dupe(u8, pattern);
+            duped += 1;
+        }
+        task.retry_on_patterns = patterns;
+    }
+
+    // Postconditions: every advanced field ends up set whenever the template offered one and
+    // the task had not already claimed it — the "silently dropped to zero" bug this fixes.
+    assert(task.retry_backoff_multiplier != null or template.retry_backoff_multiplier == null);
+    assert(task.max_backoff_ms != null or template.max_backoff_ms == null);
+    assert(task.retry_on_codes.len > 0 or template.retry_on_codes.len == 0);
+    assert(task.retry_on_patterns.len > 0 or template.retry_on_patterns.len == 0);
+}
+
 /// Apply template fields to an existing task with parameter substitution.
 /// This function modifies the task in-place by:
 /// 1. Looking up the template from config.templates
@@ -2305,11 +2385,7 @@ fn applyTemplateToTask(
         task.allow_failure = template.allow_failure;
     }
 
-    if (task.retry_max == 0 and template.retry_max > 0) {
-        task.retry_max = template.retry_max;
-        task.retry_delay_ms = template.retry_delay_ms;
-        task.retry_backoff = template.retry_backoff;
-    }
+    try applyTemplateRetryDefaults(allocator, task, &template);
 
     if (task.condition == null and template.condition != null) {
         task.condition = try Config.substituteParams(allocator, template.condition.?, params_map);

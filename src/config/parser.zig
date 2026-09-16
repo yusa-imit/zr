@@ -1041,6 +1041,29 @@ fn bracketDelta(s: []const u8) i32 {
     return depth;
 }
 
+/// Returns the next top-level comma-separated field of `s` starting at `pos.*`, treating a
+/// comma inside `[...]`/`{...}` as part of the current field rather than a delimiter — so
+/// `on_codes = [1, 2]` stays one field instead of splitting at the inner comma. Advances
+/// `pos.*` past the field and its delimiter; returns `null` once every field has been yielded.
+fn nextTopLevelField(s: []const u8, pos: *usize) ?[]const u8 {
+    assert(pos.* <= s.len + 1); // Precondition: caller has not called past exhaustion.
+    if (pos.* > s.len) return null;
+
+    var depth: i32 = 0;
+    var end = pos.*;
+    while (end < s.len) : (end += 1) {
+        const ch = s[end];
+        if (ch == '[' or ch == '{') depth += 1;
+        if (ch == ']' or ch == '}') depth -= 1;
+        if (ch == ',' and depth == 0) break;
+    }
+
+    const field = s[pos.*..end];
+    pos.* = end + 1;
+    assert(pos.* > 0); // Postcondition: pos always advances, so this can never spin forever.
+    return field;
+}
+
 /// Counts non-overlapping `"""` occurrences in `s`. An odd count means `s`
 /// leaves a TOML triple-quoted (multi-line) string open.
 fn countTripleQuotes(s: []const u8) usize {
@@ -1703,6 +1726,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     template_cache,
                     template_max_cpu,
                     template_max_memory,
+                    template_retry_backoff_multiplier,
+                    template_retry_jitter,
+                    template_max_backoff_ms,
+                    &template_retry_on_codes,
+                    &template_retry_on_patterns,
                 );
             }
             template_deps.clearRetainingCapacity();
@@ -3549,6 +3577,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     template_cache,
                     template_max_cpu,
                     template_max_memory,
+                    template_retry_backoff_multiplier,
+                    template_retry_jitter,
+                    template_max_backoff_ms,
+                    &template_retry_on_codes,
+                    &template_retry_on_patterns,
                 );
             }
 
@@ -5373,8 +5406,8 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
                     const inner = std.mem.trim(u8, value, " \t");
                     if (std.mem.startsWith(u8, inner, "{") and std.mem.endsWith(u8, inner, "}")) {
                         const pairs_str = inner[1 .. inner.len - 1];
-                        var pairs_it = std.mem.splitScalar(u8, pairs_str, ',');
-                        while (pairs_it.next()) |pair_str| {
+                        var pair_pos: usize = 0;
+                        while (nextTopLevelField(pairs_str, &pair_pos)) |pair_str| {
                             const eq = std.mem.indexOf(u8, pair_str, "=") orelse continue;
                             const rkey = std.mem.trim(u8, pair_str[0..eq], " \t\"");
                             const rval = std.mem.trim(u8, pair_str[eq + 1 ..], " \t\"");
@@ -5905,6 +5938,11 @@ pub fn parseToml(allocator: std.mem.Allocator, content: []const u8) !Config {
             template_cache,
             template_max_cpu,
             template_max_memory,
+            template_retry_backoff_multiplier,
+            template_retry_jitter,
+            template_max_backoff_ms,
+            &template_retry_on_codes,
+            &template_retry_on_patterns,
         );
     }
 
@@ -6329,6 +6367,11 @@ fn flushCurrentTemplate(
     template_cache: bool,
     template_max_cpu: ?u32,
     template_max_memory: ?u64,
+    template_retry_backoff_multiplier: ?f64,
+    template_retry_jitter: bool,
+    template_max_backoff_ms: ?u64,
+    template_retry_on_codes: *std.ArrayList(u8),
+    template_retry_on_patterns: *std.ArrayList([]const u8),
 ) !void {
     stdx.maybe(template_cmd == null); // A template with no cmd is skipped, not an error.
     stdx.maybe(tmpl_name.len == 0); // Section-header template names; empty is degenerate but valid.
@@ -6382,6 +6425,15 @@ fn flushCurrentTemplate(
         allocator.free(tmpl_params_owned);
     }
 
+    const tmpl_retry_on_codes_owned = try allocator.dupe(u8, template_retry_on_codes.items);
+    errdefer if (tmpl_retry_on_codes_owned.len > 0) allocator.free(tmpl_retry_on_codes_owned);
+
+    const tmpl_retry_on_patterns_owned = try dupeDeps(allocator, template_retry_on_patterns.items);
+    errdefer {
+        for (tmpl_retry_on_patterns_owned) |p| allocator.free(p);
+        allocator.free(tmpl_retry_on_patterns_owned);
+    }
+
     const template = types.TaskTemplate{
         .name = tmpl_name_owned,
         .cmd = tmpl_cmd_owned,
@@ -6402,6 +6454,11 @@ fn flushCurrentTemplate(
         .max_memory = template_max_memory,
         .toolchain = tmpl_toolchain_owned,
         .params = tmpl_params_owned,
+        .retry_backoff_multiplier = template_retry_backoff_multiplier,
+        .retry_jitter = template_retry_jitter,
+        .max_backoff_ms = template_max_backoff_ms,
+        .retry_on_codes = tmpl_retry_on_codes_owned,
+        .retry_on_patterns = tmpl_retry_on_patterns_owned,
     };
 
     try config.templates.put(tmpl_name_owned, template);
@@ -8803,6 +8860,10 @@ test "flushCurrentTemplate: null cmd is skipped without adding a template" {
     defer toolchain.deinit(allocator);
     var params = std.ArrayList([]const u8){};
     defer params.deinit(allocator);
+    var retry_on_codes = std.ArrayList(u8){};
+    defer retry_on_codes.deinit(allocator);
+    var retry_on_patterns = std.ArrayList([]const u8){};
+    defer retry_on_patterns.deinit(allocator);
 
     try flushCurrentTemplate(
         allocator,
@@ -8826,6 +8887,11 @@ test "flushCurrentTemplate: null cmd is skipped without adding a template" {
         false,
         null,
         null,
+        null,
+        false,
+        null,
+        &retry_on_codes,
+        &retry_on_patterns,
     );
 
     try std.testing.expectEqual(@as(usize, 0), config.templates.count());
@@ -8851,6 +8917,10 @@ test "flushCurrentTemplate: adds a template with every owned slice duped" {
     var params = std.ArrayList([]const u8){};
     defer params.deinit(allocator);
     try params.append(allocator, "target");
+    var retry_on_codes = std.ArrayList(u8){};
+    defer retry_on_codes.deinit(allocator);
+    var retry_on_patterns = std.ArrayList([]const u8){};
+    defer retry_on_patterns.deinit(allocator);
 
     try flushCurrentTemplate(
         allocator,
@@ -8874,6 +8944,11 @@ test "flushCurrentTemplate: adds a template with every owned slice duped" {
         true,
         4,
         1024,
+        null,
+        false,
+        null,
+        &retry_on_codes,
+        &retry_on_patterns,
     );
 
     const tmpl = config.templates.get("release").?;
@@ -8887,6 +8962,42 @@ test "flushCurrentTemplate: adds a template with every owned slice duped" {
     try std.testing.expectEqual(@as(usize, 1), tmpl.params.len);
     try std.testing.expectEqual(@as(u64, 5000), tmpl.timeout_ms.?);
     try std.testing.expectEqual(@as(u32, 3), tmpl.retry_max);
+}
+
+test "parseToml: task inherits advanced retry fields from its template" {
+    const allocator = std.testing.allocator;
+    const toml_content =
+        \\[templates.retrying]
+        \\cmd = "echo hi"
+        \\retry = { max = 3, delay = "2s", backoff_multiplier = 2.5, jitter = true, max_backoff = "30s", on_codes = [1, 2], on_patterns = ["timeout", "connection refused"] }
+        \\
+        \\[tasks.build]
+        \\template = "retrying"
+    ;
+
+    var config = try parseToml(allocator, toml_content);
+    defer config.deinit();
+
+    const task = config.tasks.get("build").?;
+
+    // Basic retry fields already worked via templates before this test; keep them as a
+    // sanity check that the template was applied at all.
+    try std.testing.expectEqual(@as(u32, 3), task.retry_max);
+    try std.testing.expectEqual(@as(u64, 2_000), task.retry_delay_ms);
+
+    // The 5 advanced retry fields must be inherited from the template too, not silently
+    // dropped to their zero values.
+    try std.testing.expect(task.retry_backoff_multiplier != null);
+    try std.testing.expectEqual(@as(f64, 2.5), task.retry_backoff_multiplier.?);
+    try std.testing.expect(task.retry_jitter);
+    try std.testing.expect(task.max_backoff_ms != null);
+    try std.testing.expectEqual(@as(u64, 30_000), task.max_backoff_ms.?);
+    try std.testing.expectEqual(@as(usize, 2), task.retry_on_codes.len);
+    try std.testing.expectEqual(@as(u8, 1), task.retry_on_codes[0]);
+    try std.testing.expectEqual(@as(u8, 2), task.retry_on_codes[1]);
+    try std.testing.expectEqual(@as(usize, 2), task.retry_on_patterns.len);
+    try std.testing.expectEqualStrings("timeout", task.retry_on_patterns[0]);
+    try std.testing.expectEqualStrings("connection refused", task.retry_on_patterns[1]);
 }
 
 // --- flushCurrentHook ---
