@@ -2,6 +2,8 @@ const std = @import("std");
 const conventional = @import("conventional.zig");
 const CommitType = conventional.CommitType;
 const ConventionalCommit = conventional.ConventionalCommit;
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 /// Generate CHANGELOG.md content from commits
 pub fn generateChangelog(
@@ -105,6 +107,30 @@ fn writeCommitEntry(writer: anytype, commit: *const ConventionalCommit) !void {
     }
 }
 
+/// Bound on how many years the day-to-year loop below will walk before giving up. Any real
+/// system clock stays far under this; it exists so a corrupted timestamp fails loudly instead
+/// of spinning.
+const years_since_epoch_max: u32 = 100_000;
+
+/// Given a day count since 1970-01-01, returns the calendar year it falls in and the number
+/// of days remaining within that year (0-indexed day-of-year).
+fn yearFromDaysSinceEpoch(days_since_epoch: u64) struct { year: u32, days_left: u64 } {
+    var year: u32 = 1970;
+    var days_left = days_since_epoch;
+
+    var iterations: u32 = 0;
+    while (iterations < years_since_epoch_max) : (iterations += 1) {
+        const days_in_year: u64 = if (isLeapYear(year)) 366 else 365;
+        if (days_left < days_in_year) break;
+        days_left -= days_in_year;
+        year += 1;
+    }
+    stdx.assert_always(iterations < years_since_epoch_max);
+
+    assert(days_left < 366); // Postcondition: remaining days always fit within one year.
+    return .{ .year = year, .days_left = days_left };
+}
+
 fn getCurrentDate(allocator: std.mem.Allocator) ![]const u8 {
     const timestamp = std.time.timestamp();
     const epoch_seconds = @as(u64, @intCast(timestamp));
@@ -113,17 +139,9 @@ fn getCurrentDate(allocator: std.mem.Allocator) ![]const u8 {
     const seconds_per_day = 86400;
     const days_since_epoch = epoch_seconds / seconds_per_day;
 
-    // Simple algorithm for date calculation
-    // Epoch is 1970-01-01
-    var year: u32 = 1970;
-    var days_remaining = days_since_epoch;
-
-    while (true) {
-        const days_in_year = if (isLeapYear(year)) @as(u64, 366) else @as(u64, 365);
-        if (days_remaining < days_in_year) break;
-        days_remaining -= days_in_year;
-        year += 1;
-    }
+    const year_result = yearFromDaysSinceEpoch(days_since_epoch);
+    const year = year_result.year;
+    var days_remaining = year_result.days_left;
 
     const days_in_months = if (isLeapYear(year))
         [_]u32{ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
@@ -246,4 +264,36 @@ test "isLeapYear" {
     try std.testing.expectEqual(false, isLeapYear(1900));
     try std.testing.expectEqual(true, isLeapYear(2024));
     try std.testing.expectEqual(false, isLeapYear(2023));
+}
+
+test "yearFromDaysSinceEpoch: day 0 is 1970-01-01" {
+    const result = yearFromDaysSinceEpoch(0);
+    try std.testing.expectEqual(@as(u32, 1970), result.year);
+    try std.testing.expectEqual(@as(u64, 0), result.days_left);
+}
+
+test "yearFromDaysSinceEpoch: last day of a non-leap year stays in that year" {
+    const result = yearFromDaysSinceEpoch(364);
+    try std.testing.expectEqual(@as(u32, 1970), result.year);
+    try std.testing.expectEqual(@as(u64, 364), result.days_left);
+}
+
+test "yearFromDaysSinceEpoch: day 365 rolls over into 1971" {
+    const result = yearFromDaysSinceEpoch(365);
+    try std.testing.expectEqual(@as(u32, 1971), result.year);
+    try std.testing.expectEqual(@as(u64, 0), result.days_left);
+}
+
+test "yearFromDaysSinceEpoch: a leap year's day 366 stays inside it" {
+    // 1970..1972 exclusive is 730 days (365 + 365); 1972 is a leap year with 366 days,
+    // so day 730 + 365 = 1095 is the last day of 1972 (index 365 within it).
+    const result = yearFromDaysSinceEpoch(730 + 365);
+    try std.testing.expectEqual(@as(u32, 1972), result.year);
+    try std.testing.expectEqual(@as(u64, 365), result.days_left);
+}
+
+test "yearFromDaysSinceEpoch: a huge day count still terminates within the bound" {
+    const result = yearFromDaysSinceEpoch(365 * 50_000);
+    try std.testing.expect(result.year > 1970);
+    try std.testing.expect(result.days_left < 366);
 }

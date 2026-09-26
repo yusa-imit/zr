@@ -1,6 +1,8 @@
 const std = @import("std");
 const semver = @import("../util/semver.zig");
 const constraint = @import("constraint.zig");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 
 const Version = semver.Version;
 const VersionConstraint = constraint.VersionConstraint;
@@ -232,6 +234,30 @@ fn extractQuotedValue(s: []const u8) []const u8 {
     return s;
 }
 
+/// Bound on how many years the day-to-year loop below will walk before giving up. Any real
+/// system clock stays far under this; it exists so a corrupted timestamp fails loudly instead
+/// of spinning.
+const years_since_epoch_max: u32 = 100_000;
+
+/// Given a day count since 1970-01-01, returns the calendar year it falls in and the number
+/// of days remaining within that year (0-indexed day-of-year).
+fn yearFromDaysSinceEpoch(days_since_epoch: u64) struct { year: u64, days_left: u64 } {
+    var year: u64 = 1970;
+    var days_left = days_since_epoch;
+
+    var iterations: u32 = 0;
+    while (iterations < years_since_epoch_max) : (iterations += 1) {
+        const days_in_year: u64 = if (isLeapYear(year)) 366 else 365;
+        if (days_left < days_in_year) break;
+        days_left -= days_in_year;
+        year += 1;
+    }
+    stdx.assert_always(iterations < years_since_epoch_max);
+
+    assert(days_left < 366); // Postcondition: remaining days always fit within one year.
+    return .{ .year = year, .days_left = days_left };
+}
+
 /// Get current timestamp in ISO 8601 format
 fn getCurrentTimestamp(allocator: std.mem.Allocator) ![]const u8 {
     const ts = std.time.timestamp();
@@ -243,15 +269,9 @@ fn getCurrentTimestamp(allocator: std.mem.Allocator) ![]const u8 {
 
     // Calculate year, month, day (simplified algorithm)
     // Days since 1970-01-01
-    var year: u64 = 1970;
-    var days_left = days_since_epoch;
-
-    while (true) {
-        const days_in_year: u64 = if (isLeapYear(year)) 366 else 365;
-        if (days_left < days_in_year) break;
-        days_left -= days_in_year;
-        year += 1;
-    }
+    const year_result = yearFromDaysSinceEpoch(days_since_epoch);
+    const year = year_result.year;
+    var days_left = year_result.days_left;
 
     const days_in_months: [12]u64 = if (isLeapYear(year))
         .{ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
@@ -852,4 +872,22 @@ test "isLeapYear identifies leap years correctly" {
     // Century leap years (divisible by 400)
     try std.testing.expect(isLeapYear(2000));
     try std.testing.expect(isLeapYear(2400));
+}
+
+test "yearFromDaysSinceEpoch: day 0 is 1970-01-01" {
+    const result = yearFromDaysSinceEpoch(0);
+    try std.testing.expectEqual(@as(u64, 1970), result.year);
+    try std.testing.expectEqual(@as(u64, 0), result.days_left);
+}
+
+test "yearFromDaysSinceEpoch: day 365 rolls over into 1971" {
+    const result = yearFromDaysSinceEpoch(365);
+    try std.testing.expectEqual(@as(u64, 1971), result.year);
+    try std.testing.expectEqual(@as(u64, 0), result.days_left);
+}
+
+test "yearFromDaysSinceEpoch: a huge day count still terminates within the bound" {
+    const result = yearFromDaysSinceEpoch(365 * 50_000);
+    try std.testing.expect(result.year > 1970);
+    try std.testing.expect(result.days_left < 366);
 }
