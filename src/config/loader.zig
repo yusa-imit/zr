@@ -46,8 +46,9 @@ fn findAndApplyParentWorkspace(
     var current = allocator.dupe(u8, config_dir) catch return;
     defer allocator.free(current);
 
-    // Walk up directories
-    while (true) {
+    // Walk up directories. Each pass strictly shortens `current`, so the walk ends within
+    // `config_dir.len` passes; the `for` bound makes that limit explicit.
+    for (0..config_dir.len + 1) |_| {
         const parent = std.fs.path.dirname(current) orelse break;
         if (std.mem.eql(u8, parent, current)) break; // Reached root
 
