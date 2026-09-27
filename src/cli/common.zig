@@ -16,7 +16,9 @@ pub fn findConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
     var current_dir = try allocator.dupe(u8, cwd);
     defer allocator.free(current_dir);
 
-    while (true) {
+    // Walk up directories. Each pass strictly shortens `current_dir`, so the walk ends within
+    // `cwd.len` passes; the `for` bound makes that limit explicit.
+    for (0..cwd.len + 1) |_| {
         // Try to find zr.toml in current directory
         const candidate = try std.fs.path.join(allocator, &[_][]const u8{ current_dir, CONFIG_FILE });
         errdefer allocator.free(candidate);
@@ -49,6 +51,9 @@ pub fn findConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
         // Found it!
         return candidate;
     }
+
+    // Bound exhausted without finding the root sentinel; treat as not found.
+    return null;
 }
 
 /// Load config from file, applying profile overrides if requested.
@@ -63,19 +68,25 @@ pub fn loadConfig(
     var config = loader.loadFromFile(allocator, config_path) catch |err| {
         switch (err) {
             error.FileNotFound => {
-                try color.printError(err_writer, use_color,
+                try color.printError(
+                    err_writer,
+                    use_color,
                     "Config: {s} not found\n\n  Hint: Run 'zr init' to create a new configuration file\n",
                     .{config_path},
                 );
             },
             error.CircularImport => {
-                try color.printError(err_writer, use_color,
+                try color.printError(
+                    err_writer,
+                    use_color,
                     "Config: circular import detected while loading {s}\n\n  Hint: Check the [imports] chains for a cycle\n",
                     .{config_path},
                 );
             },
             else => {
-                try color.printError(err_writer, use_color,
+                try color.printError(
+                    err_writer,
+                    use_color,
                     "Config: Failed to load {s}: {s}\n",
                     .{ config_path, @errorName(err) },
                 );
@@ -107,7 +118,9 @@ pub fn loadConfig(
     if (effective_profile) |pname| {
         config.applyProfile(pname) catch |err| switch (err) {
             error.ProfileNotFound => {
-                try color.printError(err_writer, use_color,
+                try color.printError(
+                    err_writer,
+                    use_color,
                     "profile: '{s}' not found in {s}\n\n  Hint: Add [profiles.{s}] to your zr.toml\n",
                     .{ pname, config_path, pname },
                 );
@@ -115,8 +128,12 @@ pub fn loadConfig(
                 return null;
             },
             else => {
-                try color.printError(err_writer, use_color,
-                    "profile: Failed to apply '{s}': {s}\n", .{ pname, @errorName(err) });
+                try color.printError(
+                    err_writer,
+                    use_color,
+                    "profile: Failed to apply '{s}': {s}\n",
+                    .{ pname, @errorName(err) },
+                );
                 config.deinit();
                 return null;
             },
@@ -324,7 +341,7 @@ test "buildDag with mixed dependency types" {
     try config.addTask("generate", "echo generate", null, null, &[_][]const u8{});
 
     // Add task with parallel deps only (deps_serial are handled by scheduler, not DAG)
-    try config.addTask("build", "echo build", null, null, &[_][]const u8{"install", "generate"});
+    try config.addTask("build", "echo build", null, null, &[_][]const u8{ "install", "generate" });
 
     var dag = try buildDag(allocator, &config);
     defer dag.deinit();

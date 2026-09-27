@@ -104,7 +104,7 @@ src/cli/codeowners.zig:line-length:9
 src/cli/common.zig:ban-list:1
 src/cli/common.zig:doc-header:1
 src/cli/common.zig:line-length:8
-src/cli/common.zig:loadConfig:74
+src/cli/common.zig:loadConfig:86
 src/cli/completion.zig:ban-list:4
 src/cli/completion.zig:doc-header:1
 src/cli/completion.zig:line-length:44
