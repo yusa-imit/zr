@@ -66,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (v1.114.0) and the latest suite run (1799 unit / 2087 integration); README's headless
   Contributing bullet list now links `.github/CONTRIBUTING.md`; stale `.claude/` reference in
   `CONTRIBUTING.md`'s project-structure diagram and CI-trigger notes removed.
+- **Unbounded parent-directory walk in `cli/common.zig`'s `findConfigPath`**: the same
+  dirname-shrinks-so-it-terminates `while (true)` pattern already fixed in
+  `config/loader.zig` (workspace lookup) and 3 timestamp helpers — replaced with a
+  `for (0..cwd.len + 1) |_|` loop that states the limit explicitly, per Tiger Style.
 
 ## [1.114.0] - 2026-09-05
 
