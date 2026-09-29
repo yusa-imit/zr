@@ -667,8 +667,7 @@ src/toolchain/version.zig:ban-list:1
 src/toolchain/version.zig:doc-header:1
 src/toolchain/version.zig:line-length:4
 src/toolchain/version.zig:parseVersionOutput:119
-src/upgrade/checker.zig:doc-header:1
-src/upgrade/checker.zig:getLatestRelease:100
+src/upgrade/checker.zig:getLatestRelease:92
 src/upgrade/checker.zig:line-length:3
 src/upgrade/installer.zig:ban-list:8
 src/upgrade/installer.zig:doc-header:1
