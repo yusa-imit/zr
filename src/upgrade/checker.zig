@@ -1,3 +1,9 @@
+//! Update check: fetches the GitHub releases list and reports a newer zr release, if any.
+//!
+//! Every failure of the network path (DNS, connect, read, oversize or malformed response)
+//! degrades to "no update" rather than an error; the response read is bounded by
+//! `response_bytes_max`. Returned `Release` values own their strings (see `Release.deinit`).
+
 const std = @import("std");
 const builtin = @import("builtin");
 const types = @import("types.zig");
@@ -5,6 +11,9 @@ const Release = types.Release;
 
 /// GitHub API endpoint for releases
 const GITHUB_API_URL = "https://api.github.com/repos/yusa-imit/zr/releases";
+
+/// Upper bound on the GitHub releases response; a page of releases is a few hundred KiB.
+const response_bytes_max: usize = 8 * 1024 * 1024;
 
 /// Current version of zr, injected from build.zig.zon via build options
 pub const CURRENT_VERSION = @import("build_options").version;
@@ -68,17 +77,9 @@ fn getLatestRelease(
     _ = stream.writeAll(request) catch return null;
 
     // Read response
-    var response_buf: std.ArrayListUnmanaged(u8) = .empty;
-    defer response_buf.deinit(allocator);
-
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const n = stream.read(&buf) catch return null;
-        if (n == 0) break;
-        try response_buf.appendSlice(allocator, buf[0..n]);
-    }
-
-    const response = response_buf.items;
+    const response = try readResponseBounded(allocator, &stream, response_bytes_max) orelse
+        return null;
+    defer allocator.free(response);
 
     // Parse HTTP response
     const header_end = std.mem.indexOf(u8, response, "\r\n\r\n") orelse return null;
@@ -130,6 +131,37 @@ fn getLatestRelease(
     }
 
     return null;
+}
+
+/// Reads `source` until end-of-stream into a caller-owned buffer. Returns null when the peer
+/// sends more than `bytes_max` bytes or a read fails: an update check must degrade to "no update
+/// found", never exhaust memory on a hostile or broken server. `source` needs
+/// `fn read(*Source, []u8) !usize`. Precondition: `bytes_max > 0`.
+fn readResponseBounded(
+    allocator: std.mem.Allocator,
+    source: anytype,
+    bytes_max: usize,
+) error{OutOfMemory}!?[]u8 {
+    std.debug.assert(bytes_max > 0);
+
+    var response_buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer response_buf.deinit(allocator);
+
+    var buf: [4096]u8 = undefined;
+    // Every iteration either ends the stream or adds at least one byte, so `bytes_max + 1`
+    // productive iterations would already have exceeded the limit and returned.
+    for (0..bytes_max + 1) |_| {
+        const n = source.read(&buf) catch {
+            response_buf.deinit(allocator);
+            return null;
+        };
+        if (n == 0) return try response_buf.toOwnedSlice(allocator);
+        if (response_buf.items.len + n > bytes_max) {
+            response_buf.deinit(allocator);
+            return null;
+        }
+        try response_buf.appendSlice(allocator, buf[0..n]);
+    } else unreachable;
 }
 
 /// Extract platform-specific download URL from GitHub release assets
@@ -203,6 +235,83 @@ test "isNewerVersion comparison" {
     try std.testing.expect(try isNewerVersion("1.0.0", "0.0.4"));
     try std.testing.expect(!try isNewerVersion("0.0.4", "0.0.4"));
     try std.testing.expect(!try isNewerVersion("0.0.3", "0.0.4"));
+}
+
+/// Test double for a socket: serves `data` in chunks of at most `chunk_size` bytes, then either
+/// signals end-of-stream or fails, and never ends when `endless` is set.
+const FakeStream = struct {
+    data: []const u8,
+    chunk_size: usize,
+    offset: usize = 0,
+    endless: bool = false,
+    fail_after_data: bool = false,
+
+    fn read(stream: *FakeStream, buf: []u8) error{ConnectionResetByPeer}!usize {
+        if (stream.endless) {
+            const n = @min(buf.len, stream.chunk_size);
+            @memset(buf[0..n], 'x');
+            return n;
+        }
+        if (stream.offset == stream.data.len) {
+            if (stream.fail_after_data) return error.ConnectionResetByPeer;
+            return 0;
+        }
+        const n = @min(@min(buf.len, stream.chunk_size), stream.data.len - stream.offset);
+        @memcpy(buf[0..n], stream.data[stream.offset..][0..n]);
+        stream.offset += n;
+        return n;
+    }
+};
+
+test "readResponseBounded returns the whole response when under the limit" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "HTTP/1.1 200 OK\r\n\r\n[]", .chunk_size = 5 };
+
+    const response = (try readResponseBounded(allocator, &stream, 64)).?;
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("HTTP/1.1 200 OK\r\n\r\n[]", response);
+}
+
+test "readResponseBounded accepts an empty response" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "", .chunk_size = 5 };
+
+    const response = (try readResponseBounded(allocator, &stream, 64)).?;
+    defer allocator.free(response);
+
+    try std.testing.expectEqual(@as(usize, 0), response.len);
+}
+
+test "readResponseBounded accepts a response of exactly the limit" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "0123456789", .chunk_size = 3 };
+
+    const response = (try readResponseBounded(allocator, &stream, 10)).?;
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("0123456789", response);
+}
+
+test "readResponseBounded rejects a response one byte over the limit" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "0123456789A", .chunk_size = 3 };
+
+    try std.testing.expectEqual(null, try readResponseBounded(allocator, &stream, 10));
+}
+
+test "readResponseBounded stops on a peer that never ends the stream" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "", .chunk_size = 1, .endless = true };
+
+    try std.testing.expectEqual(null, try readResponseBounded(allocator, &stream, 100));
+}
+
+test "readResponseBounded returns null on a read error" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "partial", .chunk_size = 4, .fail_after_data = true };
+
+    try std.testing.expectEqual(null, try readResponseBounded(allocator, &stream, 64));
 }
 
 test "getDownloadUrl platform detection" {
