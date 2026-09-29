@@ -169,8 +169,8 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
         }
     }
 
-    // Process levels until all nodes are processed
-    while (true) {
+    // Each productive pass processes >= 1 node, so node_count + 1 passes always suffice.
+    for (0..processed.count() + 1) |_| {
         var current_level = std.ArrayList([]const u8){};
         errdefer {
             for (current_level.items) |node| {
@@ -228,7 +228,7 @@ pub fn getExecutionLevels(allocator: std.mem.Allocator, dag: *const DAG) !Execut
         }
 
         try levels.append(allocator, current_level);
-    }
+    } else unreachable; // Each pass fills one more node, so the empty pass arrives by then.
 
     return ExecutionLevels{ .levels = levels };
 }
@@ -336,4 +336,49 @@ test "execution levels: no dependencies" {
 
     try std.testing.expect(levels.levels.items.len == 1);
     try std.testing.expect(levels.levels.items[0].items.len == 3);
+}
+
+test "execution levels: chain as deep as the loop bound is not truncated" {
+    const allocator = std.testing.allocator;
+
+    var dag = DAG.init(allocator);
+    defer dag.deinit();
+
+    // A chain of N nodes needs N productive iterations plus one empty terminating iteration,
+    // the widest case the loop bound must admit. Names outlive the DAG's edges, so an arena
+    // owns them (the graph keeps edge endpoints by slice, not by copy).
+    const chain_len: usize = 40;
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+    var prev: []const u8 = try std.fmt.allocPrint(arena, "t{d}", .{0});
+    try dag.addNode(prev);
+    for (1..chain_len) |i| {
+        const name = try std.fmt.allocPrint(arena, "t{d}", .{i});
+        try dag.addEdge(name, prev);
+        prev = name;
+    }
+
+    var levels = try getExecutionLevels(allocator, &dag);
+    defer levels.deinit(allocator);
+
+    try std.testing.expectEqual(chain_len, levels.levels.items.len);
+    for (levels.levels.items) |level| {
+        try std.testing.expectEqual(@as(usize, 1), level.items.len);
+    }
+}
+
+test "execution levels: acyclic prefix followed by a cycle reports CycleDetected" {
+    const allocator = std.testing.allocator;
+
+    var dag = DAG.init(allocator);
+    defer dag.deinit();
+
+    try dag.addNode("root");
+    try dag.addEdge("a", "root");
+    try dag.addEdge("a", "b");
+    try dag.addEdge("b", "a");
+
+    try std.testing.expectError(error.CycleDetected, getExecutionLevels(allocator, &dag));
 }
