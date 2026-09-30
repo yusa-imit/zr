@@ -1,3 +1,8 @@
+//! HTTP client for the plugin registry: search, list and detail queries over plain HTTP/1.1.
+//!
+//! Every response read is bounded by `response_bytes_max`. Returned `SearchResult` and
+//! `PluginDetails` values own their strings (see their `deinit`).
+
 const std = @import("std");
 
 /// Plugin metadata returned from registry search/list.
@@ -83,6 +88,9 @@ pub const RegistryClientError = error{
 
 /// Default registry base URL.
 pub const default_registry_url = "https://registry.zr.dev";
+
+/// Upper bound on a registry response; a search page of plugin metadata is a few hundred KiB.
+const response_bytes_max: usize = 8 * 1024 * 1024;
 
 /// Configuration for registry client.
 pub const Config = struct {
@@ -240,17 +248,8 @@ pub const Client = struct {
         _ = stream.writeAll(request) catch return RegistryClientError.NetworkError;
 
         // Read response.
-        var response_buf: std.ArrayListUnmanaged(u8) = .empty;
-        defer response_buf.deinit(self.allocator);
-
-        var buf: [4096]u8 = undefined;
-        while (true) {
-            const n = stream.read(&buf) catch return RegistryClientError.NetworkError;
-            if (n == 0) break;
-            try response_buf.appendSlice(self.allocator, buf[0..n]);
-        }
-
-        const response = response_buf.items;
+        const response = try readResponseBounded(self.allocator, &stream, response_bytes_max);
+        defer self.allocator.free(response);
 
         // Parse HTTP response.
         const header_end = std.mem.indexOf(u8, response, "\r\n\r\n") orelse
@@ -281,6 +280,31 @@ pub const Client = struct {
         return try self.allocator.dupe(u8, body);
     }
 };
+
+/// Reads `source` until end-of-stream into a caller-owned buffer. A failed read is
+/// `NetworkError`; a peer that sends more than `bytes_max` bytes is `InvalidResponse`, so a
+/// hostile or broken registry cannot exhaust memory. `source` needs `fn read(*Source, []u8)
+/// !usize`. Precondition: `bytes_max > 0`.
+fn readResponseBounded(
+    allocator: std.mem.Allocator,
+    source: anytype,
+    bytes_max: usize,
+) (RegistryClientError || error{OutOfMemory})![]u8 {
+    std.debug.assert(bytes_max > 0);
+
+    var response_buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer response_buf.deinit(allocator);
+
+    var buf: [4096]u8 = undefined;
+    // Every iteration either ends the stream or adds at least one byte, so `bytes_max + 1`
+    // productive iterations would already have exceeded the limit and returned.
+    for (0..bytes_max + 1) |_| {
+        const n = source.read(&buf) catch return RegistryClientError.NetworkError;
+        if (n == 0) return try response_buf.toOwnedSlice(allocator);
+        if (response_buf.items.len + n > bytes_max) return RegistryClientError.InvalidResponse;
+        try response_buf.appendSlice(allocator, buf[0..n]);
+    } else unreachable;
+}
 
 /// URL-encode a string (simple implementation for query parameters).
 fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
@@ -483,4 +507,90 @@ test "parsePluginDetails: valid JSON" {
     try std.testing.expectEqualStrings("zr-runner", details.org);
     try std.testing.expectEqual(@as(usize, 2), details.versions.len);
     try std.testing.expectEqualStrings("# Docker Plugin", details.readme);
+}
+
+/// Test double for a socket: serves `data` in chunks of at most `chunk_size` bytes, then either
+/// signals end-of-stream or fails, and never ends when `endless` is set.
+const FakeStream = struct {
+    data: []const u8,
+    chunk_size: usize,
+    offset: usize = 0,
+    endless: bool = false,
+    fail_after_data: bool = false,
+
+    fn read(stream: *FakeStream, buf: []u8) error{ConnectionResetByPeer}!usize {
+        if (stream.endless) {
+            const n = @min(buf.len, stream.chunk_size);
+            @memset(buf[0..n], 'x');
+            return n;
+        }
+        if (stream.offset == stream.data.len) {
+            if (stream.fail_after_data) return error.ConnectionResetByPeer;
+            return 0;
+        }
+        const n = @min(@min(buf.len, stream.chunk_size), stream.data.len - stream.offset);
+        @memcpy(buf[0..n], stream.data[stream.offset..][0..n]);
+        stream.offset += n;
+        return n;
+    }
+};
+
+test "readResponseBounded returns the whole response when under the limit" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "HTTP/1.1 200 OK\r\n\r\n[]", .chunk_size = 5 };
+
+    const response = try readResponseBounded(allocator, &stream, 64);
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("HTTP/1.1 200 OK\r\n\r\n[]", response);
+}
+
+test "readResponseBounded accepts an empty response" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "", .chunk_size = 5 };
+
+    const response = try readResponseBounded(allocator, &stream, 64);
+    defer allocator.free(response);
+
+    try std.testing.expectEqual(@as(usize, 0), response.len);
+}
+
+test "readResponseBounded accepts a response of exactly the limit" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "0123456789", .chunk_size = 3 };
+
+    const response = try readResponseBounded(allocator, &stream, 10);
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("0123456789", response);
+}
+
+test "readResponseBounded rejects a response one byte over the limit" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "0123456789A", .chunk_size = 3 };
+
+    try std.testing.expectError(
+        RegistryClientError.InvalidResponse,
+        readResponseBounded(allocator, &stream, 10),
+    );
+}
+
+test "readResponseBounded rejects a peer that never ends the stream" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "", .chunk_size = 4096, .endless = true };
+
+    try std.testing.expectError(
+        RegistryClientError.InvalidResponse,
+        readResponseBounded(allocator, &stream, 16 * 1024),
+    );
+}
+
+test "readResponseBounded maps a failed read to NetworkError" {
+    const allocator = std.testing.allocator;
+    var stream: FakeStream = .{ .data = "partial", .chunk_size = 3, .fail_after_data = true };
+
+    try std.testing.expectError(
+        RegistryClientError.NetworkError,
+        readResponseBounded(allocator, &stream, 64),
+    );
 }

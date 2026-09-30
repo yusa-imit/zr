@@ -616,8 +616,7 @@ src/plugin/loader.zig:line-length:5
 src/plugin/registry.zig:doc-header:1
 src/plugin/registry.zig:installRegistryPlugin:83
 src/plugin/registry.zig:line-length:7
-src/plugin/registry_client.zig:doc-header:1
-src/plugin/registry_client.zig:get:85
+src/plugin/registry_client.zig:get:76
 src/plugin/registry_client.zig:line-length:1
 src/plugin/search.zig:doc-header:1
 src/plugin/search.zig:line-length:4
