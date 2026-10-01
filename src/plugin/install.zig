@@ -1,5 +1,14 @@
+//! Local and git plugin installation into `~/.zr/plugins/<name>/`.
+//!
+//! Every file copied from a local plugin source is bounded by `file_bytes_max`, so a hostile or
+//! corrupt source tree cannot fill the disk. Returned paths and `PluginMeta` fields are owned by
+//! the caller, who frees them with the allocator passed in.
+
 const std = @import("std");
 const platform = @import("../util/platform.zig");
+
+/// Largest single file `installLocalPlugin` copies; plugin binaries and manifests are far smaller.
+const file_bytes_max: u64 = 64 * 1024 * 1024;
 
 /// Metadata read from a plugin's plugin.toml file.
 pub const PluginMeta = struct {
@@ -21,6 +30,7 @@ pub const InstallError = error{
     SourceNotFound,
     AlreadyInstalled,
     DestinationCreateFailed,
+    FileTooLarge,
 };
 
 pub const GitInstallError = error{
@@ -202,7 +212,9 @@ pub fn installLocalPlugin(
 
     // Check if already installed.
     const already = blk: {
-        std.fs.accessAbsolute(dest_dir, .{}) catch { break :blk false; };
+        std.fs.accessAbsolute(dest_dir, .{}) catch {
+            break :blk false;
+        };
         break :blk true;
     };
     if (already) return InstallError.AlreadyInstalled;
@@ -231,15 +243,33 @@ pub fn installLocalPlugin(
         defer src_file.close();
         var dst_file = try dest.createFile(entry.name, .{});
         defer dst_file.close();
-        var fifo_buf: [8192]u8 = undefined;
-        while (true) {
-            const n = try src_file.read(&fifo_buf);
-            if (n == 0) break;
-            try dst_file.writeAll(fifo_buf[0..n]);
-        }
+        _ = try copyBounded(&src_file, &dst_file, file_bytes_max);
     }
 
     return dest_dir;
+}
+
+/// Copy `source` to `sink` until end-of-stream and return the number of bytes copied. `source`
+/// needs `read(buf) !usize` and `sink` needs `writeAll(bytes) !void`. A source longer than
+/// `bytes_max` is `InstallError.FileTooLarge`; the sink may already hold a prefix of it, so the
+/// caller discards the destination on error. Precondition: `bytes_max > 0`.
+fn copyBounded(source: anytype, sink: anytype, bytes_max: u64) !u64 {
+    std.debug.assert(bytes_max > 0);
+    var buffer: [8192]u8 = undefined;
+    var copied: u64 = 0;
+    // Every iteration either ends the stream or copies at least one byte, so `bytes_max + 1`
+    // iterations are enough to reach end-of-stream or to overrun the limit.
+    for (0..bytes_max + 1) |_| {
+        const n = try source.read(&buffer);
+        if (n == 0) {
+            std.debug.assert(copied <= bytes_max);
+            return copied;
+        }
+        if (copied + n > bytes_max) return InstallError.FileTooLarge;
+        try sink.writeAll(buffer[0..n]);
+        copied += n;
+    }
+    return InstallError.FileTooLarge;
 }
 
 /// Remove an installed plugin from ~/.zr/plugins/<name>/.
@@ -296,7 +326,9 @@ pub fn installGitPlugin(
 
     // Check if already installed.
     const already = blk: {
-        std.fs.accessAbsolute(dest_dir, .{}) catch { break :blk false; };
+        std.fs.accessAbsolute(dest_dir, .{}) catch {
+            break :blk false;
+        };
         break :blk true;
     };
     if (already) return GitInstallError.AlreadyInstalled;
@@ -503,7 +535,9 @@ test "installLocalPlugin and removePlugin round-trip" {
 
     // Verify it's gone.
     const gone = blk: {
-        std.fs.accessAbsolute(dest_path, .{}) catch { break :blk true; };
+        std.fs.accessAbsolute(dest_path, .{}) catch {
+            break :blk true;
+        };
         break :blk false;
     };
     try std.testing.expect(gone);
@@ -744,4 +778,99 @@ test "updateLocalPlugin: round-trip install + update" {
 
     // Clean up.
     try removePlugin(allocator, plugin_name);
+}
+
+/// Test double for a file: serves `data` in chunks of at most `chunk_size` bytes, then signals
+/// end-of-stream or fails, and never ends when `endless` is set.
+const FakeSource = struct {
+    data: []const u8,
+    chunk_size: usize,
+    offset: usize = 0,
+    endless: bool = false,
+    fail_after_data: bool = false,
+
+    fn read(source: *FakeSource, buf: []u8) error{InputOutput}!usize {
+        if (source.endless) {
+            const n = @min(buf.len, source.chunk_size);
+            @memset(buf[0..n], 'x');
+            return n;
+        }
+        if (source.offset == source.data.len) {
+            if (source.fail_after_data) return error.InputOutput;
+            return 0;
+        }
+        const n = @min(@min(buf.len, source.chunk_size), source.data.len - source.offset);
+        @memcpy(buf[0..n], source.data[source.offset..][0..n]);
+        source.offset += n;
+        return n;
+    }
+};
+
+/// Test double for a destination file: keeps every byte written so tests can compare them.
+const FakeSink = struct {
+    gpa: std.mem.Allocator,
+    bytes: std.ArrayList(u8) = .empty,
+
+    fn writeAll(sink: *FakeSink, data: []const u8) error{OutOfMemory}!void {
+        try sink.bytes.appendSlice(sink.gpa, data);
+    }
+
+    fn deinit(sink: *FakeSink) void {
+        sink.bytes.deinit(sink.gpa);
+    }
+};
+
+test "copyBounded copies the whole file when under the limit" {
+    var source: FakeSource = .{ .data = "plugin binary bytes", .chunk_size = 5 };
+    var sink: FakeSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    const copied = try copyBounded(&source, &sink, 64);
+    try std.testing.expectEqual(@as(u64, 19), copied);
+    try std.testing.expectEqualStrings("plugin binary bytes", sink.bytes.items);
+}
+
+test "copyBounded accepts an empty file" {
+    var source: FakeSource = .{ .data = "", .chunk_size = 5 };
+    var sink: FakeSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    const copied = try copyBounded(&source, &sink, 64);
+    try std.testing.expectEqual(@as(u64, 0), copied);
+    try std.testing.expectEqual(@as(usize, 0), sink.bytes.items.len);
+}
+
+test "copyBounded accepts a file of exactly the limit" {
+    var source: FakeSource = .{ .data = "0123456789", .chunk_size = 3 };
+    var sink: FakeSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    const copied = try copyBounded(&source, &sink, 10);
+    try std.testing.expectEqual(@as(u64, 10), copied);
+    try std.testing.expectEqualStrings("0123456789", sink.bytes.items);
+}
+
+test "copyBounded rejects a file one byte over the limit" {
+    var source: FakeSource = .{ .data = "0123456789A", .chunk_size = 3 };
+    var sink: FakeSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    try std.testing.expectError(InstallError.FileTooLarge, copyBounded(&source, &sink, 10));
+    // Never writes past the limit, even when the oversize chunk straddles it.
+    try std.testing.expect(sink.bytes.items.len <= 10);
+}
+
+test "copyBounded rejects a source that never ends" {
+    var source: FakeSource = .{ .data = "", .chunk_size = 4096, .endless = true };
+    var sink: FakeSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    try std.testing.expectError(
+        InstallError.FileTooLarge,
+        copyBounded(&source, &sink, 16 * 1024),
+    );
+    try std.testing.expect(sink.bytes.items.len <= 16 * 1024);
+}
+
+test "copyBounded propagates a failed read" {
+    var source: FakeSource = .{ .data = "partial", .chunk_size = 3, .fail_after_data = true };
+    var sink: FakeSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    try std.testing.expectError(error.InputOutput, copyBounded(&source, &sink, 64));
+    try std.testing.expectEqualStrings("partial", sink.bytes.items);
 }

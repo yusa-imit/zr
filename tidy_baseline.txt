@@ -609,7 +609,6 @@ src/plugin/builtin_env.zig:doc-header:1
 src/plugin/builtin_env.zig:line-length:1
 src/plugin/builtin_git.zig:doc-header:1
 src/plugin/install.zig:ban-list:1
-src/plugin/install.zig:doc-header:1
 src/plugin/install.zig:line-length:16
 src/plugin/loader.zig:doc-header:1
 src/plugin/loader.zig:line-length:5
