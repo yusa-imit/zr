@@ -607,7 +607,6 @@ src/plugin/builtin_docker.zig:buildCommand:75
 src/plugin/builtin_docker.zig:doc-header:1
 src/plugin/builtin_env.zig:doc-header:1
 src/plugin/builtin_env.zig:line-length:1
-src/plugin/builtin_git.zig:doc-header:1
 src/plugin/install.zig:ban-list:1
 src/plugin/install.zig:line-length:16
 src/plugin/loader.zig:doc-header:1
