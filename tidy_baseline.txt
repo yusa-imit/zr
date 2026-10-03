@@ -419,7 +419,6 @@ src/exec/process.zig:doc-header:1
 src/exec/process.zig:line-length:3
 src/exec/remote.zig:ban-list:2
 src/exec/remote.zig:deserializeTask:75
-src/exec/remote.zig:doc-header:1
 src/exec/remote.zig:line-length:5
 src/exec/replay.zig:ban-list:3
 src/exec/replay.zig:captureFailure:98

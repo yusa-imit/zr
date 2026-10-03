@@ -1,3 +1,10 @@
+//! Remote task execution over SSH and HTTP.
+//!
+//! The SSH executor reads the stdout and stderr of its `ssh` child through `collectPipes`, which
+//! holds each stream to `output_bytes_max` bytes. A child that prints more is killed and reported
+//! as `error.OutputTooLarge`, so a hostile or broken remote cannot exhaust local memory.
+//! Allocation: output buffers grow on the caller's `allocator` and are freed by the caller.
+
 const std = @import("std");
 const types = @import("../config/types.zig");
 
@@ -11,6 +18,7 @@ pub const RemoteExecutorError = error{
     InvalidTaskDeserialization,
     NetworkError,
     InvalidURI,
+    OutputTooLarge,
 } || std.mem.Allocator.Error;
 
 /// Remote executor configuration.
@@ -161,25 +169,7 @@ pub const SSHExecutor = struct {
         var stderr_list: std.ArrayListUnmanaged(u8) = .{};
         defer stderr_list.deinit(self.allocator);
 
-        // Create a small buffer for reading
-        const read_buf_size = 4096;
-        var buf: [read_buf_size]u8 = undefined;
-
-        if (child.stdout) |stdout| {
-            while (true) {
-                const bytes_read = try stdout.read(&buf);
-                if (bytes_read == 0) break;
-                try stdout_list.appendSlice(self.allocator, buf[0..bytes_read]);
-            }
-        }
-
-        if (child.stderr) |stderr| {
-            while (true) {
-                const bytes_read = try stderr.read(&buf);
-                if (bytes_read == 0) break;
-                try stderr_list.appendSlice(self.allocator, buf[0..bytes_read]);
-            }
-        }
+        try collectPipes(self.allocator, &child, &stdout_list, &stderr_list);
 
         // Wait for process to finish
         const term = try child.wait();
@@ -238,24 +228,7 @@ pub const SSHExecutor = struct {
         var stderr_list: std.ArrayListUnmanaged(u8) = .{};
         errdefer stderr_list.deinit(self.allocator);
 
-        const read_buf_size = 4096;
-        var buf: [read_buf_size]u8 = undefined;
-
-        if (child.stdout) |stdout| {
-            while (true) {
-                const bytes_read = try stdout.read(&buf);
-                if (bytes_read == 0) break;
-                try stdout_list.appendSlice(self.allocator, buf[0..bytes_read]);
-            }
-        }
-
-        if (child.stderr) |stderr| {
-            while (true) {
-                const bytes_read = try stderr.read(&buf);
-                if (bytes_read == 0) break;
-                try stderr_list.appendSlice(self.allocator, buf[0..bytes_read]);
-            }
-        }
+        try collectPipes(self.allocator, &child, &stdout_list, &stderr_list);
 
         const term = try child.wait();
 
@@ -595,9 +568,167 @@ pub const RemoteExecutor = struct {
     }
 };
 
+/// Upper bound on the bytes read from each of a child's output pipes.
+const output_bytes_max: u32 = 16 * 1024 * 1024;
+
+const read_chunk_size = 4096;
+
+/// Read the stdout and stderr of a spawned `child` into the two lists, each bounded by
+/// `output_bytes_max`. On any error the child is killed and reaped here, so the caller must not
+/// `wait()` after an error. Precondition: the child was spawned with both streams piped.
+fn collectPipes(
+    gpa: std.mem.Allocator,
+    child: *std.process.Child,
+    stdout_list: *std.ArrayListUnmanaged(u8),
+    stderr_list: *std.ArrayListUnmanaged(u8),
+) RemoteExecutorError!void {
+    std.debug.assert(child.stdout_behavior == .Pipe);
+    std.debug.assert(child.stderr_behavior == .Pipe);
+    if (child.stdout) |pipe| {
+        readBounded(pipe, gpa, stdout_list, output_bytes_max) catch |err| {
+            _ = child.kill() catch {};
+            return err;
+        };
+    }
+    if (child.stderr) |pipe| {
+        readBounded(pipe, gpa, stderr_list, output_bytes_max) catch |err| {
+            _ = child.kill() catch {};
+            return err;
+        };
+    }
+}
+
+/// Append everything `source` yields to `output`, up to `bytes_max` bytes. `source` needs
+/// `read(buf) !usize`. A read error is `error.NetworkError`; output longer than `bytes_max` is
+/// `error.OutputTooLarge`, and `output` then holds at most `bytes_max` bytes. Precondition:
+/// `bytes_max > 0`.
+fn readBounded(
+    source: anytype,
+    gpa: std.mem.Allocator,
+    output: *std.ArrayListUnmanaged(u8),
+    bytes_max: u32,
+) RemoteExecutorError!void {
+    std.debug.assert(bytes_max > 0);
+    var chunk: [read_chunk_size]u8 = undefined;
+    // Every iteration either ends the stream or appends at least one byte, so `bytes_max + 1`
+    // iterations are enough to reach end-of-stream or to overrun the limit.
+    for (0..@as(u64, bytes_max) + 1) |_| {
+        const n = source.read(&chunk) catch return error.NetworkError;
+        if (n == 0) {
+            std.debug.assert(output.items.len <= bytes_max);
+            return;
+        }
+        if (output.items.len + n > bytes_max) return error.OutputTooLarge;
+        try output.appendSlice(gpa, chunk[0..n]);
+    }
+    return error.OutputTooLarge;
+}
+
 // ============================================================================
 // TESTS
 // ============================================================================
+
+/// Test double for a child's output pipe.
+const FakeSource = struct {
+    data: []const u8,
+    chunk_size: usize,
+    offset: usize = 0,
+    endless: bool = false,
+    fail_after_data: bool = false,
+
+    fn read(source: *FakeSource, buf: []u8) error{InputOutput}!usize {
+        if (source.endless) {
+            const n = @min(buf.len, source.chunk_size);
+            @memset(buf[0..n], 'x');
+            return n;
+        }
+        if (source.offset == source.data.len) {
+            if (source.fail_after_data) return error.InputOutput;
+            return 0;
+        }
+        const n = @min(@min(buf.len, source.chunk_size), source.data.len - source.offset);
+        @memcpy(buf[0..n], source.data[source.offset..][0..n]);
+        source.offset += n;
+        return n;
+    }
+};
+
+test "readBounded collects the whole stream when under the limit" {
+    var source: FakeSource = .{ .data = "remote says hi\n", .chunk_size = 5 };
+    var output: std.ArrayListUnmanaged(u8) = .{};
+    defer output.deinit(std.testing.allocator);
+    try readBounded(&source, std.testing.allocator, &output, 64);
+    try std.testing.expectEqualStrings("remote says hi\n", output.items);
+}
+
+test "readBounded accepts an empty stream" {
+    var source: FakeSource = .{ .data = "", .chunk_size = 5 };
+    var output: std.ArrayListUnmanaged(u8) = .{};
+    defer output.deinit(std.testing.allocator);
+    try readBounded(&source, std.testing.allocator, &output, 64);
+    try std.testing.expectEqual(@as(usize, 0), output.items.len);
+}
+
+test "readBounded accepts a stream of exactly the limit" {
+    var source: FakeSource = .{ .data = "0123456789", .chunk_size = 3 };
+    var output: std.ArrayListUnmanaged(u8) = .{};
+    defer output.deinit(std.testing.allocator);
+    try readBounded(&source, std.testing.allocator, &output, 10);
+    try std.testing.expectEqualStrings("0123456789", output.items);
+}
+
+test "readBounded rejects a stream one byte over the limit" {
+    var source: FakeSource = .{ .data = "0123456789A", .chunk_size = 3 };
+    var output: std.ArrayListUnmanaged(u8) = .{};
+    defer output.deinit(std.testing.allocator);
+    try std.testing.expectError(
+        error.OutputTooLarge,
+        readBounded(&source, std.testing.allocator, &output, 10),
+    );
+    // Never holds more than the limit, even when the oversize chunk straddles it.
+    try std.testing.expect(output.items.len <= 10);
+}
+
+test "readBounded stops an endless peer at the limit" {
+    var source: FakeSource = .{ .data = "", .chunk_size = 4096, .endless = true };
+    var output: std.ArrayListUnmanaged(u8) = .{};
+    defer output.deinit(std.testing.allocator);
+    try std.testing.expectError(
+        error.OutputTooLarge,
+        readBounded(&source, std.testing.allocator, &output, 10_000),
+    );
+    try std.testing.expect(output.items.len <= 10_000);
+}
+
+test "readBounded reports a read error as NetworkError" {
+    var source: FakeSource = .{ .data = "partial", .chunk_size = 3, .fail_after_data = true };
+    var output: std.ArrayListUnmanaged(u8) = .{};
+    defer output.deinit(std.testing.allocator);
+    try std.testing.expectError(
+        error.NetworkError,
+        readBounded(&source, std.testing.allocator, &output, 64),
+    );
+    try std.testing.expectEqualStrings("partial", output.items);
+}
+
+test "collectPipes reads both streams of a real child" {
+    const gpa = std.testing.allocator;
+    var child = std.process.Child.init(&.{ "/bin/sh", "-c", "echo out; echo err >&2" }, gpa);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+    try child.spawn();
+
+    var stdout_list: std.ArrayListUnmanaged(u8) = .{};
+    defer stdout_list.deinit(gpa);
+
+    var stderr_list: std.ArrayListUnmanaged(u8) = .{};
+    defer stderr_list.deinit(gpa);
+
+    try collectPipes(gpa, &child, &stdout_list, &stderr_list);
+    _ = try child.wait();
+    try std.testing.expectEqualStrings("out\n", stdout_list.items);
+    try std.testing.expectEqualStrings("err\n", stderr_list.items);
+}
 
 test "parseTarget handles SSH short format user@host:port" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
