@@ -4,6 +4,9 @@ const platform = @import("../util/platform.zig");
 const resource = @import("resource.zig");
 const control = @import("control.zig");
 const monitor_mod = @import("../output/monitor.zig");
+const stdx = @import("../stdx.zig");
+
+const assert = stdx.assert;
 
 pub const ProcessError = error{
     SpawnFailed,
@@ -24,6 +27,52 @@ pub const ProcessResult = struct {
 
 /// Callback for streaming output lines.
 pub const OutputCallback = *const fn (line: []const u8, is_stderr: bool, ctx: ?*anyopaque) void;
+
+/// Most bytes buffered for one streamed output line. A child that prints without ever writing a
+/// newline would otherwise grow the line buffer until the process runs out of memory.
+const line_bytes_max: u32 = 1 << 20;
+
+const EmitOptions = struct {
+    /// Longest line held in memory; a longer one is delivered in pieces of this size.
+    line_bytes_max: u32,
+    is_stderr: bool,
+    callback: OutputCallback,
+    callback_ctx: ?*anyopaque,
+};
+
+/// Splits `chunk` into lines and delivers each complete line to the callback. `line_buf` carries
+/// the unterminated tail between calls and never holds more than `options.line_bytes_max` bytes:
+/// a line reaching that size is delivered early, as is the pending tail when an append cannot
+/// allocate (the byte is lost, but the reader keeps draining the pipe so the child cannot block).
+/// Precondition: `options.line_bytes_max > 0`.
+fn emitLines(
+    gpa: std.mem.Allocator,
+    line_buf: *std.ArrayListUnmanaged(u8),
+    chunk: []const u8,
+    options: EmitOptions,
+) void {
+    assert(options.line_bytes_max > 0);
+    assert(line_buf.items.len < options.line_bytes_max);
+    defer assert(line_buf.items.len < options.line_bytes_max);
+
+    for (chunk) |byte| {
+        if (byte == '\n') {
+            options.callback(line_buf.items, options.is_stderr, options.callback_ctx);
+            line_buf.clearRetainingCapacity();
+            continue;
+        }
+        line_buf.append(gpa, byte) catch {
+            // Out of memory: deliver what is pending so memory is not needed to make progress.
+            options.callback(line_buf.items, options.is_stderr, options.callback_ctx);
+            line_buf.clearRetainingCapacity();
+            continue;
+        };
+        if (line_buf.items.len == options.line_bytes_max) {
+            options.callback(line_buf.items, options.is_stderr, options.callback_ctx);
+            line_buf.clearRetainingCapacity();
+        }
+    }
+}
 
 pub const ProcessConfig = struct {
     cmd: []const u8,
@@ -368,14 +417,12 @@ pub fn run(allocator: std.mem.Allocator, config: ProcessConfig) ProcessError!Pro
                 const n = ctx.file.read(&buf) catch break;
                 if (n == 0) break; // EOF
 
-                for (buf[0..n]) |byte| {
-                    if (byte == '\n') {
-                        ctx.callback(line_buf.items, ctx.is_stderr, ctx.callback_ctx);
-                        line_buf.clearRetainingCapacity();
-                    } else {
-                        line_buf.append(ctx.allocator, byte) catch {};
-                    }
-                }
+                emitLines(ctx.allocator, &line_buf, buf[0..n], .{
+                    .line_bytes_max = line_bytes_max,
+                    .is_stderr = ctx.is_stderr,
+                    .callback = ctx.callback,
+                    .callback_ctx = ctx.callback_ctx,
+                });
             }
 
             // Emit remaining partial line
@@ -671,4 +718,97 @@ test "run: output callback receives all lines without dropping trailing output" 
         try std.testing.expectEqualStrings("line4", ctx.lines.items[3]);
         try std.testing.expectEqualStrings("line5", ctx.lines.items[4]);
     }
+}
+
+const EmitTestSink = struct {
+    gpa: std.mem.Allocator,
+    lines: std.ArrayListUnmanaged([]u8) = .empty,
+
+    fn deinit(sink: *EmitTestSink) void {
+        for (sink.lines.items) |line| sink.gpa.free(line);
+        sink.lines.deinit(sink.gpa);
+    }
+
+    fn callback(line: []const u8, is_stderr: bool, ctx: ?*anyopaque) void {
+        _ = is_stderr;
+        const sink: *EmitTestSink = @ptrCast(@alignCast(ctx.?));
+        const copy = sink.gpa.dupe(u8, line) catch return;
+        sink.lines.append(sink.gpa, copy) catch sink.gpa.free(copy);
+    }
+
+    fn options(sink: *EmitTestSink, line_bytes: u32) EmitOptions {
+        return .{
+            .line_bytes_max = line_bytes,
+            .is_stderr = false,
+            .callback = callback,
+            .callback_ctx = sink,
+        };
+    }
+};
+
+test "emitLines: splits complete lines and carries the unterminated tail" {
+    const gpa = std.testing.allocator;
+    var sink: EmitTestSink = .{ .gpa = gpa };
+    defer sink.deinit();
+    var line_buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer line_buf.deinit(gpa);
+
+    emitLines(gpa, &line_buf, "ab\ncd", sink.options(16));
+    try std.testing.expectEqual(@as(usize, 1), sink.lines.items.len);
+    try std.testing.expectEqualStrings("ab", sink.lines.items[0]);
+    try std.testing.expectEqualStrings("cd", line_buf.items);
+
+    emitLines(gpa, &line_buf, "ef\n\n", sink.options(16));
+    try std.testing.expectEqual(@as(usize, 3), sink.lines.items.len);
+    try std.testing.expectEqualStrings("cdef", sink.lines.items[1]);
+    try std.testing.expectEqualStrings("", sink.lines.items[2]);
+    try std.testing.expectEqual(@as(usize, 0), line_buf.items.len);
+}
+
+test "emitLines: a line of exactly line_bytes_max bytes is not delivered twice" {
+    const gpa = std.testing.allocator;
+    var sink: EmitTestSink = .{ .gpa = gpa };
+    defer sink.deinit();
+    var line_buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer line_buf.deinit(gpa);
+
+    emitLines(gpa, &line_buf, "abcd\n", sink.options(4));
+    try std.testing.expectEqual(@as(usize, 2), sink.lines.items.len);
+    try std.testing.expectEqualStrings("abcd", sink.lines.items[0]);
+    try std.testing.expectEqualStrings("", sink.lines.items[1]);
+}
+
+test "emitLines: an endless line is delivered in pieces and the buffer stays bounded" {
+    const gpa = std.testing.allocator;
+    var sink: EmitTestSink = .{ .gpa = gpa };
+    defer sink.deinit();
+    var line_buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer line_buf.deinit(gpa);
+
+    // 10 bytes, no newline, 4-byte cap: pieces of 4, 4, then a 2-byte tail.
+    emitLines(gpa, &line_buf, "0123456789", sink.options(4));
+    try std.testing.expectEqual(@as(usize, 2), sink.lines.items.len);
+    try std.testing.expectEqualStrings("0123", sink.lines.items[0]);
+    try std.testing.expectEqualStrings("4567", sink.lines.items[1]);
+    try std.testing.expectEqualStrings("89", line_buf.items);
+    try std.testing.expect(line_buf.items.len < 4);
+}
+
+test "emitLines: allocation failure delivers the pending tail instead of dropping silently" {
+    // A 200-byte arena cannot hold a 250-byte line, so growth fails partway through it.
+    var arena_storage: [200]u8 align(8) = undefined;
+    var arena = std.heap.FixedBufferAllocator.init(&arena_storage);
+    const gpa = arena.allocator();
+    var sink: EmitTestSink = .{ .gpa = std.testing.allocator };
+    defer sink.deinit();
+    var line_buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer line_buf.deinit(gpa);
+
+    const long_line = "x" ** 250;
+    emitLines(gpa, &line_buf, long_line ++ "\nz\n", sink.options(1 << 10));
+    try std.testing.expect(sink.lines.items.len >= 3);
+    try std.testing.expect(sink.lines.items[0].len > 0);
+    try std.testing.expect(sink.lines.items[0].len < long_line.len);
+    try std.testing.expectEqualStrings("z", sink.lines.items[sink.lines.items.len - 1]);
+    try std.testing.expectEqual(@as(usize, 0), line_buf.items.len);
 }
