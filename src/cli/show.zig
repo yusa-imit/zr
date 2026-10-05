@@ -5,6 +5,9 @@ const common = @import("common.zig");
 const types = @import("../config/types.zig");
 const sailor = @import("sailor");
 const pager = @import("../util/pager.zig");
+const stdx = @import("../stdx.zig");
+
+const assert = stdx.assert;
 
 fn processOutput(
     allocator: Allocator,
@@ -120,9 +123,12 @@ pub const ShowOutputOptions = struct {
     no_pager: bool = false,
 };
 
+/// Longest line `StreamingLineReader` hands out; a longer line comes back in pieces of this size.
+const line_bytes_max: usize = 1 << 20;
+
 /// StreamingLineReader provides line-by-line iteration over a file
 /// without loading the entire file into memory.
-/// Memory usage: ~4KB buffer + current line allocation
+/// Memory usage: ~4KB buffer + current line allocation (at most `line_bytes_max`)
 const StreamingLineReader = struct {
     allocator: Allocator,
     file: std.fs.File,
@@ -156,7 +162,9 @@ const StreamingLineReader = struct {
         var line_buf: std.ArrayListUnmanaged(u8) = .{};
         errdefer line_buf.deinit(self.allocator);
 
-        while (true) {
+        // Each pass either returns or appends at least one byte, so the line cap bounds the passes.
+        for (0..line_bytes_max + 2) |_| {
+            assert(line_buf.items.len <= line_bytes_max);
             // Refill buffer if needed
             if (self.buffer_pos >= self.buffer_len and !self.eof_reached) {
                 self.buffer_len = try self.file.read(&self.buffer);
@@ -179,17 +187,26 @@ const StreamingLineReader = struct {
 
             // Scan for newline in current buffer
             const remaining = self.buffer[self.buffer_pos..self.buffer_len];
-            if (std.mem.indexOfScalar(u8, remaining, '\n')) |newline_offset| {
-                // Found newline - append up to (but not including) newline
-                try line_buf.appendSlice(self.allocator, remaining[0..newline_offset]);
+            const newline_at = std.mem.indexOfScalar(u8, remaining, '\n');
+            const chunk_len = newline_at orelse remaining.len;
+            const room = line_bytes_max - line_buf.items.len;
+            if (chunk_len > room) {
+                // Over-long line: hand out a full piece; the rest is the next line.
+                try line_buf.appendSlice(self.allocator, remaining[0..room]);
+                self.buffer_pos += room;
+                assert(line_buf.items.len == line_bytes_max);
+                return try line_buf.toOwnedSlice(self.allocator);
+            }
+            try line_buf.appendSlice(self.allocator, remaining[0..chunk_len]);
+            if (newline_at) |newline_offset| {
                 self.buffer_pos += newline_offset + 1; // Skip past newline
                 return try line_buf.toOwnedSlice(self.allocator);
-            } else {
-                // No newline in buffer - append all remaining and continue
-                try line_buf.appendSlice(self.allocator, remaining);
-                self.buffer_pos = self.buffer_len;
             }
+            // No newline in buffer - the whole chunk is appended; continue
+            self.buffer_pos = self.buffer_len;
         }
+        // Every pass appends at least one byte or returns, and the cap is checked before appending.
+        unreachable;
     }
 };
 
@@ -486,7 +503,9 @@ pub fn cmdShow(
 
     // Find task
     const task = config.tasks.get(task_name) orelse {
-        try color.printError(ew, use_color,
+        try color.printError(
+            ew,
+            use_color,
             "show: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
             .{task_name},
         );
@@ -496,7 +515,9 @@ pub fn cmdShow(
     // Handle --output flag: display captured task output
     if (output_flag) {
         if (task.output_file == null) {
-            try color.printError(ew, use_color,
+            try color.printError(
+                ew,
+                use_color,
                 "show: Task '{s}' has no output_file configured\n\n  Hint: Add 'output_file = \"path/to/file\"' to the task configuration\n",
                 .{task_name},
             );
@@ -532,7 +553,9 @@ pub fn cmdShow(
             defer allocator.free(result.stderr);
 
             if (result.term.Exited != 0) {
-                try color.printError(ew, use_color,
+                try color.printError(
+                    ew,
+                    use_color,
                     "show: Failed to decompress output file: {s}\n  Error: {s}\n",
                     .{ gz_path, result.stderr },
                 );
@@ -547,14 +570,18 @@ pub fn cmdShow(
         // No compression, read normally
         const file = std.fs.cwd().openFile(output_path, .{}) catch |err| {
             if (err == error.FileNotFound) {
-                try color.printError(ew, use_color,
+                try color.printError(
+                    ew,
+                    use_color,
                     "show: Output file not found: {s}\n\n  Hint: Run the task first to generate output\n",
                     .{output_path},
                 );
             } else {
-                try color.printError(ew, use_color,
+                try color.printError(
+                    ew,
+                    use_color,
                     "show: Cannot open output file: {s}\n  Error: {}\n",
-                    .{output_path, err},
+                    .{ output_path, err },
                 );
             }
             return 1;
@@ -949,6 +976,97 @@ test "StreamingLineReader handles single line" {
 
     const line2 = try reader.next();
     try std.testing.expect(line2 == null);
+}
+
+/// Writes `bytes` to a fresh temp file and returns it rewound for reading.
+fn bounded_test_file(tmp: *std.testing.TmpDir, bytes: []const u8) !std.fs.File {
+    const file = try tmp.dir.createFile("bounded.txt", .{ .read = true });
+    try file.writeAll(bytes);
+    try file.seekTo(0);
+    return file;
+}
+
+test "StreamingLineReader splits an endless line" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const total = 2 * line_bytes_max + 1000;
+    const bytes = try allocator.alloc(u8, total);
+    defer allocator.free(bytes);
+
+    @memset(bytes, 'a');
+    const file = try bounded_test_file(&tmp, bytes);
+    defer file.close();
+
+    var reader = StreamingLineReader.init(allocator, file);
+    defer reader.deinit();
+
+    var lengths: [3]usize = undefined;
+    for (&lengths) |*length| {
+        const line = (try reader.next()).?;
+        defer allocator.free(line);
+
+        length.* = line.len;
+    }
+    try std.testing.expectEqualSlices(usize, &.{ line_bytes_max, line_bytes_max, 1000 }, &lengths);
+    try std.testing.expect((try reader.next()) == null);
+}
+
+test "StreamingLineReader keeps a cap-sized line whole" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const bytes = try allocator.alloc(u8, line_bytes_max + 3);
+    defer allocator.free(bytes);
+
+    @memset(bytes, 'b');
+    bytes[line_bytes_max] = '\n';
+    bytes[line_bytes_max + 1] = 'x';
+    bytes[line_bytes_max + 2] = '\n';
+    const file = try bounded_test_file(&tmp, bytes);
+    defer file.close();
+
+    var reader = StreamingLineReader.init(allocator, file);
+    defer reader.deinit();
+
+    const first = (try reader.next()).?;
+    defer allocator.free(first);
+
+    try std.testing.expectEqual(line_bytes_max, first.len);
+    const second = (try reader.next()).?;
+    defer allocator.free(second);
+
+    try std.testing.expectEqualStrings("x", second);
+    try std.testing.expect((try reader.next()) == null);
+}
+
+test "StreamingLineReader splits a cap-plus-one line" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const bytes = try allocator.alloc(u8, line_bytes_max + 2);
+    defer allocator.free(bytes);
+
+    @memset(bytes, 'c');
+    bytes[line_bytes_max + 1] = '\n';
+    const file = try bounded_test_file(&tmp, bytes);
+    defer file.close();
+
+    var reader = StreamingLineReader.init(allocator, file);
+    defer reader.deinit();
+
+    const first = (try reader.next()).?;
+    defer allocator.free(first);
+
+    try std.testing.expectEqual(line_bytes_max, first.len);
+    const second = (try reader.next()).?;
+    defer allocator.free(second);
+
+    try std.testing.expectEqualStrings("c", second);
+    try std.testing.expect((try reader.next()) == null);
 }
 
 test "streamProcessOutput filters lines while streaming" {

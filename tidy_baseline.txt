@@ -240,7 +240,7 @@ src/cli/setup.zig:line-length:4
 src/cli/shell_hook.zig:doc-header:1
 src/cli/shell_hook.zig:line-length:9
 src/cli/show.zig:ban-list:2
-src/cli/show.zig:cmdShow:299
+src/cli/show.zig:cmdShow:309
 src/cli/show.zig:doc-header:1
 src/cli/show.zig:line-length:5
 src/cli/show.zig:processOutput:71
