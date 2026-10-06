@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines recorded, not gated).
 
 ### Fixed
+- **Interactive prompts read a line without a limit**: `zr add` (`src/cli/add.zig`,
+  `src/cli/add_interactive.zig`) and the config editor (`src/cli/config_editor.zig`) each carried
+  a copy of a byte-by-byte stdin loop that appended to a growing buffer until a newline. They now
+  share `src/cli/line_input.zig`: lines are capped at 4096 bytes in a caller-owned buffer, the
+  rest of an over-long line is discarded (at most 1 MiB), and the user sees an "Input line too
+  long" message instead of the process growing without bound.
 - **`zr show` line reader buffered a whole line without a limit**: `StreamingLineReader` in
   `src/cli/show.zig` grew one allocation per line, so a log file with a multi-gigabyte line
   exhausted memory. Lines are now capped at 1 MiB; a longer line is returned in pieces of that

@@ -1,6 +1,7 @@
 const std = @import("std");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
+const line_input = @import("line_input.zig");
 const types = @import("../config/types.zig");
 const parser = @import("../config/parser.zig");
 
@@ -86,32 +87,21 @@ fn prompt(allocator: std.mem.Allocator, w: anytype, ew: anytype, use_color: bool
 
     const stdin = std.fs.File.stdin();
 
-    // Read line from stdin byte by byte
-    var buffer = std.ArrayList(u8){};
-    defer buffer.deinit(allocator);
-
-    var read_buf: [1]u8 = undefined;
-    while (true) {
-        const n = stdin.read(&read_buf) catch |err| {
-            if (err == error.EndOfStream or err == error.NotOpenForReading) {
-                try color.printError(ew, use_color, "\nCancelled by user\n", .{});
-                return null;
-            }
-            return err;
-        };
-        if (n == 0) {
-            // EOF
+    var line_buf: [line_input.line_bytes_max]u8 = undefined;
+    const read = line_input.readLine(&stdin, &line_buf) catch |err| switch (err) {
+        error.LineTooLong => {
+            try color.printError(ew, use_color, line_input.too_long_message, .{});
+            return null;
+        },
+        else => return err,
+    };
+    const line = switch (read) {
+        .text => |text| text,
+        .eof => {
             try color.printError(ew, use_color, "\nCancelled by user\n", .{});
             return null;
-        }
-        const ch = read_buf[0];
-        if (ch == '\n') break;
-        if (ch != '\r') { // Skip carriage return
-            try buffer.append(allocator, ch);
-        }
-    }
-
-    const line = buffer.items;
+        },
+    };
     if (line.len == 0) {
         return null;
     }
