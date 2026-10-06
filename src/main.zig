@@ -222,6 +222,7 @@ comptime {
     _ = version_cmd;
     _ = publish_cmd;
     _ = analytics_cmd;
+    _ = @import("cli/line_input.zig");
     _ = @import("versioning/types.zig");
     _ = @import("versioning/bump.zig");
     _ = @import("versioning/conventional.zig");

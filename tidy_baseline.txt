@@ -111,7 +111,7 @@ src/cli/completion.zig:line-length:44
 src/cli/config_editor.zig:ban-list:3
 src/cli/config_editor.zig:doc-header:1
 src/cli/config_editor.zig:line-length:1
-src/cli/config_editor.zig:run:133
+src/cli/config_editor.zig:run:113
 src/cli/conformance.zig:cmdConformance:137
 src/cli/conformance.zig:doc-header:1
 src/cli/conformance.zig:line-length:6

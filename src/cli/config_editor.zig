@@ -3,6 +3,7 @@ const sailor = @import("sailor");
 const config_types = @import("../config/types.zig");
 const config_parser = @import("../config/parser.zig");
 const color_mod = @import("../output/color.zig");
+const line_input = @import("line_input.zig");
 const toml_highlight = @import("../config/toml_highlight.zig");
 
 const Allocator = std.mem.Allocator;
@@ -84,33 +85,21 @@ pub const ConfigEditor = struct {
             }
             try w.flush(); // CRITICAL: flush before reading stdin
 
-            // Read line from stdin byte by byte
-            var buffer = std.ArrayList(u8){};
-            defer buffer.deinit(self.allocator);
-
-            var read_buf: [1]u8 = undefined;
-            while (true) {
-                const n = stdin.read(&read_buf) catch |err| {
-                    if (err == error.EndOfStream or err == error.NotOpenForReading) {
-                        try color_mod.printError(ew, use_color, "\nCancelled by user\n", .{});
-                        return 1;
-                    }
-                    return err;
-                };
-                if (n == 0) {
-                    // EOF
+            var line_buf: [line_input.line_bytes_max]u8 = undefined;
+            const read = line_input.readLine(&stdin, &line_buf) catch |err| switch (err) {
+                error.LineTooLong => {
+                    try color_mod.printError(ew, use_color, line_input.too_long_message, .{});
+                    return 1;
+                },
+                else => return err,
+            };
+            const line = switch (read) {
+                .text => |text| text,
+                .eof => {
                     try color_mod.printError(ew, use_color, "\nCancelled by user\n", .{});
                     return 1;
-                }
-                const ch = read_buf[0];
-                if (ch == '\n') break;
-                if (ch != '\r') {
-                    // Skip carriage return
-                    try buffer.append(self.allocator, ch);
-                }
-            }
-
-            const line = buffer.items;
+                },
+            };
             const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
             if (field.required and trimmed.len == 0) {
                 try ew.writeAll("  ❌ This field is required!\n\n");
@@ -142,27 +131,19 @@ pub const ConfigEditor = struct {
         try w.writeAll("Add to zr.toml? [Y/n]: ");
         try w.flush();
 
-        var confirm_buffer = std.ArrayList(u8){};
-        defer confirm_buffer.deinit(self.allocator);
-
-        var read_buf: [1]u8 = undefined;
-        while (true) {
-            const n = stdin.read(&read_buf) catch |err| {
-                if (err == error.EndOfStream or err == error.NotOpenForReading) {
-                    try color_mod.printError(ew, use_color, "\nCancelled by user\n", .{});
-                    return 1;
-                }
-                return err;
-            };
-            if (n == 0) break;
-            const ch = read_buf[0];
-            if (ch == '\n') break;
-            if (ch != '\r') {
-                try confirm_buffer.append(self.allocator, ch);
-            }
-        }
-
-        const confirm = confirm_buffer.items;
+        var confirm_buf: [line_input.line_bytes_max]u8 = undefined;
+        const confirm_read = line_input.readLine(&stdin, &confirm_buf) catch |err| switch (err) {
+            error.LineTooLong => {
+                try color_mod.printError(ew, use_color, line_input.too_long_message, .{});
+                return 1;
+            },
+            else => return err,
+        };
+        // End of input means the default answer: yes.
+        const confirm = switch (confirm_read) {
+            .text => |text| text,
+            .eof => "",
+        };
         const trimmed = std.mem.trim(u8, confirm, &std.ascii.whitespace);
         if (trimmed.len > 0 and (trimmed[0] == 'n' or trimmed[0] == 'N')) {
             try w.writeAll("Cancelled.\n");
