@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines recorded, not gated).
 
 ### Fixed
+- **`zr show` line reader buffered a whole line without a limit**: `StreamingLineReader` in
+  `src/cli/show.zig` grew one allocation per line, so a log file with a multi-gigabyte line
+  exhausted memory. Lines are now capped at 1 MiB; a longer line is returned in pieces of that
+  size, and the scan loop is a bounded `for` instead of `while (true)`. 3 new tests.
 - **WASM plugin LEB128 decoder shift-counter overflow**: `src/plugin/wasm_runtime.zig`'s
   `readVarU32`/`readVarI32`/`readVarI64` tracked their bit-shift amount in a `u5`/`u6` too
   narrow to hold the increment on the final byte of a maximal-width encoding — for the signed
