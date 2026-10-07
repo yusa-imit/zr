@@ -257,7 +257,7 @@ src/cli/task_picker.zig:renderPreviewPane:103
 src/cli/task_picker.zig:runPicker:127
 src/cli/task_selector.zig:doc-header:1
 src/cli/task_selector.zig:selectTasks:82
-src/cli/template.zig:applyTemplate:167
+src/cli/template.zig:applyTemplate:137
 src/cli/template.zig:ban-list:5
 src/cli/template.zig:doc-header:1
 src/cli/template.zig:line-length:9

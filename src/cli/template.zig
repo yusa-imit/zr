@@ -4,6 +4,29 @@ const TaskTemplate = @import("../config/types.zig").TaskTemplate;
 const loader = @import("../config/loader.zig");
 const color = @import("../output/color.zig");
 const template_cmd = @import("../cli/template_cmd.zig");
+const line_input = @import("line_input.zig");
+
+/// The outcome of reading one interactive reply.
+const Reply = union(enum) {
+    /// The trimmed reply; borrows the caller's buffer.
+    text: []const u8,
+    /// The input ended before a newline arrived.
+    eof,
+    /// The line exceeded the buffer; its tail was discarded.
+    too_long,
+};
+
+/// Reads one whitespace-trimmed line from `source` into `buffer` (see `line_input.readLine`).
+fn readReply(source: anytype, buffer: []u8) !Reply {
+    const line = line_input.readLine(source, buffer) catch |err| switch (err) {
+        error.LineTooLong => return .too_long,
+        else => return err,
+    };
+    return switch (line) {
+        .text => |text| .{ .text = std.mem.trim(u8, text, &std.ascii.whitespace) },
+        .eof => .eof,
+    };
+}
 
 /// List all available templates in the configuration.
 pub fn listTemplates(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
@@ -217,7 +240,7 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
         return 1;
     };
 
-    const stdin = std.fs.File.stdin();
+    var stdin_mut = std.fs.File.stdin();
 
     // Collect parameter values interactively
     var params = std.ArrayList([2][]const u8){};
@@ -237,32 +260,19 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
             try out_w.interface.print("  {s}: ", .{param});
             try out_w.interface.flush();
 
-            // Read parameter value from stdin line by line
-            var buffer = std.ArrayList(u8){};
-            defer buffer.deinit(allocator);
-
-            var read_buf: [1]u8 = undefined;
-            while (true) {
-                const n = stdin.read(&read_buf) catch |err| {
-                    if (err == error.EndOfStream or err == error.NotOpenForReading) {
-                        try err_w.interface.print("\nError: unexpected end of input\n", .{});
-                        return 1;
-                    }
-                    return err;
-                };
-                if (n == 0) {
-                    // EOF
+            // Read parameter value from stdin line by line, bounded by `line_buf`.
+            var line_buf: [line_input.line_bytes_max]u8 = undefined;
+            const value = switch (try readReply(&stdin_mut, &line_buf)) {
+                .text => |text| text,
+                .eof => {
                     try err_w.interface.print("\nError: unexpected end of input\n", .{});
                     return 1;
-                }
-                const ch = read_buf[0];
-                if (ch == '\n') break;
-                if (ch != '\r') {
-                    try buffer.append(allocator, ch);
-                }
-            }
-
-            const value = std.mem.trim(u8, buffer.items, &std.ascii.whitespace);
+                },
+                .too_long => {
+                    try err_w.interface.print("{s}", .{line_input.too_long_message});
+                    return 1;
+                },
+            };
             if (value.len == 0) {
                 try err_w.interface.print("✗ [Template]: parameter value cannot be empty\n", .{});
                 return 1;
@@ -292,31 +302,14 @@ pub fn applyTemplate(allocator: std.mem.Allocator, args: []const []const u8) !u8
     try out_w.interface.print("\nAdd this to zr.toml? (y/n): ", .{});
     try out_w.interface.flush();
 
-    var confirm_buffer = std.ArrayList(u8){};
-    defer confirm_buffer.deinit(allocator);
-
-    var read_buf: [1]u8 = undefined;
-    while (true) {
-        const n = stdin.read(&read_buf) catch |err| {
-            if (err == error.EndOfStream or err == error.NotOpenForReading) {
-                try out_w.interface.print("Cancelled.\n", .{});
-                return 0;
-            }
-            return err;
-        };
-        if (n == 0) {
-            // EOF
+    var confirm_buf: [line_input.line_bytes_max]u8 = undefined;
+    const confirm = switch (try readReply(&stdin_mut, &confirm_buf)) {
+        .text => |text| text,
+        .eof, .too_long => {
             try out_w.interface.print("Cancelled.\n", .{});
             return 0;
-        }
-        const ch = read_buf[0];
-        if (ch == '\n') break;
-        if (ch != '\r') {
-            try confirm_buffer.append(allocator, ch);
-        }
-    }
-
-    const confirm = std.mem.trim(u8, confirm_buffer.items, &std.ascii.whitespace);
+        },
+    };
     if (!std.mem.eql(u8, confirm, "y") and !std.mem.eql(u8, confirm, "Y")) {
         try out_w.interface.print("Cancelled.\n", .{});
         return 0;
@@ -392,6 +385,49 @@ test "template commands: showTemplate with non-existent template" {
 
     const exit_code = try showTemplate(allocator, &[_][]const u8{"nonexistent"});
     try std.testing.expectEqual(@as(u8, 1), exit_code);
+}
+
+const FixedSource = struct {
+    data: []const u8,
+    position: usize = 0,
+
+    pub fn read(self: *FixedSource, out: []u8) error{NotOpenForReading}!usize {
+        if (self.position >= self.data.len) return 0;
+        out[0] = self.data[self.position];
+        self.position += 1;
+        return 1;
+    }
+};
+
+test "template reply: a complete line is trimmed" {
+    var source = FixedSource{ .data = "  value \r\nnext\n" };
+    var buffer: [32]u8 = undefined;
+    const reply = try readReply(&source, &buffer);
+    try std.testing.expectEqualStrings("value", reply.text);
+}
+
+test "template reply: input ending before a newline is eof" {
+    var source = FixedSource{ .data = "partial" };
+    var buffer: [32]u8 = undefined;
+    const reply = try readReply(&source, &buffer);
+    try std.testing.expect(reply == .eof);
+}
+
+test "template reply: a line over the buffer is too long" {
+    var source = FixedSource{ .data = "0123456789\nok\n" };
+    var buffer: [4]u8 = undefined;
+    const reply = try readReply(&source, &buffer);
+    try std.testing.expect(reply == .too_long);
+
+    const next = try readReply(&source, &buffer);
+    try std.testing.expectEqualStrings("ok", next.text);
+}
+
+test "template reply: a line exactly the buffer size is accepted" {
+    var source = FixedSource{ .data = "abcd\n" };
+    var buffer: [4]u8 = undefined;
+    const reply = try readReply(&source, &buffer);
+    try std.testing.expectEqualStrings("abcd", reply.text);
 }
 
 /// List built-in templates (separate from user-defined templates in zr.toml)
