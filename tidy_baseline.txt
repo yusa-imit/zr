@@ -471,8 +471,6 @@ src/history/store.zig:line-length:7
 src/jsonrpc/parser.zig:doc-header:1
 src/jsonrpc/parser.zig:line-length:1
 src/jsonrpc/parser.zig:parseMessage:90
-src/jsonrpc/transport.zig:doc-header:1
-src/jsonrpc/transport.zig:line-length:2
 src/jsonrpc/types.zig:doc-header:1
 src/jsonrpc/writer.zig:doc-header:1
 src/lang/bun.zig:ban-list:2

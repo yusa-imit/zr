@@ -5,7 +5,6 @@
 
 const std = @import("std");
 const jsonrpc = @import("../jsonrpc/types.zig");
-const transport = @import("../jsonrpc/transport.zig");
 const parser = @import("../jsonrpc/parser.zig");
 const writer = @import("../jsonrpc/writer.zig");
 const capability = @import("capability.zig");
@@ -257,7 +256,8 @@ test "handleRequest: tool call without initialize returns error" {
         .jsonrpc = jsonrpc.JSONRPC_VERSION,
         .id = .{ .number = 3 },
         .method = "tools/call",
-        .params = try allocator.dupe(u8, \\{"name":"list_tasks"}
+        .params = try allocator.dupe(u8,
+            \\{"name":"list_tasks"}
         ),
     };
     defer allocator.free(req.params.?);
