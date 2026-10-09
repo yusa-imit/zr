@@ -6,6 +6,7 @@ const handlers = @import("handlers.zig");
 const completion_mod = @import("completion.zig");
 const hover_mod = @import("hover.zig");
 const definition_mod = @import("definition.zig");
+const message_reader = @import("message_reader.zig");
 
 /// LSP server state
 pub const Server = struct {
@@ -27,91 +28,19 @@ pub const Server = struct {
 
     /// Main server loop - read from stdin, write to stdout
     pub fn run(self: *Server) !void {
-        const stdin = std.fs.File.stdin();
+        var stdin = std.fs.File.stdin();
         const stdout = std.fs.File.stdout();
 
-        // Internal buffer for reading - keeps data available even when pipe closes
-        var internal_buf: [8192]u8 = undefined;
-        var buf_start: usize = 0;
-        var buf_end: usize = 0;
-
-        var header_buf = std.ArrayList(u8){};
-        defer header_buf.deinit(self.allocator);
+        var reader: message_reader.MessageReader = .{};
 
         while (!self.shutdown_requested) {
-            // Read Content-Length header
-            header_buf.clearRetainingCapacity();
-            var content_length: ?usize = null;
-
-            // Read headers until \r\n\r\n
-            var prev_char: u8 = 0;
-            var empty_line_count: u8 = 0;
-
-            while (true) {
-                // If buffer is empty, refill it
-                if (buf_start == buf_end) {
-                    const n = stdin.read(&internal_buf) catch |err| {
-                        if (err == error.EndOfStream and buf_start == buf_end) return;
-                        return err;
-                    };
-                    if (n == 0 and buf_start == buf_end) return; // EOF with no buffered data
-                    buf_start = 0;
-                    buf_end = n;
-                }
-
-                // Get next byte from buffer
-                const ch = internal_buf[buf_start];
-                buf_start += 1;
-                try header_buf.append(self.allocator, ch);
-
-                // Detect \r\n\r\n (end of headers)
-                if (ch == '\n' and prev_char == '\r') {
-                    empty_line_count += 1;
-                    if (empty_line_count == 2) break;
-                } else if (ch != '\r' and ch != '\n') {
-                    empty_line_count = 0;
-                }
-                prev_char = ch;
-            }
-
-            // Parse Content-Length from headers
-            const headers = header_buf.items;
-            if (std.mem.indexOf(u8, headers, "Content-Length: ")) |idx| {
-                const value_start = idx + "Content-Length: ".len;
-                var value_end = value_start;
-                while (value_end < headers.len and headers[value_end] >= '0' and headers[value_end] <= '9') {
-                    value_end += 1;
-                }
-                const length_str = headers[value_start..value_end];
-                content_length = std.fmt.parseInt(usize, length_str, 10) catch null;
-            }
-
-            const len = content_length orelse continue;
-
-            // Read JSON content
-            const json_buf = try self.allocator.alloc(u8, len);
+            const json_buf = reader.next(self.allocator, &stdin) catch |err| switch (err) {
+                // A header block without a usable length carries no message; read the next one.
+                error.MissingContentLength => continue,
+                else => return err,
+            } orelse return;
             defer self.allocator.free(json_buf);
 
-            var bytes_read: usize = 0;
-            while (bytes_read < len) {
-                // If buffer is empty, refill it
-                if (buf_start == buf_end) {
-                    const n = try stdin.read(&internal_buf);
-                    if (n == 0) return; // EOF
-                    buf_start = 0;
-                    buf_end = n;
-                }
-
-                // Copy from buffer
-                const available = buf_end - buf_start;
-                const needed = len - bytes_read;
-                const to_copy = @min(available, needed);
-                @memcpy(json_buf[bytes_read..][0..to_copy], internal_buf[buf_start..][0..to_copy]);
-                buf_start += to_copy;
-                bytes_read += to_copy;
-            }
-
-            // Parse and handle message
             try self.handleMessage(json_buf, stdout);
         }
     }

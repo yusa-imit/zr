@@ -265,6 +265,7 @@ comptime {
     _ = @import("lsp/diagnostics.zig");
     _ = @import("lsp/handlers.zig");
     _ = @import("lsp/server.zig");
+    _ = @import("lsp/message_reader.zig");
     _ = config_editor;
     _ = abbreviations;
 }

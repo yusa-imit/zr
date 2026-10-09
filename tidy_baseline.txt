@@ -529,7 +529,6 @@ src/lsp/position.zig:line-length:1
 src/lsp/server.zig:ban-list:2
 src/lsp/server.zig:doc-header:1
 src/lsp/server.zig:line-length:12
-src/lsp/server.zig:run:89
 src/main.zig:ban-list:5
 src/main.zig:doc-header:1
 src/main.zig:line-length:263
