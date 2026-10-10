@@ -9,6 +9,40 @@ const parser = @import("../jsonrpc/parser.zig");
 const writer = @import("../jsonrpc/writer.zig");
 const capability = @import("capability.zig");
 const handlers = @import("handlers.zig");
+const line_input = @import("../cli/line_input.zig");
+const assert = @import("../stdx.zig").assert;
+
+/// Upper bound on one newline-delimited JSON-RPC request, in bytes.
+const request_bytes_max: u32 = line_input.buffer_bytes_max;
+
+const RequestLine = union(enum) {
+    /// One request without its newline; borrows the caller's buffer.
+    text: []const u8,
+    /// The client closed stdin, or sent an empty line, which ends the session.
+    end,
+    /// The line exceeded the buffer; it was consumed through its newline.
+    too_long,
+};
+
+/// Reads the next request line from `source`, a pointer to a value with `read([]u8) !usize`.
+/// `buffer.len` is the request limit and must be non-zero. A line that does not fit is an
+/// operating error (the bytes come from a client), reported as `.too_long`.
+fn next_request_line(source: anytype, buffer: []u8) !RequestLine {
+    assert(buffer.len > 0);
+    assert(buffer.len <= request_bytes_max);
+
+    const line = line_input.readLine(source, buffer) catch |err| switch (err) {
+        error.LineTooLong => return .too_long,
+        else => return err,
+    };
+    switch (line) {
+        .eof => return .end,
+        .text => |text| {
+            if (text.len == 0) return .end;
+            return .{ .text = text };
+        },
+    }
+}
 
 /// MCP server state
 const ServerState = enum {
@@ -28,31 +62,23 @@ pub fn serve(allocator: std.mem.Allocator) !u8 {
 
     var state = ServerState.uninitialized;
 
-    // Input buffer for reading lines from stdin
-    var line_buf = std.ArrayList(u8){};
-    defer line_buf.deinit(allocator);
-
-    // Buffer for reading stdin
-    var read_buf: [1]u8 = undefined;
+    // One request line is stored in this buffer, allocated once, so input cannot grow memory.
+    const line_buf = try allocator.alloc(u8, request_bytes_max);
+    defer allocator.free(line_buf);
 
     // Main server loop
     while (true) {
-        // Read a line from stdin (newline-delimited) - byte by byte
-        line_buf.clearRetainingCapacity();
-        while (true) {
-            const n = stdin_file.read(&read_buf) catch |err| {
-                if (err == error.EndOfStream) break;
-                std.debug.print("MCP server: read error: {s}\n", .{@errorName(err)});
-                return 1;
-            };
-            if (n == 0) break; // EOF
-            if (read_buf[0] == '\n') break; // End of line
-            try line_buf.append(allocator, read_buf[0]);
-        }
-
-        if (line_buf.items.len == 0) break; // EOF with no data
-
-        const json_text = line_buf.items;
+        const json_text = switch (next_request_line(&stdin_file, line_buf) catch |err| {
+            std.debug.print("MCP server: read error: {s}\n", .{@errorName(err)});
+            return 1;
+        }) {
+            .text => |text| text,
+            .end => break,
+            .too_long => {
+                std.debug.print("MCP server: request over {d} bytes\n", .{request_bytes_max});
+                continue;
+            },
+        };
 
         // Parse the JSON-RPC message
         var message = parser.parseMessage(allocator, json_text) catch |err| {
@@ -263,4 +289,64 @@ test "handleRequest: tool call without initialize returns error" {
     defer allocator.free(req.params.?);
 
     try std.testing.expectError(error.ServerNotInitialized, handleRequest(allocator, &state, req));
+}
+
+const TestSource = struct {
+    data: []const u8,
+    position: usize = 0,
+
+    pub fn read(source: *TestSource, out: []u8) error{NotOpenForReading}!usize {
+        if (source.position >= source.data.len) return 0;
+        out[0] = source.data[source.position];
+        source.position += 1;
+        return 1;
+    }
+};
+
+const BrokenSource = struct {
+    pub fn read(_: *BrokenSource, _: []u8) error{ NotOpenForReading, InputOutput }!usize {
+        return error.InputOutput;
+    }
+};
+
+test "next_request_line returns each line, then end on eof" {
+    var source = TestSource{ .data = "{\"a\":1}\n{\"b\":2}\n" };
+    var buffer: [32]u8 = undefined;
+
+    const first = try next_request_line(&source, &buffer);
+    try std.testing.expectEqualStrings("{\"a\":1}", first.text);
+    const second = try next_request_line(&source, &buffer);
+    try std.testing.expectEqualStrings("{\"b\":2}", second.text);
+    try std.testing.expectEqual(RequestLine.end, try next_request_line(&source, &buffer));
+}
+
+test "next_request_line treats an empty line as the end of the session" {
+    var source = TestSource{ .data = "\n{\"a\":1}\n" };
+    var buffer: [32]u8 = undefined;
+
+    try std.testing.expectEqual(RequestLine.end, try next_request_line(&source, &buffer));
+}
+
+test "next_request_line skips an over-long line and keeps framing" {
+    var source = TestSource{ .data = "0123456789\nok\n" };
+    var buffer: [4]u8 = undefined;
+
+    try std.testing.expectEqual(RequestLine.too_long, try next_request_line(&source, &buffer));
+    const next = try next_request_line(&source, &buffer);
+    try std.testing.expectEqualStrings("ok", next.text);
+}
+
+test "next_request_line accepts a line of exactly the buffer size" {
+    var source = TestSource{ .data = "abcd\n" };
+    var buffer: [4]u8 = undefined;
+
+    const line = try next_request_line(&source, &buffer);
+    try std.testing.expectEqualStrings("abcd", line.text);
+}
+
+test "next_request_line propagates a read error" {
+    var source = BrokenSource{};
+    var buffer: [4]u8 = undefined;
+
+    try std.testing.expectError(error.InputOutput, next_request_line(&source, &buffer));
 }

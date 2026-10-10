@@ -14,6 +14,9 @@ const assert = @import("../stdx.zig").assert;
 /// Default capacity for an interactive prompt line, in bytes.
 pub const line_bytes_max: u32 = 4096;
 
+/// Upper bound on the buffer a caller may pass, for machine protocols with larger lines.
+pub const buffer_bytes_max: u32 = 1024 * 1024;
+
 /// Upper bound on bytes discarded while skipping the tail of an over-long line.
 pub const discard_bytes_max: u32 = 1024 * 1024;
 
@@ -39,7 +42,7 @@ pub const Line = union(enum) {
 /// consumed per call, so a source that never sends a newline cannot hang the caller.
 pub fn readLine(source: anytype, buffer: []u8) !Line {
     assert(buffer.len > 0);
-    assert(buffer.len <= line_bytes_max);
+    assert(buffer.len <= buffer_bytes_max);
 
     var length: usize = 0;
     var overflowed = false;
