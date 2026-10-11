@@ -1,3 +1,10 @@
+//! Data types shared by the task template system: `Category`, `TemplateVariable` and
+//! `Template`.
+//!
+//! Invariants: every value is plain data and immutable; the built-in templates are comptime
+//! constants whose strings live in the binary's read-only data. Nothing here allocates or owns
+//! memory, so there is nothing to free.
+
 const std = @import("std");
 
 /// Template category for organizing built-in templates

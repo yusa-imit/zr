@@ -1,3 +1,10 @@
+//! Registry of the built-in task templates: the comptime concatenation of every list in
+//! `builtin/` (build, test, lint, deploy, ci, release) with lookup by name and category.
+//!
+//! Invariants: the registry only borrows comptime constants, so it owns nothing. Lookups that
+//! return a list of matches allocate it from the caller's `allocator`; the caller frees the
+//! slice, never the templates inside it.
+
 const std = @import("std");
 const types = @import("types.zig");
 const Template = types.Template;

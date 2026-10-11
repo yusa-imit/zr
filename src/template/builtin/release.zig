@@ -1,3 +1,8 @@
+//! Built-in release templates: semantic version bumps, cargo publish and npm publish.
+//!
+//! Invariants: every template is a comptime constant listed in `all`, with category `.release`;
+//! nothing here allocates.
+
 const types = @import("../types.zig");
 const Template = types.Template;
 const TemplateVariable = types.TemplateVariable;
