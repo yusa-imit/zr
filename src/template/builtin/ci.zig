@@ -1,3 +1,8 @@
+//! Built-in CI templates: dependency caching, artifact upload and a parallel build matrix.
+//!
+//! Invariants: every template is a comptime constant listed in `all`, with category `.ci`;
+//! nothing here allocates.
+
 const types = @import("../types.zig");
 const Template = types.Template;
 const TemplateVariable = types.TemplateVariable;

@@ -1,3 +1,8 @@
+//! Built-in deploy templates: Docker image push, Kubernetes deploy and Terraform apply.
+//!
+//! Invariants: every template is a comptime constant listed in `all`, with category `.deploy`;
+//! nothing here allocates.
+
 const types = @import("../types.zig");
 const Template = types.Template;
 const TemplateVariable = types.TemplateVariable;
