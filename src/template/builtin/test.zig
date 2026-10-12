@@ -1,3 +1,8 @@
+//! Built-in test templates: Go, Cargo, npm, pytest, Zig and Maven.
+//!
+//! Invariants: every template is a comptime constant listed in `all`, with category `.testing`;
+//! nothing here allocates.
+
 const types = @import("../types.zig");
 const Template = types.Template;
 const TemplateVariable = types.TemplateVariable;

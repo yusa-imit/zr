@@ -1,3 +1,8 @@
+//! Built-in build templates: Go, Cargo, npm, Zig, Maven and .NET.
+//!
+//! Invariants: every template is a comptime constant listed in `all`, with category `.build`;
+//! nothing here allocates.
+
 const types = @import("../types.zig");
 const Template = types.Template;
 const TemplateVariable = types.TemplateVariable;

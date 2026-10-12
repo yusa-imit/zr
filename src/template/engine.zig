@@ -1,3 +1,9 @@
+//! Variable substitution for template content: `${VAR}` and `${VAR:default}`.
+//!
+//! Invariants: an unknown variable without a default, and an unterminated `${`, are left in the
+//! output verbatim. The engine borrows the values passed to `setVar`; `render` returns a slice
+//! the caller frees with the engine's allocator.
+
 const std = @import("std");
 const mem = std.mem;
 
