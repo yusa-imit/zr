@@ -1,3 +1,9 @@
+//! Types for the `zr upgrade` command: an available release and the command options.
+//!
+//! `Release` owns its four string fields once they are non-empty: `deinit` frees each one
+//! with the allocator given to `init`, so every assigned string must come from that
+//! allocator. The empty string means "not set" and is never freed.
+
 const std = @import("std");
 
 /// Represents an available zr release

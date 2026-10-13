@@ -1,3 +1,9 @@
+//! Types for the `[codeowners]` config section: an owner pattern and the generation settings.
+//!
+//! Both types own their slices. `OwnerPattern.deinit` and `CodeownersConfig.deinit` take the
+//! allocator that produced them; `output_path` is freed only when it differs from the static
+//! default "CODEOWNERS", and empty `default_owners` / `patterns` slices are never freed.
+
 const std = @import("std");
 
 /// Ownership pattern for CODEOWNERS file.

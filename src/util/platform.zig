@@ -1,3 +1,9 @@
+//! Cross-platform shims for the few POSIX-only calls zr makes: HOME and environment lookup
+//! and process kill, pause and resume.
+//!
+//! Every function is allocation-free. On Windows, lookups return a fixed fallback and pause
+//! and resume are no-ops; kill failures are ignored because the target may already be gone.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
