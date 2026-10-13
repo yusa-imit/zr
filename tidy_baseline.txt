@@ -303,7 +303,6 @@ src/cli/workspace.zig:line-length:32
 src/cli/workspace.zig:resolveWorkspaceMembers:115
 src/codeowners/generator.zig:doc-header:1
 src/codeowners/generator.zig:line-length:3
-src/codeowners/types.zig:doc-header:1
 src/config/aliases.zig:ban-list:2
 src/config/aliases.zig:doc-header:1
 src/config/aliases.zig:line-length:3
@@ -563,7 +562,6 @@ src/migrate/report.zig:line-length:5
 src/migrate/taskfile.zig:doc-header:1
 src/migrate/taskfile.zig:line-length:2
 src/migrate/taskfile.zig:parseToZrToml:113
-src/multirepo.zig:doc-header:1
 src/multirepo/graph.zig:buildRepoGraph:81
 src/multirepo/graph.zig:doc-header:1
 src/multirepo/graph.zig:line-length:1
@@ -653,7 +651,6 @@ src/upgrade/checker.zig:getLatestRelease:92
 src/upgrade/checker.zig:line-length:3
 src/upgrade/installer.zig:ban-list:8
 src/upgrade/installer.zig:doc-header:1
-src/upgrade/types.zig:doc-header:1
 src/util/affected.zig:doc-header:1
 src/util/affected.zig:line-length:4
 src/util/affinity.zig:ban-list:17
@@ -676,7 +673,6 @@ src/util/numa.zig:line-length:10
 src/util/object_pool.zig:ban-list:1
 src/util/object_pool.zig:doc-header:1
 src/util/pager.zig:doc-header:1
-src/util/platform.zig:doc-header:1
 src/util/profiler.zig:ban-list:3
 src/util/profiler.zig:doc-header:1
 src/util/semver.zig:doc-header:1
