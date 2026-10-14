@@ -1,8 +1,8 @@
-// src/util/levenshtein.zig
-//
-// Levenshtein distance calculation for "Did you mean?" suggestions
-// Phase 9C — Used for command/task name typo detection
-// Migrated to zuda v1.15.0 (2026-03-21)
+//! Levenshtein edit distance for "Did you mean?" suggestions on mistyped command and task names.
+//!
+//! The distance itself is computed by zuda's `editDistance`; this module adds candidate
+//! filtering and ranking. Results are allocated with the caller's allocator, which also owns
+//! the returned suggestion slice. Suggestion names borrow from the candidate list.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

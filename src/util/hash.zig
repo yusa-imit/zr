@@ -1,3 +1,9 @@
+//! Non-cryptographic 64-bit hashing (Wyhash, seed 0) for cache keys and change detection.
+//!
+//! `hashString` and `hashStrings` allocate nothing. `hashFile` reads the whole file into memory
+//! (at most 100 MiB) with the caller's allocator and frees it before returning. Hashes are not
+//! collision-resistant against an adversary; never use them for integrity or security checks.
+
 const std = @import("std");
 
 /// Hash a file's contents using Wyhash and return a 64-bit hash.

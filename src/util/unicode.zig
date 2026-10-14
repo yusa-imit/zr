@@ -1,5 +1,9 @@
-/// Unicode utility functions for proper text display.
-/// Wraps sailor's Unicode width calculation for CJK/emoji support.
+//! Terminal display width of UTF-8 text, so CJK and emoji columns line up.
+//!
+//! Widths come from a local range table (control and combining marks 0, CJK, kana, Hangul and
+//! emoji 2, everything else 1), not from sailor. A malformed byte counts as one column; a
+//! truncated sequence at the end of the input is not counted. Every function is allocation-free.
+
 const std = @import("std");
 const sailor = @import("sailor");
 
