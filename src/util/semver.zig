@@ -1,3 +1,8 @@
+//! Minimal semantic versions: exactly `major.minor.patch`, each a decimal `u32`.
+//!
+//! Pre-release and build metadata suffixes are not supported and parse as `InvalidFormat`.
+//! Parsing and comparison are allocation-free.
+
 const std = @import("std");
 
 /// Semantic version with major, minor, patch components.

@@ -662,8 +662,6 @@ src/util/glob.zig:doc-header:1
 src/util/glob.zig:find:80
 src/util/glob.zig:findDirs:95
 src/util/glob.zig:line-length:7
-src/util/hash.zig:doc-header:1
-src/util/levenshtein.zig:doc-header:1
 src/util/levenshtein.zig:line-length:3
 src/util/numa.zig:GetNumaAvailableMemoryNodeEx:92
 src/util/numa.zig:GlobalMemoryStatusEx:144
@@ -675,11 +673,9 @@ src/util/object_pool.zig:doc-header:1
 src/util/pager.zig:doc-header:1
 src/util/profiler.zig:ban-list:3
 src/util/profiler.zig:doc-header:1
-src/util/semver.zig:doc-header:1
 src/util/string_pool.zig:doc-header:1
 src/util/tui_profiler.zig:ban-list:2
 src/util/tui_profiler.zig:line-length:5
-src/util/unicode.zig:doc-header:1
 src/versioning/bump.zig:doc-header:1
 src/versioning/bump.zig:line-length:10
 src/versioning/changelog.zig:ban-list:2
