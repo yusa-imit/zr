@@ -1,3 +1,10 @@
+//! Semantic-version bumping and `package.json` version read/write.
+//!
+//! `bumpVersion` resets the lower components (`1.2.3` + minor = `1.3.0`) and returns an
+//! owned string. The package.json helpers read the file whole (1 MiB cap) and rewrite only the
+//! first `"version"` string value; every other byte is preserved. All results are allocated
+//! from the caller's allocator and freed by the caller.
+
 const std = @import("std");
 const types = @import("types.zig");
 const semver_mod = @import("../util/semver.zig");

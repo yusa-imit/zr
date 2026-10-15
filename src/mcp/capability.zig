@@ -1,7 +1,8 @@
-// src/mcp/capability.zig
-//
-// MCP capability negotiation for Model Context Protocol
-// Phase 10A — MCP Server implementation
+//! MCP capability negotiation: the `initialize` response body and the `tools/list` body.
+//!
+//! Both bodies are rendered JSON text. The nine tool definitions are one comptime constant, so
+//! the list never drifts between the two responses. Each function allocates its result from the
+//! caller's allocator; the caller frees it. Nothing here allocates after returning.
 
 const std = @import("std");
 

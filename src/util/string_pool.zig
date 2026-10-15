@@ -1,3 +1,9 @@
+//! String interning pool: one owned copy per distinct string.
+//!
+//! Invariant: every key in `pool` is the same slice as its value, and the pool owns that
+//! allocation. Interned slices stay valid until `deinit`. The pool stores its allocator and
+//! allocates on every first-time `intern`; `get` and `count` never allocate.
+
 const std = @import("std");
 
 /// StringPool provides string interning to reduce memory allocations
