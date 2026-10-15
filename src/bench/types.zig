@@ -1,3 +1,8 @@
+//! Benchmark data types: one timed run, the summary over many runs, and the run configuration.
+//!
+//! `BenchmarkStats` owns its `runs` slice and frees it in `deinit`; the caller keeps the
+//! allocator it passed to `init` alive until then. Durations are nanoseconds.
+
 const std = @import("std");
 
 /// A single benchmark run result.

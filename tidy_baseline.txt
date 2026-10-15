@@ -33,7 +33,6 @@ src/bench/runner.zig:calculateStats:71
 src/bench/runner.zig:doc-header:1
 src/bench/runner.zig:line-length:5
 src/bench/types.zig:ban-list:1
-src/bench/types.zig:doc-header:1
 src/cache/remote.zig:ban-list:13
 src/cache/remote.zig:doc-header:1
 src/cache/remote.zig:getGCSAccessTokenFromServiceAccount:88
@@ -533,7 +532,6 @@ src/main.zig:doc-header:1
 src/main.zig:line-length:263
 src/main.zig:printHelp:113
 src/main.zig:run:2395
-src/mcp/capability.zig:doc-header:1
 src/mcp/capability.zig:line-length:10
 src/mcp/handlers.zig:ban-list:6
 src/mcp/handlers.zig:doc-header:1
@@ -673,10 +671,8 @@ src/util/object_pool.zig:doc-header:1
 src/util/pager.zig:doc-header:1
 src/util/profiler.zig:ban-list:3
 src/util/profiler.zig:doc-header:1
-src/util/string_pool.zig:doc-header:1
 src/util/tui_profiler.zig:ban-list:2
 src/util/tui_profiler.zig:line-length:5
-src/versioning/bump.zig:doc-header:1
 src/versioning/bump.zig:line-length:10
 src/versioning/changelog.zig:ban-list:2
 src/versioning/changelog.zig:doc-header:1
