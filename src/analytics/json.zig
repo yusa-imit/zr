@@ -1,3 +1,11 @@
+//! JSON rendering of an analytics report.
+//!
+//! `generateJsonReport` writes the report's totals, parallelization metrics, per-task statistics,
+//! critical path and time series as one pretty-printed JSON object. Task names and series keys
+//! are written verbatim without escaping, so callers must pass names free of quotes and control
+//! characters. Ownership: the returned slice is owned by the caller and freed with the same
+//! allocator; the report is only read.
+
 const std = @import("std");
 const types = @import("types.zig");
 

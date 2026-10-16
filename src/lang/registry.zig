@@ -1,3 +1,11 @@
+//! Registry of the built-in language providers.
+//!
+//! Maps every `ToolKind` to its static `LanguageProvider` (the switch in `getProvider` is
+//! exhaustive, so a new kind fails the build until it is registered) and runs project detection
+//! across all providers. Providers are comptime constants; nothing here is allocated except the
+//! `detectProjectLanguages` result, which the caller frees (and each entry's `files_found`
+//! slice with it).
+
 const std = @import("std");
 const types = @import("../toolchain/types.zig");
 const ToolKind = types.ToolKind;
