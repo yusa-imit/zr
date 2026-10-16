@@ -1,3 +1,10 @@
+//! Value types for workspace versioning: mode, bump convention, bump type and package version.
+//!
+//! The enums parse from their lowercase config spelling and return null for anything else, so
+//! the caller decides how to report an invalid value. `PackageVersion` owns duplicates of its
+//! name and version strings, freed by `deinit` with the allocator it was created with;
+//! `VersioningConfig` owns nothing.
+
 const std = @import("std");
 
 /// Versioning mode for workspace packages

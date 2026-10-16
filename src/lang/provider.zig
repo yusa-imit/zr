@@ -1,3 +1,11 @@
+//! Language provider interface for the toolchain manager.
+//!
+//! `LanguageProvider` is a table of function pointers (download URL, latest version, binary
+//! path, environment, project detection, task extraction) that each language module fills in;
+//! `PlatformInfo` and `DownloadSpec` carry the platform and archive facts those functions share.
+//! `fetchUrl` shells out to curl and returns a body the caller frees. Strings in the specs and
+//! `ProjectInfo` are owned by whichever provider function returned them.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const types = @import("../toolchain/types.zig");
