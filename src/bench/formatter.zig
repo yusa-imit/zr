@@ -1,3 +1,9 @@
+//! Renders benchmark statistics as human-readable text, JSON or CSV.
+//!
+//! Every printer takes any writer and a borrowed `BenchmarkStats`; nothing is allocated or
+//! retained. Durations are scaled to s, ms, μs or ns at fixed three-decimal precision, and the
+//! text form omits the coefficient of variation when the mean is zero.
+
 const std = @import("std");
 const sailor = @import("sailor");
 const types = @import("types.zig");
