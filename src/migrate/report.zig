@@ -1,3 +1,10 @@
+//! Accumulates and formats the outcome of converting a Makefile, Justfile, Taskfile or npm
+//! scripts into a zr config.
+//!
+//! `MigrationReport` owns a duplicate of the source path and of every warning, manual step and
+//! unsupported feature added to it; `deinit` must receive the allocator used to create it.
+//! `format` returns an owned string with optional ANSI colour and omits empty sections.
+
 const std = @import("std");
 
 pub const MigrationReport = struct {

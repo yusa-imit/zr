@@ -25,7 +25,6 @@ src/analytics/json.zig:generateJsonReport:83
 src/analytics/json.zig:line-length:7
 src/analytics/types.zig:doc-header:1
 src/analytics/types.zig:line-length:2
-src/bench/formatter.zig:doc-header:1
 src/bench/formatter.zig:line-length:1
 src/bench/runner.zig:ban-list:9
 src/bench/runner.zig:calculateStats:71
@@ -290,7 +289,6 @@ src/cli/version.zig:ban-list:1
 src/cli/version.zig:cmdVersion:126
 src/cli/version.zig:doc-header:1
 src/cli/version.zig:line-length:9
-src/cli/which.zig:doc-header:1
 src/cli/which.zig:line-length:1
 src/cli/workspace.zig:ban-list:2
 src/cli/workspace.zig:cmdWorkspaceList:79
@@ -384,7 +382,6 @@ src/context/json.zig:generateJsonOutput:156
 src/context/json.zig:line-length:1
 src/context/types.zig:doc-header:1
 src/context/types.zig:line-length:1
-src/context/yaml.zig:doc-header:1
 src/context/yaml.zig:generateYamlOutput:117
 src/context/yaml.zig:line-length:1
 src/exec/artifacts.zig:ban-list:3
@@ -552,7 +549,6 @@ src/migrate/makefile.zig:parseToZrToml:143
 src/migrate/npm.zig:doc-header:1
 src/migrate/npm.zig:line-length:3
 src/migrate/npm.zig:parseToZrToml:137
-src/migrate/report.zig:doc-header:1
 src/migrate/report.zig:line-length:5
 src/migrate/taskfile.zig:doc-header:1
 src/migrate/taskfile.zig:line-length:2

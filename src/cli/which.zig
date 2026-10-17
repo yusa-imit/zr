@@ -1,3 +1,9 @@
+//! The `zr which <task>` command: prints the config file that defines a task and its details.
+//!
+//! Only the main config file is tracked, so imported files are not reported yet. Returns exit
+//! code 1 when the config fails to load or the task is unknown, 0 otherwise. Output goes to the
+//! caller-supplied writers; the config and the resolved path are freed before returning.
+
 const std = @import("std");
 const color = @import("../output/color.zig");
 const common = @import("common.zig");
@@ -16,7 +22,9 @@ pub fn cmdWhich(
 
     // Check if task exists
     const task = config.tasks.get(task_name) orelse {
-        try color.printError(err_writer, use_color,
+        try color.printError(
+            err_writer,
+            use_color,
             "✗ [Which]: Task '{s}' not found\n\n  Hint: Run 'zr list' to see available tasks\n",
             .{task_name},
         );

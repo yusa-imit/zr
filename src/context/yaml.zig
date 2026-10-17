@@ -1,3 +1,9 @@
+//! Serializes a `ProjectContext` as YAML for the `zr context` command.
+//!
+//! The output holds the project graph, task catalog, ownership mapping, recent changes and
+//! toolchains. Values are written inside double quotes without escaping, so a name containing a
+//! quote or newline yields invalid YAML. The caller owns the returned slice.
+
 const std = @import("std");
 const types = @import("types.zig");
 
