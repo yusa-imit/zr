@@ -1,3 +1,9 @@
+//! Desktop notifications for finished tasks: the trigger policy, message text and delivery.
+//!
+//! `shouldNotify` maps a `NotifyOn` setting and a task result to a yes or no. `buildMessage`
+//! allocates the text and the caller frees it. `send` is fire-and-forget and delivers only on
+//! Linux through `notify-send`; it does nothing on macOS or Windows, and it ignores failures.
+
 const std = @import("std");
 
 /// Notification trigger conditions
