@@ -51,7 +51,6 @@ src/ci/templates/github_actions.zig:line-length:4
 src/ci/templates/gitlab.zig:doc-header:1
 src/ci/templates/gitlab.zig:line-length:3
 src/ci/templates/registry.zig:doc-header:1
-src/ci/templates/types.zig:doc-header:1
 src/ci/templates/types.zig:line-length:1
 src/cli/abbreviations.zig:ban-list:1
 src/cli/abbreviations.zig:doc-header:1
@@ -404,7 +403,6 @@ src/exec/hooks.zig:line-length:4
 src/exec/matrix.zig:doc-header:1
 src/exec/metrics_export.zig:doc-header:1
 src/exec/metrics_export.zig:line-length:9
-src/exec/notification.zig:doc-header:1
 src/exec/notification.zig:line-length:5
 src/exec/output_capture.zig:doc-header:1
 src/exec/output_capture.zig:line-length:2
@@ -510,7 +508,6 @@ src/lsp/definition.zig:line-length:6
 src/lsp/diagnostics.zig:ban-list:1
 src/lsp/diagnostics.zig:doc-header:1
 src/lsp/diagnostics.zig:line-length:5
-src/lsp/document.zig:doc-header:1
 src/lsp/document.zig:line-length:1
 src/lsp/handlers.zig:doc-header:1
 src/lsp/handlers.zig:line-length:7
@@ -659,8 +656,6 @@ src/util/numa.zig:GlobalMemoryStatusEx:144
 src/util/numa.zig:detectWindows:140
 src/util/numa.zig:doc-header:1
 src/util/numa.zig:line-length:10
-src/util/object_pool.zig:ban-list:1
-src/util/object_pool.zig:doc-header:1
 src/util/pager.zig:doc-header:1
 src/util/profiler.zig:ban-list:3
 src/util/profiler.zig:doc-header:1

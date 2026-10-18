@@ -1,3 +1,10 @@
+//! Value types for the CI template generator: `Platform`, `TemplateType`, `TemplateVariable`
+//! and `Template`.
+//!
+//! The types borrow their strings and own nothing, so a `Template` is valid while its backing
+//! slices are. `fromString` returns null for an unknown name, and `Template.matches` treats a
+//! null filter as "match anything".
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 

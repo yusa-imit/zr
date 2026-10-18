@@ -1,3 +1,11 @@
+//! Open-document state for the LSP server: `Document` and the `DocumentStore` that owns them.
+//!
+//! The store keys documents by URI and holds a copy of each URI and each text. `change` replaces
+//! the text, `close` frees the document, and `deinit` frees whatever is still open. A `change`
+//! on a URI that was never opened returns `error.DocumentNotFound`. Calling `open` for a URI that
+//! is already open overwrites the entry and leaks the earlier copy, so callers must `close`
+//! first. Pointers from `get` are invalidated by the next `open` or `close`.
+
 const std = @import("std");
 
 /// Represents an open document in the LSP server
