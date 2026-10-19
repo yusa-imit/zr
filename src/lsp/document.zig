@@ -3,8 +3,8 @@
 //! The store keys documents by URI and holds a copy of each URI and each text. `change` replaces
 //! the text, `close` frees the document, and `deinit` frees whatever is still open. A `change`
 //! on a URI that was never opened returns `error.DocumentNotFound`. Calling `open` for a URI that
-//! is already open overwrites the entry and leaks the earlier copy, so callers must `close`
-//! first. Pointers from `get` are invalidated by the next `open` or `close`.
+//! is already open replaces the entry and frees the earlier copy. Pointers from `get` are
+//! invalidated by the next `open` or `close`.
 
 const std = @import("std");
 
@@ -58,10 +58,16 @@ pub const DocumentStore = struct {
         self.documents.deinit();
     }
 
-    /// Open a new document
+    /// Open a document. A URI that is already open is replaced and its old copy freed, so the
+    /// store never holds two entries for one URI. The new copy is built before the old one is
+    /// touched: on `OutOfMemory` the previous document stays open.
     pub fn open(self: *DocumentStore, uri: []const u8, content: []const u8, version: i32) !void {
-        const doc = try Document.init(self.allocator, uri, content, version);
-        try self.documents.put(doc.uri, doc);
+        var doc = try Document.init(self.allocator, uri, content, version);
+        errdefer doc.deinit();
+
+        try self.documents.ensureUnusedCapacity(1);
+        self.close(uri);
+        self.documents.putAssumeCapacityNoClobber(doc.uri, doc);
     }
 
     /// Update an existing document
@@ -150,4 +156,18 @@ test "DocumentStore - change nonexistent" {
 
     const result = store.change("file:///missing.toml", "content", 1);
     try std.testing.expectError(error.DocumentNotFound, result);
+}
+
+test "DocumentStore - reopen replaces without leaking" {
+    const allocator = std.testing.allocator;
+    var store = DocumentStore.init(allocator);
+    defer store.deinit();
+
+    try store.open("file:///test.toml", "first", 1);
+    try store.open("file:///test.toml", "second", 2);
+
+    try std.testing.expectEqual(@as(u32, 1), store.documents.count());
+    const doc = store.get("file:///test.toml").?;
+    try std.testing.expectEqualStrings("second", doc.content);
+    try std.testing.expectEqual(@as(i32, 2), doc.version);
 }
