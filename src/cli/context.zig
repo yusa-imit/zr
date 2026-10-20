@@ -1,3 +1,12 @@
+//! The `zr context` command: prints project metadata for AI coding agents as JSON or YAML.
+//!
+//! Flags: `--format <json|yaml>` (default json), `--scope <path>`, `-h`/`--help`. An unknown
+//! flag or format prints a message to the error writer and returns exit code 1; `--help`
+//! returns 0.
+//!
+//! Allocation: the generated context and the rendered output are allocated from the caller's
+//! allocator and freed before `cmdContext` returns.
+
 const std = @import("std");
 const generator = @import("../context/generator.zig");
 const json_gen = @import("../context/json.zig");

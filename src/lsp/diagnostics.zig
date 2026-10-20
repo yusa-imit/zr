@@ -1,3 +1,14 @@
+//! LSP diagnostics for zr.toml: severity, the owned `Diagnostic` record and constructors that
+//! map parse errors, missing fields and unknown fields to a position in the document.
+//!
+//! Invariants: a `Diagnostic` owns a copy of its message; `deinit` frees it with the allocator
+//! it was created with. `toJson` interpolates the message without JSON escaping, so messages
+//! must not contain quotes or backslashes (all built-in messages are plain text, but the field
+//! and section names in `missingRequiredField` and `unknownField` come from the document).
+//!
+//! Allocation: every constructor and `toJson` allocate from the caller's allocator; the caller
+//! frees the result.
+
 const std = @import("std");
 const position = @import("position.zig");
 

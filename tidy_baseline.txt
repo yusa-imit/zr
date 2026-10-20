@@ -112,7 +112,6 @@ src/cli/conformance.zig:cmdConformance:137
 src/cli/conformance.zig:doc-header:1
 src/cli/conformance.zig:line-length:6
 src/cli/context.zig:cmdContext:77
-src/cli/context.zig:doc-header:1
 src/cli/context.zig:line-length:3
 src/cli/deps.zig:ban-list:5
 src/cli/deps.zig:doc-header:1
@@ -506,14 +505,12 @@ src/lsp/completion.zig:line-length:15
 src/lsp/definition.zig:doc-header:1
 src/lsp/definition.zig:line-length:6
 src/lsp/diagnostics.zig:ban-list:1
-src/lsp/diagnostics.zig:doc-header:1
 src/lsp/diagnostics.zig:line-length:5
 src/lsp/document.zig:line-length:1
 src/lsp/handlers.zig:doc-header:1
 src/lsp/handlers.zig:line-length:7
 src/lsp/hover.zig:doc-header:1
 src/lsp/hover.zig:line-length:16
-src/lsp/position.zig:doc-header:1
 src/lsp/position.zig:line-length:1
 src/lsp/server.zig:ban-list:2
 src/lsp/server.zig:doc-header:1
