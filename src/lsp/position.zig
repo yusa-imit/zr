@@ -1,3 +1,11 @@
+//! LSP position and range types and conversions between byte offsets and positions.
+//!
+//! Invariants: lines and characters are 0-indexed; a `\n` byte ends a line. The `character`
+//! field counts UTF-8 bytes, not the UTF-16 code units the LSP spec asks for, so positions on
+//! lines with non-ASCII text are off for clients that count code units.
+//!
+//! Allocation: none. Every function is pure over the caller's text slice.
+
 const std = @import("std");
 
 /// LSP position (0-indexed line, 0-indexed character)
