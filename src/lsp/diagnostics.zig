@@ -2,9 +2,9 @@
 //! map parse errors, missing fields and unknown fields to a position in the document.
 //!
 //! Invariants: a `Diagnostic` owns a copy of its message; `deinit` frees it with the allocator
-//! it was created with. `toJson` interpolates the message without JSON escaping, so messages
-//! must not contain quotes or backslashes (all built-in messages are plain text, but the field
-//! and section names in `missingRequiredField` and `unknownField` come from the document).
+//! it was created with. `toJson` writes the message as a JSON string through `std.json.fmt`, so
+//! quotes, backslashes and control bytes are escaped (the field and section names in
+//! `missingRequiredField` and `unknownField` come from the document).
 //!
 //! Allocation: every constructor and `toJson` allocate from the caller's allocator; the caller
 //! frees the result.
@@ -43,14 +43,14 @@ pub const Diagnostic = struct {
     /// Format as LSP JSON diagnostic
     pub fn toJson(self: Diagnostic, allocator: std.mem.Allocator) ![]const u8 {
         return std.fmt.allocPrint(allocator,
-            \\{{"range":{{"start":{{"line":{d},"character":{d}}},"end":{{"line":{d},"character":{d}}}}},"severity":{d},"message":"{s}"}}
+            \\{{"range":{{"start":{{"line":{d},"character":{d}}},"end":{{"line":{d},"character":{d}}}}},"severity":{d},"message":{f}}}
         , .{
             self.range.start.line,
             self.range.start.character,
             self.range.end.line,
             self.range.end.character,
             @intFromEnum(self.severity),
-            self.message,
+            std.json.fmt(self.message, .{}),
         });
     }
 };
@@ -160,6 +160,27 @@ test "Diagnostic - toJson" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"character\":5") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"severity\":1") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"message\":\"test\"") != null);
+}
+
+test "Diagnostic - toJson escapes quotes, backslashes and control bytes" {
+    const allocator = std.testing.allocator;
+    const range = position.Range{
+        .start = position.Position{ .line = 1, .character = 0 },
+        .end = position.Position{ .line = 1, .character = 1 },
+    };
+
+    var diag = try Diagnostic.init(allocator, range, .Error, "a\"b\\c\nd");
+    defer diag.deinit();
+
+    const json = try diag.toJson(allocator);
+    defer allocator.free(json);
+
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"message\":\"a\\\"b\\\\c\\nd\"}") != null);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+    const message = parsed.value.object.get("message").?.string;
+    try std.testing.expectEqualStrings("a\"b\\c\nd", message);
 }
 
 test "fromTomlError" {
