@@ -1,3 +1,11 @@
+//! `zr help <task>` and `zr man <task>`: renders one task's documentation from the loaded
+//! config (description, command, examples, parameters, outputs, dependencies, related tasks),
+//! or its man page through `output/man.zig`.
+//!
+//! Contract: writes the document to `w`; an unknown task name writes a hint to `ew` and returns
+//! `error.TaskNotFound`. `cmdHelp` ignores its color flag. Neither function stores the config
+//! or retains an allocation; `cmdMan` allocates only inside `formatManPage`.
+
 const std = @import("std");
 const sailor = @import("sailor");
 const config_types = @import("../config/types.zig");
@@ -127,7 +135,6 @@ pub fn cmdMan(
 
 // Integration tests for help.zig exist in tests/task_documentation_test.zig
 // Unit tests below verify formatting logic in isolation
-
 
 test "cmdHelp returns error for non-existent task" {
     const allocator = std.testing.allocator;
