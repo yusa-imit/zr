@@ -1,3 +1,12 @@
+//! Parses the `[conformance]` TOML table into a `ConformanceConfig`.
+//!
+//! Contract: the caller owns the returned config and frees it with `deinit`; every string is
+//! duplicated, so the TOML table may be released first. A rule missing `id`, `type`, `scope`
+//! or `message` fails with `MissingRule*`, and an unknown `type` with `InvalidRuleType`.
+//! Lenient by design: a field of the wrong TOML type (`fail_on_warning`, `pattern`, `fixable`,
+//! a non-string `ignore` entry, a `config` value that is neither string nor integer) is skipped
+//! silently, and an unknown `severity` falls back to `err`.
+
 const std = @import("std");
 const types = @import("types.zig");
 

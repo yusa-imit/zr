@@ -160,7 +160,6 @@ src/cli/graph_tui.zig:doc-header:1
 src/cli/graph_tui.zig:graphTui:277
 src/cli/graph_tui.zig:line-length:10
 src/cli/help.zig:cmdHelp:101
-src/cli/help.zig:doc-header:1
 src/cli/help.zig:line-length:4
 src/cli/init.zig:ban-list:1
 src/cli/init.zig:cmdInit:144
@@ -277,7 +276,6 @@ src/cli/tui_runner.zig:doc-header:1
 src/cli/tui_runner.zig:inputThread:129
 src/cli/tui_runner.zig:line-length:7
 src/cli/tui_runner.zig:render:156
-src/cli/upgrade.zig:doc-header:1
 src/cli/upgrade.zig:line-length:3
 src/cli/validate.zig:ban-list:3
 src/cli/validate.zig:cmdValidate:559
@@ -367,7 +365,6 @@ src/conformance/engine.zig:line-length:5
 src/conformance/fixer.zig:ban-list:1
 src/conformance/fixer.zig:doc-header:1
 src/conformance/fixer.zig:line-length:2
-src/conformance/parser.zig:doc-header:1
 src/conformance/parser.zig:parseRule:71
 src/conformance/types.zig:doc-header:1
 src/conformance/types.zig:line-length:1
@@ -573,7 +570,6 @@ src/output/man.zig:doc-header:1
 src/output/man.zig:formatManPage:181
 src/output/man.zig:line-length:1
 src/output/monitor.zig:ban-list:3
-src/output/monitor.zig:doc-header:1
 src/output/monitor.zig:line-length:3
 src/output/monitor.zig:monitorDisplay:97
 src/output/progress.zig:ban-list:2

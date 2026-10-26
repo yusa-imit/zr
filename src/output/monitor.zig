@@ -1,3 +1,12 @@
+//! Live resource monitor: a thread body that redraws one stderr line with a child process's RSS
+//! and CPU every 500 ms and records the peaks.
+//!
+//! Contract: `monitorDisplay` runs until `ctx.done` is set, then clears the line and prints the
+//! peak RSS and CPU. Peaks are atomics read by the owner after the thread joins; CPU is stored
+//! as percent times ten. Known gap: the stderr writer is buffered (4096 bytes) and the loop
+//! never flushes it, so updates reach the terminal only when the buffer fills. Write errors are
+//! ignored. The wall clock and sleep are read directly, not injected.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const resource = @import("../exec/resource.zig");

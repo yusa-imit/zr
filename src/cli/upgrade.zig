@@ -1,3 +1,11 @@
+//! `zr upgrade`: checks for a newer release, asks for confirmation, and installs it.
+//!
+//! Options: `--check`, `--version <ver>`, `--prerelease`, `--verbose`, `--help`. An unknown
+//! option or a `--version` without a value prints a hint to `ew` and returns exit code 1.
+//! Known gaps: the confirmation reads stdin once into a 256-byte buffer (EOF or any reply other
+//! than `y`/`Y` cancels), and `--version` is parsed but `runUpgrade` still installs the latest
+//! release found by the checker.
+
 const std = @import("std");
 const output = @import("../output/color.zig");
 const checker = @import("../upgrade/checker.zig");
