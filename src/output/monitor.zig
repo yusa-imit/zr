@@ -3,9 +3,8 @@
 //!
 //! Contract: `monitorDisplay` runs until `ctx.done` is set, then clears the line and prints the
 //! peak RSS and CPU. Peaks are atomics read by the owner after the thread joins; CPU is stored
-//! as percent times ten. Known gap: the stderr writer is buffered (4096 bytes) and the loop
-//! never flushes it, so updates reach the terminal only when the buffer fills. Write errors are
-//! ignored. The wall clock and sleep are read directly, not injected.
+//! as percent times ten. The stderr writer is buffered (4096 bytes); every redraw and the final
+//! summary flush it so updates appear immediately. Write errors are ignored. The wall clock and sleep are read directly, not injected.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -74,55 +73,44 @@ pub fn monitorDisplay(ctx: *MonitorContext) void {
         last_cpu_time_ns = usage.cpu_time_ns;
         last_update_ns = now_ns;
 
-        // Display live stats (overwrite previous line)
-        // Use carriage return to update in place
-        writer.print("\r", .{}) catch continue;
-
-        if (ctx.use_color) {
-            writer.print("\x1b[36m", .{}) catch continue; // Cyan
-        }
-        writer.print("  [{s}] RSS: ", .{ctx.task_name}) catch continue;
-        if (ctx.use_color) {
-            writer.print("\x1b[1m", .{}) catch continue; // Bold
-        }
-        formatBytes(writer, usage.rss_bytes) catch continue;
-        if (ctx.use_color) {
-            writer.print("\x1b[0m\x1b[36m", .{}) catch continue; // Reset bold, keep cyan
-        }
-        writer.print(" | CPU: ", .{}) catch continue;
-        if (ctx.use_color) {
-            writer.print("\x1b[1m", .{}) catch continue; // Bold
-        }
-        writer.print("{d:.1}%", .{cpu_percent}) catch continue;
-        if (ctx.use_color) {
-            writer.print("\x1b[0m", .{}) catch continue; // Reset
-        }
-        writer.print("  ", .{}) catch continue; // Extra spaces to clear previous content
-
-        // No flush needed - direct write to stderr
+        // Display live stats (overwrite previous line).
+        renderLive(writer, ctx, usage.rss_bytes, cpu_percent) catch continue;
     }
 
-    // Clear the monitor line and print final peak stats
-    writer.print("\r", .{}) catch return;
-    writer.print("                                                                  \r", .{}) catch return;
-
-    const peak_rss = ctx.peak_rss_bytes.load(.acquire);
+    // Clear the monitor line and print final peak stats.
     const peak_cpu_x10 = ctx.peak_cpu_percent.load(.acquire);
     const peak_cpu: f64 = @as(f64, @floatFromInt(peak_cpu_x10)) / 10.0;
+    renderSummary(writer, ctx, ctx.peak_rss_bytes.load(.acquire), peak_cpu) catch return;
+}
 
+/// Redraw the live line in place with a carriage return, then flush so it reaches the terminal.
+fn renderLive(writer: *std.Io.Writer, ctx: *const MonitorContext, rss_bytes: u64, cpu_percent: f64) std.Io.Writer.Error!void {
+    try writer.print("\r", .{});
+    if (ctx.use_color) try writer.print("\x1b[36m", .{}); // Cyan
+    try writer.print("  [{s}] RSS: ", .{ctx.task_name});
+    if (ctx.use_color) try writer.print("\x1b[1m", .{}); // Bold
+    try formatBytes(writer, rss_bytes);
+    if (ctx.use_color) try writer.print("\x1b[0m\x1b[36m", .{}); // Reset bold, keep cyan
+    try writer.print(" | CPU: ", .{});
+    if (ctx.use_color) try writer.print("\x1b[1m", .{}); // Bold
+    try writer.print("{d:.1}%", .{cpu_percent});
+    if (ctx.use_color) try writer.print("\x1b[0m", .{}); // Reset
+    try writer.print("  ", .{}); // Extra spaces to clear previous content
+    try writer.flush();
+}
+
+/// Clear the live line, print the peak line when anything was measured, then flush.
+fn renderSummary(writer: *std.Io.Writer, ctx: *const MonitorContext, peak_rss: u64, peak_cpu: f64) std.Io.Writer.Error!void {
+    try writer.print("\r", .{});
+    try writer.print("                                                                  \r", .{});
     if (peak_rss > 0 or peak_cpu > 0.0) {
-        if (ctx.use_color) {
-            writer.print("\x1b[2m", .{}) catch return; // Dim
-        }
-        writer.print("  [{s}] Peak RSS: ", .{ctx.task_name}) catch return;
-        formatBytes(writer, peak_rss) catch return;
-        writer.print(" | Peak CPU: {d:.1}%\n", .{peak_cpu}) catch return;
-        if (ctx.use_color) {
-            writer.print("\x1b[0m", .{}) catch return; // Reset
-        }
+        if (ctx.use_color) try writer.print("\x1b[2m", .{}); // Dim
+        try writer.print("  [{s}] Peak RSS: ", .{ctx.task_name});
+        try formatBytes(writer, peak_rss);
+        try writer.print(" | Peak CPU: {d:.1}%\n", .{peak_cpu});
+        if (ctx.use_color) try writer.print("\x1b[0m", .{}); // Reset
     }
-
-    // No flush needed - direct write to stderr
+    try writer.flush();
 }
 
 /// Format bytes into human-readable format (KB, MB, GB).
@@ -175,4 +163,75 @@ test "MonitorContext initialization" {
 
     try std.testing.expectEqual(@as(u64, 0), ctx.peak_rss_bytes.load(.acquire));
     try std.testing.expectEqual(@as(u64, 0), ctx.peak_cpu_percent.load(.acquire));
+}
+
+/// Test sink that records every byte the buffered writer drains.
+const DrainSink = struct {
+    interface: std.Io.Writer,
+    drained: [512]u8 = undefined,
+    drained_len: usize = 0,
+
+    fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const sink: *DrainSink = @fieldParentPtr("interface", w);
+        var consumed: usize = 0;
+        for (data[0 .. data.len - 1]) |chunk| {
+            @memcpy(sink.drained[sink.drained_len..][0..chunk.len], chunk);
+            sink.drained_len += chunk.len;
+            consumed += chunk.len;
+        }
+        const last = data[data.len - 1];
+        for (0..splat) |_| {
+            @memcpy(sink.drained[sink.drained_len..][0..last.len], last);
+            sink.drained_len += last.len;
+            consumed += last.len;
+        }
+        return consumed;
+    }
+};
+
+fn test_context(done: *std.atomic.Value(bool), use_color: bool) MonitorContext {
+    return .{
+        .pid = if (builtin.os.tag == .windows) undefined else 1,
+        .task_name = "build",
+        .done = done,
+        .use_color = use_color,
+        .allocator = std.testing.allocator,
+    };
+}
+
+test "renderLive flushes the line to the sink" {
+    var done = std.atomic.Value(bool).init(false);
+    const ctx = test_context(&done, false);
+    var buf: [256]u8 = undefined;
+    var sink = DrainSink{ .interface = .{ .vtable = &.{ .drain = DrainSink.drain }, .buffer = &buf } };
+
+    try renderLive(&sink.interface, &ctx, 2 * 1024 * 1024, 12.5);
+
+    try std.testing.expectEqualStrings("\r  [build] RSS: 2.0 MB | CPU: 12.5%  ", sink.drained[0..sink.drained_len]);
+    try std.testing.expectEqual(@as(usize, 0), sink.interface.end);
+}
+
+test "renderSummary flushes the peak line and colors it" {
+    var done = std.atomic.Value(bool).init(false);
+    const ctx = test_context(&done, true);
+    var buf: [256]u8 = undefined;
+    var sink = DrainSink{ .interface = .{ .vtable = &.{ .drain = DrainSink.drain }, .buffer = &buf } };
+
+    try renderSummary(&sink.interface, &ctx, 512, 3.5);
+
+    const out = sink.drained[0..sink.drained_len];
+    try std.testing.expect(std.mem.endsWith(u8, out, "\x1b[2m  [build] Peak RSS: 512 B | Peak CPU: 3.5%\n\x1b[0m"));
+    try std.testing.expect(std.mem.startsWith(u8, out, "\r" ++ " " ** 66 ++ "\r"));
+    try std.testing.expectEqual(@as(usize, 0), sink.interface.end);
+}
+
+test "renderSummary with no samples only clears the line" {
+    var done = std.atomic.Value(bool).init(false);
+    const ctx = test_context(&done, false);
+    var buf: [256]u8 = undefined;
+    var sink = DrainSink{ .interface = .{ .vtable = &.{ .drain = DrainSink.drain }, .buffer = &buf } };
+
+    try renderSummary(&sink.interface, &ctx, 0, 0.0);
+
+    try std.testing.expectEqualStrings("\r" ++ " " ** 66 ++ "\r", sink.drained[0..sink.drained_len]);
 }
