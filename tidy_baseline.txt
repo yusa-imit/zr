@@ -571,7 +571,6 @@ src/output/man.zig:formatManPage:181
 src/output/man.zig:line-length:1
 src/output/monitor.zig:ban-list:3
 src/output/monitor.zig:line-length:3
-src/output/monitor.zig:monitorDisplay:97
 src/output/progress.zig:ban-list:2
 src/output/progress.zig:doc-header:1
 src/output/progress.zig:line-length:3
