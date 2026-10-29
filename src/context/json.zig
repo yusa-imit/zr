@@ -1,3 +1,11 @@
+//! JSON rendering of a project context.
+//!
+//! `generateJsonOutput` writes the project graph, task catalog, ownership mapping, recent changes
+//! and toolchains as one pretty-printed JSON object. Every package, task, path, owner and tag
+//! string goes through `std.json.fmt`, so quotes, backslashes and control bytes are escaped.
+//! Ownership: the returned slice is owned by the caller and freed with the same allocator; the
+//! context is only read.
+
 const std = @import("std");
 const types = @import("types.zig");
 
@@ -16,13 +24,13 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
 
     for (ctx.project_graph.packages.items, 0..) |pkg, i| {
         try writer.writeAll("      {\n");
-        try writer.print("        \"name\": \"{s}\",\n", .{escapeJson(pkg.name)});
-        try writer.print("        \"path\": \"{s}\",\n", .{escapeJson(pkg.path)});
+        try writer.print("        \"name\": {f},\n", .{std.json.fmt(pkg.name, .{})});
+        try writer.print("        \"path\": {f},\n", .{std.json.fmt(pkg.path, .{})});
 
         // Dependencies
         try writer.writeAll("        \"dependencies\": [");
         for (pkg.dependencies.items, 0..) |dep, j| {
-            try writer.print("\"{s}\"", .{escapeJson(dep)});
+            try writer.print("{f}", .{std.json.fmt(dep, .{})});
             if (j < pkg.dependencies.items.len - 1) {
                 try writer.writeAll(", ");
             }
@@ -32,7 +40,7 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
         // Tags
         try writer.writeAll("        \"tags\": [");
         for (pkg.tags.items, 0..) |tag, j| {
-            try writer.print("\"{s}\"", .{escapeJson(tag)});
+            try writer.print("{f}", .{std.json.fmt(tag, .{})});
             if (j < pkg.tags.items.len - 1) {
                 try writer.writeAll(", ");
             }
@@ -54,23 +62,23 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
 
     for (ctx.task_catalog.items, 0..) |pkg_info, i| {
         try writer.writeAll("    {\n");
-        try writer.print("      \"package\": \"{s}\",\n", .{escapeJson(pkg_info.package_name)});
+        try writer.print("      \"package\": {f},\n", .{std.json.fmt(pkg_info.package_name, .{})});
         try writer.writeAll("      \"tasks\": [\n");
 
         for (pkg_info.tasks.items, 0..) |task, j| {
             try writer.writeAll("        {\n");
-            try writer.print("          \"name\": \"{s}\",\n", .{escapeJson(task.name)});
-            try writer.print("          \"cmd\": \"{s}\",\n", .{escapeJson(task.cmd)});
+            try writer.print("          \"name\": {f},\n", .{std.json.fmt(task.name, .{})});
+            try writer.print("          \"cmd\": {f},\n", .{std.json.fmt(task.cmd, .{})});
 
             if (task.description) |desc| {
-                try writer.print("          \"description\": \"{s}\",\n", .{escapeJson(desc)});
+                try writer.print("          \"description\": {f},\n", .{std.json.fmt(desc, .{})});
             } else {
                 try writer.writeAll("          \"description\": null,\n");
             }
 
             try writer.writeAll("          \"dependencies\": [");
             for (task.dependencies.items, 0..) |dep, k| {
-                try writer.print("\"{s}\"", .{escapeJson(dep)});
+                try writer.print("{f}", .{std.json.fmt(dep, .{})});
                 if (k < task.dependencies.items.len - 1) {
                     try writer.writeAll(", ");
                 }
@@ -99,10 +107,10 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
 
     for (ctx.ownership_mapping.items, 0..) |entry, i| {
         try writer.writeAll("    {\n");
-        try writer.print("      \"path\": \"{s}\",\n", .{escapeJson(entry.path)});
+        try writer.print("      \"path\": {f},\n", .{std.json.fmt(entry.path, .{})});
         try writer.writeAll("      \"owners\": [");
         for (entry.owners.items, 0..) |owner, j| {
-            try writer.print("\"{s}\"", .{escapeJson(owner)});
+            try writer.print("{f}", .{std.json.fmt(owner, .{})});
             if (j < entry.owners.items.len - 1) {
                 try writer.writeAll(", ");
             }
@@ -124,7 +132,7 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
     try writer.print("    \"time_range_days\": {d},\n", .{ctx.recent_changes.time_range_days});
     try writer.writeAll("    \"affected_packages\": [");
     for (ctx.recent_changes.affected_packages.items, 0..) |pkg, i| {
-        try writer.print("\"{s}\"", .{escapeJson(pkg)});
+        try writer.print("{f}", .{std.json.fmt(pkg, .{})});
         if (i < ctx.recent_changes.affected_packages.items.len - 1) {
             try writer.writeAll(", ");
         }
@@ -137,11 +145,11 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
 
     for (ctx.toolchains.items, 0..) |tc, i| {
         try writer.writeAll("    {\n");
-        try writer.print("      \"name\": \"{s}\",\n", .{escapeJson(tc.name)});
-        try writer.print("      \"version\": \"{s}\",\n", .{escapeJson(tc.version)});
+        try writer.print("      \"name\": {f},\n", .{std.json.fmt(tc.name, .{})});
+        try writer.print("      \"version\": {f},\n", .{std.json.fmt(tc.version, .{})});
 
         if (tc.install_path) |path| {
-            try writer.print("      \"install_path\": \"{s}\"\n", .{escapeJson(path)});
+            try writer.print("      \"install_path\": {f}\n", .{std.json.fmt(path, .{})});
         } else {
             try writer.writeAll("      \"install_path\": null\n");
         }
@@ -159,13 +167,6 @@ pub fn generateJsonOutput(allocator: std.mem.Allocator, ctx: *const types.Projec
     return output.toOwnedSlice(allocator);
 }
 
-/// Escape JSON special characters
-fn escapeJson(s: []const u8) []const u8 {
-    // Simple approach: assume strings don't contain special chars for now
-    // In production, would need proper escaping of ", \, etc.
-    return s;
-}
-
 test "generateJsonOutput basic" {
     const allocator = std.testing.allocator;
 
@@ -178,4 +179,29 @@ test "generateJsonOutput basic" {
     try std.testing.expect(json.len > 0);
     try std.testing.expect(std.mem.indexOf(u8, json, "project_graph") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "task_catalog") != null);
+}
+
+test "generateJsonOutput escapes quotes and control bytes in task fields" {
+    const allocator = std.testing.allocator;
+
+    var ctx = types.ProjectContext.init(allocator);
+    defer ctx.deinit();
+
+    const pkg = try types.PackageTaskInfo.init(allocator, "pkg\"one");
+    try ctx.task_catalog.append(allocator, pkg);
+    const pkg_ptr = &ctx.task_catalog.items[0];
+    const task = try types.TaskInfo.init(allocator, "say \"hi\"", "echo a\\b\nc", "tab\there");
+    try pkg_ptr.tasks.append(allocator, task);
+
+    const json = try generateJsonOutput(allocator, &ctx);
+    defer allocator.free(json);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+    const catalog = parsed.value.object.get("task_catalog").?.array.items;
+    try std.testing.expectEqualStrings("pkg\"one", catalog[0].object.get("package").?.string);
+    const task_obj = catalog[0].object.get("tasks").?.array.items[0].object;
+    try std.testing.expectEqualStrings("say \"hi\"", task_obj.get("name").?.string);
+    try std.testing.expectEqualStrings("echo a\\b\nc", task_obj.get("cmd").?.string);
+    try std.testing.expectEqualStrings("tab\there", task_obj.get("description").?.string);
 }
