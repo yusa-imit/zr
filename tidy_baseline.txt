@@ -372,7 +372,6 @@ src/context/generator.zig:ban-list:1
 src/context/generator.zig:collectTaskCatalog:86
 src/context/generator.zig:doc-header:1
 src/context/generator.zig:line-length:5
-src/context/json.zig:doc-header:1
 src/context/json.zig:generateJsonOutput:156
 src/context/json.zig:line-length:1
 src/context/types.zig:doc-header:1
