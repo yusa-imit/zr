@@ -3,8 +3,9 @@
 //! Options: `--check`, `--version <ver>`, `--prerelease`, `--verbose`, `--help`. An unknown
 //! option or a `--version` without a value prints a hint to `ew` and returns exit code 1.
 //! Known gaps: the confirmation reads stdin once into a 256-byte buffer (EOF or any reply other
-//! than `y`/`Y` cancels), and `--version` is parsed but `runUpgrade` still installs the latest
-//! release found by the checker.
+//! than `y`/`Y` cancels). `--version <ver>` installs that exact release, older or newer than
+//! the running one; when it is missing from the release list or already running, the command
+//! says so and exits 0. A release without an asset for this platform fails the command.
 
 const std = @import("std");
 const output = @import("../output/color.zig");
@@ -49,10 +50,10 @@ fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions, w: *s
     // Check for updates
     try w.print("Checking for updates...\n", .{});
 
-    const maybe_release = try checker.checkForUpdate(
-        allocator,
-        options.include_prerelease,
-    );
+    const maybe_release = try checker.checkForUpdate(allocator, .{
+        .include_prerelease = options.include_prerelease,
+        .version = options.version,
+    });
 
     if (maybe_release) |release| {
         defer {
@@ -93,6 +94,9 @@ fn runUpgrade(allocator: std.mem.Allocator, options: types.UpgradeOptions, w: *s
         try w.print("\n{s}{s}✓ Upgrade complete!{s}\n", .{ green, bold, reset });
         try w.print("Run 'zr --version' to verify.\n", .{});
 
+        return 0;
+    } else if (options.version) |version| {
+        try w.print("Version {s} was not found or is already installed.\n", .{version});
         return 0;
     } else {
         const green = output.Code.green;
