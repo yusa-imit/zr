@@ -18,32 +18,27 @@ const response_bytes_max: usize = 8 * 1024 * 1024;
 /// Current version of zr, injected from build.zig.zon via build options
 pub const CURRENT_VERSION = @import("build_options").version;
 
-/// Check if a newer version is available
-pub fn checkForUpdate(
-    allocator: std.mem.Allocator,
-    include_prerelease: bool,
-) !?Release {
-    const latest = try getLatestRelease(allocator, include_prerelease);
+/// Looks up the release `zr upgrade` should install. Without `selection.version` that is the
+/// newest release, and only when it is newer than `CURRENT_VERSION`. With an explicit version it
+/// is that release, whether older or newer, unless it is the running version. Null means
+/// nothing to install (including every network failure).
+pub fn checkForUpdate(allocator: std.mem.Allocator, selection: Selection) !?Release {
+    var release = (try getLatestRelease(allocator, selection)) orelse return null;
+    errdefer release.deinit();
 
-    if (latest) |rel| {
-        // Compare versions
-        if (try isNewerVersion(rel.version, CURRENT_VERSION)) {
-            return rel;
-        } else {
-            var mutable_rel = rel;
-            mutable_rel.deinit();
-            return null;
-        }
-    }
+    const wanted = selection.version != null;
+    const install = if (wanted)
+        !std.mem.eql(u8, release.version, CURRENT_VERSION)
+    else
+        try isNewerVersion(release.version, CURRENT_VERSION);
+    if (install) return release;
 
+    release.deinit();
     return null;
 }
 
 /// Get the latest release from GitHub
-fn getLatestRelease(
-    allocator: std.mem.Allocator,
-    include_prerelease: bool,
-) !?Release {
+fn getLatestRelease(allocator: std.mem.Allocator, selection: Selection) !?Release {
     // Parse URL to extract host and path
     const uri = std.Uri.parse(GITHUB_API_URL) catch return null;
 
@@ -100,37 +95,63 @@ fn getLatestRelease(
     ) catch return null;
     defer parsed.deinit();
 
-    const releases = parsed.value.array;
-    if (releases.items.len == 0) return null;
+    if (parsed.value != .array) return null;
+    return try selectRelease(allocator, parsed.value.array.items, selection);
+}
 
-    // Find the latest non-prerelease version (or latest prerelease if requested)
-    for (releases.items) |item| {
+/// Which release `selectRelease` is looking for.
+pub const Selection = struct {
+    /// Let a prerelease win when no explicit `version` is given.
+    include_prerelease: bool,
+    /// Exact version wanted (`1.2.3` or `v1.2.3`); null means the newest eligible release.
+    version: ?[]const u8,
+};
+
+/// Picks the release to offer from the GitHub releases array (newest first). Entries that are
+/// not objects or lack `tag_name`, `prerelease`, `created_at` or `assets` are skipped: the
+/// array comes off the network, so a malformed entry is data, not a programmer error. An
+/// explicit `selection.version` matches its own tag even when that release is a prerelease.
+fn selectRelease(
+    allocator: std.mem.Allocator,
+    releases: []const std.json.Value,
+    selection: Selection,
+) !?Release {
+    const wanted: ?[]const u8 = if (selection.version) |ver| trimVersionPrefix(ver) else null;
+    if (wanted) |ver| std.debug.assert(ver.len > 0);
+
+    for (releases) |item| {
+        if (item != .object) continue;
         const obj = item.object;
-        const is_prerelease = obj.get("prerelease").?.bool;
+        const prerelease_value = obj.get("prerelease") orelse continue;
+        const tag_value = obj.get("tag_name") orelse continue;
+        const created_value = obj.get("created_at") orelse continue;
+        if (prerelease_value != .bool or tag_value != .string or created_value != .string) continue;
 
-        // Skip prereleases unless requested
-        if (is_prerelease and !include_prerelease) continue;
+        const version = trimVersionPrefix(tag_value.string);
+        if (wanted) |ver| {
+            if (!std.mem.eql(u8, ver, version)) continue;
+        } else if (prerelease_value.bool and !selection.include_prerelease) continue;
 
-        const tag_name = obj.get("tag_name").?.string;
-        const version = if (std.mem.startsWith(u8, tag_name, "v"))
-            tag_name[1..]
-        else
-            tag_name;
+        const assets_value = obj.get("assets") orelse continue;
+        if (assets_value != .array) continue;
 
-        const created_at = obj.get("created_at").?.string;
-
-        // Construct download URL for current platform
-        const download_url = try getDownloadUrlFromAssets(allocator, obj);
+        const download_url = try getDownloadUrlFromAssets(allocator, assets_value.array.items);
+        errdefer allocator.free(download_url);
 
         var release = Release.init(allocator);
-        release.version = try allocator.dupe(u8, version);
-        release.created_at = try allocator.dupe(u8, created_at);
+        errdefer release.deinit();
         release.download_url = download_url;
-
+        release.version = try allocator.dupe(u8, version);
+        release.created_at = try allocator.dupe(u8, created_value.string);
         return release;
     }
 
     return null;
+}
+
+fn trimVersionPrefix(version: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, version, "v")) return version[1..];
+    return version;
 }
 
 /// Reads `source` until end-of-stream into a caller-owned buffer. Returns null when the peer
@@ -165,7 +186,10 @@ fn readResponseBounded(
 }
 
 /// Extract platform-specific download URL from GitHub release assets
-fn getDownloadUrlFromAssets(allocator: std.mem.Allocator, release_obj: std.json.ObjectMap) ![]const u8 {
+fn getDownloadUrlFromAssets(
+    allocator: std.mem.Allocator,
+    assets: []const std.json.Value,
+) error{ OutOfMemory, UnsupportedPlatform, UnsupportedArchitecture, NoMatchingAsset }![]const u8 {
     const os_name = switch (builtin.os.tag) {
         .linux => "linux",
         .macos => "macos",
@@ -179,18 +203,18 @@ fn getDownloadUrlFromAssets(allocator: std.mem.Allocator, release_obj: std.json.
         else => return error.UnsupportedArchitecture,
     };
 
-    const assets = release_obj.get("assets").?.array;
     const target_pattern = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ os_name, arch_name });
     defer allocator.free(target_pattern);
 
     // Find matching asset
-    for (assets.items) |asset_item| {
-        const asset = asset_item.object;
-        const asset_name = asset.get("name").?.string;
+    for (assets) |asset_item| {
+        if (asset_item != .object) continue;
+        const name_value = asset_item.object.get("name") orelse continue;
+        const url_value = asset_item.object.get("browser_download_url") orelse continue;
+        if (name_value != .string or url_value != .string) continue;
 
-        if (std.mem.indexOf(u8, asset_name, target_pattern) != null) {
-            const download_url = asset.get("browser_download_url").?.string;
-            return try allocator.dupe(u8, download_url);
+        if (std.mem.indexOf(u8, name_value.string, target_pattern) != null) {
+            return try allocator.dupe(u8, url_value.string);
         }
     }
 
@@ -323,4 +347,140 @@ test "getDownloadUrl platform detection" {
 
     const url = try getDownloadUrl(release);
     try std.testing.expect(url.len > 0);
+}
+
+fn parseReleasesFixture(
+    allocator: std.mem.Allocator,
+    json_text: []const u8,
+) !std.json.Parsed(std.json.Value) {
+    return try std.json.parseFromSlice(std.json.Value, allocator, json_text, .{});
+}
+
+/// Builds a releases array, newest first, in which every release carries one asset for the
+/// platform running the tests. A stray string sits in the array to exercise malformed input.
+fn releasesFixtureText(allocator: std.mem.Allocator) ![]u8 {
+    const target = switch (builtin.os.tag) {
+        .linux => "linux",
+        .macos => "macos",
+        else => "windows",
+    } ++ "-" ++ switch (builtin.cpu.arch) {
+        .aarch64 => "aarch64",
+        else => "x86_64",
+    };
+    return try std.fmt.allocPrint(allocator,
+        \\[
+        \\{{"tag_name":"v2.0.0-rc1","prerelease":true,"created_at":"c3","assets":[
+        \\{{"name":"zr-{[t]s}.tgz","browser_download_url":"https://x/rc1"}}]}},
+        \\"junk",
+        \\{{"tag_name":"v1.5.0","prerelease":false,"created_at":"c2","assets":[
+        \\{{"name":"zr-{[t]s}.tgz","browser_download_url":"https://x/150"}}]}},
+        \\{{"tag_name":"v1.4.0","prerelease":false,"created_at":"c1","assets":[
+        \\{{"name":"zr-{[t]s}.tgz","browser_download_url":"https://x/140"}}]}}
+        \\]
+    , .{ .t = target });
+}
+
+test "selectRelease without a version returns the newest stable release" {
+    const allocator = std.testing.allocator;
+    const text = try releasesFixtureText(allocator);
+    defer allocator.free(text);
+    var parsed = try parseReleasesFixture(allocator, text);
+    defer parsed.deinit();
+
+    var release = (try selectRelease(allocator, parsed.value.array.items, .{
+        .include_prerelease = false,
+        .version = null,
+    })).?;
+    defer release.deinit();
+
+    try std.testing.expectEqualStrings("1.5.0", release.version);
+    try std.testing.expectEqualStrings("c2", release.created_at);
+    try std.testing.expectEqualStrings("https://x/150", release.download_url);
+}
+
+test "selectRelease without a version returns a prerelease only when asked" {
+    const allocator = std.testing.allocator;
+    const text = try releasesFixtureText(allocator);
+    defer allocator.free(text);
+    var parsed = try parseReleasesFixture(allocator, text);
+    defer parsed.deinit();
+
+    var release = (try selectRelease(allocator, parsed.value.array.items, .{
+        .include_prerelease = true,
+        .version = null,
+    })).?;
+    defer release.deinit();
+
+    try std.testing.expectEqualStrings("2.0.0-rc1", release.version);
+}
+
+test "selectRelease with a version returns that release, not the newest" {
+    const allocator = std.testing.allocator;
+    const text = try releasesFixtureText(allocator);
+    defer allocator.free(text);
+    var parsed = try parseReleasesFixture(allocator, text);
+    defer parsed.deinit();
+
+    var plain = (try selectRelease(allocator, parsed.value.array.items, .{
+        .include_prerelease = false,
+        .version = "1.4.0",
+    })).?;
+    defer plain.deinit();
+    var prefixed = (try selectRelease(allocator, parsed.value.array.items, .{
+        .include_prerelease = false,
+        .version = "v1.4.0",
+    })).?;
+    defer prefixed.deinit();
+
+    try std.testing.expectEqualStrings("1.4.0", plain.version);
+    try std.testing.expectEqualStrings("https://x/140", plain.download_url);
+    try std.testing.expectEqualStrings("1.4.0", prefixed.version);
+}
+
+test "selectRelease with a version finds a prerelease without include_prerelease" {
+    const allocator = std.testing.allocator;
+    const text = try releasesFixtureText(allocator);
+    defer allocator.free(text);
+    var parsed = try parseReleasesFixture(allocator, text);
+    defer parsed.deinit();
+
+    var release = (try selectRelease(allocator, parsed.value.array.items, .{
+        .include_prerelease = false,
+        .version = "2.0.0-rc1",
+    })).?;
+    defer release.deinit();
+
+    try std.testing.expectEqualStrings("2.0.0-rc1", release.version);
+}
+
+test "selectRelease returns null for a version that was never released" {
+    const allocator = std.testing.allocator;
+    const text = try releasesFixtureText(allocator);
+    defer allocator.free(text);
+    var parsed = try parseReleasesFixture(allocator, text);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(null, try selectRelease(allocator, parsed.value.array.items, .{
+        .include_prerelease = true,
+        .version = "9.9.9",
+    }));
+}
+
+test "selectRelease skips malformed entries and reports a missing platform asset" {
+    const allocator = std.testing.allocator;
+    var parsed = try parseReleasesFixture(allocator,
+        \\[1, {"tag_name":"v3.0.0"}, {"tag_name":"v2.0.0","prerelease":false,"created_at":"c",
+        \\"assets":[{"name":"zr-plan9-arm.tgz","browser_download_url":"https://x/p9"}]}]
+    );
+    defer parsed.deinit();
+
+    const items = parsed.value.array.items;
+    try std.testing.expectError(error.NoMatchingAsset, selectRelease(allocator, items, .{
+        .include_prerelease = false,
+        .version = null,
+    }));
+    try std.testing.expectEqual(null, try selectRelease(allocator, items[0..2], .{
+        .include_prerelease = false,
+        .version = null,
+    }));
 }
