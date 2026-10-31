@@ -1,13 +1,25 @@
+//! Built-in `.env` plugin: reads dotenv files into the process environment or into pairs.
+//!
+//! Contract: a file larger than `file_bytes_max` is rejected with `error.FileTooLarge`
+//! instead of being silently truncated. Returned pairs are owned by the caller; the file is read
+//! into a stack buffer, so nothing is allocated beyond the pairs and the setenv(3) copies.
+
 const std = @import("std");
 const builtin = @import("builtin");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
 const native_os = builtin.os.tag;
+
+/// Largest `.env` file accepted, in bytes. A larger file is an error, never a partial read.
+pub const file_bytes_max: u32 = 65536;
 
 // POSIX setenv(3) — only available on non-Windows targets.
 // The extern declaration is behind a comptime branch so it doesn't
 // generate a linker reference on Windows.
 fn posixSetenv(name_z: [*:0]const u8, val_z: [*:0]const u8, overwrite: bool) void {
     if (comptime native_os == .windows) return;
-    const c_setenv = @extern(*const fn ([*:0]const u8, [*:0]const u8, c_int) callconv(.c) c_int, .{ .name = "setenv" });
+    const SetenvFn = *const fn ([*:0]const u8, [*:0]const u8, c_int) callconv(.c) c_int;
+    const c_setenv = @extern(SetenvFn, .{ .name = "setenv" });
     _ = c_setenv(name_z, val_z, if (overwrite) 1 else 0);
 }
 
@@ -16,6 +28,7 @@ pub const EnvPlugin = struct {
     /// Skips comments (#), blank lines, and lines without '='.
     /// Variables already set in the environment are NOT overwritten by default.
     /// Set `overwrite = true` to force overwrite.
+    /// Returns `error.FileTooLarge` when the file exceeds `file_bytes_max`.
     pub fn loadDotEnv(
         allocator: std.mem.Allocator,
         env_path: []const u8,
@@ -27,9 +40,8 @@ pub const EnvPlugin = struct {
         };
         defer file.close();
 
-        var buf: [65536]u8 = undefined;
-        const n = try file.readAll(&buf);
-        const content = buf[0..n];
+        var buf: [file_bytes_max + 1]u8 = undefined;
+        const content = try readBounded(file, &buf);
 
         var lines = std.mem.splitScalar(u8, content, '\n');
         while (lines.next()) |line| {
@@ -57,6 +69,7 @@ pub const EnvPlugin = struct {
 
     /// Read key=value pairs from a .env file into a slice of [2]string pairs.
     /// Caller owns the returned slice and all strings within.
+    /// Returns `error.FileTooLarge` when the file exceeds `file_bytes_max`.
     pub fn readDotEnv(
         allocator: std.mem.Allocator,
         env_path: []const u8,
@@ -67,9 +80,8 @@ pub const EnvPlugin = struct {
         };
         defer file.close();
 
-        var buf: [65536]u8 = undefined;
-        const n = try file.readAll(&buf);
-        const content = buf[0..n];
+        var buf: [file_bytes_max + 1]u8 = undefined;
+        const content = try readBounded(file, &buf);
 
         var pairs: std.ArrayListUnmanaged([2][]const u8) = .empty;
         errdefer {
@@ -103,6 +115,16 @@ pub const EnvPlugin = struct {
         return pairs.toOwnedSlice(allocator);
     }
 };
+
+/// Reads the whole file into `buf` (capacity `file_bytes_max + 1`); a file that fills the extra
+/// byte is over the cap.
+fn readBounded(file: std.fs.File, buf: []u8) ![]const u8 {
+    assert(buf.len == file_bytes_max + 1);
+    const n = try file.readAll(buf);
+    if (n > file_bytes_max) return error.FileTooLarge;
+    assert(n <= file_bytes_max);
+    return buf[0..n];
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -178,4 +200,59 @@ test "EnvPlugin.readDotEnv: single-quoted values stripped" {
 
     try std.testing.expectEqual(@as(usize, 1), pairs.len);
     try std.testing.expectEqualStrings("hello world", pairs[0][1]);
+}
+
+test "EnvPlugin.readDotEnv: file at the size cap is read in full" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // "K=" plus padding, exactly file_bytes_max bytes, no trailing newline.
+    const data = try allocator.alloc(u8, file_bytes_max);
+    defer allocator.free(data);
+    @memset(data, 'v');
+    data[0] = 'K';
+    data[1] = '=';
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = data });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    const env_path = try std.fmt.allocPrint(allocator, "{s}/.env", .{tmp_path});
+    defer allocator.free(env_path);
+
+    const pairs = try EnvPlugin.readDotEnv(allocator, env_path);
+    defer {
+        for (pairs) |p| {
+            allocator.free(p[0]);
+            allocator.free(p[1]);
+        }
+        allocator.free(pairs);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), pairs.len);
+    try std.testing.expectEqual(@as(usize, file_bytes_max - 2), pairs[0][1].len);
+}
+
+test "EnvPlugin.readDotEnv: file over the size cap is an error" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const data = try allocator.alloc(u8, file_bytes_max + 1);
+    defer allocator.free(data);
+    @memset(data, 'v');
+    data[0] = 'K';
+    data[1] = '=';
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = data });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    const env_path = try std.fmt.allocPrint(allocator, "{s}/.env", .{tmp_path});
+    defer allocator.free(env_path);
+
+    try std.testing.expectError(error.FileTooLarge, EnvPlugin.readDotEnv(allocator, env_path));
+    const loaded = EnvPlugin.loadDotEnv(allocator, env_path, false);
+    try std.testing.expectError(error.FileTooLarge, loaded);
 }
