@@ -1,6 +1,9 @@
 const std = @import("std");
 const platform = @import("../util/platform.zig");
 const cache_store = @import("../cache/store.zig");
+const stdx = @import("../stdx.zig");
+const assert = stdx.assert;
+const maybe = stdx.maybe;
 
 /// Built-in plugin names recognized by zr.
 pub const BUILTIN_NAMES = [_][]const u8{ "env", "git", "notify", "cache", "docker" };
@@ -138,6 +141,34 @@ const BuiltinState = union(enum) {
     },
 };
 
+/// Loads the `.env` file at `env_path` and returns true on success. A failure is written to
+/// `warning_writer` as one line and returns false: the env plugin runs at init, where the user
+/// cannot otherwise learn that their variables were not loaded.
+fn loadEnvFileOrWarn(
+    gpa: std.mem.Allocator,
+    env_path: []const u8,
+    overwrite: bool,
+    warning_writer: *std.Io.Writer,
+) bool {
+    assert(env_path.len > 0);
+    EnvPlugin.loadDotEnv(gpa, env_path, overwrite) catch |err| {
+        const prefix = "zr: warning: env plugin could not load";
+        // A failed warning write has nowhere left to be reported, so it is dropped.
+        switch (err) {
+            error.FileTooLarge => warning_writer.print(
+                "{s} {s}: file is larger than {d} bytes\n",
+                .{ prefix, env_path, builtin_env.file_bytes_max },
+            ) catch {},
+            else => warning_writer.print(
+                "{s} {s}: {s}\n",
+                .{ prefix, env_path, @errorName(err) },
+            ) catch {},
+        }
+        return false;
+    };
+    return true;
+}
+
 /// A loaded built-in plugin that implements the same hook interface as native plugins.
 pub const BuiltinHandle = struct {
     name: []const u8,
@@ -177,7 +208,16 @@ pub const BuiltinHandle = struct {
                         var arena = std.heap.ArenaAllocator.init(self.allocator);
                         defer arena.deinit();
                         const overwrite = self.configBool("overwrite", false);
-                        EnvPlugin.loadDotEnv(arena.allocator(), pair[1], overwrite) catch {};
+                        var warning_buf: [512]u8 = undefined;
+                        var stderr_writer = std.fs.File.stderr().writer(&warning_buf);
+                        const loaded = loadEnvFileOrWarn(
+                            arena.allocator(),
+                            pair[1],
+                            overwrite,
+                            &stderr_writer.interface,
+                        );
+                        stderr_writer.interface.flush() catch {};
+                        maybe(loaded);
                     }
                 }
             },
@@ -561,4 +601,54 @@ test "cache plugin: onBeforeTask with no max_age is a no-op" {
 
     // Verify state is still .cache after calling onBeforeTask
     try std.testing.expect(handle.state == .cache);
+}
+
+test "loadEnvFileOrWarn: oversized .env file is reported, not silently ignored" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const data = try allocator.alloc(u8, builtin_env.file_bytes_max + 1);
+    defer allocator.free(data);
+    @memset(data, 'x');
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = data });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    const env_path = try std.fmt.allocPrint(allocator, "{s}/.env", .{tmp_path});
+    defer allocator.free(env_path);
+
+    var out: [512]u8 = undefined;
+    var w = std.Io.Writer.fixed(&out);
+    try std.testing.expect(!loadEnvFileOrWarn(allocator, env_path, false, &w));
+
+    const expected = try std.fmt.allocPrint(
+        allocator,
+        "zr: warning: env plugin could not load {s}: file is larger than {d} bytes\n",
+        .{ env_path, builtin_env.file_bytes_max },
+    );
+    defer allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, w.buffered());
+}
+
+test "loadEnvFileOrWarn: missing and valid files write nothing" {
+    const allocator = std.testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = ".env", .data = "ZR_TEST_WARN_OK=1\n" });
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    const good = try std.fmt.allocPrint(allocator, "{s}/.env", .{tmp_path});
+    defer allocator.free(good);
+    const missing = try std.fmt.allocPrint(allocator, "{s}/absent.env", .{tmp_path});
+    defer allocator.free(missing);
+
+    var out: [512]u8 = undefined;
+    var w = std.Io.Writer.fixed(&out);
+    try std.testing.expect(loadEnvFileOrWarn(allocator, good, false, &w));
+    try std.testing.expect(loadEnvFileOrWarn(allocator, missing, false, &w));
+    try std.testing.expectEqual(@as(usize, 0), w.buffered().len);
 }
