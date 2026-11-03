@@ -36,14 +36,16 @@ pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Config {
 /// Find parent workspace config and apply shared tasks, mixins, and templates (v1.114.0, v1.115.0).
 /// Walks up the directory tree from `config_dir` looking for a parent zr.toml
 /// with a [workspace] section. If found, inherits shared tasks, mixins, and templates.
+/// A missing, unreadable or non-workspace parent is not an error (the member simply inherits
+/// nothing); running out of memory is, because it would leave the inheritance half applied.
 fn findAndApplyParentWorkspace(
     allocator: std.mem.Allocator,
     member_config: *Config,
     config_path: []const u8,
-) void {
+) error{OutOfMemory}!void {
     const config_dir = std.fs.path.dirname(config_path) orelse return;
 
-    var current = allocator.dupe(u8, config_dir) catch return;
+    var current = try allocator.dupe(u8, config_dir);
     defer allocator.free(current);
 
     // Walk up directories. Each pass strictly shortens `current`, so the walk ends within
@@ -52,18 +54,24 @@ fn findAndApplyParentWorkspace(
         const parent = std.fs.path.dirname(current) orelse break;
         if (std.mem.eql(u8, parent, current)) break; // Reached root
 
-        const parent_owned = allocator.dupe(u8, parent) catch break;
+        const parent_owned = try allocator.dupe(u8, parent);
         allocator.free(current);
         current = parent_owned;
 
-        const parent_config_path = std.fs.path.join(allocator, &[_][]const u8{ current, "zr.toml" }) catch continue;
+        const parent_config_path = try std.fs.path.join(
+            allocator,
+            &[_][]const u8{ current, "zr.toml" },
+        );
         defer allocator.free(parent_config_path);
 
         // Check if zr.toml exists in parent
         std.fs.cwd().access(parent_config_path, .{}) catch continue;
 
         // Try to load parent config
-        var parent_config = loadFromFile(allocator, parent_config_path) catch continue;
+        var parent_config = loadFromFile(allocator, parent_config_path) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => continue,
+        };
         defer parent_config.deinit();
 
         // Only use it if it has a workspace section with shared tasks
@@ -71,9 +79,9 @@ fn findAndApplyParentWorkspace(
         if (parent_config.workspace.?.shared_tasks.count() == 0) break; // Workspace root found but no shared tasks
 
         // Apply shared tasks
-        inheritWorkspaceSharedTasks(allocator, member_config, &parent_config) catch {};
+        try inheritWorkspaceSharedTasks(allocator, member_config, &parent_config);
         // Apply workspace mixins and templates (v1.115.0)
-        inheritWorkspaceMixinsAndTemplates(allocator, member_config, &parent_config) catch {};
+        try inheritWorkspaceMixinsAndTemplates(allocator, member_config, &parent_config);
         break; // Only apply from immediate workspace root
     }
 }
@@ -170,7 +178,7 @@ fn loadFromFileInternal(allocator: std.mem.Allocator, path: []const u8, visited:
     // Inherit workspace shared tasks, mixins, and templates from parent workspace root (v1.114.0, v1.115.0)
     // Call this BEFORE resolveMixins so that workspace mixins are available when resolving task mixins
     if (config.workspace == null) {
-        findAndApplyParentWorkspace(allocator, &config, abs_path);
+        try findAndApplyParentWorkspace(allocator, &config, abs_path);
     }
 
     // Resolve task mixins (v1.67.0) — apply mixin fields to tasks
@@ -1938,4 +1946,47 @@ test "resolveMixins: mixin env parsed from array-of-pairs syntax is applied to t
     try std.testing.expectEqual(@as(usize, 1), task.env.len);
     try std.testing.expectEqualStrings("A", task.env[0][0]);
     try std.testing.expectEqualStrings("parent_a", task.env[0][1]);
+}
+
+test "findAndApplyParentWorkspace: out of memory is returned, never swallowed" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace_toml =
+        \\[workspace]
+        \\members = ["member"]
+        \\
+        \\[workspace.shared_tasks.lint]
+        \\cmd = "echo lint"
+        \\
+    ;
+    const member_toml = "[tasks.build]\ncmd = \"echo b\"\n";
+    try tmp.dir.writeFile(.{ .sub_path = "zr.toml", .data = workspace_toml });
+    try tmp.dir.makeDir("member");
+    try tmp.dir.writeFile(.{ .sub_path = "member/zr.toml", .data = member_toml });
+    const member_path = try tmp.dir.realpathAlloc(allocator, "member/zr.toml");
+    defer allocator.free(member_path);
+
+    // A working allocator inherits the shared task.
+    {
+        var member = try parseToml(allocator, member_toml);
+        defer member.deinit();
+        try findAndApplyParentWorkspace(allocator, &member, member_path);
+        try std.testing.expect(member.tasks.get("lint").?.inherited);
+    }
+
+    // The first three allocations are the directory walk's own: the copy of the config
+    // directory, the copy of its parent, and the parent's `zr.toml` path. Each must surface
+    // as OutOfMemory and leave the member without inherited tasks.
+    for (0..3) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(allocator, .{ .fail_index = fail_index });
+        var member = try parseToml(allocator, member_toml);
+        defer member.deinit();
+        try std.testing.expectError(
+            error.OutOfMemory,
+            findAndApplyParentWorkspace(failing.allocator(), &member, member_path),
+        );
+        try std.testing.expect(!member.tasks.contains("lint"));
+    }
 }
