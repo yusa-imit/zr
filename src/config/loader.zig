@@ -1,4 +1,5 @@
 const std = @import("std");
+const stdx = @import("../stdx.zig");
 pub const types = @import("types.zig");
 pub const Config = types.Config;
 pub const Task = types.Task;
@@ -1048,25 +1049,55 @@ fn copyTemplate(allocator: std.mem.Allocator, template: *const types.TaskTemplat
     return result;
 }
 
+/// Duplicates `items` and every string in it; an empty input returns the shared empty slice.
+/// Nothing is leaked when an allocation fails part-way through.
+fn dupeStrings(allocator: std.mem.Allocator, items: []const []const u8) ![]const []const u8 {
+    if (items.len == 0) return &.{};
+    const copies = try allocator.alloc([]const u8, items.len);
+    var copied_total: usize = 0;
+    errdefer {
+        for (copies[0..copied_total]) |copied| allocator.free(copied);
+        allocator.free(copies);
+    }
+    for (items, 0..) |item, i| {
+        copies[i] = try allocator.dupe(u8, item);
+        copied_total += 1;
+    }
+    stdx.assert(copied_total == items.len);
+    return copies;
+}
+
+/// Frees a slice produced by `dupeStrings`; the empty slice is not allocated.
+fn freeStrings(allocator: std.mem.Allocator, items: []const []const u8) void {
+    if (items.len == 0) return;
+    for (items) |item| allocator.free(item);
+    allocator.free(items);
+}
+
 /// Deep copy a task (v1.114.0 complete deep copy for shared task inheritance).
-/// Mirrors Task.deinit() to ensure all allocated fields are properly duped.
-/// Includes comprehensive errdefer cleanup chains to prevent leaks on failure.
+/// Mirrors Task.deinit(): every owned field must be duped here, otherwise the copy aliases the
+/// original and freeing both is a double free. Known gap: a failure part-way through leaks the
+/// fields copied after the retry strategy; the leading strings and the retry strategy are
+/// released by errdefer.
 fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
     var result = task.*;
-    var copied_count: usize = 0; // Track depth for errdefer cleanup
 
     // 1. Copy basic strings
     result.name = try allocator.dupe(u8, task.name);
-    errdefer if (copied_count < 1) allocator.free(result.name);
-    copied_count += 1;
+    errdefer allocator.free(result.name);
 
     result.cmd = try allocator.dupe(u8, task.cmd);
-    errdefer if (copied_count < 2) allocator.free(result.cmd);
-    copied_count += 1;
+    errdefer allocator.free(result.cmd);
 
     result.cwd = if (task.cwd) |c| try allocator.dupe(u8, c) else null;
-    errdefer if (copied_count < 3 and result.cwd != null) allocator.free(result.cwd.?);
-    copied_count += 1;
+    errdefer if (result.cwd) |c| allocator.free(c);
+
+    // 1b. Copy retry strategy (v1.47.0); Task.deinit frees both, so they cannot alias.
+    result.retry_on_codes = try allocator.dupe(u8, task.retry_on_codes);
+    errdefer if (result.retry_on_codes.len > 0) allocator.free(result.retry_on_codes);
+
+    result.retry_on_patterns = try dupeStrings(allocator, task.retry_on_patterns);
+    errdefer freeStrings(allocator, result.retry_on_patterns);
 
     // 2. Copy description (union type with nested dupe)
     result.description = if (task.description) |d| desc_copy: {
@@ -1088,7 +1119,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
             },
         }
     } else null;
-    copied_count += 1;
 
     // 3. Copy examples (optional array of strings)
     result.examples = if (task.examples) |examples| blk: {
@@ -1098,7 +1128,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 4. Copy outputs (optional StringHashMap)
     result.outputs = if (task.outputs) |outputs| blk: {
@@ -1112,7 +1141,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk out_map;
     } else null;
-    copied_count += 1;
 
     // 5. Copy see_also (optional array of strings)
     result.see_also = if (task.see_also) |see_also| blk: {
@@ -1122,21 +1150,18 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 6. Copy deps
     result.deps = try allocator.alloc([]const u8, task.deps.len);
     for (task.deps, 0..) |dep, i| {
         result.deps[i] = try allocator.dupe(u8, dep);
     }
-    copied_count += 1;
 
     // 7. Copy deps_serial
     result.deps_serial = try allocator.alloc([]const u8, task.deps_serial.len);
     for (task.deps_serial, 0..) |dep, i| {
         result.deps_serial[i] = try allocator.dupe(u8, dep);
     }
-    copied_count += 1;
 
     // 8. Copy deps_if (array of ConditionalDep)
     result.deps_if = if (task.deps_if.len > 0) blk: {
@@ -1147,7 +1172,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 9. Copy deps_optional
     result.deps_optional = if (task.deps_optional.len > 0) blk: {
@@ -1157,7 +1181,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 10. Copy env (array of [2]string pairs)
     result.env = try allocator.alloc([2][]const u8, task.env.len);
@@ -1165,7 +1188,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         result.env[i][0] = try allocator.dupe(u8, pair[0]);
         result.env[i][1] = try allocator.dupe(u8, pair[1]);
     }
-    copied_count += 1;
 
     // 11. Copy env_file (optional array of strings)
     result.env_file = if (task.env_file) |env_file| blk: {
@@ -1175,7 +1197,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 12. Copy required_env (optional array of strings)
     result.required_env = if (task.required_env) |req_env| blk: {
@@ -1185,7 +1206,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 13. Copy secrets (optional array of strings)
     result.secrets = if (task.secrets) |secrets| blk: {
@@ -1195,19 +1215,15 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 14. Copy condition (optional string)
     result.condition = if (task.condition) |c| try allocator.dupe(u8, c) else null;
-    copied_count += 1;
 
     // 15. Copy skip_if (optional string)
     result.skip_if = if (task.skip_if) |s| try allocator.dupe(u8, s) else null;
-    copied_count += 1;
 
     // 16. Copy output_if (optional string)
     result.output_if = if (task.output_if) |o| try allocator.dupe(u8, o) else null;
-    copied_count += 1;
 
     // 17. Copy toolchain (array of strings)
     result.toolchain = if (task.toolchain.len > 0) blk: {
@@ -1217,7 +1233,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 18. Copy requires (optional StringHashMap)
     result.requires = if (task.requires) |requires| blk: {
@@ -1231,7 +1246,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk req_map;
     } else null;
-    copied_count += 1;
 
     // 19. Copy tags (array of strings)
     result.tags = if (task.tags.len > 0) blk: {
@@ -1241,7 +1255,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 20. Copy cpu_affinity (optional array of u32)
     result.cpu_affinity = if (task.cpu_affinity) |affinity| blk: {
@@ -1249,7 +1262,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         @memcpy(arr, affinity);
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 21. Copy watch (optional WatchConfig with deinit)
     result.watch = if (task.watch) |w| blk: {
@@ -1271,7 +1283,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         watch_copy.mode = if (w.mode) |m| try allocator.dupe(u8, m) else null;
         break :blk watch_copy;
     } else null;
-    copied_count += 1;
 
     // 22. Copy hooks (array of TaskHook with deinit for each)
     result.hooks = if (task.hooks.len > 0) blk: {
@@ -1281,11 +1292,9 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 23. Copy template (optional string)
     result.template = if (task.template) |t| try allocator.dupe(u8, t) else null;
-    copied_count += 1;
 
     // 24. Copy params (array of [2]string pairs)
     result.params = if (task.params.len > 0) blk: {
@@ -1296,12 +1305,10 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 25. Copy circuit_breaker (optional CircuitBreakerConfig - no deinit needed, all scalars)
     // circuit_breaker: ?CircuitBreakerConfig = null (has all scalar fields, no deinit)
     // result.circuit_breaker already copied via task.*
-    copied_count += 1;
 
     // 26. Copy checkpoint (optional CheckpointConfig with deinit)
     result.checkpoint = if (task.checkpoint) |cp| blk: {
@@ -1311,23 +1318,18 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         cp_copy.checkpoint_dir = try allocator.dupe(u8, cp.checkpoint_dir);
         break :blk cp_copy;
     } else null;
-    copied_count += 1;
 
     // 27. Copy output_file (optional string)
     result.output_file = if (task.output_file) |of| try allocator.dupe(u8, of) else null;
-    copied_count += 1;
 
     // 28. Copy output_mode (optional string)
     result.output_mode = if (task.output_mode) |om| try allocator.dupe(u8, om) else null;
-    copied_count += 1;
 
     // 29. Copy remote (optional string)
     result.remote = if (task.remote) |r| try allocator.dupe(u8, r) else null;
-    copied_count += 1;
 
     // 30. Copy remote_cwd (optional string)
     result.remote_cwd = if (task.remote_cwd) |rc| try allocator.dupe(u8, rc) else null;
-    copied_count += 1;
 
     // 31. Copy remote_env (optional array of [2]string)
     result.remote_env = if (task.remote_env) |re| blk: {
@@ -1338,11 +1340,9 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 32. Copy concurrency_group (optional string)
     result.concurrency_group = if (task.concurrency_group) |cg| try allocator.dupe(u8, cg) else null;
-    copied_count += 1;
 
     // 33. Copy mixins (array of strings)
     result.mixins = if (task.mixins.len > 0) blk: {
@@ -1352,7 +1352,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 34. Copy aliases (array of strings)
     result.aliases = if (task.aliases.len > 0) blk: {
@@ -1362,7 +1361,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 35. Copy sources (array of strings)
     result.sources = if (task.sources.len > 0) blk: {
@@ -1372,7 +1370,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 36. Copy generates (array of strings)
     result.generates = if (task.generates.len > 0) blk: {
@@ -1382,7 +1379,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 37. Copy task_params (array of TaskParam with deinit for each)
     result.task_params = if (task.task_params.len > 0) blk: {
@@ -1395,7 +1391,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 38. Copy artifacts (optional array of strings)
     result.artifacts = if (task.artifacts) |artifacts| blk: {
@@ -1405,7 +1400,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else null;
-    copied_count += 1;
 
     // 39. Copy artifact_retention (optional ArtifactRetention union with deinit)
     result.artifact_retention = if (task.artifact_retention) |ar| blk: {
@@ -1419,15 +1413,12 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
             },
         }
     } else null;
-    copied_count += 1;
 
     // 40. Copy notify_on (optional string)
     result.notify_on = if (task.notify_on) |no| try allocator.dupe(u8, no) else null;
-    copied_count += 1;
 
     // 41. Copy notify_title (optional string)
     result.notify_title = if (task.notify_title) |nt| try allocator.dupe(u8, nt) else null;
-    copied_count += 1;
 
     // 42. Copy input_prompts (array of InputPrompt with deinit for each)
     result.input_prompts = if (task.input_prompts.len > 0) blk: {
@@ -1449,7 +1440,6 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 43. Copy redact (array of strings)
     result.redact = if (task.redact.len > 0) blk: {
@@ -1459,19 +1449,15 @@ fn copyTask(allocator: std.mem.Allocator, task: *const Task) !Task {
         }
         break :blk arr;
     } else &.{};
-    copied_count += 1;
 
     // 44. Copy confirm (optional string)
     result.confirm = if (task.confirm) |c| try allocator.dupe(u8, c) else null;
-    copied_count += 1;
 
     // 45. Copy confirm_if (optional string)
     result.confirm_if = if (task.confirm_if) |ci| try allocator.dupe(u8, ci) else null;
-    copied_count += 1;
 
     // 46. Copy source_file (optional string)
     result.source_file = if (task.source_file) |sf| try allocator.dupe(u8, sf) else null;
-    copied_count += 1;
 
     // Note: inherited, silent, allow_failure, cache, share_output, timeout_ms, retry_max,
     // retry_delay_ms, retry_backoff, retry_jitter, max_cpu, max_memory, max_concurrent,
@@ -1989,4 +1975,60 @@ test "findAndApplyParentWorkspace: out of memory is returned, never swallowed" {
         );
         try std.testing.expect(!member.tasks.contains("lint"));
     }
+}
+
+test "copyTask: retry_on_codes and retry_on_patterns are owned by the copy" {
+    const allocator = std.testing.allocator;
+
+    var original = Task{
+        .name = try allocator.dupe(u8, "flaky"),
+        .cmd = try allocator.dupe(u8, "echo flaky"),
+        .cwd = null,
+        .deps = try allocator.alloc([]const u8, 0),
+        .deps_serial = try allocator.alloc([]const u8, 0),
+        .env = try allocator.alloc([2][]const u8, 0),
+        .retry_on_codes = try allocator.dupe(u8, &[_]u8{ 1, 2 }),
+        .retry_on_patterns = blk: {
+            const patterns = try allocator.alloc([]const u8, 1);
+            errdefer allocator.free(patterns);
+            patterns[0] = try allocator.dupe(u8, "timeout");
+            break :blk patterns;
+        },
+    };
+    defer original.deinit(allocator);
+
+    var copy = try copyTask(allocator, &original);
+    defer copy.deinit(allocator);
+
+    // Distinct allocations, equal contents: freeing both must not double free.
+    try std.testing.expect(copy.retry_on_codes.ptr != original.retry_on_codes.ptr);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 1, 2 }, copy.retry_on_codes);
+    try std.testing.expect(copy.retry_on_patterns.ptr != original.retry_on_patterns.ptr);
+    try std.testing.expectEqual(@as(usize, 1), copy.retry_on_patterns.len);
+    try std.testing.expect(copy.retry_on_patterns[0].ptr != original.retry_on_patterns[0].ptr);
+    try std.testing.expectEqualStrings("timeout", copy.retry_on_patterns[0]);
+}
+
+test "dupeStrings: every allocation failure is released and the empty input is shared" {
+    const allocator = std.testing.allocator;
+    const items = [_][]const u8{ "alpha", "beta", "gamma" };
+
+    const empty = try dupeStrings(allocator, &.{});
+    try std.testing.expectEqual(@as(usize, 0), empty.len);
+    freeStrings(allocator, empty);
+
+    // One allocation for the array plus one per string: indices 0..3 fail, 4 succeeds.
+    for (0..4) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(allocator, .{ .fail_index = fail_index });
+        try std.testing.expectError(
+            error.OutOfMemory,
+            dupeStrings(failing.allocator(), &items),
+        );
+    }
+
+    const copies = try dupeStrings(allocator, &items);
+    defer freeStrings(allocator, copies);
+    try std.testing.expectEqual(@as(usize, 3), copies.len);
+    try std.testing.expectEqualStrings("gamma", copies[2]);
+    try std.testing.expect(copies[0].ptr != items[0].ptr);
 }
