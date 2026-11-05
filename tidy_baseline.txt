@@ -324,7 +324,7 @@ src/config/loader.zig:applyMixinToMixin:220
 src/config/loader.zig:applyMixinToTask:222
 src/config/loader.zig:ban-list:7
 src/config/loader.zig:copyMixin:94
-src/config/loader.zig:copyTask:388
+src/config/loader.zig:copyTask:80
 src/config/loader.zig:doc-header:1
 src/config/loader.zig:line-length:29
 src/config/loader.zig:loadFromFileInternal:103
