@@ -1,6 +1,13 @@
-// src/jsonrpc/writer.zig
-//
-// JSON-RPC 2.0 message serialization
+//! JSON-RPC 2.0 message serialization shared by the MCP and LSP servers.
+//!
+//! Invariants: every string field (`id`, `method`, error `message`) is written through
+//! `std.json.fmt`, so quotes, backslashes and control bytes are escaped and the output parses as
+//! JSON. `params`, `result` and error `data` are already raw JSON text and are written verbatim;
+//! the caller guarantees they are valid JSON.
+//!
+//! Allocation: `serializeMessage` returns a caller-owned slice; `createResponse` and
+//! `createErrorResponse` return values whose strings the caller frees through `deinit`. Nothing is
+//! retained after a call returns.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -23,43 +30,44 @@ pub fn serializeMessage(allocator: std.mem.Allocator, message: Message) ![]const
     };
 }
 
-fn buildRequestJson(allocator: std.mem.Allocator, req: Request) ![]const u8 {
-    const id_str = switch (req.id) {
-        .string => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+/// Render a message id as JSON text; string ids are quoted and escaped. Caller frees the result.
+fn formatId(allocator: std.mem.Allocator, id: MessageId) ![]const u8 {
+    return switch (id) {
+        .string => |s| try std.fmt.allocPrint(allocator, "{f}", .{std.json.fmt(s, .{})}),
         .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
         .null_id => try allocator.dupe(u8, "null"),
     };
+}
+
+fn buildRequestJson(allocator: std.mem.Allocator, req: Request) ![]const u8 {
+    const id_str = try formatId(allocator, req.id);
     defer allocator.free(id_str);
 
     if (req.params) |params| {
         return try std.fmt.allocPrint(allocator,
-            \\{{"jsonrpc":"{s}","id":{s},"method":"{s}","params":{s}}}
-        , .{ req.jsonrpc, id_str, req.method, params });
+            \\{{"jsonrpc":"{s}","id":{s},"method":{f},"params":{s}}}
+        , .{ req.jsonrpc, id_str, std.json.fmt(req.method, .{}), params });
     } else {
         return try std.fmt.allocPrint(allocator,
-            \\{{"jsonrpc":"{s}","id":{s},"method":"{s}"}}
-        , .{ req.jsonrpc, id_str, req.method });
+            \\{{"jsonrpc":"{s}","id":{s},"method":{f}}}
+        , .{ req.jsonrpc, id_str, std.json.fmt(req.method, .{}) });
     }
 }
 
 fn buildNotificationJson(allocator: std.mem.Allocator, notif: Notification) ![]const u8 {
     if (notif.params) |params| {
         return try std.fmt.allocPrint(allocator,
-            \\{{"jsonrpc":"{s}","method":"{s}","params":{s}}}
-        , .{ notif.jsonrpc, notif.method, params });
+            \\{{"jsonrpc":"{s}","method":{f},"params":{s}}}
+        , .{ notif.jsonrpc, std.json.fmt(notif.method, .{}), params });
     } else {
         return try std.fmt.allocPrint(allocator,
-            \\{{"jsonrpc":"{s}","method":"{s}"}}
-        , .{ notif.jsonrpc, notif.method });
+            \\{{"jsonrpc":"{s}","method":{f}}}
+        , .{ notif.jsonrpc, std.json.fmt(notif.method, .{}) });
     }
 }
 
 fn buildResponseJson(allocator: std.mem.Allocator, resp: Response) ![]const u8 {
-    const id_str = switch (resp.id) {
-        .string => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
-        .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
-        .null_id => try allocator.dupe(u8, "null"),
-    };
+    const id_str = try formatId(allocator, resp.id);
     defer allocator.free(id_str);
 
     return try std.fmt.allocPrint(allocator,
@@ -68,21 +76,19 @@ fn buildResponseJson(allocator: std.mem.Allocator, resp: Response) ![]const u8 {
 }
 
 fn buildErrorResponseJson(allocator: std.mem.Allocator, err: ErrorResponse) ![]const u8 {
-    const id_str = switch (err.id) {
-        .string => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
-        .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
-        .null_id => try allocator.dupe(u8, "null"),
-    };
+    const id_str = try formatId(allocator, err.id);
     defer allocator.free(id_str);
 
+    const code = @intFromEnum(err.@"error".code);
+    const message = std.json.fmt(err.@"error".message, .{});
     if (err.@"error".data) |data| {
         return try std.fmt.allocPrint(allocator,
-            \\{{"jsonrpc":"{s}","id":{s},"error":{{"code":{d},"message":"{s}","data":{s}}}}}
-        , .{ err.jsonrpc, id_str, @intFromEnum(err.@"error".code), err.@"error".message, data });
+            \\{{"jsonrpc":"{s}","id":{s},"error":{{"code":{d},"message":{f},"data":{s}}}}}
+        , .{ err.jsonrpc, id_str, code, message, data });
     } else {
         return try std.fmt.allocPrint(allocator,
-            \\{{"jsonrpc":"{s}","id":{s},"error":{{"code":{d},"message":"{s}"}}}}
-        , .{ err.jsonrpc, id_str, @intFromEnum(err.@"error".code), err.@"error".message });
+            \\{{"jsonrpc":"{s}","id":{s},"error":{{"code":{d},"message":{f}}}}}
+        , .{ err.jsonrpc, id_str, code, message });
     }
 }
 
@@ -214,4 +220,58 @@ test "createErrorResponse helper" {
     try std.testing.expectEqual(99, err_resp.id.number);
     try std.testing.expectEqual(types.ErrorCode.invalid_params, err_resp.@"error".code);
     try std.testing.expectEqualStrings("Bad params", err_resp.@"error".message);
+}
+
+test "serialize error response escapes quotes, backslashes and control bytes" {
+    const allocator = std.testing.allocator;
+
+    const err_resp = ErrorResponse{
+        .jsonrpc = types.JSONRPC_VERSION,
+        .id = .{ .string = "id\"1\\" },
+        .@"error" = .{
+            .code = .method_not_found,
+            .message = "Unknown method \"a\\b\"\nline2",
+            .data = null,
+        },
+    };
+
+    const json = try serializeMessage(allocator, .{ .error_response = err_resp });
+    defer allocator.free(json);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+    const root = parsed.value.object;
+    try std.testing.expectEqualStrings("id\"1\\", root.get("id").?.string);
+    const message = root.get("error").?.object.get("message").?.string;
+    try std.testing.expectEqualStrings("Unknown method \"a\\b\"\nline2", message);
+}
+
+test "serialize request and notification escape the method name" {
+    const allocator = std.testing.allocator;
+
+    const req = Request{ .id = .{ .string = "a\"b" }, .method = "m\"x\\y", .params = null };
+    const req_json = try serializeMessage(allocator, .{ .request = req });
+    defer allocator.free(req_json);
+    const req_parsed = try std.json.parseFromSlice(std.json.Value, allocator, req_json, .{});
+    defer req_parsed.deinit();
+    try std.testing.expectEqualStrings("m\"x\\y", req_parsed.value.object.get("method").?.string);
+    try std.testing.expectEqualStrings("a\"b", req_parsed.value.object.get("id").?.string);
+
+    const notif = Notification{ .method = "n\"\t", .params = null };
+    const notif_json = try serializeMessage(allocator, .{ .notification = notif });
+    defer allocator.free(notif_json);
+    const notif_parsed = try std.json.parseFromSlice(std.json.Value, allocator, notif_json, .{});
+    defer notif_parsed.deinit();
+    try std.testing.expectEqualStrings("n\"\t", notif_parsed.value.object.get("method").?.string);
+}
+
+test "serialize response escapes a string id" {
+    const allocator = std.testing.allocator;
+
+    const resp = Response{ .id = .{ .string = "q\"\n" }, .result = "null" };
+    const json = try serializeMessage(allocator, .{ .response = resp });
+    defer allocator.free(json);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("q\"\n", parsed.value.object.get("id").?.string);
 }

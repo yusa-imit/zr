@@ -459,7 +459,6 @@ src/jsonrpc/parser.zig:doc-header:1
 src/jsonrpc/parser.zig:line-length:1
 src/jsonrpc/parser.zig:parseMessage:90
 src/jsonrpc/types.zig:doc-header:1
-src/jsonrpc/writer.zig:doc-header:1
 src/lang/bun.zig:ban-list:2
 src/lang/bun.zig:doc-header:1
 src/lang/bun.zig:line-length:10
