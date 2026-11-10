@@ -1,3 +1,12 @@
+//! Cycle detection over a `DAG` using Kahn's algorithm.
+//!
+//! Purpose: report whether a graph has a cycle, and which nodes are stuck behind it, or
+//! whether a proposed edge would create one.
+//! Cost: each processed node scans every node's dependencies, so a run is quadratic in the
+//! node count; the graphs are task graphs (hundreds of nodes), not general-purpose.
+//! Ownership: `CycleDetectionResult.cycle_path` owns its duplicated names; the caller frees
+//! it with `deinit`. The inspected DAG is never mutated.
+
 const std = @import("std");
 const DAG = @import("dag.zig").DAG;
 
