@@ -444,7 +444,6 @@ src/graph/ascii.zig:line-length:1
 src/graph/ascii.zig:renderGraph:74
 src/graph/ascii.zig:renderNode:99
 src/graph/cycle_detect.zig:detectCycle:76
-src/graph/cycle_detect.zig:doc-header:1
 src/graph/cycle_detect.zig:line-length:1
 src/graph/dag.zig:line-length:3
 src/graph/topo_sort.zig:doc-header:1
@@ -455,10 +454,8 @@ src/history/stats.zig:line-length:2
 src/history/store.zig:ban-list:3
 src/history/store.zig:doc-header:1
 src/history/store.zig:line-length:7
-src/jsonrpc/parser.zig:doc-header:1
 src/jsonrpc/parser.zig:line-length:1
 src/jsonrpc/parser.zig:parseMessage:90
-src/jsonrpc/types.zig:doc-header:1
 src/lang/bun.zig:ban-list:2
 src/lang/bun.zig:doc-header:1
 src/lang/bun.zig:line-length:10

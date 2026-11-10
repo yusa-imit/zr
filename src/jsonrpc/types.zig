@@ -1,7 +1,9 @@
-// src/jsonrpc/types.zig
-//
-// JSON-RPC 2.0 type definitions shared by MCP and LSP servers
-// Phase 9B — Foundation for AI integration (MCP) and editor integration (LSP)
+//! JSON-RPC 2.0 type definitions shared by the MCP and LSP servers.
+//!
+//! Purpose: one set of message, id, error-code and error-object types for both transports.
+//! Ownership: every slice inside a message is owned by the message; `deinit` frees it with
+//! the allocator that built it, and `MessageId.clone` duplicates string ids.
+//! Invariants: this module performs no I/O and allocates only in the `clone` helpers.
 
 const std = @import("std");
 

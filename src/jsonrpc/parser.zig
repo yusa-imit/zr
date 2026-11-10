@@ -1,7 +1,11 @@
-// src/jsonrpc/parser.zig
-//
-// JSON-RPC 2.0 message parser
-// Supports both Content-Length framing (LSP) and newline-delimited (MCP)
+//! JSON-RPC 2.0 message parser for the MCP and LSP servers.
+//!
+//! Purpose: turn one JSON text (already de-framed by the transport: Content-Length for LSP,
+//! newline-delimited for MCP) into a `types.Message`.
+//! Errors: malformed JSON surfaces as the `std.json` error set; a well-formed document that is
+//! not a valid JSON-RPC 2.0 message returns `error.InvalidRequest`.
+//! Ownership: the returned message owns its slices; the caller frees it with `Message.deinit`
+//! using the same allocator.
 
 const std = @import("std");
 const types = @import("types.zig");
