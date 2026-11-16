@@ -46,7 +46,6 @@ src/ci/templates/circleci.zig:doc-header:1
 src/ci/templates/circleci.zig:line-length:4
 src/ci/templates/engine.zig:doc-header:1
 src/ci/templates/engine.zig:line-length:1
-src/ci/templates/github_actions.zig:doc-header:1
 src/ci/templates/github_actions.zig:line-length:4
 src/ci/templates/gitlab.zig:doc-header:1
 src/ci/templates/gitlab.zig:line-length:3
@@ -95,7 +94,6 @@ src/cli/clean.zig:cmdClean:263
 src/cli/clean.zig:doc-header:1
 src/cli/clean.zig:line-length:15
 src/cli/codeowners.zig:cmdCodeownersGenerate:113
-src/cli/codeowners.zig:doc-header:1
 src/cli/codeowners.zig:line-length:9
 src/cli/common.zig:ban-list:1
 src/cli/common.zig:doc-header:1
@@ -293,7 +291,6 @@ src/cli/workspace.zig:cmdWorkspaceRunFiltered:153
 src/cli/workspace.zig:doc-header:1
 src/cli/workspace.zig:line-length:32
 src/cli/workspace.zig:resolveWorkspaceMembers:115
-src/codeowners/generator.zig:doc-header:1
 src/codeowners/generator.zig:line-length:3
 src/config/aliases.zig:ban-list:2
 src/config/aliases.zig:doc-header:1

@@ -1,3 +1,11 @@
+//! `zr codeowners` command: dispatches the `generate` subcommand, which writes a CODEOWNERS file
+//! (or prints it with `--dry-run`).
+//!
+//! Returns the process exit code: 0 on success or help, 1 on a usage or I/O error, reported on
+//! the error writer. The command loads the config and discovers workspace members, then hands the
+//! member paths to `codeowners/generator.zig`. Every allocation it makes is released before it
+//! returns.
+
 const std = @import("std");
 const color = @import("../output/color.zig");
 const config_loader = @import("../config/loader.zig");

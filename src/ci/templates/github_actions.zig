@@ -1,3 +1,10 @@
+//! Built-in GitHub Actions workflow templates: `basic_ci`, `monorepo` and `release`, plus the
+//! `templates` array that lists them for the CI template registry.
+//!
+//! Each template is comptime data. Its body is a workflow YAML with `${NAME}` placeholders that
+//! match the template's declared variables; substitution happens in the caller, not here, so
+//! this file allocates nothing and owns nothing.
+
 const types = @import("types.zig");
 const Template = types.Template;
 const TemplateVariable = types.TemplateVariable;
