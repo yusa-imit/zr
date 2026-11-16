@@ -1,3 +1,14 @@
+//! CODEOWNERS content generator.
+//!
+//! A `Generator` collects owner patterns, either added by hand or detected from workspace member
+//! paths, and renders them after the config's own patterns. The catch-all `*` line for the
+//! default owners is written last, because GitHub gives the last matching pattern precedence.
+//!
+//! Ownership: `init` stores the allocator and borrows the config, which must outlive the
+//! generator. Every pattern and owner string added is duplicated and freed by `deinit`; the
+//! slice returned by `generate` belongs to the caller. Each `add`/`detect` call allocates, so
+//! the generator does not honour a no-allocation-after-`init` contract.
+
 const std = @import("std");
 const types = @import("types.zig");
 const config_types = @import("../config/types.zig");
